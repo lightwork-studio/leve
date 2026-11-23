@@ -12,6 +12,7 @@ vi.mock("react-native-safe-area-context", () => ({
 }));
 vi.mock("react-native-svg", () => ({ default: "Svg", Path: "Path" }));
 vi.mock("react-native", () => ({
+  Platform: { OS: "web" },
   useColorScheme: () => "dark",
   SectionList: ({ ListHeaderComponent }: { ListHeaderComponent: React.ReactNode }) =>
     ListHeaderComponent,
@@ -84,6 +85,15 @@ it("filters logged movements with the anatomy figure, chips and search, keeping 
     expect(
       root.findAllByProps({ accessibilityLabel: "Filter by muscle group, Triceps" }).length,
     ).toBeGreaterThan(0);
+    await act(() => search().props.onFocus());
+    expect(search().props.value).toBe("");
+    expect(
+      root.findAllByProps({ accessibilityLabel: "Filter by muscle group, Triceps" }),
+    ).toHaveLength(0);
+    expect(shown()).toEqual([
+      ["Triceps · primary", ["Band press"]],
+      ["Also works triceps", ["Bench Press"]],
+    ]);
     await act(() => search().props.onChangeText("band"));
     expect(shown()).toEqual([["Triceps · primary", ["Band press"]]]);
     expect(
@@ -117,6 +127,13 @@ it("filters logged movements with the anatomy figure, chips and search, keeping 
     await act(() => search().props.onChangeText("retired"));
     expect(shown()).toEqual([]);
     await act(() => search().props.onChangeText(""));
+    expect(
+      root.findAllByProps({ accessibilityLabel: "Filter by muscle group, Triceps" }),
+    ).toHaveLength(0);
+    await act(() => search().props.onBlur());
+    expect(
+      root.findAllByProps({ accessibilityLabel: "Filter by muscle group, Triceps" }).length,
+    ).toBeGreaterThan(0);
     // The chips reach every muscle, including ones the figure doesn't draw.
     await chip("Other");
     expect(shown()).toEqual([["Other · primary", ["Retired movement"]]]);

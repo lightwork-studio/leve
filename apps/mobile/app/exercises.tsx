@@ -13,7 +13,11 @@ import { lastDoneLabel } from "../src/model/train.ts";
 import { radius, space, type } from "../src/theme.ts";
 import { BackLink } from "../src/ui/back-link.tsx";
 import { EmptyState } from "../src/ui/empty-state.tsx";
-import { ExerciseFilters, ExerciseSearch } from "../src/ui/exercise-search.tsx";
+import {
+  ExerciseFilters,
+  ExerciseSearch,
+  keepExerciseSearchFocused,
+} from "../src/ui/exercise-search.tsx";
 import { SectionLabel } from "../src/ui/group.tsx";
 import { ChevronIcon } from "../src/ui/icons.tsx";
 import { MuscleFilter, MusclePreview } from "../src/ui/muscle-filter.tsx";
@@ -32,6 +36,8 @@ export default function ExercisesScreen() {
   const fromTrain = from === "train";
   const styles = useStyles(sheet);
   const [query, setQuery] = useState("");
+  const [focused, setFocused] = useState(false);
+  const searching = focused || !!query.trim();
   const [muscle, setMuscle] = useState("");
   const [equipment, setEquipment] = useState("");
   const available = useMemo(
@@ -59,16 +65,18 @@ export default function ExercisesScreen() {
         primary: sections.find((s) => s.key === "primary")?.data.length ?? 0,
         also: sections.find((s) => s.key === "also")?.data.length ?? 0,
       }
-    : { total: available.length };
+    : { total: matching.length };
   const insets = useSafeAreaInsets();
   // Rows change with the day ("yesterday"), not the minute.
   const now = useToday();
   const empty = sections.every((section) => section.data.length === 0);
   return (
     <SectionList
+      {...keepExerciseSearchFocused(focused, setFocused)}
       style={styles.scroll}
       contentContainerStyle={[styles.content, { paddingTop: insets.top + space.md }]}
       keyboardShouldPersistTaps="handled"
+      automaticallyAdjustKeyboardInsets
       stickySectionHeadersEnabled={false}
       sections={empty ? [] : sections}
       keyExtractor={(item) => item.exerciseId}
@@ -94,23 +102,25 @@ export default function ExercisesScreen() {
             label={fromTrain ? "Train" : "Progress"}
             fallback={fromTrain ? "/" : "/progress"}
           />
-          <View style={styles.titles}>
-            <Text style={styles.eyebrow}>Your exercises</Text>
-            <Text accessibilityRole="header" style={styles.title}>
-              Exercises
-            </Text>
-            <Text style={styles.subtitle}>
-              {index.exercises.length === 0
-                ? "Exercises you log show up here, with their records."
-                : `${index.exercises.length} done, most recent first`}
-            </Text>
-          </View>
+          {!focused && (
+            <View style={styles.titles}>
+              <Text style={styles.eyebrow}>Your exercises</Text>
+              <Text accessibilityRole="header" style={styles.title}>
+                Exercises
+              </Text>
+              <Text style={styles.subtitle}>
+                {index.exercises.length === 0
+                  ? "Exercises you log show up here, with their records."
+                  : `${index.exercises.length} done, most recent first`}
+              </Text>
+            </View>
+          )}
           {index.exercises.length > 0 && (
             <>
-              <ExerciseSearch value={query} onChange={setQuery} />
+              <ExerciseSearch value={query} onChange={setQuery} onFocusChange={setFocused} />
               <ExerciseFilters
-                key={query.trim()}
-                searching={!!query.trim()}
+                key={searching ? `search:${query.trim()}` : "browse"}
+                searching={searching}
                 muscle={muscle}
                 value={equipment}
                 onChange={setEquipment}
