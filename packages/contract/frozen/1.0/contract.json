@@ -1,0 +1,2026 @@
+{
+  "release": "1.0",
+  "kinds": {
+    "body_measurement": {
+      "content": {
+        "type": "object",
+        "properties": {
+          "bodyweightKg": {
+            "type": "nullable",
+            "of": {
+              "type": "number",
+              "integer": false,
+              "minimum": 0,
+              "maximum": 2000
+            }
+          },
+          "fatPercent": {
+            "type": "nullable",
+            "of": {
+              "type": "number",
+              "integer": false,
+              "minimum": 0,
+              "maximum": 100
+            }
+          },
+          "takenAt": {
+            "type": "string",
+            "minLength": 24,
+            "maxLength": 24,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+            "format": "utc-date-time"
+          }
+        },
+        "required": [
+          "bodyweightKg",
+          "fatPercent",
+          "takenAt"
+        ]
+      },
+      "meanings": {
+        "bodyweightKg": "Bodyweight in kilograms; null if not measured",
+        "fatPercent": "Body fat in percent; null if not measured",
+        "takenAt": "When the measurement was taken (UTC)"
+      }
+    },
+    "custom_exercise": {
+      "content": {
+        "type": "object",
+        "properties": {
+          "archived": {
+            "type": "boolean"
+          },
+          "equipment": {
+            "type": "enum",
+            "values": [
+              "none",
+              "barbell",
+              "dumbbell",
+              "kettlebell",
+              "machine",
+              "cable",
+              "plate",
+              "resistance_band",
+              "suspension",
+              "other"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "primaryMuscle": {
+            "type": "enum",
+            "values": [
+              "abdominals",
+              "abductors",
+              "adductors",
+              "biceps",
+              "calves",
+              "chest",
+              "forearms",
+              "glutes",
+              "hamstrings",
+              "lats",
+              "lower_back",
+              "upper_back",
+              "neck",
+              "quadriceps",
+              "shoulders",
+              "traps",
+              "triceps",
+              "cardio",
+              "full_body",
+              "other"
+            ]
+          },
+          "secondaryMuscles": {
+            "type": "array",
+            "of": {
+              "type": "enum",
+              "values": [
+                "abdominals",
+                "abductors",
+                "adductors",
+                "biceps",
+                "calves",
+                "chest",
+                "forearms",
+                "glutes",
+                "hamstrings",
+                "lats",
+                "lower_back",
+                "upper_back",
+                "neck",
+                "quadriceps",
+                "shoulders",
+                "traps",
+                "triceps",
+                "cardio",
+                "full_body",
+                "other"
+              ]
+            },
+            "maxItems": 20
+          },
+          "type": {
+            "type": "enum",
+            "values": [
+              "weight_reps",
+              "bodyweight_reps",
+              "weighted_bodyweight",
+              "assisted_bodyweight",
+              "duration",
+              "weight_duration",
+              "distance_duration",
+              "weight_distance",
+              "floors_duration",
+              "steps_duration"
+            ]
+          },
+          "usesBodyweight": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "archived",
+          "equipment",
+          "name",
+          "primaryMuscle",
+          "secondaryMuscles",
+          "type",
+          "usesBodyweight"
+        ]
+      },
+      "meanings": {
+        "archived": "Hidden from pickers; stays valid in history (custom exercises are archived, never deleted)",
+        "equipment": "Equipment used",
+        "name": "Exercise name",
+        "primaryMuscle": "Main muscle group trained",
+        "secondaryMuscles": "Other muscle groups trained",
+        "type": "How sets are measured; fixed once created",
+        "usesBodyweight": "Volume includes the lifter's bodyweight"
+      }
+    },
+    "routine": {
+      "content": {
+        "type": "object",
+        "properties": {
+          "exercises": {
+            "type": "array",
+            "of": {
+              "type": "object",
+              "properties": {
+                "exerciseId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "exerciseName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "exerciseType": {
+                  "type": "enum",
+                  "values": [
+                    "weight_reps",
+                    "bodyweight_reps",
+                    "weighted_bodyweight",
+                    "assisted_bodyweight",
+                    "duration",
+                    "weight_duration",
+                    "distance_duration",
+                    "weight_distance",
+                    "floors_duration",
+                    "steps_duration"
+                  ]
+                },
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^[A-Za-z0-9._:-]+$"
+                },
+                "notes": {
+                  "type": "array",
+                  "of": {
+                    "type": "object",
+                    "properties": {
+                      "createdAt": {
+                        "type": "string",
+                        "minLength": 24,
+                        "maxLength": 24,
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+                        "format": "utc-date-time"
+                      },
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64,
+                        "pattern": "^[A-Za-z0-9._:-]+$"
+                      },
+                      "text": {
+                        "type": "string",
+                        "minLength": 0,
+                        "maxLength": 10000
+                      }
+                    },
+                    "required": [
+                      "createdAt",
+                      "id",
+                      "text"
+                    ]
+                  },
+                  "maxItems": 100
+                },
+                "restSeconds": {
+                  "type": "number",
+                  "integer": true,
+                  "minimum": 0,
+                  "maximum": 3600
+                },
+                "sets": {
+                  "type": "array",
+                  "of": {
+                    "type": "object",
+                    "properties": {
+                      "count": {
+                        "type": "nullable",
+                        "of": {
+                          "type": "number",
+                          "integer": true,
+                          "minimum": 0,
+                          "maximum": 1000000
+                        }
+                      },
+                      "distanceMeters": {
+                        "type": "nullable",
+                        "of": {
+                          "type": "number",
+                          "integer": false,
+                          "minimum": 0,
+                          "maximum": 10000000
+                        }
+                      },
+                      "durationSeconds": {
+                        "type": "nullable",
+                        "of": {
+                          "type": "number",
+                          "integer": false,
+                          "minimum": 0,
+                          "maximum": 1000000
+                        }
+                      },
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64,
+                        "pattern": "^[A-Za-z0-9._:-]+$"
+                      },
+                      "repRangeMax": {
+                        "type": "nullable",
+                        "of": {
+                          "type": "number",
+                          "integer": true,
+                          "minimum": 0,
+                          "maximum": 10000
+                        }
+                      },
+                      "repRangeMin": {
+                        "type": "nullable",
+                        "of": {
+                          "type": "number",
+                          "integer": true,
+                          "minimum": 0,
+                          "maximum": 10000
+                        }
+                      },
+                      "reps": {
+                        "type": "nullable",
+                        "of": {
+                          "type": "number",
+                          "integer": true,
+                          "minimum": 0,
+                          "maximum": 10000
+                        }
+                      },
+                      "rpe": {
+                        "type": "nullable",
+                        "of": {
+                          "type": "enum",
+                          "values": [
+                            6,
+                            7,
+                            7.5,
+                            8,
+                            8.5,
+                            9,
+                            9.5,
+                            10
+                          ]
+                        }
+                      },
+                      "type": {
+                        "type": "enum",
+                        "values": [
+                          "normal",
+                          "warmup",
+                          "failure",
+                          "drop"
+                        ]
+                      },
+                      "weightKg": {
+                        "type": "nullable",
+                        "of": {
+                          "type": "number",
+                          "integer": false,
+                          "minimum": 0,
+                          "maximum": 2000
+                        }
+                      }
+                    },
+                    "required": [
+                      "count",
+                      "distanceMeters",
+                      "durationSeconds",
+                      "id",
+                      "repRangeMax",
+                      "repRangeMin",
+                      "reps",
+                      "rpe",
+                      "type",
+                      "weightKg"
+                    ]
+                  },
+                  "maxItems": 150
+                },
+                "supersetId": {
+                  "type": "nullable",
+                  "of": {
+                    "type": "number",
+                    "integer": true,
+                    "minimum": 0,
+                    "maximum": 1000
+                  }
+                },
+                "useRepRange": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "exerciseId",
+                "exerciseName",
+                "exerciseType",
+                "id",
+                "notes",
+                "restSeconds",
+                "sets",
+                "supersetId",
+                "useRepRange"
+              ]
+            },
+            "maxItems": 50
+          },
+          "folderId": {
+            "type": "nullable",
+            "of": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9._:-]+$"
+            }
+          },
+          "notes": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 2000
+          },
+          "position": {
+            "type": "number",
+            "integer": false,
+            "minimum": -1000000000000000,
+            "maximum": 1000000000000000
+          },
+          "title": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "exercises",
+          "folderId",
+          "notes",
+          "position",
+          "title"
+        ]
+      },
+      "meanings": {
+        "exercises": "The routine's exercises in order, each with target sets (weights in kilograms, distances in metres, durations in seconds, rep ranges as min/max)",
+        "folderId": "The folder holding the routine; null when unfiled or the folder is gone",
+        "notes": "Free-text notes on the routine",
+        "position": "Order within its folder; lower first, ties ordered by id",
+        "title": "Routine name"
+      }
+    },
+    "routine_folder": {
+      "content": {
+        "type": "object",
+        "properties": {
+          "position": {
+            "type": "number",
+            "integer": false,
+            "minimum": -1000000000000000,
+            "maximum": 1000000000000000
+          },
+          "title": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 30
+          }
+        },
+        "required": [
+          "position",
+          "title"
+        ]
+      },
+      "meanings": {
+        "position": "Order among folders; lower first, ties ordered by id",
+        "title": "Folder name"
+      }
+    },
+    "settings": {
+      "content": {
+        "type": "object",
+        "properties": {
+          "autoUpdateRoutineValues": {
+            "type": "boolean"
+          },
+          "countWarmups": {
+            "type": "boolean"
+          },
+          "defaultRestSeconds": {
+            "type": "number",
+            "integer": true,
+            "minimum": 0,
+            "maximum": 3600
+          },
+          "distanceUnit": {
+            "type": "enum",
+            "values": [
+              "km",
+              "miles"
+            ]
+          },
+          "firstWeekday": {
+            "type": "number",
+            "integer": true,
+            "minimum": 0,
+            "maximum": 6
+          },
+          "measurementUnit": {
+            "type": "enum",
+            "values": [
+              "cm",
+              "in"
+            ]
+          },
+          "previousValues": {
+            "type": "enum",
+            "values": [
+              "any_workout",
+              "same_routine"
+            ]
+          },
+          "rpeEnabled": {
+            "type": "boolean"
+          },
+          "shortDistanceUnit": {
+            "type": "enum",
+            "values": [
+              "m",
+              "yd"
+            ]
+          },
+          "trackRepsInReserve": {
+            "type": "nullable",
+            "of": {
+              "type": "boolean"
+            }
+          },
+          "weightUnit": {
+            "type": "enum",
+            "values": [
+              "kg",
+              "lbs"
+            ]
+          }
+        },
+        "required": [
+          "autoUpdateRoutineValues",
+          "countWarmups",
+          "defaultRestSeconds",
+          "distanceUnit",
+          "firstWeekday",
+          "measurementUnit",
+          "previousValues",
+          "rpeEnabled",
+          "shortDistanceUnit",
+          "trackRepsInReserve",
+          "weightUnit"
+        ]
+      },
+      "singletonId": "settings",
+      "meanings": {
+        "autoUpdateRoutineValues": "After a routine-based workout, copy the logged values back into the routine",
+        "countWarmups": "Whether warm-up sets count toward volume, set counts and records",
+        "defaultRestSeconds": "Rest timer for new exercise entries; 0 means off",
+        "distanceUnit": "Unit for long distances; stored values stay in metres",
+        "firstWeekday": "First day of the week, 0 = Sunday",
+        "measurementUnit": "Unit for body measurements",
+        "previousValues": "Where 'previous' values come from while logging: any workout or the same routine",
+        "rpeEnabled": "Whether RPE can be entered on sets",
+        "shortDistanceUnit": "Unit for short distances; stored values stay in metres",
+        "trackRepsInReserve": "Whether the app asks for reps in reserve after each logged set; null means not set, which reads as off",
+        "weightUnit": "Unit for showing and entering weight; stored values stay in kilograms"
+      }
+    },
+    "workout": {
+      "content": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 2000
+          },
+          "endedAt": {
+            "type": "nullable",
+            "of": {
+              "type": "string",
+              "minLength": 24,
+              "maxLength": 24,
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+              "format": "utc-date-time"
+            }
+          },
+          "initialPlan": {
+            "type": "nullable",
+            "of": {
+              "type": "object",
+              "properties": {
+                "exercises": {
+                  "type": "array",
+                  "of": {
+                    "type": "object",
+                    "properties": {
+                      "exerciseId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "exerciseName": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "exerciseType": {
+                        "type": "enum",
+                        "values": [
+                          "weight_reps",
+                          "bodyweight_reps",
+                          "weighted_bodyweight",
+                          "assisted_bodyweight",
+                          "duration",
+                          "weight_duration",
+                          "distance_duration",
+                          "weight_distance",
+                          "floors_duration",
+                          "steps_duration"
+                        ]
+                      },
+                      "restSeconds": {
+                        "type": "number",
+                        "integer": true,
+                        "minimum": 0,
+                        "maximum": 3600
+                      },
+                      "sets": {
+                        "type": "array",
+                        "of": {
+                          "type": "object",
+                          "properties": {
+                            "count": {
+                              "type": "nullable",
+                              "of": {
+                                "type": "number",
+                                "integer": true,
+                                "minimum": 0,
+                                "maximum": 1000000
+                              }
+                            },
+                            "distanceMeters": {
+                              "type": "nullable",
+                              "of": {
+                                "type": "number",
+                                "integer": false,
+                                "minimum": 0,
+                                "maximum": 10000000
+                              }
+                            },
+                            "durationSeconds": {
+                              "type": "nullable",
+                              "of": {
+                                "type": "number",
+                                "integer": false,
+                                "minimum": 0,
+                                "maximum": 1000000
+                              }
+                            },
+                            "repRangeMax": {
+                              "type": "nullable",
+                              "of": {
+                                "type": "number",
+                                "integer": true,
+                                "minimum": 0,
+                                "maximum": 10000
+                              }
+                            },
+                            "repRangeMin": {
+                              "type": "nullable",
+                              "of": {
+                                "type": "number",
+                                "integer": true,
+                                "minimum": 0,
+                                "maximum": 10000
+                              }
+                            },
+                            "reps": {
+                              "type": "nullable",
+                              "of": {
+                                "type": "number",
+                                "integer": true,
+                                "minimum": 0,
+                                "maximum": 10000
+                              }
+                            },
+                            "rpe": {
+                              "type": "nullable",
+                              "of": {
+                                "type": "enum",
+                                "values": [
+                                  6,
+                                  7,
+                                  7.5,
+                                  8,
+                                  8.5,
+                                  9,
+                                  9.5,
+                                  10
+                                ]
+                              }
+                            },
+                            "type": {
+                              "type": "enum",
+                              "values": [
+                                "normal",
+                                "warmup",
+                                "failure",
+                                "drop"
+                              ]
+                            },
+                            "weightKg": {
+                              "type": "nullable",
+                              "of": {
+                                "type": "number",
+                                "integer": false,
+                                "minimum": 0,
+                                "maximum": 2000
+                              }
+                            }
+                          },
+                          "required": [
+                            "count",
+                            "distanceMeters",
+                            "durationSeconds",
+                            "repRangeMax",
+                            "repRangeMin",
+                            "reps",
+                            "rpe",
+                            "type",
+                            "weightKg"
+                          ]
+                        },
+                        "maxItems": 150
+                      },
+                      "supersetId": {
+                        "type": "nullable",
+                        "of": {
+                          "type": "number",
+                          "integer": true,
+                          "minimum": 0,
+                          "maximum": 1000
+                        }
+                      },
+                      "useRepRange": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "exerciseId",
+                      "exerciseName",
+                      "exerciseType",
+                      "restSeconds",
+                      "sets",
+                      "supersetId",
+                      "useRepRange"
+                    ]
+                  },
+                  "maxItems": 50
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 0,
+                  "maxLength": 100
+                }
+              },
+              "required": [
+                "exercises",
+                "title"
+              ]
+            }
+          },
+          "routineId": {
+            "type": "nullable",
+            "of": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9._:-]+$"
+            }
+          },
+          "startedAt": {
+            "type": "string",
+            "minLength": 24,
+            "maxLength": 24,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+            "format": "utc-date-time"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "description",
+          "endedAt",
+          "initialPlan",
+          "routineId",
+          "startedAt",
+          "title"
+        ]
+      },
+      "meanings": {
+        "description": "Free-text notes about the whole workout",
+        "endedAt": "startedAt plus the active duration; null while the workout is in progress",
+        "initialPlan": "Routine title and ordered exercise and set targets captured at start; null when unknown or unplanned",
+        "routineId": "The routine the workout was started from, if any; a soft reference",
+        "startedAt": "When the workout started (UTC)",
+        "title": "Workout name shown in history"
+      }
+    },
+    "workout_exercise": {
+      "content": {
+        "type": "object",
+        "properties": {
+          "doubleDumbbellVolume": {
+            "type": "boolean"
+          },
+          "exerciseId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "exerciseName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "exerciseType": {
+            "type": "enum",
+            "values": [
+              "weight_reps",
+              "bodyweight_reps",
+              "weighted_bodyweight",
+              "assisted_bodyweight",
+              "duration",
+              "weight_duration",
+              "distance_duration",
+              "weight_distance",
+              "floors_duration",
+              "steps_duration"
+            ]
+          },
+          "notes": {
+            "type": "array",
+            "of": {
+              "type": "object",
+              "properties": {
+                "createdAt": {
+                  "type": "string",
+                  "minLength": 24,
+                  "maxLength": 24,
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+                  "format": "utc-date-time"
+                },
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^[A-Za-z0-9._:-]+$"
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 0,
+                  "maxLength": 10000
+                }
+              },
+              "required": [
+                "createdAt",
+                "id",
+                "text"
+              ]
+            },
+            "maxItems": 100
+          },
+          "position": {
+            "type": "number",
+            "integer": false,
+            "minimum": -1000000000000000,
+            "maximum": 1000000000000000
+          },
+          "restSeconds": {
+            "type": "number",
+            "integer": true,
+            "minimum": 0,
+            "maximum": 3600
+          },
+          "supersetId": {
+            "type": "nullable",
+            "of": {
+              "type": "number",
+              "integer": true,
+              "minimum": 0,
+              "maximum": 1000
+            }
+          },
+          "workoutId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          }
+        },
+        "required": [
+          "doubleDumbbellVolume",
+          "exerciseId",
+          "exerciseName",
+          "exerciseType",
+          "notes",
+          "position",
+          "restSeconds",
+          "supersetId",
+          "workoutId"
+        ]
+      },
+      "parent": {
+        "kind": "workout",
+        "field": "workoutId"
+      },
+      "meanings": {
+        "doubleDumbbellVolume": "Count the set weight twice in volume (one dumbbell per hand)",
+        "exerciseId": "Built-in or custom exercise id; a soft reference",
+        "exerciseName": "The exercise's name when logged, shown if the exercise no longer exists",
+        "exerciseType": "How sets of this exercise are measured; decides which set values are used",
+        "notes": "Notes on this entry, each with its own id and creation time",
+        "position": "Order within the workout; lower first, ties ordered by id",
+        "restSeconds": "Rest timer after a set in seconds; 0 means off",
+        "supersetId": "Entries of one workout sharing this number form a superset; null if none",
+        "workoutId": "The workout this entry belongs to (parent)"
+      }
+    },
+    "workout_note": {
+      "content": {
+        "type": "object",
+        "properties": {
+          "createdAt": {
+            "type": "string",
+            "minLength": 24,
+            "maxLength": 24,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+            "format": "utc-date-time"
+          },
+          "kind": {
+            "type": "enum",
+            "values": [
+              "session",
+              "sticky"
+            ]
+          },
+          "reply": {
+            "type": "nullable",
+            "of": {
+              "type": "object",
+              "properties": {
+                "createdAt": {
+                  "type": "string",
+                  "minLength": 24,
+                  "maxLength": 24,
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+                  "format": "utc-date-time"
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 10000
+                }
+              },
+              "required": [
+                "createdAt",
+                "text"
+              ]
+            }
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          },
+          "workoutId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          }
+        },
+        "required": [
+          "createdAt",
+          "kind",
+          "reply",
+          "text",
+          "workoutId"
+        ]
+      },
+      "parent": {
+        "kind": "workout",
+        "field": "workoutId"
+      },
+      "meanings": {
+        "createdAt": "Time the note was written in UTC",
+        "kind": "Session notes belong to one workout; sticky notes also appear in later workouts",
+        "reply": "Optional coach reply and time it was supplied, shown in the first eligible later workout",
+        "text": "The lifter’s note",
+        "workoutId": "The workout in which this note was written"
+      }
+    },
+    "workout_rest": {
+      "content": {
+        "type": "object",
+        "properties": {
+          "seconds": {
+            "type": "nullable",
+            "of": {
+              "type": "number",
+              "integer": true,
+              "minimum": 0,
+              "maximum": 3600
+            }
+          },
+          "workoutId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          }
+        },
+        "required": [
+          "seconds",
+          "workoutId"
+        ]
+      },
+      "parent": {
+        "kind": "workout",
+        "field": "workoutId",
+        "sharedId": true
+      },
+      "meanings": {
+        "seconds": "Default rest in seconds for exercises added to this workout. Zero turns the timer off. Null uses account settings. Clear the preference by setting seconds to null; it is deleted with its workout.",
+        "workoutId": "The workout to which this rest preference belongs; its record ID equals the workout ID"
+      }
+    },
+    "workout_set": {
+      "content": {
+        "type": "object",
+        "properties": {
+          "completedAt": {
+            "type": "nullable",
+            "of": {
+              "type": "string",
+              "minLength": 24,
+              "maxLength": 24,
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+              "format": "utc-date-time"
+            }
+          },
+          "count": {
+            "type": "nullable",
+            "of": {
+              "type": "number",
+              "integer": true,
+              "minimum": 0,
+              "maximum": 1000000
+            }
+          },
+          "distanceMeters": {
+            "type": "nullable",
+            "of": {
+              "type": "number",
+              "integer": false,
+              "minimum": 0,
+              "maximum": 10000000
+            }
+          },
+          "durationSeconds": {
+            "type": "nullable",
+            "of": {
+              "type": "number",
+              "integer": false,
+              "minimum": 0,
+              "maximum": 1000000
+            }
+          },
+          "planSlot": {
+            "type": "nullable",
+            "of": {
+              "type": "object",
+              "properties": {
+                "exercise": {
+                  "type": "number",
+                  "integer": true,
+                  "minimum": 0,
+                  "maximum": 49
+                },
+                "set": {
+                  "type": "number",
+                  "integer": true,
+                  "minimum": 0,
+                  "maximum": 149
+                }
+              },
+              "required": [
+                "exercise",
+                "set"
+              ]
+            }
+          },
+          "position": {
+            "type": "number",
+            "integer": false,
+            "minimum": -1000000000000000,
+            "maximum": 1000000000000000
+          },
+          "reps": {
+            "type": "nullable",
+            "of": {
+              "type": "number",
+              "integer": true,
+              "minimum": 0,
+              "maximum": 10000
+            }
+          },
+          "repsInReserve": {
+            "type": "nullable",
+            "of": {
+              "type": "number",
+              "integer": true,
+              "minimum": 0,
+              "maximum": 10000
+            }
+          },
+          "rpe": {
+            "type": "nullable",
+            "of": {
+              "type": "enum",
+              "values": [
+                6,
+                7,
+                7.5,
+                8,
+                8.5,
+                9,
+                9.5,
+                10
+              ]
+            }
+          },
+          "type": {
+            "type": "enum",
+            "values": [
+              "normal",
+              "warmup",
+              "failure",
+              "drop"
+            ]
+          },
+          "weightKg": {
+            "type": "nullable",
+            "of": {
+              "type": "number",
+              "integer": false,
+              "minimum": 0,
+              "maximum": 2000
+            }
+          },
+          "workoutExerciseId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          }
+        },
+        "required": [
+          "completedAt",
+          "count",
+          "distanceMeters",
+          "durationSeconds",
+          "planSlot",
+          "position",
+          "reps",
+          "repsInReserve",
+          "rpe",
+          "type",
+          "weightKg",
+          "workoutExerciseId"
+        ]
+      },
+      "parent": {
+        "kind": "workout_exercise",
+        "field": "workoutExerciseId"
+      },
+      "meanings": {
+        "completedAt": "When the set was ticked off (UTC); null if not completed",
+        "count": "Floors or steps for those exercise types; null when unused",
+        "distanceMeters": "Distance in metres; null when unused",
+        "durationSeconds": "Duration in seconds; null when unused",
+        "planSlot": "Zero-based exercise and set indices in the workout initial plan, independent of row order; null if unplanned or unknown",
+        "position": "Order within the entry; lower first, ties ordered by id",
+        "reps": "Repetitions; null when the exercise type doesn't count them",
+        "repsInReserve": "Estimated additional repetitions possible when the set ended; zero means no repetitions remained, null means unrecorded",
+        "rpe": "Rate of perceived exertion; null if not given",
+        "type": "normal, warmup, failure or drop set",
+        "weightKg": "Weight in kilograms; for weighted bodyweight the added load, for assisted bodyweight the assistance; null when the exercise type has no weight",
+        "workoutExerciseId": "The exercise entry this set belongs to (parent)"
+      }
+    }
+  },
+  "features": [
+    "body_measurements",
+    "custom_exercises",
+    "reps_in_reserve",
+    "routines",
+    "rpe",
+    "track_reps_in_reserve",
+    "workout_journal",
+    "workout_rest",
+    "workouts"
+  ],
+  "messages": {
+    "pushRequest": {
+      "type": "object",
+      "properties": {
+        "lineage": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9._:-]+$"
+        },
+        "release": {
+          "type": "literal",
+          "value": "1.0"
+        },
+        "submissions": {
+          "type": "array",
+          "of": {
+            "type": "union",
+            "discriminator": "op",
+            "variants": [
+              {
+                "type": "object",
+                "properties": {
+                  "baseRevision": {
+                    "type": "nullable",
+                    "of": {
+                      "type": "number",
+                      "integer": true,
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "content": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                    "open": true
+                  },
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[A-Za-z0-9._:-]+$"
+                  },
+                  "kind": {
+                    "type": "enum",
+                    "values": [
+                      "body_measurement",
+                      "custom_exercise",
+                      "routine",
+                      "routine_folder",
+                      "settings",
+                      "workout",
+                      "workout_exercise",
+                      "workout_note",
+                      "workout_rest",
+                      "workout_set"
+                    ]
+                  },
+                  "op": {
+                    "type": "literal",
+                    "value": "put"
+                  },
+                  "submissionId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[A-Za-z0-9._:-]+$"
+                  }
+                },
+                "required": [
+                  "baseRevision",
+                  "content",
+                  "id",
+                  "kind",
+                  "op",
+                  "submissionId"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "baseRevision": {
+                    "type": "nullable",
+                    "of": {
+                      "type": "number",
+                      "integer": true,
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "descendants": {
+                    "type": "array",
+                    "of": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64,
+                          "pattern": "^[A-Za-z0-9._:-]+$"
+                        },
+                        "kind": {
+                          "type": "enum",
+                          "values": [
+                            "body_measurement",
+                            "custom_exercise",
+                            "routine",
+                            "routine_folder",
+                            "settings",
+                            "workout",
+                            "workout_exercise",
+                            "workout_note",
+                            "workout_rest",
+                            "workout_set"
+                          ]
+                        },
+                        "revision": {
+                          "type": "number",
+                          "integer": true,
+                          "minimum": 1,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "kind",
+                        "revision"
+                      ]
+                    },
+                    "maxItems": 2000
+                  },
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[A-Za-z0-9._:-]+$"
+                  },
+                  "kind": {
+                    "type": "enum",
+                    "values": [
+                      "body_measurement",
+                      "custom_exercise",
+                      "routine",
+                      "routine_folder",
+                      "settings",
+                      "workout",
+                      "workout_exercise",
+                      "workout_note",
+                      "workout_rest",
+                      "workout_set"
+                    ]
+                  },
+                  "op": {
+                    "type": "literal",
+                    "value": "delete"
+                  },
+                  "submissionId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[A-Za-z0-9._:-]+$"
+                  }
+                },
+                "required": [
+                  "baseRevision",
+                  "descendants",
+                  "id",
+                  "kind",
+                  "op",
+                  "submissionId"
+                ]
+              }
+            ]
+          },
+          "maxItems": 100
+        }
+      },
+      "required": [
+        "lineage",
+        "release",
+        "submissions"
+      ]
+    },
+    "pushResponse": {
+      "type": "object",
+      "properties": {
+        "release": {
+          "type": "literal",
+          "value": "1.0"
+        },
+        "results": {
+          "type": "array",
+          "of": {
+            "type": "union",
+            "discriminator": "status",
+            "variants": [
+              {
+                "type": "object",
+                "properties": {
+                  "revision": {
+                    "type": "number",
+                    "integer": true,
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "status": {
+                    "type": "literal",
+                    "value": "accepted"
+                  },
+                  "submissionId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[A-Za-z0-9._:-]+$"
+                  }
+                },
+                "required": [
+                  "revision",
+                  "status",
+                  "submissionId"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "current": {
+                    "type": "nullable",
+                    "of": {
+                      "type": "union",
+                      "discriminator": "state",
+                      "variants": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "content": {
+                              "type": "object",
+                              "properties": {},
+                              "required": [],
+                              "open": true
+                            },
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[A-Za-z0-9._:-]+$"
+                            },
+                            "kind": {
+                              "type": "enum",
+                              "values": [
+                                "body_measurement",
+                                "custom_exercise",
+                                "routine",
+                                "routine_folder",
+                                "settings",
+                                "workout",
+                                "workout_exercise",
+                                "workout_note",
+                                "workout_rest",
+                                "workout_set"
+                              ]
+                            },
+                            "revision": {
+                              "type": "number",
+                              "integer": true,
+                              "minimum": 1,
+                              "maximum": 9007199254740991
+                            },
+                            "state": {
+                              "type": "literal",
+                              "value": "live"
+                            }
+                          },
+                          "required": [
+                            "content",
+                            "id",
+                            "kind",
+                            "revision",
+                            "state"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[A-Za-z0-9._:-]+$"
+                            },
+                            "kind": {
+                              "type": "enum",
+                              "values": [
+                                "body_measurement",
+                                "custom_exercise",
+                                "routine",
+                                "routine_folder",
+                                "settings",
+                                "workout",
+                                "workout_exercise",
+                                "workout_note",
+                                "workout_rest",
+                                "workout_set"
+                              ]
+                            },
+                            "revision": {
+                              "type": "number",
+                              "integer": true,
+                              "minimum": 1,
+                              "maximum": 9007199254740991
+                            },
+                            "state": {
+                              "type": "literal",
+                              "value": "deleted"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "kind",
+                            "revision",
+                            "state"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[A-Za-z0-9._:-]+$"
+                            },
+                            "kind": {
+                              "type": "enum",
+                              "values": [
+                                "body_measurement",
+                                "custom_exercise",
+                                "routine",
+                                "routine_folder",
+                                "settings",
+                                "workout",
+                                "workout_exercise",
+                                "workout_note",
+                                "workout_rest",
+                                "workout_set"
+                              ]
+                            },
+                            "revision": {
+                              "type": "number",
+                              "integer": true,
+                              "minimum": 1,
+                              "maximum": 9007199254740991
+                            },
+                            "state": {
+                              "type": "literal",
+                              "value": "unavailable"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "kind",
+                            "revision",
+                            "state"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "reason": {
+                    "type": "enum",
+                    "values": [
+                      "stale",
+                      "deleted",
+                      "exists",
+                      "parent_deleted"
+                    ]
+                  },
+                  "status": {
+                    "type": "literal",
+                    "value": "conflict"
+                  },
+                  "submissionId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[A-Za-z0-9._:-]+$"
+                  }
+                },
+                "required": [
+                  "current",
+                  "reason",
+                  "status",
+                  "submissionId"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "literal",
+                    "value": "parent_missing"
+                  },
+                  "status": {
+                    "type": "literal",
+                    "value": "retry_later"
+                  },
+                  "submissionId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[A-Za-z0-9._:-]+$"
+                  }
+                },
+                "required": [
+                  "reason",
+                  "status",
+                  "submissionId"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "enum",
+                    "values": [
+                      "invalid_content",
+                      "submission_reused",
+                      "not_singleton",
+                      "not_deletable"
+                    ]
+                  },
+                  "message": {
+                    "type": "string",
+                    "minLength": 0,
+                    "maxLength": 1000
+                  },
+                  "status": {
+                    "type": "literal",
+                    "value": "invalid"
+                  },
+                  "submissionId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[A-Za-z0-9._:-]+$"
+                  }
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "status",
+                  "submissionId"
+                ]
+              }
+            ]
+          },
+          "maxItems": 100
+        }
+      },
+      "required": [
+        "release",
+        "results"
+      ]
+    },
+    "pullRequest": {
+      "type": "object",
+      "properties": {
+        "cursor": {
+          "type": "number",
+          "integer": true,
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "limit": {
+          "type": "number",
+          "integer": true,
+          "minimum": 1,
+          "maximum": 500
+        },
+        "lineage": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9._:-]+$"
+        },
+        "release": {
+          "type": "literal",
+          "value": "1.0"
+        },
+        "waitMs": {
+          "type": "number",
+          "integer": true,
+          "minimum": 0,
+          "maximum": 25000
+        }
+      },
+      "required": [
+        "cursor",
+        "lineage",
+        "release"
+      ]
+    },
+    "pullResponse": {
+      "type": "object",
+      "properties": {
+        "changes": {
+          "type": "array",
+          "of": {
+            "type": "union",
+            "discriminator": "state",
+            "variants": [
+              {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                    "open": true
+                  },
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[A-Za-z0-9._:-]+$"
+                  },
+                  "kind": {
+                    "type": "enum",
+                    "values": [
+                      "body_measurement",
+                      "custom_exercise",
+                      "routine",
+                      "routine_folder",
+                      "settings",
+                      "workout",
+                      "workout_exercise",
+                      "workout_note",
+                      "workout_rest",
+                      "workout_set"
+                    ]
+                  },
+                  "revision": {
+                    "type": "number",
+                    "integer": true,
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "state": {
+                    "type": "literal",
+                    "value": "live"
+                  }
+                },
+                "required": [
+                  "content",
+                  "id",
+                  "kind",
+                  "revision",
+                  "state"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[A-Za-z0-9._:-]+$"
+                  },
+                  "kind": {
+                    "type": "enum",
+                    "values": [
+                      "body_measurement",
+                      "custom_exercise",
+                      "routine",
+                      "routine_folder",
+                      "settings",
+                      "workout",
+                      "workout_exercise",
+                      "workout_note",
+                      "workout_rest",
+                      "workout_set"
+                    ]
+                  },
+                  "revision": {
+                    "type": "number",
+                    "integer": true,
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "state": {
+                    "type": "literal",
+                    "value": "deleted"
+                  }
+                },
+                "required": [
+                  "id",
+                  "kind",
+                  "revision",
+                  "state"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[A-Za-z0-9._:-]+$"
+                  },
+                  "kind": {
+                    "type": "enum",
+                    "values": [
+                      "body_measurement",
+                      "custom_exercise",
+                      "routine",
+                      "routine_folder",
+                      "settings",
+                      "workout",
+                      "workout_exercise",
+                      "workout_note",
+                      "workout_rest",
+                      "workout_set"
+                    ]
+                  },
+                  "revision": {
+                    "type": "number",
+                    "integer": true,
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "state": {
+                    "type": "literal",
+                    "value": "unavailable"
+                  }
+                },
+                "required": [
+                  "id",
+                  "kind",
+                  "revision",
+                  "state"
+                ]
+              }
+            ]
+          },
+          "maxItems": 500
+        },
+        "cursor": {
+          "type": "number",
+          "integer": true,
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "release": {
+          "type": "literal",
+          "value": "1.0"
+        }
+      },
+      "required": [
+        "changes",
+        "cursor",
+        "hasMore",
+        "release"
+      ]
+    }
+  },
+  "rules": {
+    "text": "String lengths count UTF-16 code units. Timestamps are UTC with exactly three fraction digits (2026-11-10T19:57:06.000Z); other spellings are invalid, so each instant has one spelling and content compares as JSON.",
+    "sizes": "A record's content is at most 200000 bytes of UTF-8 JSON, measured as compact JSON with non-ASCII characters not escaped (larger content is invalid). A request body is at most 1048576 bytes; clients split uploads to stay below it. A download page stops early once its records hold about 800000 bytes, and always moves the cursor by at least one revision.",
+    "restore": "hello's restoredFrom names the lineage a restored backup belonged to and the backup's revision; revisions up to it mean the same in that lineage and the current one. It is informational: a device that sees a new lineage resets, confirms identical copies by offering them again, and gives every other difference to the user for review.",
+    "lineage": "Push and pull carry the lineage from hello. A different lineage, or a pull cursor beyond the account's revision, is answered cursor_reset; in the second case the server first gives the account a new lineage.",
+    "push": "Each submission is decided on its own, in request order; the answer has exactly one result per submission, in the same order. Submission ids are unique within a request.",
+    "put": "baseRevision is the revision the edit started from, null to create. Content holds every field of the release; null means not set. Fields the release doesn't define keep their stored values.",
+    "delete": "baseRevision is the revision deleted, or null when the deleter has no copy (accepted only if the server has no live record). descendants lists every live record below it with the revision the deleter knows; any difference is stale. Deleting removes all descendants. The server checks all descendants, including kinds outside the requesting release. Singleton kinds cannot be deleted. A shared-ID child can be cleared by updating its content. A separate deletion of that child is refused while its owner is live. During recovery, retry a missing or deleted child's marker after a missing owner arrives. Accept that marker when its same-ID owner is deleted. Other deleted or unknown records accept deletion.",
+    "accepted": "The change is stored at revision; also answered for a repeat of an accepted submission id with the same content (the original revision), and when the content already equals the current copy.",
+    "conflict": "stale: the record changed since the base (or a descendant differs). deleted: the record is deleted. exists: a create of an id that exists with other content. parent_deleted: the parent is deleted. current is the server's copy for the requester's release, or null when the record never existed.",
+    "retry_later": "parent_missing: the parent isn't on the server yet; send again after it.",
+    "invalid": "invalid_content: the content breaks the release's rules. submission_reused: the id was used before for a different change (receipts are kept for 90 days). not_singleton: a singleton kind under another id. not_deletable: a delete of a singleton or an independent delete of a shared-ID child outside recovery.",
+    "pull": "Changes after cursor in revision order. limit defaults to 100 (at most 500); waitMs (default 0, at most 25000) waits for a first change. Kinds the release doesn't have are skipped. A record the release can't represent is sent as unavailable. Save the page's cursor together with its changes.",
+    "errors": "invalid_request (HTTP 400): malformed request. unauthorized (401). unsupported_release (400): the server doesn't accept this release; serverReleases lists those it does. update_required (426): no common release; update names the side to update. cursor_reset (409): download everything again after connecting. unavailable (503): try again later."
+  },
+  "negotiation": {
+    "paths": {
+      "hello": "POST /sync/hello",
+      "push": "POST /sync/push",
+      "pull": "POST /sync/pull"
+    },
+    "helloRequest": {
+      "type": "object",
+      "properties": {
+        "app": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 64
+        },
+        "releases": {
+          "type": "array",
+          "of": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 16
+          },
+          "maxItems": 64
+        }
+      },
+      "required": [
+        "app",
+        "releases"
+      ]
+    },
+    "helloResponse": {
+      "type": "object",
+      "properties": {
+        "features": {
+          "type": "array",
+          "of": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 64
+          },
+          "maxItems": 256
+        },
+        "lineage": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9._:-]+$"
+        },
+        "release": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 16
+        },
+        "restoredFrom": {
+          "type": "nullable",
+          "of": {
+            "type": "object",
+            "properties": {
+              "lineage": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9._:-]+$"
+              },
+              "restorePoint": {
+                "type": "number",
+                "integer": true,
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "lineage",
+              "restorePoint"
+            ]
+          }
+        },
+        "revision": {
+          "type": "number",
+          "integer": true,
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "features",
+        "lineage",
+        "release",
+        "restoredFrom",
+        "revision"
+      ]
+    },
+    "errorResponse": {
+      "type": "object",
+      "properties": {
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "enum",
+              "values": [
+                "invalid_request",
+                "unauthorized",
+                "unsupported_release",
+                "update_required",
+                "cursor_reset",
+                "unavailable"
+              ]
+            },
+            "message": {
+              "type": "string",
+              "minLength": 0,
+              "maxLength": 1000
+            },
+            "serverReleases": {
+              "type": "array",
+              "of": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 16
+              },
+              "maxItems": 64
+            },
+            "update": {
+              "type": "enum",
+              "values": [
+                "client",
+                "server"
+              ]
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ]
+        }
+      },
+      "required": [
+        "error"
+      ]
+    }
+  }
+}

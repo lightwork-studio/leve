@@ -1,0 +1,15 @@
+{
+  "name": "@leve/sync-playground",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/main.ts",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@leve/contract": "workspace:*",
+    "@leve/storage": "workspace:*",
+    "@leve/sync": "workspace:*"
+  }
+}

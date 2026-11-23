@@ -1,0 +1,8 @@
+.expo/
+dist/
+dist-ios/
+web-build/
+expo-env.d.ts
+.metro-health-check*
+/ios
+/android

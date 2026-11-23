@@ -1,0 +1,104 @@
+name: CI
+on:
+  pull_request:
+  workflow_call:
+  push:
+    branches: ["integration/*"]
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      base: ${{ steps.scope.outputs.base }}
+      ios_required: ${{ steps.scope.outputs.ios_required }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: github.event_name == 'pull_request'
+        with:
+          # The trusted base check runs before using the PR's toolchain settings.
+          node-version: 24
+      - name: Verify the base and determine which checks apply
+        id: scope
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          base="$(git rev-parse HEAD)"
+          ios_required=false
+
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            base="${PR_BASE:?A pull request requires its base commit}"
+            git cat-file -e "$base^{commit}"
+            git show "$base:packages/contract/scripts/check-frozen.ts" > "$RUNNER_TEMP/check-frozen.ts"
+            FROZEN_BASE_REF="$base" node "$RUNNER_TEMP/check-frozen.ts"
+
+            # While the first version of this planner is being introduced, run the native check.
+            if git cat-file -e "$base:.github/scripts/requires-ios-check.sh" 2>/dev/null; then
+              git show "$base:.github/scripts/requires-ios-check.sh" > "$RUNNER_TEMP/requires-ios-check.sh"
+              ios_required="$(bash "$RUNNER_TEMP/requires-ios-check.sh" "$base")"
+            else
+              ios_required=true
+            fi
+          elif [ "$GITHUB_EVENT_NAME" = push ] && [ -n "$PUSH_BEFORE" ] &&
+            [ "$PUSH_BEFORE" != 0000000000000000000000000000000000000000 ]; then
+            git cat-file -e "$PUSH_BEFORE^{commit}"
+            base="$PUSH_BEFORE"
+          fi
+
+          printf 'base=%s\nios_required=%s\n' "$base" "$ios_required" >> "$GITHUB_OUTPUT"
+
+  verify:
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+        env:
+          FROZEN_BASE_REF: ${{ needs.preflight.outputs.base }}
+      - run: pnpm check:builds
+
+  ios-native:
+    needs: preflight
+    if: needs.preflight.outputs.ios_required == 'true'
+    uses: ./.github/workflows/workout-activity.yml
+
+  check:
+    needs: [preflight, verify, ios-native]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require all applicable checks
+        env:
+          PREFLIGHT_RESULT: ${{ needs.preflight.result }}
+          VERIFY_RESULT: ${{ needs.verify.result }}
+          IOS_REQUIRED: ${{ needs.preflight.outputs.ios_required }}
+          IOS_RESULT: ${{ needs.ios-native.result }}
+        run: |
+          if [ "$PREFLIGHT_RESULT" = success ] && [ "$VERIFY_RESULT" = success ]; then
+            case "$IOS_REQUIRED:$IOS_RESULT" in
+              true:success|false:skipped) exit 0 ;;
+            esac
+          fi
+          echo "Preflight: $PREFLIGHT_RESULT. Verify: $VERIFY_RESULT. iOS required: $IOS_REQUIRED. iOS result: $IOS_RESULT."
+          exit 1

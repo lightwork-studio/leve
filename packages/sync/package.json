@@ -1,0 +1,17 @@
+{
+  "name": "@leve/sync",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./server": "./src/server/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@leve/contract": "workspace:*",
+    "@leve/storage": "workspace:*"
+  }
+}

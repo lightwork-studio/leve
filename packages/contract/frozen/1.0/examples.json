@@ -1,0 +1,649 @@
+{
+  "helloRequest": {
+    "releases": [
+      "1.0"
+    ],
+    "app": "0.1.0"
+  },
+  "helloResponse": {
+    "release": "1.0",
+    "features": [
+      "body_measurements",
+      "custom_exercises",
+      "reps_in_reserve",
+      "routines",
+      "rpe",
+      "track_reps_in_reserve",
+      "workout_journal",
+      "workout_rest",
+      "workouts"
+    ],
+    "revision": 21,
+    "lineage": "3f2a9c1e-5b7d-4e8f-9a0b-1c2d3e4f5a6b",
+    "restoredFrom": {
+      "lineage": "1d0f3c2b-7a6e-4c5d-8b9a-0f1e2d3c4b5a",
+      "restorePoint": 18
+    }
+  },
+  "pushRequest": {
+    "release": "1.0",
+    "lineage": "3f2a9c1e-5b7d-4e8f-9a0b-1c2d3e4f5a6b",
+    "submissions": [
+      {
+        "op": "put",
+        "submissionId": "submission-1",
+        "kind": "body_measurement",
+        "id": "measurement-1",
+        "baseRevision": null,
+        "content": {
+          "bodyweightKg": 80.2,
+          "fatPercent": null,
+          "takenAt": "2026-11-10T18:30:00.000Z"
+        }
+      },
+      {
+        "op": "put",
+        "submissionId": "submission-2",
+        "kind": "custom_exercise",
+        "id": "custom-1",
+        "baseRevision": null,
+        "content": {
+          "archived": false,
+          "equipment": "other",
+          "name": "Sled Push",
+          "primaryMuscle": "quadriceps",
+          "secondaryMuscles": [
+            "glutes",
+            "calves"
+          ],
+          "type": "weight_distance",
+          "usesBodyweight": false
+        }
+      },
+      {
+        "op": "put",
+        "submissionId": "submission-3",
+        "kind": "routine",
+        "id": "routine-1",
+        "baseRevision": null,
+        "content": {
+          "exercises": [
+            {
+              "id": "routine-exercise-1",
+              "exerciseId": "bench-press-barbell",
+              "exerciseName": "Bench Press (Barbell)",
+              "exerciseType": "weight_reps",
+              "supersetId": null,
+              "restSeconds": 120,
+              "notes": [],
+              "useRepRange": true,
+              "sets": [
+                {
+                  "id": "routine-set-1",
+                  "type": "warmup",
+                  "weightKg": 40,
+                  "reps": null,
+                  "repRangeMin": 8,
+                  "repRangeMax": 10,
+                  "distanceMeters": null,
+                  "durationSeconds": null,
+                  "count": null,
+                  "rpe": null
+                }
+              ]
+            }
+          ],
+          "folderId": null,
+          "notes": "",
+          "position": 1,
+          "title": "Upper A"
+        }
+      },
+      {
+        "op": "put",
+        "submissionId": "submission-4",
+        "kind": "routine_folder",
+        "id": "folder-1",
+        "baseRevision": null,
+        "content": {
+          "position": 1,
+          "title": "Strength"
+        }
+      },
+      {
+        "op": "put",
+        "submissionId": "submission-5",
+        "kind": "settings",
+        "id": "settings",
+        "baseRevision": null,
+        "content": {
+          "autoUpdateRoutineValues": true,
+          "countWarmups": true,
+          "defaultRestSeconds": 90,
+          "distanceUnit": "km",
+          "firstWeekday": 1,
+          "measurementUnit": "cm",
+          "previousValues": "any_workout",
+          "rpeEnabled": true,
+          "shortDistanceUnit": "m",
+          "trackRepsInReserve": null,
+          "weightUnit": "kg"
+        }
+      },
+      {
+        "op": "put",
+        "submissionId": "submission-6",
+        "kind": "workout",
+        "id": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a01",
+        "baseRevision": null,
+        "content": {
+          "description": "",
+          "endedAt": null,
+          "initialPlan": null,
+          "routineId": null,
+          "startedAt": "2026-11-10T18:30:00.000Z",
+          "title": "Push day"
+        }
+      },
+      {
+        "op": "put",
+        "submissionId": "submission-7",
+        "kind": "workout_exercise",
+        "id": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a02",
+        "baseRevision": null,
+        "content": {
+          "doubleDumbbellVolume": false,
+          "exerciseId": "bench-press-barbell",
+          "exerciseName": "Bench Press (Barbell)",
+          "exerciseType": "weight_reps",
+          "notes": [
+            {
+              "id": "note-1",
+              "text": "Pause at the bottom",
+              "createdAt": "2026-11-10T18:30:00.000Z"
+            }
+          ],
+          "position": 1,
+          "restSeconds": 120,
+          "supersetId": null,
+          "workoutId": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a01"
+        }
+      },
+      {
+        "op": "put",
+        "submissionId": "submission-8",
+        "kind": "workout_note",
+        "id": "note-1",
+        "baseRevision": null,
+        "content": {
+          "createdAt": "2026-11-10T18:30:00.000Z",
+          "kind": "sticky",
+          "reply": null,
+          "text": "Adjust the bench",
+          "workoutId": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a01"
+        }
+      },
+      {
+        "op": "put",
+        "submissionId": "submission-9",
+        "kind": "workout_rest",
+        "id": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a01",
+        "baseRevision": null,
+        "content": {
+          "seconds": 75,
+          "workoutId": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a01"
+        }
+      },
+      {
+        "op": "put",
+        "submissionId": "submission-10",
+        "kind": "workout_set",
+        "id": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a03",
+        "baseRevision": null,
+        "content": {
+          "completedAt": "2026-11-10T18:30:00.000Z",
+          "count": null,
+          "distanceMeters": null,
+          "durationSeconds": null,
+          "planSlot": null,
+          "position": 1,
+          "reps": 5,
+          "repsInReserve": null,
+          "rpe": 8.5,
+          "type": "normal",
+          "weightKg": 82.5,
+          "workoutExerciseId": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a02"
+        }
+      },
+      {
+        "op": "put",
+        "submissionId": "submission-update",
+        "kind": "workout_set",
+        "id": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a03",
+        "baseRevision": 10,
+        "content": {
+          "completedAt": "2026-11-10T18:30:00.000Z",
+          "count": null,
+          "distanceMeters": null,
+          "durationSeconds": null,
+          "planSlot": null,
+          "position": 1,
+          "reps": 6,
+          "repsInReserve": null,
+          "rpe": 8.5,
+          "type": "normal",
+          "weightKg": 82.5,
+          "workoutExerciseId": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a02"
+        }
+      },
+      {
+        "op": "delete",
+        "submissionId": "submission-delete",
+        "kind": "workout_exercise",
+        "id": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a02",
+        "baseRevision": 7,
+        "descendants": [
+          {
+            "kind": "workout_set",
+            "id": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a03",
+            "revision": 11
+          }
+        ]
+      }
+    ]
+  },
+  "pushResponse": {
+    "release": "1.0",
+    "results": [
+      {
+        "status": "accepted",
+        "submissionId": "submission-1",
+        "revision": 1
+      },
+      {
+        "status": "accepted",
+        "submissionId": "submission-2",
+        "revision": 2
+      },
+      {
+        "status": "accepted",
+        "submissionId": "submission-3",
+        "revision": 3
+      },
+      {
+        "status": "accepted",
+        "submissionId": "submission-4",
+        "revision": 4
+      },
+      {
+        "status": "accepted",
+        "submissionId": "submission-5",
+        "revision": 5
+      },
+      {
+        "status": "accepted",
+        "submissionId": "submission-6",
+        "revision": 6
+      },
+      {
+        "status": "accepted",
+        "submissionId": "submission-7",
+        "revision": 7
+      },
+      {
+        "status": "accepted",
+        "submissionId": "submission-8",
+        "revision": 8
+      },
+      {
+        "status": "accepted",
+        "submissionId": "submission-9",
+        "revision": 9
+      },
+      {
+        "status": "accepted",
+        "submissionId": "submission-10",
+        "revision": 10
+      },
+      {
+        "status": "accepted",
+        "submissionId": "submission-update",
+        "revision": 11
+      },
+      {
+        "status": "accepted",
+        "submissionId": "submission-delete",
+        "revision": 13
+      }
+    ]
+  },
+  "rejectedRequest": {
+    "release": "1.0",
+    "lineage": "3f2a9c1e-5b7d-4e8f-9a0b-1c2d3e4f5a6b",
+    "submissions": [
+      {
+        "op": "put",
+        "submissionId": "submission-stale",
+        "kind": "workout",
+        "id": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a01",
+        "baseRevision": 3,
+        "content": {
+          "description": "",
+          "endedAt": null,
+          "initialPlan": null,
+          "routineId": null,
+          "startedAt": "2026-11-10T18:30:00.000Z",
+          "title": "Push day A"
+        }
+      },
+      {
+        "op": "put",
+        "submissionId": "submission-orphan",
+        "kind": "workout_set",
+        "id": "set-under-new-entry",
+        "baseRevision": null,
+        "content": {
+          "completedAt": "2026-11-10T18:30:00.000Z",
+          "count": null,
+          "distanceMeters": null,
+          "durationSeconds": null,
+          "planSlot": null,
+          "position": 1,
+          "reps": 5,
+          "repsInReserve": null,
+          "rpe": 8.5,
+          "type": "normal",
+          "weightKg": 82.5,
+          "workoutExerciseId": "entry-not-uploaded"
+        }
+      },
+      {
+        "op": "put",
+        "submissionId": "submission-bad",
+        "kind": "body_measurement",
+        "id": "measurement-2",
+        "baseRevision": null,
+        "content": {
+          "bodyweightKg": 80.2,
+          "fatPercent": 120,
+          "takenAt": "2026-11-10T18:30:00.000Z"
+        }
+      },
+      {
+        "op": "delete",
+        "submissionId": "submission-settings",
+        "kind": "settings",
+        "id": "settings",
+        "baseRevision": 5,
+        "descendants": []
+      }
+    ]
+  },
+  "rejectedResponse": {
+    "release": "1.0",
+    "results": [
+      {
+        "status": "conflict",
+        "submissionId": "submission-stale",
+        "reason": "stale",
+        "current": {
+          "state": "live",
+          "kind": "workout",
+          "id": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a01",
+          "revision": 12,
+          "content": {
+            "description": "",
+            "endedAt": null,
+            "initialPlan": null,
+            "routineId": null,
+            "startedAt": "2026-11-10T18:30:00.000Z",
+            "title": "Chest day"
+          }
+        }
+      },
+      {
+        "status": "retry_later",
+        "submissionId": "submission-orphan",
+        "reason": "parent_missing"
+      },
+      {
+        "status": "invalid",
+        "submissionId": "submission-bad",
+        "code": "invalid_content",
+        "message": "$.fatPercent must be 0..100"
+      },
+      {
+        "status": "invalid",
+        "submissionId": "submission-settings",
+        "code": "not_deletable",
+        "message": "settings can be changed but not deleted"
+      }
+    ]
+  },
+  "pullRequest": {
+    "release": "1.0",
+    "lineage": "3f2a9c1e-5b7d-4e8f-9a0b-1c2d3e4f5a6b",
+    "cursor": 0,
+    "limit": 100,
+    "waitMs": 20000
+  },
+  "pullResponse": {
+    "release": "1.0",
+    "changes": [
+      {
+        "state": "live",
+        "kind": "body_measurement",
+        "id": "measurement-1",
+        "revision": 1,
+        "content": {
+          "bodyweightKg": 80.2,
+          "fatPercent": null,
+          "takenAt": "2026-11-10T18:30:00.000Z"
+        }
+      },
+      {
+        "state": "live",
+        "kind": "custom_exercise",
+        "id": "custom-1",
+        "revision": 2,
+        "content": {
+          "archived": false,
+          "equipment": "other",
+          "name": "Sled Push",
+          "primaryMuscle": "quadriceps",
+          "secondaryMuscles": [
+            "glutes",
+            "calves"
+          ],
+          "type": "weight_distance",
+          "usesBodyweight": false
+        }
+      },
+      {
+        "state": "live",
+        "kind": "routine",
+        "id": "routine-1",
+        "revision": 3,
+        "content": {
+          "exercises": [
+            {
+              "id": "routine-exercise-1",
+              "exerciseId": "bench-press-barbell",
+              "exerciseName": "Bench Press (Barbell)",
+              "exerciseType": "weight_reps",
+              "supersetId": null,
+              "restSeconds": 120,
+              "notes": [],
+              "useRepRange": true,
+              "sets": [
+                {
+                  "id": "routine-set-1",
+                  "type": "warmup",
+                  "weightKg": 40,
+                  "reps": null,
+                  "repRangeMin": 8,
+                  "repRangeMax": 10,
+                  "distanceMeters": null,
+                  "durationSeconds": null,
+                  "count": null,
+                  "rpe": null
+                }
+              ]
+            }
+          ],
+          "folderId": null,
+          "notes": "",
+          "position": 1,
+          "title": "Upper A"
+        }
+      },
+      {
+        "state": "live",
+        "kind": "routine_folder",
+        "id": "folder-1",
+        "revision": 4,
+        "content": {
+          "position": 1,
+          "title": "Strength"
+        }
+      },
+      {
+        "state": "live",
+        "kind": "settings",
+        "id": "settings",
+        "revision": 5,
+        "content": {
+          "autoUpdateRoutineValues": true,
+          "countWarmups": true,
+          "defaultRestSeconds": 90,
+          "distanceUnit": "km",
+          "firstWeekday": 1,
+          "measurementUnit": "cm",
+          "previousValues": "any_workout",
+          "rpeEnabled": true,
+          "shortDistanceUnit": "m",
+          "trackRepsInReserve": null,
+          "weightUnit": "kg"
+        }
+      },
+      {
+        "state": "live",
+        "kind": "workout",
+        "id": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a01",
+        "revision": 6,
+        "content": {
+          "description": "",
+          "endedAt": null,
+          "initialPlan": null,
+          "routineId": null,
+          "startedAt": "2026-11-10T18:30:00.000Z",
+          "title": "Push day"
+        }
+      },
+      {
+        "state": "live",
+        "kind": "workout_exercise",
+        "id": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a02",
+        "revision": 7,
+        "content": {
+          "doubleDumbbellVolume": false,
+          "exerciseId": "bench-press-barbell",
+          "exerciseName": "Bench Press (Barbell)",
+          "exerciseType": "weight_reps",
+          "notes": [
+            {
+              "id": "note-1",
+              "text": "Pause at the bottom",
+              "createdAt": "2026-11-10T18:30:00.000Z"
+            }
+          ],
+          "position": 1,
+          "restSeconds": 120,
+          "supersetId": null,
+          "workoutId": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a01"
+        }
+      },
+      {
+        "state": "live",
+        "kind": "workout_note",
+        "id": "note-1",
+        "revision": 8,
+        "content": {
+          "createdAt": "2026-11-10T18:30:00.000Z",
+          "kind": "sticky",
+          "reply": null,
+          "text": "Adjust the bench",
+          "workoutId": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a01"
+        }
+      },
+      {
+        "state": "live",
+        "kind": "workout_rest",
+        "id": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a01",
+        "revision": 9,
+        "content": {
+          "seconds": 75,
+          "workoutId": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a01"
+        }
+      },
+      {
+        "state": "live",
+        "kind": "workout_set",
+        "id": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a03",
+        "revision": 10,
+        "content": {
+          "completedAt": "2026-11-10T18:30:00.000Z",
+          "count": null,
+          "distanceMeters": null,
+          "durationSeconds": null,
+          "planSlot": null,
+          "position": 1,
+          "reps": 5,
+          "repsInReserve": null,
+          "rpe": 8.5,
+          "type": "normal",
+          "weightKg": 82.5,
+          "workoutExerciseId": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a02"
+        }
+      },
+      {
+        "state": "deleted",
+        "kind": "workout_set",
+        "id": "set-removed",
+        "revision": 20
+      },
+      {
+        "state": "unavailable",
+        "kind": "routine",
+        "id": "routine-2",
+        "revision": 21
+      }
+    ],
+    "cursor": 21,
+    "hasMore": false
+  },
+  "errors": [
+    {
+      "error": {
+        "code": "update_required",
+        "message": "This server needs a newer app",
+        "update": "client",
+        "serverReleases": [
+          "1.0"
+        ]
+      }
+    },
+    {
+      "error": {
+        "code": "cursor_reset",
+        "message": "Download everything again"
+      }
+    },
+    {
+      "error": {
+        "code": "invalid_request",
+        "message": "$.cursor expected an integer"
+      }
+    }
+  ]
+}

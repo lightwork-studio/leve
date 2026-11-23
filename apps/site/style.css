@@ -1,0 +1,743 @@
+:root {
+  --gutter: clamp(16px, 4vw, 48px);
+  --r: 18px;
+  --r-lg: 28px;
+  --lift: 0 32px 64px -24px rgb(0 0 0 / 0.65);
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --lift: 0 28px 56px -24px rgb(50 40 20 / 0.35);
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-text);
+  -webkit-font-smoothing: antialiased;
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  overflow-x: clip;
+  background: var(--bg);
+  line-height: 1.5;
+}
+
+h1,
+h2,
+h3,
+p,
+ul,
+ol,
+dl,
+dd,
+figure {
+  margin: 0;
+}
+
+ul,
+ol {
+  padding: 0;
+  list-style: none;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+a {
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--fg);
+  outline-offset: 3px;
+}
+
+[tabindex="-1"]:focus {
+  outline: none;
+}
+
+.shell {
+  width: min(100% - 2 * var(--gutter), 1180px);
+  margin-inline: auto;
+}
+
+.skip {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 10;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--fg);
+  color: var(--bg);
+  transform: translateY(-200%);
+}
+
+.skip:focus {
+  transform: none;
+}
+
+/* Shared type */
+
+.thin {
+  font-weight: 250;
+  color: var(--fg2);
+}
+
+.heavy {
+  font-weight: 850;
+}
+
+.dot {
+  color: var(--commit);
+}
+
+.kicker {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  color: var(--fg3);
+  font: 600 0.72rem / 1 var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.kicker span {
+  color: var(--fg);
+}
+
+/* Marks what isn't built yet, so the page never passes plans off as features. */
+.soon {
+  padding: 4px 8px;
+  border: 1px dashed var(--line2);
+  border-radius: 999px;
+  color: var(--fg2);
+  font-style: normal;
+  letter-spacing: 0.08em;
+}
+
+h2 {
+  margin-top: 18px;
+  font-family: var(--font-numeral);
+  font-size: clamp(2.1rem, 4.4vw, 3.6rem);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.045em;
+  text-wrap: balance;
+}
+
+h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.n {
+  color: var(--fg3);
+  font: 600 0.75rem / 1 var(--font-mono);
+}
+
+/* Buttons */
+
+.btn {
+  display: inline-flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  min-height: 52px;
+  padding: 0 22px;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  font-size: 1rem;
+  font-weight: 650;
+  text-decoration: none;
+  transition:
+    background-color 0.15s,
+    transform 0.15s;
+}
+
+.btn:active {
+  transform: scale(0.98);
+}
+
+.btn-commit {
+  background: var(--commit);
+  color: var(--commit-ink);
+}
+
+.btn-commit:hover {
+  background: color-mix(in srgb, var(--commit) 88%, var(--fg));
+}
+
+.btn-ghost {
+  border-color: var(--line2);
+  color: var(--fg);
+}
+
+.btn-ghost:hover {
+  background: var(--s1);
+}
+
+.btn-small {
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 12px;
+  font-size: 0.9rem;
+}
+
+/* Navigation */
+
+.nav {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  justify-content: space-between;
+  padding-block: 20px;
+}
+
+.brand img {
+  width: 92px;
+}
+
+.nav-links {
+  display: flex;
+  gap: 32px;
+  font: 600 0.72rem / 1 var(--font-mono);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.nav-links a {
+  color: var(--fg2);
+  text-decoration: none;
+}
+
+.nav-links a:hover {
+  color: var(--fg);
+}
+
+/* Phones: the app's real screens in a plain frame. */
+
+.phone {
+  padding: 8px;
+  border: 1px solid var(--line2);
+  border-radius: 46px;
+  background: #08090c;
+  box-shadow: var(--lift);
+}
+
+.phone img {
+  width: 100%;
+  border-radius: 38px;
+}
+
+/* Hero */
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  gap: clamp(40px, 6vw, 96px);
+  align-items: center;
+  padding-block: clamp(32px, 5vw, 64px) clamp(64px, 9vw, 120px);
+}
+
+.eyebrow {
+  display: inline-flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 14px 8px 12px;
+  border: 1px solid var(--line2);
+  border-radius: 999px;
+  color: var(--fg2);
+  font: 600 0.68rem / 1 var(--font-mono);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--commit);
+  animation: pulse 2.4s ease-out infinite;
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--commit) 55%, transparent);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 10px transparent;
+  }
+}
+
+h1 {
+  margin-top: 28px;
+  font-family: var(--font-numeral);
+  font-size: clamp(3rem, 7vw, 6.2rem);
+  line-height: 0.95;
+  letter-spacing: -0.05em;
+}
+
+.hero-line {
+  display: block;
+}
+
+.lede {
+  max-width: 46ch;
+  margin-top: 28px;
+  color: var(--fg2);
+  font-size: clamp(1.05rem, 1.4vw, 1.2rem);
+  line-height: 1.6;
+}
+
+.ctas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 36px;
+}
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 22px;
+  margin-top: 32px;
+  color: var(--fg3);
+  font: 500 0.7rem / 1.4 var(--font-mono);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.facts li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.facts .facts-label {
+  color: var(--fg2);
+}
+
+.facts .facts-label::before {
+  content: none;
+}
+
+.facts li::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 1px;
+  background: var(--fg3);
+}
+
+.hero-art {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+/* Concentric rings, like the face of a plate. */
+.plate {
+  position: absolute;
+  width: min(140%, 680px, 100vw);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: repeating-radial-gradient(circle, transparent 0 26px, var(--line) 26px 27px);
+  mask-image: radial-gradient(circle, #000 30%, transparent 68%);
+  pointer-events: none;
+}
+
+.phone-hero {
+  position: relative;
+  width: min(100%, 330px);
+}
+
+/* Sections */
+
+.section {
+  padding-block: clamp(64px, 9vw, 128px);
+  border-top: 1px solid var(--line);
+  scroll-margin-top: 8px;
+}
+
+.section-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  gap: 24px 64px;
+  align-items: end;
+}
+
+.section-head > p {
+  max-width: 46ch;
+  color: var(--fg2);
+  font-size: 1.08rem;
+  line-height: 1.6;
+}
+
+/* Workout notes */
+
+.loop {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: clamp(40px, 6vw, 88px);
+  align-items: center;
+  margin-top: clamp(48px, 6vw, 80px);
+}
+
+.steps li {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  padding: 24px 0;
+  border-top: 1px solid var(--line);
+}
+
+.steps li:last-child {
+  border-bottom: 1px solid var(--line);
+}
+
+.steps .n {
+  padding-top: 6px;
+}
+
+.steps p {
+  max-width: 40ch;
+  margin-top: 6px;
+  color: var(--fg2);
+  line-height: 1.55;
+}
+
+.loop-art {
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+  padding-block: 24px;
+}
+
+.phone-notes {
+  width: min(100%, 360px);
+  /* The notes screen is mostly empty below the reply, so it fades out early. */
+  mask-image: linear-gradient(#000 70%, transparent);
+}
+
+.phone-notes img {
+  aspect-ratio: 780 / 1000;
+  object-fit: cover;
+  object-position: top;
+}
+
+.chat {
+  position: absolute;
+  top: 30%;
+  left: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(50%, 340px);
+  padding: 16px 18px 20px;
+  border: 1px solid var(--line2);
+  border-radius: var(--r-lg);
+  background: var(--s1);
+  box-shadow: var(--lift);
+}
+
+.chat-bar {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--fg3);
+  font: 600 0.64rem / 1 var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.conn {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--fg2);
+}
+
+.conn-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--fg);
+}
+
+.msg {
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.msg.you {
+  align-self: flex-end;
+  max-width: 86%;
+  padding: 10px 14px;
+  border-radius: 16px 16px 6px;
+  background: var(--s2);
+}
+
+.msg.bot b {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.tool {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 10px;
+  align-items: center;
+  padding: 7px 11px;
+  border: 1px dashed var(--line2);
+  border-radius: 10px;
+  color: var(--fg2);
+  font: 500 0.72rem / 1.2 var(--font-mono);
+}
+
+.tool span {
+  color: var(--fg3);
+}
+
+.tool-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--fg2);
+}
+
+/* History gallery */
+
+.gallery {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(20px, 3vw, 40px);
+  margin-top: clamp(48px, 6vw, 80px);
+}
+
+.gallery figure {
+  display: grid;
+  gap: 28px;
+  align-content: start;
+}
+
+.gallery .phone {
+  width: min(100%, 300px);
+  justify-self: center;
+}
+
+.gallery figure:nth-child(2) {
+  margin-top: clamp(0px, 5vw, 64px);
+}
+
+.gallery figcaption {
+  max-width: 34ch;
+  justify-self: center;
+  text-align: center;
+}
+
+.gallery figcaption p {
+  margin-top: 6px;
+  color: var(--fg2);
+  line-height: 1.55;
+}
+
+/* Switching and open source */
+
+.duo {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.panel {
+  padding: clamp(28px, 4vw, 48px);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--s1);
+  scroll-margin-top: 8px;
+}
+
+.panel h2 {
+  font-size: clamp(1.9rem, 3.4vw, 2.7rem);
+}
+
+.panel-note {
+  margin-top: 14px;
+  color: var(--fg2);
+}
+
+.list,
+.specs {
+  margin-top: 28px;
+}
+
+.list li {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+  color: var(--fg2);
+}
+
+.list .n {
+  padding-top: 5px;
+}
+
+.list strong,
+.specs dd {
+  color: var(--fg);
+}
+
+.specs div {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 12px;
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+}
+
+.specs dt {
+  padding-top: 5px;
+  color: var(--fg3);
+  font: 600 0.66rem / 1.2 var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* Closing */
+
+.finale {
+  display: grid;
+  gap: 22px;
+  justify-items: center;
+  padding-block: clamp(80px, 12vw, 160px);
+  border-top: 1px solid var(--line);
+  text-align: center;
+}
+
+.finale img {
+  width: min(64vw, 420px);
+}
+
+.finale-line {
+  margin-top: 8px;
+  font-size: clamp(1.6rem, 3.2vw, 2.4rem);
+  letter-spacing: -0.035em;
+}
+
+.finale-note {
+  color: var(--fg2);
+}
+
+.finale .btn {
+  margin-top: 10px;
+}
+
+.foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  justify-content: space-between;
+  padding-block: 28px 40px;
+  border-top: 1px solid var(--line);
+  color: var(--fg3);
+  font: 500 0.7rem / 1.5 var(--font-mono);
+  letter-spacing: 0.04em;
+}
+
+/* Smaller screens */
+
+@media (max-width: 960px) {
+  .hero,
+  .section-head,
+  .loop {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .loop-art {
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 760px) {
+  .nav-links {
+    display: none;
+  }
+
+  .duo {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* The screens become a row you swipe through. */
+  .gallery {
+    grid-template-columns: none;
+    grid-auto-columns: min(78%, 280px);
+    grid-auto-flow: column;
+    margin-inline: calc(-1 * var(--gutter));
+    padding: 8px var(--gutter) 40px;
+    overflow-x: auto;
+    scroll-padding-inline: var(--gutter);
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+
+  .gallery figure {
+    scroll-snap-align: start;
+  }
+
+  .gallery figure:nth-child(2) {
+    margin-top: 0;
+  }
+}
+
+@media (max-width: 620px) {
+  .loop-art {
+    flex-direction: column;
+    gap: 0;
+    align-items: center;
+    padding: 0;
+  }
+
+  .chat {
+    position: relative;
+    top: auto;
+    width: 100%;
+    margin-bottom: -48px;
+  }
+
+  .phone-notes {
+    width: min(86%, 300px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .pulse {
+    animation: none;
+  }
+
+  .btn {
+    transition: none;
+  }
+}

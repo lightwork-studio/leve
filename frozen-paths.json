@@ -1,0 +1,9 @@
+{
+  "description": "Append-only paths. Once a file under one of these paths reaches the target branch, it never changes or disappears, as soon as its release is listed in shipped. registry.json files may only be appended to. Releases that haven't shipped only get warnings and can be frozen again (pnpm contract:freeze <release> --refreeze). Checked by pnpm check:frozen.",
+  "paths": [
+    "packages/contract/frozen",
+    "packages/contract/history",
+    "packages/storage/src/migrations"
+  ],
+  "shipped": []
+}

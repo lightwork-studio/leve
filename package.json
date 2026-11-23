@@ -1,0 +1,29 @@
+{
+  "name": "leve",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.21.0",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm check:frozen",
+    "check:builds": "pnpm build:site && pnpm --filter @leve/mobile export:web && pnpm --filter @leve/mobile check:ios-bundle",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "vitest run",
+    "contract:freeze": "node packages/contract/scripts/freeze.ts",
+    "check:frozen": "node packages/contract/scripts/check-frozen.ts",
+    "dev:sync": "pnpm --filter @leve/sync-playground start",
+    "build:site": "node apps/site/build.mts",
+    "dev:app": "pnpm --filter @leve/mobile start",
+    "preview:web": "pnpm --filter @leve/mobile export:web && pnpm --filter @leve/mobile serve:web"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.6.6",
+    "@types/node": "^22.0.0",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}

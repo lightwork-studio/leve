@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <meta
+      name="description"
+      content="Leve is a workout tracker for iPhone. Log sets, keep workout notes, and see your progress over time."
+    />
+    <title>Leve · A light app for heavy lifting</title>
+    <link rel="icon" href="./favicon.png" type="image/png" />
+    <link rel="stylesheet" href="./theme.css" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+
+    <header class="nav shell">
+      <a class="brand" href="#main" aria-label="Leve">
+        <picture>
+          <source srcset="./wordmark-on-light.svg" media="(prefers-color-scheme: light)" />
+          <img src="./wordmark-on-dark.svg" width="92" height="28" alt="Leve" />
+        </picture>
+      </a>
+      <nav class="nav-links" aria-label="Sections">
+        <a href="#notes">Workout notes</a>
+        <a href="#history">History</a>
+        <a href="#switch">Switching</a>
+        <a href="#open">Source and hosting</a>
+      </nav>
+    </header>
+
+    <main id="main" tabindex="-1">
+      <section class="hero shell" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow"><span class="pulse" aria-hidden="true"></span>In development for iPhone</p>
+          <h1 id="hero-title">
+            <span class="hero-line thin">A light app</span>
+            <span class="hero-line heavy">for heavy lifting<span class="dot">.</span></span>
+          </h1>
+          <p class="lede">
+            Leve (Portuguese for “light”) is a workout tracker that stays out of your way. Last session’s numbers
+            sit beside every set, the rest timer waits under your thumb, and pinned notes follow you to the next session.
+          </p>
+          <div class="ctas">
+            <a class="btn btn-commit" href="#notes">See workout notes <span aria-hidden="true">↓</span></a>
+            <a class="btn btn-ghost" href="#history">See the app</a>
+          </div>
+          <ul class="facts" aria-label="Planned">
+            <li class="facts-label">Planned</li>
+            <li>Hevy CSV import</li>
+            <li>Free MCP access</li>
+          </ul>
+        </div>
+
+        <div class="hero-art">
+          <div class="plate" aria-hidden="true"></div>
+          <div class="phone phone-hero">
+            <img
+              src="./screen-rest.png"
+              width="780"
+              height="1688"
+              alt="A Push day workout in Leve: two bench press sets logged at 87.5 kg for 8, last session’s numbers beside each set, and the rest timer counting down from 2:00 in the dock."
+              fetchpriority="high"
+            />
+          </div>
+        </div>
+      </section>
+
+      <section id="notes" class="section shell" aria-labelledby="notes-title" tabindex="-1">
+        <header class="section-head">
+          <div>
+            <p class="kicker"><span>01</span> Workout notes</p>
+            <h2 id="notes-title">Remember what worked.</h2>
+          </div>
+          <p>
+            Write down what you noticed during a workout and pin anything you want to see again next time.
+            Leve keeps notes alongside the sets you logged.
+          </p>
+        </header>
+
+        <div class="loop">
+          <ol class="steps">
+            <li>
+              <span class="n">01</span>
+              <div>
+                <h3>You jot it down</h3>
+                <p>Between sets, open the workout’s notes and type what you noticed. Pin a note to bring it back next time.</p>
+              </div>
+            </li>
+            <li>
+              <span class="n">02</span>
+              <div>
+                <h3>Keep the context</h3>
+                <p>Find your notes alongside the workout where you wrote them.</p>
+              </div>
+            </li>
+            <li>
+              <span class="n">03</span>
+              <div>
+                <h3>Pick up where you left off</h3>
+                <p>Review pinned notes at your next session and add a follow-up as you train.</p>
+              </div>
+            </li>
+          </ol>
+
+          <div class="loop-art">
+            <figure class="chat" aria-label="Example workout note and follow-up">
+              <div class="chat-bar"><span>Push day</span><span class="conn"><i class="conn-dot"></i>Pinned</span></div>
+              <p class="msg you">The narrower grip felt better during incline press.</p>
+              <p class="tool"><span class="tool-dot"></span>Monday · workout note</p>
+              <p class="msg bot">Kept the same grip and logged <b>3 × 8 at 34 kg</b>.</p>
+              <p class="tool"><span class="tool-dot"></span>Thursday · follow-up</p>
+            </figure>
+            <div class="phone phone-notes">
+              <img
+                src="./screen-notes.png"
+                width="780"
+                height="1688"
+                alt="Leve’s workout notes for the next Push day, showing a pinned note and a follow-up."
+                loading="lazy"
+              />
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+      <section id="history" class="section shell" aria-labelledby="history-title" tabindex="-1">
+        <header class="section-head">
+          <div>
+            <p class="kicker"><span>02</span> History</p>
+            <h2 id="history-title">Everything you lifted, kept.</h2>
+          </div>
+          <p>Every session, set and record, sorted by month and charted lift by lift.</p>
+        </header>
+
+        <!-- biome-ignore lint/a11y/noNoninteractiveTabindex: on phones this row scrolls sideways, and keyboard users need to focus it to scroll. -->
+        <section class="gallery" aria-label="App screens" tabindex="0">
+          <figure>
+            <div class="phone">
+              <img
+                src="./screen-history.png"
+                width="780"
+                height="1688"
+                alt="History for November 2026: 11 sessions, 98,162 kg and 114 records, with training days marked on a calendar."
+                loading="lazy"
+              />
+            </div>
+            <figcaption>
+              <h3>Your month at a glance</h3>
+              <p>Sessions, volume, time and records, with every training day on the calendar.</p>
+            </figcaption>
+          </figure>
+          <figure>
+            <div class="phone">
+              <img
+                src="./screen-records.png"
+                width="780"
+                height="1688"
+                alt="A list of November workouts, each with its duration, volume and sets, and brass diamonds counting personal records."
+                loading="lazy"
+              />
+            </div>
+            <figcaption>
+              <h3>Records, in brass</h3>
+              <p>A brass diamond marks each workout that set a personal record, with the count beside it.</p>
+            </figcaption>
+          </figure>
+          <figure>
+            <div class="phone">
+              <img
+                src="./screen-exercise.png"
+                width="780"
+                height="1688"
+                alt="Overhead press detail: shoulders as the primary muscle and an estimated one-rep max of 72.8 kg, up 15.8 kg over three months."
+                loading="lazy"
+              />
+            </div>
+            <figcaption>
+              <h3>Every lift, charted</h3>
+              <p>Estimated one-rep max, heaviest weight and best set for each exercise over time.</p>
+            </figcaption>
+          </figure>
+        </section>
+      </section>
+
+      <section class="section shell duo" aria-label="Switching and hosting">
+        <article id="switch" class="panel" tabindex="-1">
+          <p class="kicker"><span>03</span> Switching <em class="soon">Planned</em></p>
+          <h2>Bring your Hevy history.</h2>
+          <p class="panel-note">Hevy import is in the works. Once it lands, switching takes three steps.</p>
+          <ol class="list">
+            <li><span class="n">01</span><span><strong>Export</strong> your workouts from Hevy as a CSV file.</span></li>
+            <li><span class="n">02</span><span><strong>Import</strong> the file into Leve.</span></li>
+            <li>
+              <span class="n">03</span><span><strong>Carry on</strong> with every past workout and set already in your history.</span>
+            </li>
+          </ol>
+        </article>
+        <article id="open" class="panel" tabindex="-1">
+          <p class="kicker"><span>04</span> Source and hosting</p>
+          <h2>Build from source.</h2>
+          <p class="panel-note">The source includes the iPhone app, this site, and sync prototypes.</p>
+          <dl class="specs">
+            <div><dt>Development</dt><dd>Try a local web preview with sample workouts or run the app with Expo.</dd></div>
+            <div><dt>Data</dt><dd>Workouts are saved on your device.</dd></div>
+            <div><dt>Sync</dt><dd>The prototypes are for development with disposable data. Hosted and self-hosted sync are planned.</dd></div>
+          </dl>
+        </article>
+      </section>
+
+      <section class="finale shell" aria-labelledby="finale-title">
+        <picture>
+          <source srcset="./wordmark-on-light.svg" media="(prefers-color-scheme: light)" />
+          <img src="./wordmark-on-dark.svg" width="420" height="129" alt="" />
+        </picture>
+        <h2 id="finale-title" class="finale-line"><span class="thin">Light app.</span> <span class="heavy">Heavy lifting.</span></h2>
+        <p class="finale-note">Leve is in development for iPhone.</p>
+      </section>
+    </main>
+
+    <footer class="foot shell">
+      <span>Leve · workout tracker</span>
+      <span>Independent project, not affiliated with Hevy.</span>
+    </footer>
+  </body>
+</html>

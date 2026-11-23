@@ -1,0 +1,13 @@
+{
+  "releases": [
+    {
+      "release": "1.0",
+      "files": {
+        "frozen/1.0/contract.json": "e732553c78f259b11df0d5b09b3f8a972cb53f951fedb0e41d2726e3786c1eac",
+        "frozen/1.0/examples.json": "ea105ec2662566dea515d48e287993bd57c75ff3d0304e12b58b090cc9e3dc92",
+        "history/1.0/peer.ts": "fa008b467cdb1827a4560af451c80722c921f5ab072436bbb1a6e998521548b2",
+        "history/1.0/contract.json": "e732553c78f259b11df0d5b09b3f8a972cb53f951fedb0e41d2726e3786c1eac"
+      }
+    }
+  ]
+}

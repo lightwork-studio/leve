@@ -1,0 +1,19 @@
+{
+  "name": "@leve/sync-cloudflare",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "npx --yes wrangler@4.158.0 deploy",
+    "load": "node load/run.ts",
+    "typecheck": "tsc -p . && tsc -p load"
+  },
+  "dependencies": {
+    "@leve/contract": "workspace:*",
+    "@leve/storage": "workspace:*",
+    "@leve/sync": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261104.1"
+  }
+}

@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sync Playground</title>
+<style>
+  :root {
+    --bg: #f6f6f3; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --line: #deddd6;
+    --accent: #2f6f5e; --warn: #a35a00; --bad: #b3261e; --chip: #efeee8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161614; --panel: #201f1d; --text: #ecebe6; --muted: #9a9993; --line: #34332f;
+      --accent: #6fbfa8; --warn: #e3a34d; --bad: #f08a80; --chip: #2b2a27;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, sans-serif; }
+  header { padding: 12px 16px; border-bottom: 1px solid var(--line); display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+  header h1 { font-size: 16px; margin: 0; }
+  header p { margin: 0; color: var(--muted); }
+  main { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; padding: 12px 16px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; min-width: 0; }
+  h2 { font-size: 15px; margin: 0 0 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  h3 { font-size: 13px; margin: 12px 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  button { font: inherit; padding: 3px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--chip); color: var(--text); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--panel); }
+  button:disabled { opacity: .5; cursor: default; }
+  input[type=text] { font: inherit; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); min-width: 0; }
+  .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 4px 0; }
+  .chip { font-size: 12px; padding: 1px 6px; border-radius: 10px; background: var(--chip); color: var(--muted); }
+  .chip.pending { color: var(--warn); }
+  .chip.conflict, .chip.invalid { color: var(--bad); }
+  .chip.partial { color: var(--warn); }
+  .tree { margin-left: 14px; border-left: 1px solid var(--line); padding-left: 8px; }
+  .item { padding: 2px 0; }
+  .problem { border: 1px solid var(--line); border-left: 3px solid var(--bad); border-radius: 6px; padding: 6px 8px; margin: 6px 0; }
+  .muted { color: var(--muted); }
+  pre { white-space: pre-wrap; word-break: break-word; margin: 4px 0; font-size: 12px; color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  td, th { text-align: left; padding: 2px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .log { font-size: 12px; color: var(--muted); max-height: 220px; overflow: auto; }
+  .error { color: var(--bad); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Leve sync playground</h1>
+  <p>Two phones and an assistant on one local sync server, using the real storage and sync code. Development data only; it may be reset at any time.</p>
+  <p id="error" class="error"></p>
+</header>
+<main id="app"></main>
+<script>
+const app = document.getElementById("app");
+const errorLine = document.getElementById("error");
+let state = null;
+let busy = false;
+
+const now = () => new Date().toISOString();
+const short = (id) => String(id).slice(0, 8);
+const esc = (text) => String(text ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+const content = {
+  workout: (title) => ({ title, description: "", startedAt: now(), endedAt: null, routineId: null }),
+  entry: (workoutId, name, position) => ({
+    workoutId, exerciseId: name.toLowerCase().replace(/[^a-z0-9]+/g, "-"), exerciseName: name,
+    exerciseType: "weight_reps", position, supersetId: null, restSeconds: 120, notes: [],
+    doubleDumbbellVolume: false,
+  }),
+  set: (workoutExerciseId, position, weightKg, reps) => ({
+    workoutExerciseId, position, type: "normal", weightKg, reps, distanceMeters: null,
+    durationSeconds: null, count: null, rpe: null, completedAt: null,
+  }),
+};
+
+async function call(path, body) {
+  busy = true;
+  render();
+  try {
+    const response = await fetch(path, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body ?? {}),
+    });
+    const reply = await response.json();
+    errorLine.textContent = reply.error ? `${path}: ${reply.error}` : "";
+    return reply.result;
+  } catch (error) {
+    errorLine.textContent = `${path}: ${error.message}`;
+  } finally {
+    busy = false;
+    await refresh();
+  }
+}
+
+async function refresh() {
+  try {
+    state = await (await fetch("/dev/state")).json();
+  } catch (error) {
+    errorLine.textContent = `state: ${error.message}`;
+  }
+  render();
+}
+
+const dev = (device, action, body) => call(`/dev/devices/${device}/${action}`, body);
+
+function setText(record) {
+  return `${record.content.weightKg ?? "–"} kg × ${record.content.reps ?? "–"}`;
+}
+
+function statusChip(record) {
+  const parts = [record.status];
+  if (record.inFlight) parts.push("sending");
+  if (record.fromRestore) parts.push("offered again");
+  return `<span class="chip ${esc(record.status)}">${esc(parts.join(", "))}</span>`;
+}
+
+function deviceView(d) {
+  const all = d.records;
+  const byParent = (field, id) => all.filter((r) => r.content && r.content[field] === id);
+  const workouts = all.filter((r) => r.kind === "workout");
+  const tree = workouts.map((w) => {
+    const entries = byParent("workoutId", w.id).filter((r) => r.kind === "workout_exercise");
+    const entryHtml = entries.map((e) => {
+      const sets = byParent("workoutExerciseId", e.id).filter((r) => r.kind === "workout_set");
+      const setHtml = sets.map((s) => `
+        <div class="item row">${esc(setText(s))} ${statusChip(s)}
+          <button data-act="edit-set" data-device="${esc(d.name)}" data-id="${esc(s.id)}">Edit</button>
+          <button data-act="delete" data-device="${esc(d.name)}" data-kind="workout_set" data-id="${esc(s.id)}">Delete</button>
+        </div>`).join("");
+      return `
+        <div class="item"><div class="row">${esc(e.content.exerciseName)} ${statusChip(e)}
+          <button data-act="add-set" data-device="${esc(d.name)}" data-id="${esc(e.id)}" data-count="${sets.length}">+ Set</button>
+          <button data-act="delete" data-device="${esc(d.name)}" data-kind="workout_exercise" data-id="${esc(e.id)}">Delete</button>
+        </div><div class="tree">${setHtml}</div></div>`;
+    }).join("");
+    return `
+      <div class="item"><div class="row"><strong>${esc(w.content.title)}</strong> <span class="muted">${esc(short(w.id))}</span> ${statusChip(w)}
+        <button data-act="rename" data-device="${esc(d.name)}" data-id="${esc(w.id)}">Rename</button>
+        <button data-act="add-entry" data-device="${esc(d.name)}" data-id="${esc(w.id)}" data-count="${entries.length}">+ Exercise</button>
+        <button data-act="delete" data-device="${esc(d.name)}" data-kind="workout" data-id="${esc(w.id)}">Delete</button>
+      </div><div class="tree">${entryHtml}</div></div>`;
+  }).join("") || `<p class="muted">No workouts.</p>`;
+
+  const problems = d.problems.map((p) => `
+    <div class="problem">
+      <div class="row"><strong>${esc(p.kind)}</strong> <span class="muted">${esc(short(p.id))}</span>
+        <span class="chip ${esc(p.status)}">${esc(p.problem?.reason ?? p.status)}</span>
+        ${p.fromRestore ? `<span class="chip">offered again</span>` : ""}</div>
+      <pre>mine: ${esc(p.deleted ? "deleted" : JSON.stringify(p.content))}
+server: ${esc(p.server ? (p.server.state === "live" ? JSON.stringify(p.server.content) : p.server.state) : p.keptContent ? `none on the restored server; last copy ${JSON.stringify(p.keptContent)}` : "none")}</pre>
+      <div class="row">
+        <button data-act="resolve" data-choice="keep_mine" data-device="${esc(d.name)}" data-kind="${esc(p.kind)}" data-id="${esc(p.id)}">Keep mine</button>
+        <button data-act="resolve" data-choice="keep_theirs" data-device="${esc(d.name)}" data-kind="${esc(p.kind)}" data-id="${esc(p.id)}">Keep theirs</button>
+        <button data-act="resolve" data-choice="save_as_new" data-device="${esc(d.name)}" data-kind="${esc(p.kind)}" data-id="${esc(p.id)}">Save as new</button>
+      </div>
+    </div>`).join("");
+  const restored = d.problems.some((p) => p.fromRestore);
+  const sync = d.sync;
+  return `
+    <section>
+      <h2>${esc(d.name)}
+        <span class="chip">${d.unsynced ? "unsynced work" : "all synced"}</span>
+        <span class="chip">cursor ${esc(sync.cursor)}${sync.restoring ? ", downloading after a restore" : ""}</span>
+      </h2>
+      <div class="row">
+        <label><input type="checkbox" data-act="online" data-device="${esc(d.name)}" ${d.online ? "checked" : ""}> online</label>
+        <button class="primary" data-act="sync" data-device="${esc(d.name)}">Sync</button>
+        <span class="muted">${esc(d.lastOutcome ? JSON.stringify(d.lastOutcome) : "")}</span>
+      </div>
+      <div class="row">
+        <input type="text" id="title-${esc(d.name)}" placeholder="Workout title" value="Push day">
+        <button data-act="new-workout" data-device="${esc(d.name)}">New workout</button>
+      </div>
+      <h3>Workouts</h3>${tree}
+      <h3>To review (${d.problems.length})</h3>
+      ${restored ? `<div class="row"><button data-act="resolve-restored" data-device="${esc(d.name)}">Keep the restored server's version for everything offered again</button></div>` : ""}
+      ${problems || `<p class="muted">Nothing to review.</p>`}
+    </section>`;
+}
+
+/** Live records below a workout as the page last read them from the server. */
+function serverDescendants(workoutId) {
+  const live = state.server.records.filter((r) => r.state === "live");
+  const entries = live.filter((r) => r.kind === "workout_exercise" && r.content.workoutId === workoutId);
+  const sets = live.filter((r) => r.kind === "workout_set" && entries.some((e) => e.id === r.content.workoutExerciseId));
+  return [...entries, ...sets].map((r) => ({ kind: r.kind, id: r.id, revision: r.revision }));
+}
+
+function serverView(s) {
+  const workouts = s.records.filter((r) => r.kind === "workout" && r.state === "live");
+  const rows = s.records.map((r) => `<tr><td>${esc(r.revision)}</td><td>${esc(r.kind)}</td><td>${esc(short(r.id))}</td><td>${esc(r.state)}</td><td>${esc(r.content?.title ?? r.content?.exerciseName ?? (r.content ? setText(r) : ""))}</td></tr>`).join("");
+  return `
+    <section>
+      <h2>Server <span class="chip">revision ${s.revision}</span> <span class="chip">lineage ${esc(short(s.lineage))}</span></h2>
+      ${s.restoredFrom ? `<p class="muted">Restored from lineage ${esc(short(s.restoredFrom.lineage))} at revision ${esc(s.restoredFrom.restorePoint)}.</p>` : ""}
+      <div class="row">
+        <button data-act="backup">Take backup</button>
+        <button data-act="restore" data-how="command" ${s.backupTakenAt ? "" : "disabled"}>Restore (command)</button>
+        <button data-act="restore" data-how="copy" ${s.backupTakenAt ? "" : "disabled"}>Restore (copy files)</button>
+        <button data-act="reset">Reset everything</button>
+      </div>
+      <p class="muted">${s.backupTakenAt ? `Backup from ${esc(s.backupTakenAt)}.` : "No backup yet."}</p>
+      <h3>Assistant</h3>
+      <div class="row">
+        <select id="assistant-target">${workouts.map((w) => `<option value="${esc(w.id)}">${esc(w.content.title)} (${esc(short(w.id))})</option>`).join("")}</select>
+        <input type="text" id="assistant-title" placeholder="New title" value="Renamed by the assistant">
+      </div>
+      <div class="row">
+        <button data-act="assistant-rename" ${workouts.length ? "" : "disabled"}>Rename</button>
+        <button data-act="assistant-delete" ${workouts.length ? "" : "disabled"}>Delete</button>
+        <button data-act="assistant-new">New workout</button>
+      </div>
+      <h3>Records</h3>
+      <table><tr><th>rev</th><th>kind</th><th>id</th><th>state</th><th>shown</th></tr>${rows}</table>
+      <h3>Log</h3>
+      <div class="log">${state.log.map((l) => `<div>${esc(l.at.slice(11, 19))} ${esc(l.text)}</div>`).join("")}</div>
+    </section>`;
+}
+
+function render() {
+  if (!state) return;
+  const focused = document.activeElement?.id;
+  const values = Object.fromEntries([...document.querySelectorAll("input[type=text], select")].map((el) => [el.id, el.value]));
+  app.innerHTML = state.devices.map(deviceView).join("") + serverView(state.server);
+  for (const [id, value] of Object.entries(values)) {
+    const el = document.getElementById(id);
+    if (el && [...(el.options ?? [{ value }])].some((o) => o.value === value)) el.value = value;
+  }
+  if (focused) document.getElementById(focused)?.focus();
+  for (const el of app.querySelectorAll("button")) if (busy) el.disabled = true;
+}
+
+app.addEventListener("change", (event) => {
+  const el = event.target;
+  if (el.dataset.act === "online") dev(el.dataset.device, "online", { online: el.checked });
+});
+
+app.addEventListener("click", async (event) => {
+  const el = event.target.closest("button");
+  if (!el) return;
+  const { act, device, id, kind } = el.dataset;
+  const records = state.devices.find((d) => d.name === device)?.records ?? [];
+  const record = records.find((r) => r.id === id);
+  if (["rename", "edit-set"].includes(act) && !record) return refresh();
+  switch (act) {
+    case "sync": return dev(device, "sync");
+    case "new-workout":
+      return dev(device, "put", { kind: "workout", content: content.workout(document.getElementById(`title-${device}`).value || "Workout") });
+    case "rename": {
+      const title = prompt("Title", record.content.title);
+      if (title !== null) return dev(device, "put", { kind: "workout", id, content: { ...record.content, title } });
+      return;
+    }
+    case "add-entry": {
+      const name = prompt("Exercise", "Bench Press");
+      if (name) return dev(device, "put", { kind: "workout_exercise", content: content.entry(id, name, Number(el.dataset.count) + 1) });
+      return;
+    }
+    case "add-set":
+      return dev(device, "put", { kind: "workout_set", content: content.set(id, Number(el.dataset.count) + 1, 60, 8) });
+    case "edit-set": {
+      const reps = prompt("Reps", record.content.reps);
+      if (reps !== null) return dev(device, "put", { kind: "workout_set", id, content: { ...record.content, reps: Number(reps) } });
+      return;
+    }
+    case "delete": return dev(device, "delete", { kind, id });
+    case "resolve": return dev(device, "resolve", { kind, id, choice: el.dataset.choice });
+    case "resolve-restored": return dev(device, "resolve-restored");
+    case "backup": return call("/dev/backup");
+    case "restore": return call("/dev/restore", { how: el.dataset.how });
+    case "reset": if (confirm("Delete all playground data?")) return call("/dev/reset"); return;
+    case "assistant-new":
+      return call("/dev/assistant", { kind: "workout", content: content.workout(document.getElementById("assistant-title").value || "From the assistant") });
+    case "assistant-rename": case "assistant-delete": {
+      const target = document.getElementById("assistant-target").value;
+      const current = state.server.records.find((r) => r.id === target);
+      if (!current) return refresh();
+      const base = { kind: "workout", id: target, baseRevision: current.revision };
+      if (act === "assistant-delete") return call("/dev/assistant", { ...base, content: null, descendants: serverDescendants(target) });
+      return call("/dev/assistant", { ...base, content: { ...current.content, title: document.getElementById("assistant-title").value } });
+    }
+  }
+});
+
+refresh();
+setInterval(() => { if (!busy && !document.activeElement?.matches("input[type=text], select")) refresh(); }, 2000);
+</script>
+</body>
+</html>

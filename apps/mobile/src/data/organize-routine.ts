@@ -1,0 +1,66 @@
+import { jsonEqual, MAX_POSITION } from "@leve/contract";
+import { LIMITS } from "@leve/core";
+import type { DeviceStore } from "@leve/storage";
+
+import type { StoredPlan } from "./routine-actions.ts";
+
+export interface RoutineLocation {
+  title: string;
+  folderId: string | null;
+  notes?: string;
+}
+
+/** Apply only the fields the user changed to the latest local copy. */
+export function organizeRoutine(
+  store: DeviceStore,
+  id: string,
+  opened: RoutineLocation,
+  draft: RoutineLocation,
+  plan?: { opened: StoredPlan; next: StoredPlan },
+) {
+  const rename = draft.title !== opened.title;
+  const move = draft.folderId !== opened.folderId;
+  const editPlan = plan && !jsonEqual(plan.opened, plan.next);
+  const editNotes = draft.notes !== undefined && draft.notes !== opened.notes;
+  if (!rename && !move && !editPlan && !editNotes) return;
+  const record = store.get("routine", id);
+  if (record?.deleted || !record?.content) throw new Error("This routine is no longer available.");
+  if (record.problem || record.fromRestore)
+    throw new Error("Resolve the sync issue on this routine before changing it.");
+  const current = record.content;
+  if (
+    (rename && current.title !== opened.title) ||
+    (move && current.folderId !== opened.folderId)
+  ) {
+    throw new Error("This routine changed. Reopen it to see the latest name and folder.");
+  }
+  const next = { ...current };
+  if (editNotes) {
+    if (current.notes !== opened.notes && current.notes !== draft.notes)
+      throw new Error("The routine notes changed. Reopen the routine to see the latest notes.");
+    next.notes = draft.notes;
+  }
+  if (editPlan) {
+    if (!jsonEqual(current.exercises, plan.opened))
+      throw new Error("The plan changed. Reopen the routine to see the latest exercises.");
+    if (!plan.next.length) throw new Error("Add an exercise to the routine.");
+    next.exercises = plan.next;
+  }
+  if (rename) {
+    const title = draft.title.trim();
+    if (!title || title.length > LIMITS.titleLength)
+      throw new Error(`Enter a name of 1–${LIMITS.titleLength} characters.`);
+    next.title = title;
+  }
+  if (move) {
+    if (draft.folderId !== null) {
+      const target = store.get("routine_folder", draft.folderId);
+      if (!target?.content || target.deleted) throw new Error("Choose an available folder.");
+    }
+    const siblings = store.list("routine").filter((r) => r.content?.folderId === draft.folderId);
+    const last = siblings.at(-1)?.content?.position;
+    next.folderId = draft.folderId;
+    next.position = Math.min(MAX_POSITION, typeof last === "number" ? last + 1 : 1);
+  }
+  if (!jsonEqual(current, next)) store.put("routine", id, next);
+}

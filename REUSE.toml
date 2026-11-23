@@ -1,0 +1,44 @@
+version = 1
+
+[[annotations]]
+path = "**"
+precedence = "closest"
+SPDX-FileCopyrightText = "Leve contributors"
+SPDX-License-Identifier = "MPL-2.0"
+
+[[annotations]]
+path = [
+  "apps/sync-node/**",
+  "apps/sync-cloudflare/**",
+  "apps/sync-playground/**",
+  "packages/sync/src/server/**",
+  "packages/storage/src/server.ts",
+  "packages/storage/src/server-store.ts",
+]
+precedence = "closest"
+SPDX-FileCopyrightText = "Leve contributors"
+SPDX-License-Identifier = "AGPL-3.0-only"
+
+[[annotations]]
+path = ["assets/icon.svg", "assets/brand/*.svg", "assets/brand/png/*.png", "apps/mobile/assets/*.png"]
+precedence = "closest"
+SPDX-FileCopyrightText = "Leve contributors"
+SPDX-License-Identifier = "LicenseRef-Leve-Brand"
+
+[[annotations]]
+path = "apps/mobile/src/data/exercise-catalog.json"
+precedence = "closest"
+SPDX-FileCopyrightText = ["free-exercise-db contributors", "Leve contributors"]
+SPDX-License-Identifier = "Unlicense AND MPL-2.0"
+
+[[annotations]]
+path = "apps/mobile/src/ui/muscle-paths.json"
+precedence = "closest"
+SPDX-FileCopyrightText = "2022 ELABBASSI Hicham"
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = "patches/expo-widgets@58.0.29.patch"
+precedence = "closest"
+SPDX-FileCopyrightText = ["2015-present 650 Industries, Inc. (aka Expo)", "Leve contributors"]
+SPDX-License-Identifier = "MIT AND MPL-2.0"

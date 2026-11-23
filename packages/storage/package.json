@@ -1,0 +1,26 @@
+{
+  "name": "@leve/storage",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.16.0"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./node": "./src/node-sqlite.ts",
+    "./server": "./src/server.ts",
+    "./sqljs": "./src/sqljs.ts",
+    "./expo-sqlite": "./src/expo-sqlite.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@leve/contract": "workspace:*",
+    "sql.js": "~1.15.2"
+  },
+  "devDependencies": {
+    "@types/sql.js": "~1.4.11"
+  }
+}

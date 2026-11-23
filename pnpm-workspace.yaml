@@ -1,0 +1,6 @@
+packages:
+  - apps/*
+  - packages/*
+
+patchedDependencies:
+  expo-widgets@58.0.29: patches/expo-widgets@58.0.29.patch

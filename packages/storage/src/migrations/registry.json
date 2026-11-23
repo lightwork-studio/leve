@@ -1,0 +1,14 @@
+{
+  "releases": [
+    {
+      "release": "1.0",
+      "device": 4,
+      "server": 4,
+      "files": {
+        "1.0/storage-v2.ts": "78992b196f1f14e42f1109a5bda20ec2ec4b0bb5a819e77540e90528fa9260c7",
+        "1.0/storage-v3.ts": "2f4058cd02183a210a07ba3c28ed7a97369026958ba151e231207750f039d50e",
+        "1.0/storage-v4.ts": "023c07247a3f624df1422ccf43d005b8015cc303a5c1ccf6564ac11caf85ed9e"
+      }
+    }
+  ]
+}

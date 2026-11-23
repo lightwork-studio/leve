@@ -1,0 +1,16 @@
+{
+  "name": "@leve/sync-node",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/main.ts",
+    "bundle": "npx --yes esbuild@0.28.2 src/main.ts --bundle --platform=node --format=esm --target=node24 --outfile=dist/server.mjs",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@leve/contract": "workspace:*",
+    "@leve/storage": "workspace:*",
+    "@leve/sync": "workspace:*"
+  }
+}

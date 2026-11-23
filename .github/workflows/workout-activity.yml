@@ -1,0 +1,34 @@
+name: iOS workout activity
+on:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  simulator:
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Recover native taps across process launches
+        working-directory: apps/mobile
+        run: |
+          swiftc node_modules/expo-widgets/ios/Widgets/LeveActivityTap.swift test/ios/ActivityTapRecovery.swift -o "$RUNNER_TEMP/activity-inbox"
+          for phase in tap recover review verify; do
+            "$RUNNER_TEMP/activity-inbox" "$phase" "$RUNNER_TEMP/activity-recovery"
+          done
+      - name: Compile the app and its Live Activity extension
+        working-directory: apps/mobile
+        run: |
+          pnpm exec expo prebuild --platform ios --no-install
+          cd ios
+          pod install
+          xcodebuild -workspace LeveDev.xcworkspace -scheme LeveDev -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' ARCHS=arm64 CODE_SIGNING_ALLOWED=NO build
