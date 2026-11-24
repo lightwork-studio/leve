@@ -4,7 +4,7 @@ The sync service as a single Node process with one SQLite file per account. It i
 point for the self-hosted package.
 
 **Benchmark only:** every request signs in with one shared token and names its account in the
-`x-leve-account` header, like the Cloudflare spike, so the same load script runs against both.
+`x-leve-account` header, so the Cloudflare load script runs against it with `SPIKE_TOKEN_FILE`.
 
 ## Run
 
