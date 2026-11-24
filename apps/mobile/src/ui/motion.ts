@@ -31,7 +31,8 @@ export const pressScale = 0.97;
 export const enterDuration = 240;
 
 /** Something that moves to make room or close a gap. */
-export const layout = LinearTransition.duration(220).easing(easeOut);
+export const layoutDuration = 220;
+export const layout = LinearTransition.duration(layoutDuration).easing(easeOut);
 
 /**
  * A surface that rises into place from the bottom edge (the rest timer, a sheet). It slides in

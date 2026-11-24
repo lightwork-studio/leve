@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Text, View } from "react-native";
+import { type StyleProp, Text, View, type ViewStyle } from "react-native";
 import { useAppData } from "../../data/app-data.tsx";
 import { restTimer, useRest } from "../../data/rest-timer.ts";
 import { font, radius, type } from "../../theme.ts";
@@ -13,6 +13,31 @@ import { RestSlab } from "./dock.tsx";
 export function EditingRest({ workoutId, next }: { workoutId: string; next?: string }) {
   const { store, version } = useAppData();
   const rest = useRest(store, workoutId, version);
+  return (
+    <>
+      {rest && (
+        <RestSlab
+          rest={rest}
+          onAdjust={(seconds) => restTimer.adjust(store, rest, seconds)}
+          onSkip={() => restTimer.skip(store, workoutId, rest.source)}
+        />
+      )}
+      <RestCompletion rest={rest} next={next} />
+    </>
+  );
+}
+
+/** The brief confirmation shown if rest ends while an editor is open. */
+export function RestCompletion({
+  rest,
+  next,
+  style,
+}: {
+  rest: ReturnType<typeof useRest>;
+  next?: string;
+  style?: StyleProp<ViewStyle>;
+}) {
+  const { store } = useAppData();
   const styles = useStyles(sheet);
   const c = useColors();
   const lastEnd = useRef<number | null>(null);
@@ -41,17 +66,9 @@ export function EditingRest({ workoutId, next }: { workoutId: string; next?: str
     return () => clearTimeout(hide);
   }, [rest, store]);
 
-  if (rest)
-    return (
-      <RestSlab
-        rest={rest}
-        onAdjust={(seconds) => restTimer.adjust(store, rest, seconds)}
-        onSkip={() => restTimer.skip(store, workoutId, rest.source)}
-      />
-    );
-  if (!done) return null;
+  if (rest || !done) return null;
   return (
-    <Enter leaves distance={4} accessibilityLiveRegion="polite" style={styles.done}>
+    <Enter leaves distance={4} accessibilityLiveRegion="polite" style={[styles.done, style]}>
       <CheckIcon color={c.rest.ink} size={20} />
       <View style={styles.detail}>
         <Text style={styles.title}>Rest done</Text>
