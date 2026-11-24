@@ -308,6 +308,21 @@ it("opens only the sessions for a trained date and collapses the list on a secon
     expect(refreshed.parent?.props.style).toEqual(
       days.findByProps({ children: 8 }).parent?.props.style,
     );
+
+    // A session added to that date later, say by sync, leaves it closed until it is picked.
+    historyMonths = month([
+      session("Synced", [2026, 10, 9, 7]),
+      session("Other day", [2026, 10, 10, 8]),
+    ]);
+    await act(() => screen.update(createElement(HistoryScreen)));
+    await act(() =>
+      card?.update(pager().props.renderItem({ item: pager().props.data[0], index: 0 })),
+    );
+    expect(links()).toEqual([]);
+    const synced = days.findByProps({ accessibilityLabel: `${longDate(2026, 10, 9)}, 1 workout` });
+    expect(synced.props.accessibilityState.expanded).toBe(false);
+    await act(() => synced.props.onPress());
+    expect(links()).toEqual(["Synced"]);
   } finally {
     await act(() => {
       card?.unmount();
@@ -474,8 +489,8 @@ it("keeps the month controls on screen, greyed out, while there is only one mont
       expect(control.props.disabled).toBe(true);
       expect(control.props.accessibilityState).toEqual({ disabled: true });
     }
-    // The month card is the calendar: History links to no separate one.
-    expect(root.findAllByType(Link)).toHaveLength(0);
+    // The month card is the calendar: History's title offers no separate one.
+    expect(root.findByType("Title" as never).props.action).toBeUndefined();
   } finally {
     await act(() => screen.unmount());
     vi.unstubAllGlobals();

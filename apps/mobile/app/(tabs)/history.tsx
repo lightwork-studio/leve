@@ -285,7 +285,8 @@ function NoResults({ query, onClear }: { query: string; onClear: () => void }) {
 
 /**
  * The month at a glance, a page per month (the current one first), browsed by swiping or with the
- * buttons beside its name (disabled at either end, both of them while there is one month). A trained date lists its sessions under the card.
+ * buttons beside its name (disabled at either end, so both while there is one month). A trained
+ * date lists its sessions under the card.
  */
 function MonthPager({
   months,
@@ -315,6 +316,14 @@ function MonthPager({
   const last = Math.max(0, pages.length - 1);
   const current = Math.min(page, last);
   const selectedDay = odometers[current]?.cells.find((day) => day?.start === selected);
+  // The picked date closes once its last session is gone, so one added later doesn't open it.
+  if (
+    selected !== null &&
+    !odometers.some((odometer) =>
+      odometer.cells.some((day) => day?.start === selected && day.sessions.length > 0),
+    )
+  )
+    setSelected(null);
   const goTo = (to: number) => {
     if (to < 0 || to > last || !list.current) return;
     list.current.scrollToOffset({ offset: to * width, animated: false });
