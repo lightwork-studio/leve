@@ -1,7 +1,7 @@
 import { MUSCLE_GROUPS } from "@leve/core";
 import { Link, useLocalSearchParams } from "expo-router";
 import { memo, useMemo, useState } from "react";
-import { SectionList, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { choiceLabel } from "../src/data/custom-exercises.ts";
 import { findLoggedExercises } from "../src/data/exercises.ts";
@@ -13,13 +13,19 @@ import { lastDoneLabel } from "../src/model/train.ts";
 import { radius, space, type } from "../src/theme.ts";
 import { BackLink } from "../src/ui/back-link.tsx";
 import { EmptyState } from "../src/ui/empty-state.tsx";
-import { ExerciseFilters, ExerciseSearch } from "../src/ui/exercise-search.tsx";
-import { SectionLabel } from "../src/ui/group.tsx";
+import { ExerciseResults } from "../src/ui/exercise-results.tsx";
+import {
+  ExerciseFilters,
+  ExerciseSearch,
+  keepExerciseSearchFocused,
+} from "../src/ui/exercise-search.tsx";
 import { ChevronIcon } from "../src/ui/icons.tsx";
 import { MuscleFilter, MusclePreview } from "../src/ui/muscle-filter.tsx";
 import { Tap } from "../src/ui/tap.tsx";
 import { themedStyles, useColors, useStyles } from "../src/ui/themed.ts";
 import { useToday } from "../src/ui/use-now.ts";
+
+const exerciseKey = (exercise: ExerciseHistory) => exercise.exerciseId;
 
 /**
  * The exercises the user has done, most recent first; each opens its records and history. A
@@ -32,6 +38,8 @@ export default function ExercisesScreen() {
   const fromTrain = from === "train";
   const styles = useStyles(sheet);
   const [query, setQuery] = useState("");
+  const [focused, setFocused] = useState(false);
+  const searching = focused || !!query.trim();
   const [muscle, setMuscle] = useState("");
   const [equipment, setEquipment] = useState("");
   const available = useMemo(
@@ -43,7 +51,7 @@ export default function ExercisesScreen() {
         : index.exercises,
     [equipment, equipmentFor, index.exercises],
   );
-  const matching = findLoggedExercises(query, available);
+  const matching = useMemo(() => findLoggedExercises(query, available), [query, available]);
   const sections = useMemo(
     () =>
       muscleSections(
@@ -59,19 +67,20 @@ export default function ExercisesScreen() {
         primary: sections.find((s) => s.key === "primary")?.data.length ?? 0,
         also: sections.find((s) => s.key === "also")?.data.length ?? 0,
       }
-    : { total: available.length };
+    : { total: matching.length };
   const insets = useSafeAreaInsets();
   // Rows change with the day ("yesterday"), not the minute.
   const now = useToday();
-  const empty = sections.every((section) => section.data.length === 0);
   return (
-    <SectionList
+    <ExerciseResults
+      {...keepExerciseSearchFocused(focused, setFocused)}
       style={styles.scroll}
       contentContainerStyle={[styles.content, { paddingTop: insets.top + space.md }]}
       keyboardShouldPersistTaps="handled"
-      stickySectionHeadersEnabled={false}
-      sections={empty ? [] : sections}
-      keyExtractor={(item) => item.exerciseId}
+      automaticallyAdjustKeyboardInsets
+      sections={sections}
+      exerciseKey={exerciseKey}
+      sectionGap={22}
       ListEmptyComponent={
         index.exercises.length ? (
           <EmptyState
@@ -94,23 +103,25 @@ export default function ExercisesScreen() {
             label={fromTrain ? "Train" : "Progress"}
             fallback={fromTrain ? "/" : "/progress"}
           />
-          <View style={styles.titles}>
-            <Text style={styles.eyebrow}>Your exercises</Text>
-            <Text accessibilityRole="header" style={styles.title}>
-              Exercises
-            </Text>
-            <Text style={styles.subtitle}>
-              {index.exercises.length === 0
-                ? "Exercises you log show up here, with their records."
-                : `${index.exercises.length} done, most recent first`}
-            </Text>
-          </View>
+          {!focused && (
+            <View style={styles.titles}>
+              <Text style={styles.eyebrow}>Your exercises</Text>
+              <Text accessibilityRole="header" style={styles.title}>
+                Exercises
+              </Text>
+              <Text style={styles.subtitle}>
+                {index.exercises.length === 0
+                  ? "Exercises you log show up here, with their records."
+                  : `${index.exercises.length} done, most recent first`}
+              </Text>
+            </View>
+          )}
           {index.exercises.length > 0 && (
             <>
-              <ExerciseSearch value={query} onChange={setQuery} />
+              <ExerciseSearch value={query} onChange={setQuery} onFocusChange={setFocused} />
               <ExerciseFilters
-                key={query.trim()}
-                searching={!!query.trim()}
+                key={searching ? `search:${query.trim()}` : "browse"}
+                searching={searching}
                 muscle={muscle}
                 value={equipment}
                 onChange={setEquipment}
@@ -128,22 +139,12 @@ export default function ExercisesScreen() {
           )}
         </View>
       }
-      renderSectionHeader={({ section }) =>
-        section.title ? (
-          <View style={styles.sectionHead}>
-            <SectionLabel aside={String(section.data.length)} header>
-              {section.title}
-            </SectionLabel>
-          </View>
-        ) : null
-      }
-      renderSectionFooter={() => <View style={styles.sectionGap} />}
-      renderItem={({ item, index: i, section }) => (
+      renderExercise={({ exercise, first, last }) => (
         <ExerciseRow
-          exercise={item}
-          targets={muscleTargets(item.exerciseId)}
-          first={i === 0}
-          last={i === section.data.length - 1}
+          exercise={exercise}
+          targets={muscleTargets(exercise.exerciseId)}
+          first={first}
+          last={last}
           now={now}
         />
       )}
@@ -220,8 +221,6 @@ const sheet = themedStyles((c) => ({
     borderRadius: radius.card,
     overflow: "hidden",
   },
-  sectionHead: { paddingHorizontal: 6, paddingBottom: 9 },
-  sectionGap: { height: 22 },
   row: {
     flexDirection: "row",
     alignItems: "center",

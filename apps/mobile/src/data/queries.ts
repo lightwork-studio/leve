@@ -1,3 +1,4 @@
+import type { DeviceStore } from "@leve/storage";
 import { useNavigation } from "expo-router";
 import { useEffect, useMemo, useReducer, useRef } from "react";
 import { useAppData } from "./app-data.tsx";
@@ -11,6 +12,7 @@ import {
   trainData,
   workoutDetail,
 } from "./read.ts";
+import { heldSet } from "./set-removal.ts";
 
 /**
  * Like useMemo, but a screen out of sight (a tab under the live workout, say) keeps what it last
@@ -74,17 +76,37 @@ export function useWorkoutDetail(workoutId: string) {
   return useMemo(() => workoutDetail(store, workoutId), [store, version, workoutId]);
 }
 
+// The full workout, mini-player and Live Activity can hand off the same snapshot.
+const liveCache = new WeakMap<
+  DeviceStore,
+  { version: number; removal: ReturnType<typeof heldSet>; data: ReturnType<typeof liveData> }
+>();
+
 export function useLive() {
   const { store, version } = useAppData();
-  // biome-ignore lint/correctness/useExhaustiveDependencies: version marks every data change.
-  return useMemo(() => liveData(store), [store, version]);
+  const cached = liveCache.get(store);
+  // Settling Undo can release a held set even when its deletion is refused.
+  const removal = heldSet(store);
+  if (cached?.version === version && cached.removal === removal) return cached.data;
+  const data = liveData(store);
+  liveCache.set(store, { version, removal, data });
+  return data;
 }
 
-/** Refresh previous-set suggestions after a history correction. Active-set edits keep the cache. */
-export function usePastWorkouts(ready: boolean) {
+const pastWorkoutsCache = new WeakMap<
+  DeviceStore,
+  { historyVersion: number; data: ReturnType<typeof readAllWorkoutTrees> }
+>();
+
+/** Use current history if another view has already read it. Defer a cold read if needed. */
+export function usePastWorkouts(allowRead: boolean) {
   const { store, historyVersion } = useAppData();
-  // biome-ignore lint/correctness/useExhaustiveDependencies: historyVersion tracks changes to the stored history.
-  return useMemo(() => (ready ? readAllWorkoutTrees(store) : null), [store, ready, historyVersion]);
+  const cached = pastWorkoutsCache.get(store);
+  if (cached?.historyVersion === historyVersion) return cached.data;
+  if (!allowRead) return null;
+  const data = readAllWorkoutTrees(store);
+  pastWorkoutsCache.set(store, { historyVersion, data });
+  return data;
 }
 
 /**

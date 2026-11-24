@@ -1,7 +1,7 @@
 import { type DeviceStore, openDeviceStore } from "@leve/storage";
 import { createSqlJsEngine } from "@leve/storage/sqljs";
-import { act, createElement, type ReactElement } from "react";
-import { Modal, Text } from "react-native";
+import { act, createElement, type ReactElement, type Ref, useImperativeHandle } from "react";
+import { FlatList, Modal, Text } from "react-native";
 import { create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 import initSqlJs from "sql.js";
 import { expect, it, vi } from "vitest";
@@ -15,6 +15,7 @@ import { setColumns } from "../src/ui/set-values.ts";
 
 /** The palette on screen while the system is in dark mode, as these tests set it. */
 const dark = palettes.dark;
+const scrollTo = vi.fn();
 
 vi.mock("react-native-svg", () => ({ default: "Svg", Path: "Path" }));
 vi.mock("react-native", () => ({
@@ -28,28 +29,27 @@ vi.mock("react-native", () => ({
   KeyboardAvoidingView: "Keyboard",
   Platform: { OS: "web" },
   useWindowDimensions: () => ({ width: 390, height: 844 }),
-  SectionList: ({
-    sections,
+  FlatList: ({
+    ref,
+    data,
+    keyExtractor,
     renderItem,
     ListHeaderComponent,
   }: {
-    sections: { data: BuiltInExercise[] }[];
-    renderItem: (props: {
-      item: BuiltInExercise;
-      index: number;
-      section: { data: BuiltInExercise[] };
-    }) => ReactElement;
+    ref?: Ref<{ scrollToOffset: typeof scrollTo }>;
+    data: unknown[];
+    keyExtractor: (item: unknown) => string;
+    renderItem: (props: { item: unknown }) => ReactElement;
     ListHeaderComponent?: ReactElement;
-  }) => [
-    ListHeaderComponent,
-    ...sections.flatMap((section) =>
-      section.data
-        .slice(0, 5)
-        .map((item, index) =>
-          createElement("Row", { key: item.id }, renderItem({ item, index, section })),
-        ),
-    ),
-  ],
+  }) => {
+    useImperativeHandle(ref, () => ({ scrollToOffset: scrollTo }));
+    return [
+      ListHeaderComponent,
+      ...data
+        .slice(0, 15)
+        .map((item) => createElement("Row", { key: keyExtractor(item) }, renderItem({ item }))),
+    ];
+  },
   StyleSheet: { create: (s: object) => s, absoluteFill: {} },
 }));
 vi.mock("react-native-reanimated", () => ({ default: { View: "Animated", Text: "Text" } }));
@@ -449,6 +449,73 @@ it("keeps the last routine slot available after deselecting or archiving a selec
     expect(pick.mock.lastCall?.[0].map((item: BuiltInExercise) => item.name)).toEqual([
       "Bench Press",
     ]);
+  } finally {
+    await act(() => screen?.unmount());
+    store.close();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("shows filtered results as soon as the pinned picker search receives focus", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  store = await openDeviceStore({
+    engine: createSqlJsEngine(await initSqlJs()),
+    path: "/picker-focus",
+    appVersion: "test",
+  });
+  let screen: ReactTestRenderer | undefined;
+  try {
+    await act(() => {
+      screen = create(
+        createElement(ExercisePicker, { included: [], onPickMany: vi.fn(), onClose: vi.fn() }),
+      );
+    });
+    if (!screen) throw Error("Missing picker");
+    const root = screen.root;
+    const searchLabel = { accessibilityLabel: "Search exercises" };
+    const field = root.findByProps(searchLabel);
+    const figure = () =>
+      root.findAllByProps({ accessibilityLabel: "Filter by muscle group, Chest" });
+    await pressIn(root, "Chest");
+    await pressIn(root, "Filter by dumbbell");
+    expect(figure().length).toBeGreaterThan(0);
+
+    scrollTo.mockClear();
+    await act(() => field.props.onFocus());
+    expect(root.findByType(FlatList).findAllByProps(searchLabel)).toHaveLength(0);
+    expect(scrollTo).toHaveBeenCalledWith({ offset: 0, animated: false });
+    expect(field.props.value).toBe("");
+    expect(figure()).toHaveLength(0);
+    expect(
+      root.findByProps({
+        accessibilityLabel: "Incline Dumbbell Press, Weight and reps, Chest (primary)",
+      }),
+    ).toBeDefined();
+    expect(
+      root
+        .findByProps({ accessibilityLabel: "Exercise filters" })
+        .findAllByProps({ accessibilityRole: "button" })
+        .slice(0, 2)
+        .map((chip) => [chip.props.accessibilityLabel, chip.props.accessibilityState.selected]),
+    ).toEqual([
+      ["Muscle filter, Chest", true],
+      ["Filter by dumbbell", true],
+    ]);
+
+    scrollTo.mockClear();
+    await act(() => field.props.onChangeText("flyes"));
+    expect(scrollTo).toHaveBeenCalledWith({ offset: 0, animated: false });
+    await pressIn(root, "Dumbbell Flyes, Weight and reps, Chest (primary)");
+    await pressIn(root, "Clear exercise search");
+    expect(field.props.value).toBe("");
+    expect(figure()).toHaveLength(0);
+    await act(() => field.props.onBlur());
+    expect(figure().length).toBeGreaterThan(0);
+    await pressIn(root, "Review selection");
+    expect(
+      root.findByProps({ accessibilityLabel: "Dumbbell Flyes, Weight and reps" }).props
+        .accessibilityState.checked,
+    ).toBe(true);
   } finally {
     await act(() => screen?.unmount());
     store.close();

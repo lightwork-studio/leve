@@ -47,6 +47,12 @@ export const exerciseLibrary = catalog.map((item) => ({
   ...seeded.get(item.id),
 }));
 const BY_ID = new Map(exerciseLibrary.map((exercise) => [exercise.id, exercise]));
+const TARGETS_BY_ID = new Map(
+  exerciseLibrary.map(({ id, primaryMuscles, secondaryMuscles }) => [
+    id,
+    { primaryMuscles, secondaryMuscles },
+  ]),
+);
 
 export interface PickerExercise extends BuiltInExercise {
   equipment: string;
@@ -111,11 +117,5 @@ function catalogueMuscle(label: string): MuscleGroup {
 }
 
 export function builtInTargets(id: string): MuscleTargets | undefined {
-  const exercise = builtInExercise(id);
-  return exercise
-    ? {
-        primaryMuscles: exercise.primaryMuscles,
-        secondaryMuscles: exercise.secondaryMuscles,
-      }
-    : undefined;
+  return TARGETS_BY_ID.get(id);
 }
