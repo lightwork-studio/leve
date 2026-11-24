@@ -4,6 +4,16 @@
     "appVersionSource": "remote"
   },
   "build": {
+    "development": {
+      "environment": "development",
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "LEVE_APP_VARIANT": "development",
+        "EXPO_PUBLIC_BUILD_LABEL": "Leve Dev",
+        "EXPO_PUBLIC_SAMPLE_DATA": "on"
+      }
+    },
     "preview": {
       "environment": "preview",
       "channel": "preview",
@@ -14,6 +24,17 @@
         "EXPO_PUBLIC_BUILD_LABEL": "TestFlight Preview",
         "EXPO_PUBLIC_SAMPLE_DATA": "off",
         "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_test_c3VidGxlLWxhZHliaXJkLTc0ODIuY2xlcmsuYWNjb3VudHMuZGV2JA=="
+      }
+    },
+    "production": {
+      "environment": "production",
+      "channel": "production",
+      "distribution": "store",
+      "autoIncrement": true,
+      "env": {
+        "LEVE_APP_VARIANT": "production",
+        "EXPO_PUBLIC_BUILD_LABEL": "App Store",
+        "EXPO_PUBLIC_SAMPLE_DATA": "off"
       }
     }
   },
