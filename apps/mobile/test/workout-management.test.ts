@@ -52,10 +52,16 @@ import { SetEditor } from "../src/ui/set-editor.tsx";
 import { useSetStopwatch } from "../src/ui/use-set-stopwatch.ts";
 import { useWorkoutSelection } from "../src/ui/use-workout-selection.ts";
 import { WorkoutDetailsEditor } from "../src/ui/workout-details-editor.tsx";
+import { feedbackScheduler } from "./support/feedback.ts";
 
+const feedback = feedbackScheduler();
+vi.mock("../src/ui/after-feedback.ts", () => ({
+  afterFeedback: (run: () => void) => feedback.afterFeedback(run),
+}));
 let store: DeviceStore;
 let version = 0;
 let historyVersion = 0;
+let preventRemoval = false;
 let detailId: string;
 let detailReturn: { back?: string; fromExercise?: string; from?: string } = {};
 let activeEntryId: string | undefined;
@@ -93,6 +99,12 @@ vi.mock("../src/data/app-data.tsx", () => ({
 vi.mock("expo-router", () => ({
   useSegments: () => ["(tabs)", "index"],
   useNavigation: () => navigation,
+  usePreventRemove: (enabled: boolean) => {
+    preventRemoval = enabled;
+    return () => {
+      preventRemoval = false;
+    };
+  },
   Link: ({ children, href }: { children: ReactNode; href: unknown }) =>
     h("div", { "data-destination": JSON.stringify(href) }, children),
   useLocalSearchParams: () => ({ id: detailId, activeEntryId, ...detailReturn }),
@@ -137,7 +149,10 @@ vi.mock("../src/ui/enter.tsx", () => ({
 }));
 vi.mock("react-native-reanimated", () => ({
   useReducedMotion: () => true,
-  default: { View: ({ children }: { children: ReactNode }) => children },
+  default: {
+    View: ({ children }: { children: ReactNode }) => children,
+    Text: ({ children }: { children: ReactNode }) => children,
+  },
   useSharedValue: (value: number) => ({ value }),
   useAnimatedStyle: () => ({}),
   Easing: { linear: (value: number) => value },
@@ -148,6 +163,7 @@ vi.mock("react-native-reanimated", () => ({
 vi.mock("../src/ui/motion.ts", () => ({
   easeOut: undefined,
   layout: undefined,
+  layoutDuration: 220,
   sinkOut: undefined,
   spring: undefined,
 }));
@@ -187,6 +203,7 @@ vi.mock("../src/ui/haptics.ts", () => ({
 vi.mock("react-native", () => {
   const container = ({ children }: { children: ReactNode }) => h("div", null, children);
   return {
+    ActivityIndicator: () => null,
     useColorScheme: () => "dark",
     Easing: { linear: (value: number) => value },
     Platform: { OS: "web" },
@@ -247,7 +264,8 @@ vi.mock("react-native", () => {
     Modal: ({ children, "aria-label": label }: { children: ReactNode; "aria-label"?: string }) =>
       h("div", { role: "dialog", "aria-label": label }, children),
     Pressable: container,
-    ScrollView: container,
+    ScrollView: ({ children, inert }: { children: ReactNode; inert?: boolean }) =>
+      h("div", { inert }, children),
     View: ({
       children,
       onMouseDown,
@@ -289,6 +307,7 @@ vi.mock("react-native-safe-area-context", () => ({
 }));
 vi.mock("../src/ui/tap.tsx", () => ({
   Tap: ({
+    "aria-busy": busy,
     accessibilityRole,
     accessibilityState,
     children,
@@ -299,6 +318,7 @@ vi.mock("../src/ui/tap.tsx", () => ({
     disabled,
     ref,
   }: {
+    "aria-busy"?: boolean;
     ref?: React.Ref<HTMLButtonElement>;
     accessibilityRole?: string;
     accessibilityState?: { checked?: boolean; expanded?: boolean };
@@ -319,6 +339,7 @@ vi.mock("../src/ui/tap.tsx", () => ({
         onFocus,
         onBlur,
         disabled,
+        "aria-busy": busy,
         "aria-label": accessibilityLabel,
         "aria-checked": accessibilityState?.checked,
         "aria-expanded": accessibilityState?.expanded,
@@ -358,6 +379,7 @@ beforeEach(async () => {
 afterEach(async () => {
   blurListeners.clear();
   await act(() => root.unmount());
+  await act(feedback.release);
   host.remove();
   store.close();
   vi.unstubAllGlobals();
@@ -1204,7 +1226,22 @@ it("shows the records before saving, then saves the workout and opens History at
   expect(host.textContent).toContain("1 unfinished. Only logged sets will be saved.");
   // Nothing is saved by looking.
   expect(store.get("workout", id)?.content?.endedAt).toBeNull();
+  feedback.hold();
   await press("Save workout");
+  const saving = host.querySelector<HTMLButtonElement>('button[aria-label="Saving workout…"]');
+  expect(saving?.getAttribute("aria-busy")).toBe("true");
+  expect(saving?.disabled).toBe(true);
+  expect(preventRemoval).toBe(true);
+  expect(
+    host.querySelector<HTMLButtonElement>('button[aria-label="Back to the workout"]')?.disabled,
+  ).toBe(true);
+  expect(
+    host.querySelector('input[aria-label="Workout description"]')?.closest("[inert]"),
+  ).toBeInstanceOf(HTMLElement);
+  expect(store.get("workout", id)?.content?.endedAt).toBeNull();
+  expect(navigateRoute).not.toHaveBeenCalled();
+  await act(feedback.release);
+  expect(preventRemoval).toBe(false);
   expect(store.get("workout", id)?.content?.endedAt).toEqual(expect.any(String));
   expect(store.list("workout_set", { parentId: entry })).toHaveLength(1);
   expect(navigateRoute).toHaveBeenCalledWith({ pathname: "/history", params: { saved: id } });

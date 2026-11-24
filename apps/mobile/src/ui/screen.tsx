@@ -61,10 +61,12 @@ export function BackButton({
   label,
   onPress,
   accessibilityLabel,
+  disabled = false,
 }: {
   label: string;
   onPress: () => void;
   accessibilityLabel?: string;
+  disabled?: boolean;
 }) {
   const styles = useStyles(sheet);
   const c = useColors();
@@ -72,6 +74,8 @@ export function BackButton({
     <Tap
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
+      disabled={disabled}
+      accessibilityState={{ disabled }}
       onPress={onPress}
       scaleTo={0.96}
       style={styles.back}

@@ -2,8 +2,9 @@
 import { type DeviceStore, openDeviceStore } from "@leve/storage";
 import { createSqlJsEngine } from "@leve/storage/sqljs";
 import { router } from "expo-router";
-import { act, createElement, type ReactElement } from "react";
+import { act, createElement, type ReactElement, useState } from "react";
 import { Text } from "react-native";
+import { withTiming } from "react-native-reanimated";
 import { create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 import initSqlJs from "sql.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -64,11 +65,11 @@ vi.mock("react-native", () => ({
 }));
 vi.mock("react-native-svg", () => ({ default: "Svg", Path: "Path", Line: "Line" }));
 vi.mock("react-native-reanimated", () => ({
-  default: { View: "View" },
-  useSharedValue: (value: number) => ({ value }),
+  default: { View: "View", Text: "Text" },
+  useSharedValue: (value: number) => useState(() => ({ value }))[0],
   useAnimatedStyle: () => ({}),
   useReducedMotion: () => true,
-  withTiming: (n: number) => n,
+  withTiming: vi.fn((n: number) => n),
   withSpring: (n: number) => n,
   Easing: { linear: (n: number) => n },
   ReduceMotion: { Never: "never" },
@@ -86,7 +87,13 @@ vi.mock("../src/ui/enter.tsx", () => ({
   useExit: () => undefined,
   useArrivedLater: () => false,
 }));
-vi.mock("../src/ui/motion.ts", () => ({ layout: {}, sinkOut: {}, spring: {}, easeOut: {} }));
+vi.mock("../src/ui/motion.ts", () => ({
+  layout: {},
+  layoutDuration: 220,
+  sinkOut: {},
+  spring: {},
+  easeOut: {},
+}));
 vi.mock("../src/ui/haptics.ts", () => ({
   haptic: { tap: () => {}, warning: () => {}, select: () => {}, success: () => {} },
 }));
@@ -222,6 +229,29 @@ const cell = (ui: Awaited<ReturnType<typeof mount>>, label: string) =>
   ui.control(label).findAllByType(Text)[0]?.props.children;
 
 describe("rest above the keypad", () => {
+  it("resizes the same countdown when opening and closing a field", async () => {
+    benchWorkout();
+    const ui = await mount();
+    await ui.press("Log set 1");
+    const panel = () => ui.root.findByType(RestSlab);
+    const fullPanel = panel();
+    const timing = vi.mocked(withTiming);
+    timing.mockClear();
+
+    await ui.press("kg for set 2");
+    expect(panel()).toBe(fullPanel);
+    expect(timing.mock.calls.map(([target]) => target)).toEqual([30]);
+    timing.mockClear();
+
+    await ui.press("reps for set 2");
+    expect(panel()).toBe(fullPanel);
+    expect(timing).not.toHaveBeenCalled();
+
+    await ui.press("Done typing");
+    expect(panel()).toBe(fullPanel);
+    expect(timing.mock.calls.map(([target]) => target)).toEqual([50]);
+  });
+
   it("adjusts the running rest without changing the field, then returns to the editable full timer", async () => {
     benchWorkout();
     const ui = await mount();
@@ -1322,14 +1352,14 @@ it("keeps the field being typed above the dock without animating when motion is 
     return 1;
   });
   const scrollTo = vi.fn();
-  // Every row and the dock measure at the same place: the row is behind the dock.
-  const ui = await mount(() => ({
+  // The viewport ends at 600. The active row extends 52 pt behind the dock.
+  const ui = await mount((element) => ({
     scrollTo,
     focus: () => {},
     measureInWindow: (report: (x: number, y: number, w: number, h: number) => void) =>
-      report(0, 600, 390, 52),
+      element.type === "Scroll" ? report(0, 100, 390, 500) : report(0, 600, 390, 52),
   }));
   await ui.press("reps for set 3");
-  expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ animated: false }));
+  expect(scrollTo).toHaveBeenCalledWith({ y: 60, animated: false });
   expect(scrollTo).not.toHaveBeenCalledWith(expect.objectContaining({ animated: true }));
 });

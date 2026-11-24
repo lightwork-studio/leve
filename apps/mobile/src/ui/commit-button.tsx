@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
-import { Text, View } from "react-native";
+import { ActivityIndicator, Text, View } from "react-native";
 import { font, radius, type } from "../theme.ts";
 import { Tap } from "./tap.tsx";
-import { themedStyles, useStyles } from "./themed.ts";
+import { themedStyles, useColors, useStyles } from "./themed.ts";
 
 // The quieter lines are dimmed only so far that they keep normal text contrast on vermilion.
 
@@ -22,6 +22,7 @@ export function CommitButton({
   onPress,
   accessibilityLabel,
   disabled = false,
+  busy = false,
   variant = "dock",
 }: {
   label: string;
@@ -31,16 +32,19 @@ export function CommitButton({
   onPress: () => void;
   accessibilityLabel?: string;
   disabled?: boolean;
+  busy?: boolean;
   variant?: "slot" | "dock";
 }) {
   const styles = useStyles(sheet);
+  const colors = useColors();
   const slot = variant === "slot";
   return (
     <Tap
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? [label, title].filter(Boolean).join(", ")}
-      accessibilityState={{ disabled }}
-      disabled={disabled}
+      accessibilityState={{ busy, disabled: disabled || busy }}
+      aria-busy={busy || undefined}
+      disabled={disabled || busy}
       onPress={onPress}
       scaleTo={0.98}
       style={[styles.button, slot ? styles.slot : styles.dock, disabled && styles.disabled]}
@@ -70,7 +74,7 @@ export function CommitButton({
           </>
         )}
       </View>
-      {icon}
+      {busy ? <ActivityIndicator color={colors.commitInk} /> : icon}
     </Tap>
   );
 }
