@@ -353,7 +353,7 @@ export function SetStrip({
           field={field}
           layout={layout}
           box={layout.boxes[i]}
-          grows={field.metric === "weight" || !fields.some((other) => other.metric === "weight")}
+          capped={field.metric !== "weight" && fields.some((other) => other.metric === "weight")}
         />
       ))}
       {effort && (
@@ -395,14 +395,14 @@ function StripSegment({
   field,
   layout,
   box,
-  grows,
+  capped,
 }: {
   field: StripField;
   layout: ReturnType<typeof stripLayout>;
   /** The field's width with its hairline; unknown until the strip has been measured. */
   box: number | undefined;
-  /** Whether it takes any room the measured widths leave (the weight, beside other fields). */
-  grows: boolean;
+  /** Whether it stops at three 44 pt targets and leaves the rest to the weight beside it. */
+  capped: boolean;
 }) {
   const styles = useStyles(sheet);
   const c = useColors();
@@ -416,9 +416,9 @@ function StripSegment({
     <View
       style={[
         styles.segment,
-        // The measured width is where it starts, not a fixed size: if the strip has changed
-        // width since it was measured, the fields still fill it.
-        box !== undefined && { flexGrow: grows ? 1 : 0, flexShrink: 1, flexBasis: box },
+        // Laid out by flex alone, as `stripLayout` describes it, so the fields fill the strip
+        // even when its measured width is wrong; the measurement only sizes what is drawn inside.
+        capped && { maxWidth: FULL_FIELD },
         field.editing && styles.segmentOn,
       ]}
     >
@@ -809,7 +809,8 @@ const sheet = themedStyles((c) => ({
     overflow: "hidden",
   },
   // Longhands rather than `flex`: on the web `flex: 0` is CSS's `0 1 0%`, whose zero basis wins
-  // over a width and collapses the column, so a fixed column sets its basis to its width.
+  // over a width and collapses the column, so a fixed column sets its basis to its width. The
+  // fields share the strip equally, up to a capped field's maximum.
   segment: {
     flexGrow: 1,
     flexShrink: 1,

@@ -1423,20 +1423,22 @@ describe("the logging strip", () => {
 
   // A phone can report the strip's width before the strip has its place, and nothing after. Sized
   // from that, both fields were drawn 0 pt wide: the check sat at the strip's start, the rest
-  // stood empty, and the fields' − and + spilled over the effort column.
+  // stood empty, and the fields' − and + spilled over the effort column. Whatever width it
+  // reports, the fields are laid out as on a correctly measured strip.
   it.each([
     // phone, the width the strip reported, weight and reps drawn
-    [390, 2, 152, 152],
-    [390, 104, 152, 152],
-    [390, 300, 183, 121],
-    // Measured wider than it is: both give way in proportion to their measured widths.
-    [375, 420, 182.8, 106.2],
+    [390, 2, 171, 133],
+    [390, 104, 171, 133],
+    [390, 160, 171, 133],
+    [390, 300, 171, 133],
+    [375, 420, 156, 133],
+    [320, 362, 117, 117],
   ])(
     "fills a %i pt phone's strip whatever it was measured as (%i pt)",
     async (phone, measured, weight, reps) => {
       const strip = await stripOn(phone, measured);
-      expect(strip.weight.box).toBeCloseTo(weight, 1);
-      expect(strip.reps.box).toBeCloseTo(reps, 1);
+      expect(strip.weight.box).toBeCloseTo(weight, 3);
+      expect(strip.reps.box).toBeCloseTo(reps, 3);
       expect(strip.weight.box + strip.reps.box + 56 + 2).toBeCloseTo(phone - 28, 3);
       await strip.unmount();
     },
