@@ -306,7 +306,7 @@ it("selects the last folder in the scrollable form and saves the chosen exercise
     // A target RPE the scale doesn't have is refused, and nothing is saved.
     await act(() => rpe.props.onChangeText("11"));
     await pressText("Save routine");
-    expect(alertText(root)).toMatch(/target RPE/);
+    expect(alertText(root)).toMatch(/RPE from 1 to 10/);
     expect(store.list("routine")).toHaveLength(0);
     await act(() => rpe.props.onChangeText("7,5"));
     // The rest chip opens the rest dialog; what it sets is this exercise's rest.
@@ -561,6 +561,51 @@ it("requires confirmation to clear an incompatible target and preserves the runn
     expect(liveData(store)?.initialPlan?.exercises[0]?.sets.map((set) => set.rpe)).toEqual([
       8, 8.5,
     ]);
+  } finally {
+    await act(() => rendered?.unmount());
+    store.close();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("converts every whole RIR target below 10 to RPE and back", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  store = await openDeviceStore({
+    engine: createSqlJsEngine(await initSqlJs()),
+    path: "/routine-wide-scale",
+    appVersion: "test",
+  });
+  let rendered: ReactTestRenderer | undefined;
+  try {
+    store.put("routine", "routine", {
+      ...routine,
+      effortScale: "rir",
+      exercises: [
+        {
+          ...entry,
+          sets: [
+            { ...target, rpe: null, repsInReserve: 5 },
+            { ...target, id: "second", rpe: null, repsInReserve: 9 },
+            { ...target, id: "third", rpe: null, repsInReserve: 10 },
+          ],
+        },
+      ],
+    });
+    await act(() => {
+      rendered = create(createElement(RoutineDetails));
+    });
+    if (!rendered) throw Error("Missing routine editor");
+    const root = rendered.root;
+    const choosing = () => root.findByProps({ label: "Effort scale" });
+    const value = (set: number, scale: string) =>
+      root.findByProps({ accessibilityLabel: `Old press set ${set} target ${scale}` }).props.value;
+    // RIR 10 has no RPE (it would be 0), so switching asks first.
+    await act(() => choosing().props.onChoose("rpe"));
+    await act(() => root.findByType("Dialog" as never).props.confirm.onPress());
+    expect([1, 2, 3].map((set) => value(set, "RPE"))).toEqual(["5", "1", ""]);
+    await act(() => choosing().props.onChoose("rir"));
+    expect(root.findAllByType("Dialog" as never)).toHaveLength(0);
+    expect([1, 2, 3].map((set) => value(set, "RIR"))).toEqual(["5", "9", ""]);
   } finally {
     await act(() => rendered?.unmount());
     store.close();
@@ -1384,9 +1429,9 @@ it("starts an editable new routine from the logged sets of a completed workout",
     const rpe = (set: number) =>
       root.findByProps({ accessibilityLabel: `Bench Press set ${set} target RPE` });
     expect(rpe(1).props.value).toBe("9");
-    await act(() => rpe(2).props.onChangeText("6.5"));
+    await act(() => rpe(2).props.onChangeText("6.3"));
     await tapText(root, "Save routine");
-    expect(alertText(root)).toMatch(/target RPE/);
+    expect(alertText(root)).toMatch(/RPE from 1 to 10/);
     expect(store.list("routine")).toHaveLength(0);
     await act(() => rpe(2).props.onChangeText("8.5"));
     await act(() => rpe(3).props.onChangeText(""));

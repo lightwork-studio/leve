@@ -1,14 +1,16 @@
-import { type EffortScale, RPE_VALUES } from "@leve/core";
+import type { EffortScale } from "@leve/core";
 import { Text, View } from "react-native";
 import { effortLabel } from "../../model/effort.ts";
-import { RIR_PICKS } from "../../model/rir.ts";
+import { effortPick, RIR_PICKS, RPE_PICKS } from "../../model/rir.ts";
 import { numeral, radius, type } from "../../theme.ts";
 import { Tap } from "../tap.tsx";
 import { themedStyles, useStyles } from "../themed.ts";
 
 /**
  * Reps in reserve as one strip of whole numbers, 0 to 4 and 5+. A number records it; 5+ opens the
- * pad on the set's RIR (5 when it has none) for anything up to 10, recorded only on Done. `bone`
+ * pad on the set's RIR (5 when it has none) for anything up to 10, recorded only on Done. RPE works
+ * the same way with 6−, 7 to 10 in half steps: 6− opens the pad (on 6 when the set has none) for any
+ * RPE from 1 to 10. `bone`
  * draws it as the top band of the rest timer, in the timer's ink over its draining fill; `plain` is
  * a joined strip on the dock or under a row.
  */
@@ -24,7 +26,7 @@ export function RirPicks({
   tone: "bone" | "plain";
   /** "Reps in reserve for set 2" */
   label: string;
-  /** The set's RIR now, to show which pick it is. */
+  /** The set's effort now, to show which pick it is. */
   value: number | null;
   scale?: EffortScale;
   target?: number | null;
@@ -33,8 +35,10 @@ export function RirPicks({
 }) {
   const styles = useStyles(sheet);
   const bone = tone === "bone";
-  const chosen = value === null || scale === "rpe" ? value : Math.min(value, 5);
-  const planned = target == null || scale === "rpe" ? target : Math.min(target, 5);
+  const chosen = value === null ? null : effortPick(value, scale);
+  const planned = target == null ? null : effortPick(target, scale);
+  const picks: readonly number[] = scale === "rpe" ? RPE_PICKS : RIR_PICKS;
+  const morePick = scale === "rpe" ? RPE_PICKS[0] : RIR_PICKS[RIR_PICKS.length - 1];
   return (
     <View
       role="group"
@@ -42,8 +46,8 @@ export function RirPicks({
       accessibilityLabel={label}
       style={bone ? styles.band : styles.strip}
     >
-      {(scale === "rpe" ? RPE_VALUES : RIR_PICKS).map((pick, i) => {
-        const more = scale === "rir" && pick === 5;
+      {picks.map((pick, i) => {
+        const more = pick === morePick;
         const on = chosen === pick;
         return (
           <Tap
@@ -51,7 +55,9 @@ export function RirPicks({
             accessibilityRole="button"
             accessibilityLabel={
               more
-                ? "5 or more: opens the number pad"
+                ? scale === "rpe"
+                  ? "6 or less: opens the number pad"
+                  : "5 or more: opens the number pad"
                 : scale === "rpe"
                   ? `RPE ${pick}`
                   : `${pick} reps in reserve`
@@ -72,7 +78,11 @@ export function RirPicks({
               ]}
             >
               {pick}
-              {more ? <Text style={[styles.plus, bone ? styles.plusBone : null]}>+</Text> : null}
+              {more ? (
+                <Text style={[styles.plus, bone ? styles.plusBone : null]}>
+                  {scale === "rpe" ? "−" : "+"}
+                </Text>
+              ) : null}
             </Text>
           </Tap>
         );
