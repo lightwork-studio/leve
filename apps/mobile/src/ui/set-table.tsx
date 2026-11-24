@@ -1,7 +1,8 @@
-import type { SetMetric, WeightUnit } from "@leve/core";
+import { EFFORT_SCALES, type EffortScale, type SetMetric, type WeightUnit } from "@leve/core";
 import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 import { newId } from "../data/ids.ts";
+import { effortLabel, effortValue } from "../model/effort.ts";
 import { emptyWorkoutSet } from "../model/live.ts";
 import { measurementName, missingMeasurements } from "../model/log-values.ts";
 import type { RecordedSet } from "../model/past-workouts.ts";
@@ -30,6 +31,7 @@ export function SetTable({
   addTo,
   unit,
   prefs,
+  effortScale,
 }: {
   workoutId: string;
   type: string;
@@ -38,6 +40,7 @@ export function SetTable({
   sets: RecordedSet[];
   unit: WeightUnit;
   prefs: DistancePreferences;
+  effortScale?: EffortScale | null | undefined;
 }) {
   const styles = useStyles(sheet);
   const c = useColors();
@@ -49,7 +52,9 @@ export function SetTable({
   }, [selected?.needsSyncReview]);
   const cols = setColumns(type, unit);
   const numbers = setNumbers(sets);
-  const showReserve = sets.some(({ content }) => content.repsInReserve != null);
+  const effortColumns = (effortScale ? [effortScale] : EFFORT_SCALES).filter((scale) =>
+    sets.some(({ content }) => effortValue(content, scale) !== null),
+  );
   const showEstimate = type === "weight_reps";
   return (
     <View>
@@ -60,11 +65,15 @@ export function SetTable({
             {col.heading}
           </Text>
         ))}
-        {showReserve && (
-          <Text accessibilityLabel="Reps in reserve" style={[styles.headCell, styles.valueCol]}>
-            RIR
+        {effortColumns.map((scale) => (
+          <Text
+            key={scale}
+            accessibilityLabel={scale === "rir" ? "Reps in reserve" : "RPE"}
+            style={[styles.headCell, styles.valueCol]}
+          >
+            {effortLabel(scale)}
           </Text>
-        )}
+        ))}
         {showEstimate && (
           <Text
             accessibilityLabel="Estimated one-rep max"
@@ -124,11 +133,11 @@ export function SetTable({
                   : setCell(set.content, col.metric, unit, prefs)}
               </Text>
             ))}
-            {showReserve && (
-              <Text style={[styles.value, styles.valueCol]}>
-                {set.content.repsInReserve ?? "–"}
+            {effortColumns.map((scale) => (
+              <Text key={scale} style={[styles.value, styles.valueCol]}>
+                {effortValue(set.content, scale) ?? "–"}
               </Text>
-            )}
+            ))}
             {showEstimate && (
               <Text style={[styles.estimate, styles.valueCol, styles.end, !done && styles.skipped]}>
                 {estimateText(

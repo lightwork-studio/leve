@@ -158,7 +158,15 @@ describe.each(cases)("server $server × archived peer $peer", (matrixCase) => {
   const S1 = "s-1";
   const S2 = "s-2";
   const contents = (): [string, string, Json][] => [
-    ["workout", W, workout("Legs", { endedAt: ENDED, description: "Heavy" })],
+    [
+      "workout",
+      W,
+      workout("Legs", {
+        endedAt: ENDED,
+        description: "Heavy",
+        initialPlan: { title: "Legs", effortScale: "rpe", exercises: [] },
+      }),
+    ],
     [
       "workout_exercise",
       E,
@@ -205,6 +213,7 @@ describe.each(cases)("server $server × archived peer $peer", (matrixCase) => {
       "r-1",
       {
         title: "Upper A",
+        effortScale: "rir",
         notes: "",
         folderId: "f-1",
         position: 1,
@@ -230,6 +239,7 @@ describe.each(cases)("server $server × archived peer $peer", (matrixCase) => {
                 durationSeconds: null,
                 count: null,
                 rpe: null,
+                repsInReserve: 0,
               },
             ],
           },

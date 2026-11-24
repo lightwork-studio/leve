@@ -28,6 +28,7 @@ import {
   WEEKDAY_CHOICES,
   WEIGHT_CHOICES,
 } from "../src/data/settings-actions.ts";
+import { saveShowTargets, useShowTargets } from "../src/data/show-targets.ts";
 import { canChangeTrackRir, useTrackRir } from "../src/data/track-rir.ts";
 import { font, gutter, numeral, radius, space, type } from "../src/theme.ts";
 import { ActionSheet, useConfirmation } from "../src/ui/action-sheet.tsx";
@@ -107,6 +108,7 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const [problem, setProblem] = useState<string | null>(null);
   const [trackRir, setTrackRir] = useTrackRir();
+  const showTargets = useShowTargets();
   const appearance = useAppearanceSetting();
   const buildDetails = [
     `version ${VERSION}`,
@@ -275,8 +277,8 @@ export default function SettingsScreen() {
               {/* Hidden while the connected server can't keep the setting. */}
               {canChangeTrackRir(store) && (
                 <ToggleRow
-                  label="Track RIR"
-                  hint="Reps in reserve, asked after each set"
+                  label="Ask for effort"
+                  hint="An optional prompt after each working set"
                   on={trackRir}
                   onChange={(on) => {
                     try {
@@ -290,6 +292,13 @@ export default function SettingsScreen() {
                   divider
                 />
               )}
+              <ToggleRow
+                label="Show targets"
+                hint="Show routine targets under set values"
+                on={showTargets}
+                onChange={saveShowTargets}
+                divider
+              />
               <ToggleRow
                 label="Warm-ups in stats"
                 hint="Count warm-up sets in volume and set totals"

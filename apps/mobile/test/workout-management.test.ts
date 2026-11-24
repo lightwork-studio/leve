@@ -31,6 +31,7 @@ import {
 import { restTimer } from "../src/data/rest-timer.ts";
 import { createRoutine, writePlan } from "../src/data/routine-actions.ts";
 import { saveSettings } from "../src/data/settings-actions.ts";
+import { saveShowTargets } from "../src/data/show-targets.ts";
 import {
   addExercise,
   addExerciseNote,
@@ -370,6 +371,7 @@ beforeEach(async () => {
   historyVersion = 0;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   store = await openWorkoutStore();
+  saveShowTargets(true);
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -423,8 +425,9 @@ async function typeInto(field: string, text: string) {
   }
 }
 /** What a set's field shows. */
-const fieldText = (field: string) =>
-  host.querySelector(`button[aria-label="${field}"]`)?.textContent ?? null;
+const field = (name: string) => host.querySelector(`button[aria-label="${name}"]`);
+const fieldText = (name: string) => field(name)?.firstElementChild?.textContent ?? null;
+const fieldTarget = (name: string) => field(name)?.children[1]?.textContent || null;
 
 it("keeps a note draft focused while its sheet adjusts and skips the same workout rest", async () => {
   const id = beginWorkout(store);
@@ -1797,21 +1800,31 @@ it("uses previous values and routine suggestions without a separate target capti
   const render = () => act(() => root.render(h(ActiveWorkoutScreen)));
   await render();
   expect(host.textContent).toContain("92.5 × 6");
+  expect(fieldTarget("kg for set 1")).toBe("40");
+  expect(fieldTarget("reps for set 1")).toBe("8–10");
+  expect(fieldTarget("kg for set 2")).toBe("0");
+  expect(fieldTarget("reps for set 2")).toBe("10–12");
+  expect(fieldText("reps for set 2")).toBe("10");
+  await act(() => saveShowTargets(false));
+  expect(fieldTarget("kg for set 1")).toBeNull();
+  expect(fieldTarget("reps for set 1")).toBeNull();
   expect(fieldText("kg for set 1")).toBe("92.5");
   expect(fieldText("reps for set 1")).toBe("6");
   expect(fieldText("kg for set 2")).toBe("0");
-  expect(fieldText("reps for set 2")).toBe("10–12");
   expect(host.textContent).not.toMatch(/\bTarget\b/);
+  await act(() => saveShowTargets(true));
   change((db) => saveSettings(db, { weightUnit: "lbs" }));
   await render();
-  expect(fieldText("lbs for set 2")).toBe("0");
+  expect(fieldTarget("lbs for set 1")).toBe("88.2");
+  expect(fieldTarget("reps for set 1")).toBe("8–10");
   await press("Log set 1");
   await render();
   expect(readWorkoutTree(store, workout)?.entries[0]?.sets[0]?.content).toMatchObject({
     weightKg: 92.5,
     reps: 6,
   });
-  expect(host.textContent).not.toMatch(/\bTarget\b/);
+  expect(fieldTarget("lbs for set 1")).toBe("88.2");
+  expect(fieldTarget("lbs for set 2")).toBe("0");
 });
 
 it("keeps previous running values and the next set’s planned duration in the fields", async () => {
@@ -1842,20 +1855,19 @@ it("keeps previous running values and the next set’s planned duration in the f
   const workout = beginWorkout(store, routine);
   const render = () => act(() => root.render(h(ActiveWorkoutScreen)));
   await render();
-  expect(fieldText("km for set 1")).toBe("2");
-  expect(fieldText("time for set 1")).toBe("15:00");
-  expect(fieldText("time for set 2")).toBe("1:37");
-  expect(host.textContent).not.toMatch(/\bTarget\b/);
+  expect(fieldTarget("km for set 1")).toBe("1.2");
+  expect(fieldTarget("time for set 1")).toBe("5:30");
+  expect(fieldTarget("time for set 2")).toBe("1:37");
   await press("Distance in km. Switch to m");
-  expect(fieldText("m for set 1")).toBe("2000");
+  expect(fieldTarget("m for set 1")).toBe("1200");
   await press("Log set 1");
   await render();
   expect(readWorkoutTree(store, workout)?.entries[0]?.sets[0]?.content).toMatchObject({
     distanceMeters: 2000,
     durationSeconds: 900,
   });
-  expect(fieldText("time for set 2")).toBe("1:37");
-  expect(host.textContent).not.toMatch(/\bTarget\b/);
+  expect(fieldTarget("time for set 2")).toBe("1:37");
+  expect(fieldTarget("m for set 1")).toBe("1200");
 });
 
 it.each([
@@ -1863,7 +1875,7 @@ it.each([
   ["floors_duration", "1", 0, 0],
   ["steps_duration", "12", null, 12],
 ] as const)(
-  "suggests the last logged count or falls back to the routine for %s",
+  "shows the planned count and reuses the last logged count for %s",
   async (type, count, previousCount, expectedCount) => {
     const exercise = { id: type, name: "Climb", type };
     const previous = beginWorkout(store);
@@ -1887,6 +1899,8 @@ it.each([
     );
     const workout = beginWorkout(store, routine);
     await act(() => root.render(h(ActiveWorkoutScreen)));
+    expect(fieldTarget("count for set 1")).toBe(count);
+    expect(fieldTarget("time for set 1")).toBe("0:30");
     expect(host.textContent).toContain(`${previousCount ?? "–"} × 1:10`);
     expect(fieldText("count for set 1")).toBe(String(expectedCount));
     await press("Log set 1");
@@ -1976,14 +1990,274 @@ it("omits the planned effort caption and logs effort only when entered", async (
   store.put("routine", "effort", { ...routine, exercises: [] });
   const render = () => act(() => root.render(h(ActiveWorkoutScreen)));
   await render();
-  expect(host.textContent).not.toMatch(/\bTarget RPE\b/);
+  expect(fieldTarget("RPE for set 1")).toBe("7.5");
+  expect(fieldTarget("RPE for set 2")).toBe("8");
+  expect(field("RPE for set 1")?.textContent).toBe("–7.5");
   await press("Log set 1");
   await render();
-  expect(host.textContent).not.toMatch(/\bTarget RPE\b/);
+  expect(fieldTarget("RPE for set 1")).toBe("7.5");
+  expect(fieldTarget("RPE for set 2")).toBe("8");
   const completed = readWorkoutTree(store, workout)?.entries[0]?.sets[0]?.content;
   expect(completed?.completedAt).toEqual(expect.any(String));
   expect(completed?.rpe).toBeNull();
   expect(completed?.repsInReserve ?? null).toBeNull();
+});
+
+it("keeps the original effort scale and numbers in a running workout and in history", async () => {
+  saveSettings(store, { trackRepsInReserve: true });
+  const routineId = createRoutine(
+    store,
+    "Push A",
+    null,
+    [
+      {
+        id: "bench",
+        exercise: EXERCISES.bench,
+        restSecondsText: "0",
+        sets: [
+          { id: "work1", values: { reps: "10" }, effortText: "2" },
+          { id: "work2", values: { reps: "10" }, effortText: "2" },
+        ],
+      },
+    ],
+    readSettings(store),
+    "",
+    "rir",
+  );
+  const originalId = beginWorkout(store, routineId);
+  const saved = store.get("routine", routineId)?.content;
+  if (!saved) throw Error("Missing routine");
+  // Change the routine while its RIR workout is already running.
+  const exercises = writePlan(
+    [
+      {
+        id: "bench",
+        exercise: EXERCISES.bench,
+        restSecondsText: "60",
+        sets: [{ id: "work1", values: { reps: "10" }, effortText: "8.5" }],
+      },
+    ],
+    readSettings(store),
+    "rpe",
+  );
+  store.put("routine", routineId, { ...saved, effortScale: "rpe", exercises });
+  const live = () => act(() => root.render(h(ActiveWorkoutScreen)));
+  await live();
+  expect(fieldTarget("reps in reserve for set 1")).toBe("2");
+  await press("Log set 1");
+  await press("1 reps in reserve");
+  await press("Log set 2");
+  await press("2 reps in reserve");
+  const original = readWorkoutTree(store, originalId);
+  expect(original?.workout.content.initialPlan?.effortScale).toBe("rir");
+  expect(
+    original?.entries[0]?.sets.map(({ content }) => [content.repsInReserve, content.rpe]),
+  ).toEqual([
+    [1, null],
+    [2, null],
+  ]);
+  const nextId = change((db) => {
+    finishWorkout(db, originalId, { countForRoutine: false });
+    return beginWorkout(db, routineId);
+  });
+  await live();
+  expect(field("reps in reserve for set 1")).toBeNull();
+  expect(fieldTarget("RPE for set 1")).toBe("8.5");
+  await press("Log set 1");
+  expect(field("Skip rest")).not.toBeNull();
+  expect(field("Skip, no RPE for set 1")).not.toBeNull();
+  expect(readWorkoutTree(store, nextId)?.entries[0]?.sets[0]?.content.rpe).toBeNull();
+  await press("RPE 8.5");
+  expect(readWorkoutTree(store, nextId)?.entries[0]?.sets[0]?.content.rpe).toBe(8.5);
+  finishWorkout(store, nextId, { countForRoutine: false });
+  detailId = originalId;
+  await act(() => root.render(h(WorkoutDetailScreen)));
+  expect(host.textContent).toContain("RIR");
+  expect(host.textContent).not.toContain("RPE");
+  await press("Edit set 2");
+  expect(host.querySelector<HTMLInputElement>('input[aria-label="Reps in reserve"]')?.value).toBe(
+    "2",
+  );
+  await act(() => root.render(null));
+  detailId = nextId;
+  await act(() => root.render(h(WorkoutDetailScreen)));
+  expect(host.textContent).toContain("RPE");
+  expect(host.textContent).not.toContain("RIR");
+  expect(host.textContent).toContain("8.5");
+});
+
+it("shows planned effort in the dock and can record actual effort with captions off", async () => {
+  const routine = createRoutine(
+    store,
+    "Push",
+    null,
+    [
+      {
+        id: "bench",
+        exercise: EXERCISES.bench,
+        restSecondsText: "0",
+        sets: [
+          { id: "work", values: { reps: "8" }, effortText: "8.5" },
+          { id: "next", values: { reps: "8" }, effortText: "7.5" },
+        ],
+      },
+    ],
+    readSettings(store),
+    "",
+    "rpe",
+  );
+  const workout = beginWorkout(store, routine);
+  await act(() => root.render(h(ActiveWorkoutScreen)));
+  expect(field("RPE in dock")?.textContent).toBe("RPE–8.5");
+  expect(field("RPE 8.5")).toBeNull();
+  await press("Bench Press");
+  expect(field("reps for set 1")).toBeNull();
+  await press("RPE in dock");
+  await press("RPE 7.5");
+  expect(readWorkoutTree(store, workout)?.entries[0]?.sets[0]?.content.rpe).toBe(7.5);
+  expect(field("Log set 1 of Bench Press")).not.toBeNull();
+  await press("RPE in dock");
+  await press("Clear effort");
+  await press("Bench Press");
+  await press("reps for set 2");
+  await press("Done typing");
+  expect(field("RPE in dock")?.textContent).toBe("RPE–7.5");
+  await act(() => saveShowTargets(false));
+  expect(field("RPE in dock")).toBeNull();
+  await press("Log set 1");
+  expect(readWorkoutTree(store, workout)?.entries[0]?.sets[0]?.content.rpe).toBeNull();
+  expect(field("RPE for set 1")).toBeNull();
+  expect(field("RPE 8.5")).toBeNull();
+  await press("Edit set 1");
+  await press("Edit RPE");
+  await press("RPE 8.5");
+  expect(readWorkoutTree(store, workout)?.entries[0]?.sets[0]?.content.rpe).toBe(8.5);
+  expect(fieldText("RPE for set 1")).toBe("8.5");
+});
+
+it("shows a legacy RPE target beside the actual RIR without reinterpreting either", async () => {
+  const routine = createRoutine(
+    store,
+    "Previous build",
+    null,
+    [
+      {
+        id: "bench",
+        exercise: EXERCISES.bench,
+        sets: [{ id: "work", values: { reps: "8" }, effortText: "8.5" }],
+      },
+    ],
+    readSettings(store),
+    "",
+    "rpe",
+  );
+  const workout = beginWorkout(store, routine);
+  const record = store.get("workout", workout)?.content;
+  const plan = record?.initialPlan;
+  if (!record || !plan || typeof plan !== "object" || !("effortScale" in plan))
+    throw Error("Missing original plan");
+  const { effortScale: _scale, ...legacyPlan } = plan;
+  store.put("workout", workout, { ...record, initialPlan: legacyPlan });
+  const logged = readWorkoutTree(store, workout)?.entries[0]?.sets[0];
+  if (!logged) throw Error("Missing legacy set");
+  logSet(store, logged.id, { reps: 8, repsInReserve: 1 });
+  await act(() => root.render(h(ActiveWorkoutScreen)));
+  expect(fieldText("reps in reserve for set 1")).toBe("1");
+  expect(fieldTarget("reps in reserve for set 1")).toBe("RPE 8.5");
+});
+
+it("shows the original scale of each logged effort in an older running workout", async () => {
+  const workout = beginWorkout(store);
+  const entry = addExercise(store, workout, EXERCISES.bench, 0);
+  const first = readWorkoutTree(store, workout)?.entries[0]?.sets[0];
+  if (!first) throw Error("Missing legacy set");
+  const second = addSet(store, entry);
+  logSet(store, first.id, { reps: 8, rpe: 8.5 });
+  logSet(store, second, { reps: 8, repsInReserve: 0, rpe: 8 });
+  await act(() => root.render(h(ActiveWorkoutScreen)));
+  expect(fieldText("RPE for set 1")).toBe("RPE 8.5");
+  expect(field("reps in reserve for set 2")?.textContent).toBe("RIR 0RPE 8");
+  await press("RPE for set 1");
+  await press("RPE 9");
+  expect(readWorkoutTree(store, workout)?.entries[0]?.sets[0]?.content.rpe).toBe(9);
+  expect(fieldText("RPE for set 1")).toBe("RPE 9");
+});
+
+it("shows a factual top-of-range cue only after the original working sets all qualify", async () => {
+  const routine = createRoutine(
+    store,
+    "Range day",
+    null,
+    [
+      {
+        id: "bench",
+        exercise: EXERCISES.bench,
+        restSecondsText: "0",
+        useRepRange: true,
+        sets: [
+          { id: "warmup", type: "warmup", values: { reps: "5" } },
+          { id: "work1", values: { repRangeMin: "8", repRangeMax: "12" } },
+          { id: "work2", type: "failure", values: { repRangeMin: "15", repRangeMax: "15" } },
+          { id: "drop", type: "drop", values: { repRangeMin: "8", repRangeMax: "12" } },
+        ],
+      },
+    ],
+    readSettings(store),
+  );
+  const workout = beginWorkout(store, routine);
+  const tree = readWorkoutTree(store, workout);
+  const [entry] = tree?.entries ?? [];
+  const [, first, second] = entry?.sets ?? [];
+  if (!entry || !first || !second) throw Error("Missing planned work");
+  logSet(store, first.id, { reps: 12 });
+  logSet(store, second.id, { reps: 14 });
+  const extra = addSet(store, entry.entry.id);
+  logSet(store, extra, { reps: 20 });
+  const live = () => act(() => root.render(h(ActiveWorkoutScreen)));
+  await live();
+  expect(host.textContent).not.toContain("Top of range");
+  change((db) => updateSet(db, second.id, { reps: 15 }), "active-workout");
+  await live();
+  expect(host.textContent).toContain("Top of range in all 2 sets");
+  change((db) => {
+    finishWorkout(db, workout, { countForRoutine: false });
+    beginWorkout(db, routine);
+  });
+  await live();
+  expect(host.textContent).toContain("Last time · Top of range in all 2 sets");
+  store.applyPushResults(
+    store.prepareSubmissions("1.0").map(({ submission }, i) => ({
+      submissionId: submission.submissionId,
+      status: "accepted",
+      revision: i + 1,
+    })),
+  );
+  const synced = store.get("workout_set", second.id)?.server?.content;
+  if (!synced) throw Error("Missing acknowledged set");
+  updateSet(store, second.id, { reps: 16 });
+  store.applyPull(
+    [
+      {
+        kind: "workout_set",
+        id: second.id,
+        state: "live",
+        revision: 50,
+        content: { ...synced, reps: 14 },
+      },
+    ],
+    50,
+  );
+  expect(store.get("workout_set", second.id)?.status).toBe("conflict");
+  historyVersion += 1;
+  await live();
+  expect(host.textContent).not.toContain("Last time · Top of range");
+  store.resetForServerRestore();
+  store.completeRestore();
+  expect(store.get("workout_set", second.id)).toMatchObject({ status: "conflict", server: null });
+  historyVersion += 1;
+  await live();
+  expect(field("Log set 1")).not.toBeNull();
+  expect(host.textContent).not.toContain("Last time · Top of range");
 });
 
 it("shows a routine exercise cue and saves an additional note only on that workout entry", async () => {
@@ -1995,6 +2269,7 @@ it("shows a routine exercise cue and saves an additional note only on that worko
   );
   const template = {
     title: "Strength",
+    effortScale: null,
     position: 1,
     folderId: null,
     notes: "",
@@ -3487,7 +3762,8 @@ describe("the minimised workout", () => {
 
     const workout = beginWorkout(store);
     addExercise(store, workout, EXERCISES.bench, 0);
-    addExercise(store, workout, EXERCISES.squat, 0);
+    const squat = addExercise(store, workout, EXERCISES.squat, 0);
+    for (let i = 0; i < 10; i++) addSet(store, squat);
     const mini = () => act(() => root.render(h(MiniPlayer)));
     await mini();
     expect(host.textContent).toContain("Bench Press · 80 × 8");
@@ -3495,6 +3771,7 @@ describe("the minimised workout", () => {
     await mini();
     expect(host.textContent).toContain("Squat · 105 × 5");
     const list = vi.spyOn(store, "list");
+    const syncState = vi.spyOn(store, "syncState");
     settled = false;
     try {
       await press("Resume Workout");
@@ -3511,6 +3788,7 @@ describe("the minimised workout", () => {
         false,
       );
       expect(list).not.toHaveBeenCalled();
+      expect(syncState.mock.calls.length).toBeLessThanOrEqual(6);
 
       settled = true;
       await act(() => root.render(h(ActiveWorkoutScreen)));
@@ -3518,6 +3796,7 @@ describe("the minimised workout", () => {
     } finally {
       settled = true;
       list.mockRestore();
+      syncState.mockRestore();
     }
   });
 

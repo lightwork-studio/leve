@@ -63,7 +63,7 @@ export function useWorkoutPlayer() {
         target.setIndex,
         drafts,
         unit,
-        previous?.get(target.entry.entry.id)?.[target.setIndex],
+        previous?.get(target.entry.entry.id)?.sets[target.setIndex],
       )
     : undefined;
   const metrics = target ? metricsOf(target.entry.entry.content.exerciseType) : [];
@@ -90,7 +90,7 @@ export function useWorkoutPlayer() {
       metric === "duration" ? view.text : `${view.text} ${fieldUnit(metric, unit, distanceUnit)}`,
     )
     .join(metrics.includes("reps") ? " × " : " · ");
-  const last = target && previous?.get(target.entry.entry.id)?.[target.setIndex];
+  const last = target && previous?.get(target.entry.entry.id)?.sets[target.setIndex];
   const lastValues = last
     ? metrics
         .map((metric) => show(metric, previousValue(last, metric), unit, distanceUnit) || "–")
