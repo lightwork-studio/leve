@@ -275,12 +275,12 @@ it("changes the other settings from their rows", async () => {
 
 it("keeps Track RIR in the synced settings, off until it is turned on", async () => {
   await render();
-  const toggle = () => byLabel("Track RIR");
+  const toggle = () => byLabel("Ask for effort");
   expect(toggle()?.getAttribute("aria-checked")).toBe("false");
-  expect(toggle()?.textContent).toContain("Reps in reserve, asked after each set");
+  expect(toggle()?.textContent).toContain("An optional prompt after each working set");
   // Showing the switch off writes nothing.
   expect(store.get("settings", "settings")).toBeNull();
-  await press("Track RIR");
+  await press("Ask for effort");
   expect(toggle()?.getAttribute("aria-checked")).toBe("true");
   expect(readTrackRir(store)).toBe(true);
   // Saved in the settings record, waiting to go to the server, and not on the device alone.
@@ -289,7 +289,7 @@ it("keeps Track RIR in the synced settings, off until it is turned on", async ()
     content: { trackRepsInReserve: true },
   });
   expect(files.size).toBe(0);
-  await press("Track RIR");
+  await press("Ask for effort");
   expect(toggle()?.getAttribute("aria-checked")).toBe("false");
   expect(store.get("settings", "settings")?.content?.trackRepsInReserve).toBe(false);
 });
@@ -298,11 +298,11 @@ it("shows Track RIR as the synced settings record says", async () => {
   const settings = settingsContent(null, {}) as unknown as JsonObject;
   store.put("settings", "settings", { ...settings, trackRepsInReserve: true });
   await render();
-  expect(byLabel("Track RIR")?.getAttribute("aria-checked")).toBe("true");
+  expect(byLabel("Ask for effort")?.getAttribute("aria-checked")).toBe("true");
   store.put("settings", "settings", { ...settings, trackRepsInReserve: false });
   version++;
   await render();
-  expect(byLabel("Track RIR")?.getAttribute("aria-checked")).toBe("false");
+  expect(byLabel("Ask for effort")?.getAttribute("aria-checked")).toBe("false");
 });
 
 it("no longer reads Track RIR from where earlier builds kept it on this device", async () => {
@@ -310,10 +310,10 @@ it("no longer reads Track RIR from where earlier builds kept it on this device",
   const saved = JSON.stringify({ trackRir: true, futureSetting: "keep" });
   files.set(path, saved);
   await render();
-  expect(byLabel("Track RIR")?.getAttribute("aria-checked")).toBe("false");
+  expect(byLabel("Ask for effort")?.getAttribute("aria-checked")).toBe("false");
   expect(readTrackRir(store)).toBe(false);
   expect(store.get("settings", "settings")).toBeNull();
-  await press("Track RIR");
+  await press("Ask for effort");
   expect(readTrackRir(store)).toBe(true);
   // The old copy is left as it was, and nothing reads it.
   expect(files.get(path)).toBe(saved);
@@ -333,7 +333,7 @@ it("hides Track RIR while the connected server can't keep it", async () => {
   store.setNegotiated("1.2", []);
   version++;
   await render();
-  expect(byLabel("Track RIR")).toBeNull();
+  expect(byLabel("Ask for effort")).toBeNull();
   expect(byLabel("Warm-ups in stats")).not.toBeNull();
   const before = store.get("settings", "settings");
   expect(() => saveTrackRir(store, false)).toThrow(SettingsError);
@@ -346,13 +346,13 @@ it("hides Track RIR while the connected server can't keep it", async () => {
   version++;
   await render();
   expect(store.syncState().refreshFrom).toBe("1.2");
-  expect(byLabel("Track RIR")).toBeNull();
+  expect(byLabel("Ask for effort")).toBeNull();
   const { cursor, lineage } = store.syncState();
   store.applyPull([], cursor, { release: "2.0", lastPage: true, cursor, lineage });
   version++;
   await render();
-  expect(byLabel("Track RIR")?.getAttribute("aria-checked")).toBe("true");
-  await press("Track RIR");
+  expect(byLabel("Ask for effort")?.getAttribute("aria-checked")).toBe("true");
+  await press("Ask for effort");
   expect(readTrackRir(store)).toBe(false);
 });
 
@@ -425,7 +425,7 @@ it("starts again only once the action sheet is confirmed", async () => {
 it("starts Track RIR off again with fresh data, without writing settings nobody chose", async () => {
   saveTrackRir(store, true);
   await render();
-  expect(byLabel("Track RIR")?.getAttribute("aria-checked")).toBe("true");
+  expect(byLabel("Ask for effort")?.getAttribute("aria-checked")).toBe("true");
   const old = store;
   // Starting again deletes the database and opens a fresh one.
   reset.mockImplementationOnce(async () => {
@@ -445,7 +445,7 @@ it("starts Track RIR off again with fresh data, without writing settings nobody 
   await act(async () => confirm?.click());
   await render();
   expect(store).not.toBe(old);
-  expect(byLabel("Track RIR")?.getAttribute("aria-checked")).toBe("false");
+  expect(byLabel("Ask for effort")?.getAttribute("aria-checked")).toBe("false");
   expect(store.get("settings", "settings")).toBeNull();
 });
 

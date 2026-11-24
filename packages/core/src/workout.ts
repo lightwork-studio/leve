@@ -12,6 +12,8 @@ export type SetType = (typeof SET_TYPES)[number];
 
 /** RPE values a user can pick. */
 export const RPE_VALUES = [6, 7, 7.5, 8, 8.5, 9, 9.5, 10] as const;
+export const EFFORT_SCALES = ["rir", "rpe"] as const;
+export type EffortScale = (typeof EFFORT_SCALES)[number];
 
 /** Rest-timer presets in seconds. Individual exercises also support custom intervals. Zero means off. */
 export const REST_TIMER_VALUES: readonly number[] = [

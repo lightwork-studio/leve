@@ -73,7 +73,13 @@ export class Peer1 extends HistoricalPeer {
   override put(kind: string, id: string, content: JsonObject, submissionId?: string): JsonObject {
     const fields = this.contract.kinds[kind]?.content.properties ?? {};
     const complete = { ...content };
-    for (const field of ["initialPlan", "planSlot", "repsInReserve", "trackRepsInReserve"]) {
+    for (const field of [
+      "effortScale",
+      "initialPlan",
+      "planSlot",
+      "repsInReserve",
+      "trackRepsInReserve",
+    ]) {
       if (Object.hasOwn(fields, field) && !Object.hasOwn(complete, field)) complete[field] = null;
     }
     return super.put(kind, id, complete, submissionId);

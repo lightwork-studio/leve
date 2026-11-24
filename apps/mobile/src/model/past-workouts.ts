@@ -30,7 +30,10 @@ export interface SummaryBar {
   warmup: boolean;
 }
 
-export type RecordedSet = WithId<WorkoutSet> & { needsSyncReview?: true };
+export type RecordedSet = WithId<WorkoutSet> & {
+  hasSyncConflict?: true;
+  needsSyncReview?: true;
+};
 
 export interface WorkoutTree {
   workout: WithId<Workout>;

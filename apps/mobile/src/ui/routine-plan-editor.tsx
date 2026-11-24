@@ -1,4 +1,11 @@
-import { isRepBased, LIMITS, type SetMetric, type SetType } from "@leve/core";
+import {
+  EFFORT_SCALES,
+  type EffortScale,
+  isRepBased,
+  LIMITS,
+  type SetMetric,
+  type SetType,
+} from "@leve/core";
 import {
   type Dispatch,
   type ReactNode,
@@ -10,11 +17,13 @@ import {
 import { PanResponder, Platform, Text, TextInput, View } from "react-native";
 import { newId } from "../data/ids.ts";
 import {
+  changePlanEffort,
   MAX_EXERCISE_CUES,
   type PlannedCue,
   type PlannedExercise,
 } from "../data/routine-actions.ts";
 import { parseRestSeconds } from "../data/settings-actions.ts";
+import { effortLabel, effortValue } from "../model/effort.ts";
 import { dropPlace, moveBlock, orderBlocks, shiftExercise } from "../model/plan-order.ts";
 import { leaveSuperset, pairWithPrevious, supersetLabels } from "../model/supersets.ts";
 import type { Settings } from "../model/types.ts";
@@ -22,7 +31,8 @@ import { font, numeral, radius, space, touch, type } from "../theme.ts";
 import { ActionSheet } from "./action-sheet.tsx";
 import { BottomSheet } from "./bottom-sheet.tsx";
 import { Button } from "./buttons.tsx";
-import { MenuRow } from "./choice-row.tsx";
+import { ChoiceRow, MenuRow } from "./choice-row.tsx";
+import { Dialog } from "./dialog.tsx";
 import { ExercisePicker } from "./exercise-picker.tsx";
 import { TextArea, TitleField } from "./field.tsx";
 import { announce } from "./focus.ts";
@@ -233,6 +243,8 @@ export function ReorderTile({
 export function RoutinePlanEditor({
   plan,
   setPlan,
+  effortScale,
+  setEffortScale,
   settings,
   reordering,
   onReorder,
@@ -240,6 +252,8 @@ export function RoutinePlanEditor({
 }: {
   plan: PlannedExercise[];
   setPlan: Dispatch<SetStateAction<PlannedExercise[]>>;
+  effortScale: EffortScale;
+  setEffortScale: (scale: EffortScale) => void;
   settings: Settings;
   reordering: boolean;
   onReorder: () => void;
@@ -249,6 +263,23 @@ export function RoutinePlanEditor({
   const c = useColors();
   const groups = supersetLabels(plan.map((entry) => entry.supersetId));
   const [picking, setPicking] = useState(false);
+  const [pendingScale, setPendingScale] = useState<EffortScale | null>(null);
+  const [effortError, setEffortError] = useState("");
+  const switchScale = (next: EffortScale, confirmed = false) => {
+    try {
+      const converted = changePlanEffort(plan, effortScale, next);
+      if (converted.cleared && !confirmed) {
+        setPendingScale(next);
+        return;
+      }
+      setPlan(converted.next);
+      setEffortScale(next);
+      setPendingScale(null);
+      setEffortError("");
+    } catch (problem) {
+      setEffortError((problem as Error).message);
+    }
+  };
   const edit = (id: string, fn: (entry: PlannedExercise) => PlannedExercise) =>
     setPlan((entries) => entries.map((entry) => (entry.id === id ? fn(entry) : entry)));
 
@@ -265,6 +296,32 @@ export function RoutinePlanEditor({
 
   return (
     <>
+      <View style={styles.card}>
+        <ChoiceRow
+          label="Effort scale"
+          hint="Applies to new workouts from this routine"
+          choices={EFFORT_SCALES.map((value) => ({ value, label: effortLabel(value) }))}
+          value={effortScale}
+          onChoose={switchScale}
+        />
+        {effortError && (
+          <Text accessibilityRole="alert" style={styles.effortHelp}>
+            {effortError}
+          </Text>
+        )}
+      </View>
+      {pendingScale && (
+        <Dialog
+          eyebrow={`Switch to ${effortLabel(pendingScale)}`}
+          onClose={() => setPendingScale(null)}
+          confirm={{ label: "Switch scale", onPress: () => switchScale(pendingScale, true) }}
+        >
+          <Text style={styles.effortHelp}>
+            Some effort targets have no exact equivalent. Switching clears those targets from this
+            routine draft.
+          </Text>
+        </Dialog>
+      )}
       {plan.map((entry, index) => (
         <ExerciseBlock
           key={entry.id}
@@ -275,6 +332,7 @@ export function RoutinePlanEditor({
           partner={partnerOf(plan, groups, index)}
           previous={plan[index - 1]}
           settings={settings}
+          effortScale={effortScale}
           edit={(fn) => edit(entry.id, fn)}
           onPair={(previousId) =>
             setPlan((entries) => pairWithPrevious(entries, previousId, entry.id))
@@ -336,6 +394,7 @@ function ExerciseBlock({
   partner,
   previous,
   settings,
+  effortScale,
   edit,
   onPair,
   onLeave,
@@ -349,6 +408,7 @@ function ExerciseBlock({
   partner: string | undefined;
   previous: PlannedExercise | undefined;
   settings: Settings;
+  effortScale: EffortScale;
   edit: (fn: (entry: PlannedExercise) => PlannedExercise) => void;
   onPair: (previousId: string) => void;
   onLeave: () => void;
@@ -498,7 +558,9 @@ function ExerciseBlock({
               {metric === "distance" ? distanceUnit.toUpperCase() : heading}
             </Text>
           ))}
-          {repBased ? <Text style={[styles.colHead, styles.rpeCol]}>RPE</Text> : null}
+          {repBased ? (
+            <Text style={[styles.colHead, styles.rpeCol]}>{effortLabel(effortScale)}</Text>
+          ) : null}
         </View>
         {entry.sets.map((set, i) => {
           const type = typeOf(set);
@@ -566,18 +628,18 @@ function ExerciseBlock({
                 {repBased ? (
                   <View style={styles.rpeCol}>
                     <TextInput
-                      accessibilityLabel={`${name} set ${i + 1} target RPE`}
-                      inputMode="decimal"
+                      accessibilityLabel={`${name} set ${i + 1} target ${effortLabel(effortScale)}`}
+                      inputMode={effortScale === "rir" ? "numeric" : "decimal"}
                       returnKeyType="done"
                       selectTextOnFocus
                       placeholder="—"
                       placeholderTextColor={c.fg3}
                       style={styles.rpe}
-                      value={set.rpeText ?? String(set.original?.rpe ?? "")}
-                      onChangeText={(rpeText) =>
+                      value={set.effortText ?? String(effortValue(set.original, effortScale) ?? "")}
+                      onChangeText={(effortText) =>
                         edit((e) => ({
                           ...e,
-                          sets: e.sets.map((s) => (s.id === set.id ? { ...s, rpeText } : s)),
+                          sets: e.sets.map((s) => (s.id === set.id ? { ...s, effortText } : s)),
                         }))
                       }
                     />
@@ -1076,6 +1138,12 @@ const sheet = themedStyles((c) => ({
   chipCol: { width: 34, alignItems: "center" },
   valueCol: { width: 70 },
   rangeCol: { width: 86 },
+  effortHelp: {
+    ...type.caption,
+    color: c.fg2,
+    paddingHorizontal: space.md,
+    paddingBottom: space.sm,
+  },
   rpeCol: { width: 40, alignItems: "center" },
   range: { flexDirection: "row", alignItems: "center" },
   dash: { ...numeral(18), color: c.fg3, width: 8, textAlign: "center" },

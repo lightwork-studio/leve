@@ -22,6 +22,13 @@ const definition = {
         initialPlan: { ...kinds.workout.fields.initialPlan, since: "1.1" },
       },
     },
+    routine: {
+      ...kinds.routine,
+      fields: {
+        ...kinds.routine.fields,
+        effortScale: { ...kinds.routine.fields.effortScale, since: "2.0" },
+      },
+    },
     workout_set: {
       ...kinds.workout_set,
       fields: {

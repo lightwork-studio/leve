@@ -1,12 +1,12 @@
-import { type ExerciseType, METRICS_BY_TYPE } from "@leve/core";
+import { type EffortScale, type ExerciseType, METRICS_BY_TYPE } from "@leve/core";
+import { effortValue, RIR_MAX, setEffortScale } from "./effort.ts";
 import type { PadKey } from "./inline-edit.ts";
 import type { WorkoutSet } from "./types.ts";
 
 // Reps in reserve (RIR) in the workout in progress: how many more reps a set had left. It is typed
 // as a whole number from 0 to 10, and an empty one stays empty: it never takes last time's value.
 
-/** The most reps in reserve that can be typed. Larger stored values still show as they are. */
-export const RIR_MAX = 10;
+export { RIR_MAX } from "./effort.ts";
 
 /** The picks offered at once; the last stands for "5 or more" and leads on to the pad. */
 export const RIR_PICKS = [0, 1, 2, 3, 4, 5] as const;
@@ -24,11 +24,16 @@ export function asksRir(options: {
   trackRir: boolean;
   canStore: boolean;
   type: string;
-  set: Pick<WorkoutSet, "type" | "repsInReserve">;
+  set: Pick<WorkoutSet, "type" | "repsInReserve"> & Partial<Pick<WorkoutSet, "rpe">>;
+  scale?: EffortScale;
 }): boolean {
-  const { trackRir, canStore, type, set } = options;
+  const { trackRir, canStore, type, set, scale = "rir" } = options;
   return (
-    trackRir && canStore && countsReps(type) && set.type !== "warmup" && set.repsInReserve == null
+    trackRir &&
+    canStore &&
+    countsReps(type) &&
+    set.type !== "warmup" &&
+    effortValue(set, scale) === null
   );
 }
 
@@ -39,10 +44,17 @@ export function asksRir(options: {
 export function showsRirColumn(options: {
   trackRir: boolean;
   type: string;
-  sets: readonly { content: Pick<WorkoutSet, "repsInReserve"> }[];
+  sets: readonly { content: Partial<Pick<WorkoutSet, "repsInReserve" | "rpe">> }[];
+  scale?: EffortScale;
+  hasTarget?: boolean;
 }): boolean {
-  const { trackRir, type, sets } = options;
-  return countsReps(type) && (trackRir || sets.some((set) => set.content.repsInReserve != null));
+  const { trackRir, type, sets, scale, hasTarget } = options;
+  return (
+    countsReps(type) &&
+    (trackRir ||
+      !!hasTarget ||
+      sets.some(({ content }) => effortValue(content, setEffortScale(content, scale)) !== null))
+  );
 }
 
 /**

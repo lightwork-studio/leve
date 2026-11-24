@@ -1,4 +1,5 @@
 import {
+  EFFORT_SCALES,
   EQUIPMENT,
   EXERCISE_TYPES,
   LIMITS,
@@ -64,6 +65,8 @@ const distanceMeters = number({ minimum: 0, maximum: MAX_METRES });
 const durationSeconds = number({ minimum: 0, maximum: MAX_SECONDS });
 const count = integer(0, MAX_COUNT);
 const rpe = enumOf(RPE_VALUES);
+const effortScale = enumOf(EFFORT_SCALES);
+const repsInReserve = integer(0, MAX_REPS);
 const supersetId = integer(0, 1000);
 const restSeconds = integer(0, MAX_REST_SECONDS);
 const exerciseRef = {
@@ -84,9 +87,10 @@ const targetFields = {
   durationSeconds: nullable(durationSeconds),
   count: nullable(count),
   rpe: nullable(rpe),
+  repsInReserve: nullable(repsInReserve),
 };
 
-const routineSet = object({ id: id(), ...targetFields });
+const routineSet = object({ id: id(), ...targetFields }, ["repsInReserve"]);
 
 const routineExercise = object({
   id: id(),
@@ -107,7 +111,7 @@ export const LEVE_CONTRACT_DEFINITION = {
       since: v,
       meanings: {
         initialPlan:
-          "Routine title and ordered exercise and set targets captured at start; null when unknown or unplanned",
+          "Routine title, effort scale, and ordered exercise and set targets captured at start; null when unknown or unplanned",
         title: "Workout name shown in history",
         description: "Free-text notes about the whole workout",
         startedAt: "When the workout started (UTC)",
@@ -118,21 +122,25 @@ export const LEVE_CONTRACT_DEFINITION = {
         initialPlan: {
           since: v,
           schema: nullable(
-            object({
-              title: string({ maxLength: LIMITS.titleLength }),
-              exercises: array(
-                object({
-                  exerciseId: exerciseRef.exerciseId.schema,
-                  exerciseName: exerciseRef.exerciseName.schema,
-                  exerciseType: exerciseRef.exerciseType.schema,
-                  restSeconds,
-                  supersetId: nullable(supersetId),
-                  useRepRange: boolean(),
-                  sets: array(object(targetFields), LIMITS.routineMaxSets),
-                }),
-                LIMITS.routineMaxExercises,
-              ),
-            }),
+            object(
+              {
+                title: string({ maxLength: LIMITS.titleLength }),
+                effortScale,
+                exercises: array(
+                  object({
+                    exerciseId: exerciseRef.exerciseId.schema,
+                    exerciseName: exerciseRef.exerciseName.schema,
+                    exerciseType: exerciseRef.exerciseType.schema,
+                    restSeconds,
+                    supersetId: nullable(supersetId),
+                    useRepRange: boolean(),
+                    sets: array(object(targetFields, ["repsInReserve"]), LIMITS.routineMaxSets),
+                  }),
+                  LIMITS.routineMaxExercises,
+                ),
+              },
+              ["effortScale"],
+            ),
           ),
         },
         title: req(string({ maxLength: LIMITS.titleLength })),
@@ -234,7 +242,7 @@ export const LEVE_CONTRACT_DEFINITION = {
       },
       parent: { kind: "workout_exercise", field: "workoutExerciseId" },
       fields: {
-        repsInReserve: { since: v, schema: nullable(integer(0, MAX_REPS)) },
+        repsInReserve: opt(repsInReserve),
         planSlot: {
           since: v,
           schema: nullable(
@@ -266,14 +274,17 @@ export const LEVE_CONTRACT_DEFINITION = {
         notes: "Free-text notes on the routine",
         folderId: "The folder holding the routine; null when unfiled or the folder is gone",
         position: "Order within its folder; lower first, ties ordered by id",
+        effortScale:
+          "Effort scale for this routine's targets and workouts started from it; absent or null for older routines",
         exercises:
-          "The routine's exercises in order, each with target sets (weights in kilograms, distances in metres, durations in seconds, rep ranges as min/max)",
+          "The routine's exercises in order, each with target sets (weights in kilograms, distances in metres, durations in seconds, rep ranges as min/max, and optional RPE or reps in reserve)",
       },
       fields: {
         title: req(string({ maxLength: LIMITS.titleLength })),
         notes: req(string({ maxLength: LIMITS.descriptionLength })),
         folderId: opt(id()),
         position: req(position),
+        effortScale: opt(effortScale),
         exercises: req(array(routineExercise, LIMITS.routineMaxExercises)),
       },
     },
@@ -332,14 +343,14 @@ export const LEVE_CONTRACT_DEFINITION = {
         measurementUnit: "Unit for body measurements",
         firstWeekday: "First day of the week, 0 = Sunday",
         defaultRestSeconds: "Rest timer for new exercise entries; 0 means off",
-        rpeEnabled: "Whether RPE can be entered on sets",
+        rpeEnabled: "Legacy RPE preference retained for compatibility",
         countWarmups: "Whether warm-up sets count toward volume, set counts and records",
         previousValues:
           "Where 'previous' values come from while logging: any workout or the same routine",
         autoUpdateRoutineValues:
           "After a routine-based workout, copy the logged values back into the routine",
         trackRepsInReserve:
-          "Whether the app asks for reps in reserve after each logged set; null means not set, which reads as off",
+          "Whether the app prompts for effort in the workout's scale after logging a set; null means off",
       },
       singletonId: "settings",
       fields: {
@@ -395,7 +406,7 @@ export const LEVE_CONTRACT_DEFINITION = {
     },
     track_reps_in_reserve: {
       since: v,
-      description: "Choose whether the app asks for reps in reserve after each logged set",
+      description: "Choose whether the app prompts for effort in the workout's scale",
       fields: [["settings", "trackRepsInReserve"]],
     },
     rpe: {

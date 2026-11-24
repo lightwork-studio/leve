@@ -67,6 +67,7 @@
         "id": "routine-1",
         "baseRevision": null,
         "content": {
+          "effortScale": "rir",
           "exercises": [
             {
               "id": "routine-exercise-1",
@@ -88,7 +89,8 @@
                   "distanceMeters": null,
                   "durationSeconds": null,
                   "count": null,
-                  "rpe": null
+                  "rpe": null,
+                  "repsInReserve": 0
                 }
               ]
             }
@@ -139,7 +141,11 @@
         "content": {
           "description": "",
           "endedAt": null,
-          "initialPlan": null,
+          "initialPlan": {
+            "title": "Push day",
+            "effortScale": "rpe",
+            "exercises": []
+          },
           "routineId": null,
           "startedAt": "2026-11-10T18:30:00.000Z",
           "title": "Push day"
@@ -330,7 +336,11 @@
         "content": {
           "description": "",
           "endedAt": null,
-          "initialPlan": null,
+          "initialPlan": {
+            "title": "Push day",
+            "effortScale": "rpe",
+            "exercises": []
+          },
           "routineId": null,
           "startedAt": "2026-11-10T18:30:00.000Z",
           "title": "Push day A"
@@ -394,7 +404,11 @@
           "content": {
             "description": "",
             "endedAt": null,
-            "initialPlan": null,
+            "initialPlan": {
+              "title": "Push day",
+              "effortScale": "rpe",
+              "exercises": []
+            },
             "routineId": null,
             "startedAt": "2026-11-10T18:30:00.000Z",
             "title": "Chest day"
@@ -465,6 +479,7 @@
         "id": "routine-1",
         "revision": 3,
         "content": {
+          "effortScale": "rir",
           "exercises": [
             {
               "id": "routine-exercise-1",
@@ -486,7 +501,8 @@
                   "distanceMeters": null,
                   "durationSeconds": null,
                   "count": null,
-                  "rpe": null
+                  "rpe": null,
+                  "repsInReserve": 0
                 }
               ]
             }
@@ -534,7 +550,11 @@
         "content": {
           "description": "",
           "endedAt": null,
-          "initialPlan": null,
+          "initialPlan": {
+            "title": "Push day",
+            "effortScale": "rpe",
+            "exercises": []
+          },
           "routineId": null,
           "startedAt": "2026-11-10T18:30:00.000Z",
           "title": "Push day"

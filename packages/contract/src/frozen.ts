@@ -35,7 +35,14 @@ export const SAMPLE_CONTENT: Record<string, JsonObject> = {
     createdAt: T,
     reply: null,
   },
-  workout: { title: "Push day", description: "", startedAt: T, endedAt: null, routineId: null },
+  workout: {
+    title: "Push day",
+    description: "",
+    startedAt: T,
+    endedAt: null,
+    routineId: null,
+    initialPlan: { title: "Push day", effortScale: "rpe", exercises: [] },
+  },
   workout_exercise: {
     workoutId: WORKOUT,
     exerciseId: "bench-press-barbell",
@@ -64,6 +71,7 @@ export const SAMPLE_CONTENT: Record<string, JsonObject> = {
     notes: "",
     folderId: null,
     position: 1,
+    effortScale: "rir",
     exercises: [
       {
         id: "routine-exercise-1",
@@ -86,6 +94,7 @@ export const SAMPLE_CONTENT: Record<string, JsonObject> = {
             durationSeconds: null,
             count: null,
             rpe: null,
+            repsInReserve: 0,
           },
         ],
       },

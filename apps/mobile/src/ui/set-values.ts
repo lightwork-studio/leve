@@ -86,8 +86,14 @@ export function sessionSetLabel(
       return value === "—" ? "— distance" : value;
     })
     .join(recordsReps ? " × " : " · ");
-  return recordsReps && set.repsInReserve != null
-    ? `${measures} · ${reserveLabel(set.repsInReserve)}`
+  return recordsReps
+    ? [
+        measures,
+        set.repsInReserve == null ? null : reserveLabel(set.repsInReserve),
+        set.rpe == null ? null : `RPE ${set.rpe}`,
+      ]
+        .filter(Boolean)
+        .join(" · ")
     : measures;
 }
 

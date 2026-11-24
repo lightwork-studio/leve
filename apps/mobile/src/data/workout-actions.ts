@@ -49,14 +49,14 @@ export function beginWorkout(store: DeviceStore, routineId?: string): string {
   return started.workout.id;
 }
 
-export function canRecordSetReserve(store: DeviceStore): boolean {
+export function canRecordSetReserve(store: DeviceStore, scale: "rir" | "rpe" = "rir"): boolean {
   const { account, release, refreshFrom, restoring } = store.syncState();
   return (
     account === null ||
     (!refreshFrom &&
       !restoring &&
       release !== null &&
-      store.contract.featureAvailable("reps_in_reserve", release))
+      store.contract.featureAvailable(scale === "rpe" ? "rpe" : "reps_in_reserve", release))
   );
 }
 
@@ -111,6 +111,8 @@ export function updateSet(
   opened?: OpenedSet,
 ): void {
   checkReserveWrite(store, patch.repsInReserve);
+  if (patch.rpe !== undefined && !canRecordSetReserve(store, "rpe"))
+    throw new WorkoutActionError("Finish syncing with a compatible server to edit RPE.");
   const latest = editableSet(store, setId);
   if (opened) {
     checkSetExercise(store, setId, latest, opened);

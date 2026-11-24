@@ -1,7 +1,7 @@
 import type { SetDistanceUnit, SetMetric } from "@leve/core";
 import type { DeviceStore } from "@leve/storage";
 import { restTimer } from "../../data/rest-timer.ts";
-import { type PreviousSet, previousSets, setLabel, setNumbers } from "../../model/live.ts";
+import { type PreviousExercise, previousExercise, setLabel, setNumbers } from "../../model/live.ts";
 import type { WorkoutTree } from "../../model/past-workouts.ts";
 import type { Settings, WorkoutPlan } from "../../model/types.ts";
 import type { DistancePreferences } from "../format.ts";
@@ -47,7 +47,7 @@ function previousKey(
 
 const previousCache = new WeakMap<
   WorkoutTree[],
-  { key: string; data: Map<string, (PreviousSet | undefined)[]> }
+  { key: string; data: Map<string, PreviousExercise> }
 >();
 
 /** Last time's sets for every exercise of the workout, by entry. */
@@ -56,15 +56,15 @@ export function previousForWorkout(
   tree: WorkoutTree,
   settings: Pick<Settings, "previousValues">,
   plan: WorkoutPlan | null,
-): Map<string, (PreviousSet | undefined)[]> {
+): Map<string, PreviousExercise> {
   const key = previousKey(tree, settings, plan);
   const cached = previousCache.get(history);
   if (cached?.key === key) return cached.data;
-  const map = new Map<string, (PreviousSet | undefined)[]>();
+  const map = new Map<string, PreviousExercise>();
   for (const { entry, sets } of tree.entries) {
     map.set(
       entry.id,
-      previousSets(history, entry.content.exerciseId, {
+      previousExercise(history, entry.content.exerciseId, {
         mode: settings.previousValues,
         routineId: tree.workout.content.routineId,
         exceptWorkoutId: tree.workout.id,

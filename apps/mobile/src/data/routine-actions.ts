@@ -1,6 +1,7 @@
 import type { RecordContent } from "@leve/contract";
-import { LIMITS, RPE_VALUES } from "@leve/core";
+import { type EffortScale, LIMITS } from "@leve/core";
 import type { DeviceStore } from "@leve/storage";
+import { effortValue, equivalentEffort, parseEffort, routineEffortScale } from "../model/effort.ts";
 import { correctionValues, type Draft, parseTyped } from "../model/log-values.ts";
 import type { Settings } from "../model/types.ts";
 import type { BuiltInExercise } from "./exercises.ts";
@@ -30,7 +31,7 @@ export interface PlannedExercise {
     id: string;
     original?: StoredEntry["sets"][number];
     type?: StoredEntry["sets"][number]["type"];
-    rpeText?: string;
+    effortText?: string;
     values: Draft & { repRangeMin?: string; repRangeMax?: string };
   }[];
 }
@@ -42,6 +43,7 @@ export function createRoutine(
   plan: readonly PlannedExercise[],
   settings: Settings,
   notes = "",
+  effortScale = plannedEffortScale(plan),
 ): string {
   const title = name.trim();
   if (!title || title.length > LIMITS.titleLength) {
@@ -52,12 +54,12 @@ export function createRoutine(
     const folder = store.get("routine_folder", folderId);
     if (!folder?.content || folder.deleted) throw new Error("Choose an available folder.");
   }
-  const exercises = writePlan(plan, settings);
+  const exercises = writePlan(plan, settings, effortScale);
   const existing = store.list("routine").filter((r) => r.content?.folderId === folderId);
   const last = existing.at(-1)?.content?.position;
   const position = typeof last === "number" ? Math.min(last + 1, 1e15) : 1;
   const id = newId();
-  store.put("routine", id, { title, folderId, position, notes, exercises });
+  store.put("routine", id, { title, folderId, position, notes, exercises, effortScale });
   return id;
 }
 
@@ -96,16 +98,40 @@ function rangePatch(
   return { repRangeMin, repRangeMax };
 }
 
-function targetRpe(text: string) {
-  const value = text.trim().replace(",", ".");
-  if (!value) return null;
-  const target = RPE_VALUES.find((rpe) => rpe === Number(value));
-  if (target === undefined || !/^\d+(?:\.\d+)?$/.test(value))
-    throw new Error(`Choose a target RPE of ${RPE_VALUES.join(", ")} or leave it empty.`);
-  return target;
+export function plannedEffortScale(plan: readonly PlannedExercise[]): EffortScale {
+  return routineEffortScale({
+    exercises: plan.map(({ sets }) => ({ sets: sets.flatMap(({ original }) => original ?? []) })),
+  });
 }
 
-export function writePlan(plan: readonly PlannedExercise[], settings: Settings): StoredPlan {
+export function changePlanEffort(
+  plan: readonly PlannedExercise[],
+  from: EffortScale,
+  to: EffortScale,
+) {
+  let cleared = 0;
+  const next = plan.map((entry) => ({
+    ...entry,
+    sets: entry.sets.map((set) => {
+      const value =
+        set.effortText === undefined
+          ? effortValue(set.original, from)
+          : parseEffort(set.effortText, from);
+      if (value === null && set.effortText === undefined && effortValue(set.original, to) === null)
+        return set;
+      const converted = value === null ? null : equivalentEffort(value, to);
+      if (value !== null && converted === null) cleared += 1;
+      return { ...set, effortText: converted === null ? "" : String(converted) };
+    }),
+  }));
+  return { next, cleared };
+}
+
+export function writePlan(
+  plan: readonly PlannedExercise[],
+  settings: Settings,
+  effortScale = plannedEffortScale(plan),
+): StoredPlan {
   return plan.map((entry) => {
     const { id, exercise, sets, original, restSecondsText } = entry;
     const useRepRange = entry.useRepRange ?? original?.useRepRange ?? false;
@@ -147,7 +173,7 @@ export function writePlan(plan: readonly PlannedExercise[], settings: Settings):
           values: { reps, repRangeMin, repRangeMax, ...metrics },
           original,
           type,
-          rpeText,
+          effortText,
         }) => ({
           ...(original ?? {
             id,
@@ -161,7 +187,15 @@ export function writePlan(plan: readonly PlannedExercise[], settings: Settings):
             rpe: null,
           }),
           type: type ?? original?.type ?? "normal",
-          ...(rpeText !== undefined && { rpe: targetRpe(rpeText) }),
+          ...(effortText !== undefined && {
+            rpe: effortScale === "rpe" ? parseEffort(effortText, effortScale) : null,
+            ...(effortScale === "rir" || original?.repsInReserve != null
+              ? {
+                  repsInReserve:
+                    effortScale === "rir" ? parseEffort(effortText, effortScale) : null,
+                }
+              : {}),
+          }),
           ...(useRepRange &&
             rangePatch(repRangeMin, repRangeMax, original, entry.useRepRange === true)),
           ...correctionValues(

@@ -240,6 +240,7 @@ export interface StripField {
   firm: boolean;
   /** kg, reps, m:ss… */
   unit: string;
+  target?: string | undefined;
   /** The ± step as shown, next to the unit for weights. */
   step?: string;
   /** How many steps the value is from zero, to slide the ruler under it. */
@@ -253,6 +254,7 @@ export interface StripField {
 const FULL_FIELD = 3 * touch + 1;
 /** The check that logs the set. */
 const CHECK = 56;
+const EFFORT = touch + 4;
 
 /**
  * The strip's columns for its width (outer, with its 1 pt border) and the fields it shows. The
@@ -262,11 +264,15 @@ const CHECK = 56;
  * strip) draws slimmer steppers. `boxes` is each field's width with its hairline, empty until the
  * strip has been measured.
  */
-export function stripLayout(width: number, metrics: readonly SetMetric[] = ["weight", "reps"]) {
+export function stripLayout(
+  width: number,
+  metrics: readonly SetMetric[] = ["weight", "reps"],
+  hasEffort = false,
+) {
   const compact = width > 0 && width < 340;
-  const stepper = compact ? 30 : 34;
+  const stepper = compact ? (hasEffort ? 25 : 30) : 34;
   if (width <= 0) return { compact, stepper, check: CHECK, boxes: [] as number[] };
-  const room = Math.max(0, width - 2 - CHECK);
+  const room = Math.max(0, width - 2 - CHECK - (hasEffort ? EFFORT : 0));
   const even = room / Math.max(1, metrics.length);
   const weight = metrics.indexOf("weight");
   const other = Math.min(FULL_FIELD, even);
@@ -307,11 +313,20 @@ export function valueSize(text: string, width: number, largest: number): number 
  */
 export function SetStrip({
   fields,
+  effort,
   logLabel,
   canLog,
   onLog,
 }: {
   fields: StripField[];
+  effort?:
+    | {
+        label: string;
+        value: number | null;
+        target: string | null;
+        onEdit?: (() => void) | undefined;
+      }
+    | undefined;
   logLabel: string;
   canLog: boolean;
   onLog: () => void;
@@ -322,12 +337,29 @@ export function SetStrip({
   const layout = stripLayout(
     width,
     fields.map((field) => field.metric),
+    !!effort,
   );
   return (
     <View style={styles.strip} onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
       {fields.map((field, i) => (
         <StripSegment key={field.metric} field={field} layout={layout} box={layout.boxes[i]} />
       ))}
+      {effort && (
+        <Tap
+          accessibilityRole="button"
+          accessibilityLabel={`${effort.label} in dock`}
+          accessibilityHint={`${effort.value ?? "Empty"}${effort.target === null ? "" : `, target ${effort.target}`}`}
+          disabled={!effort.onEdit}
+          onPress={effort.onEdit}
+          style={[styles.segment, styles.stripEffort]}
+        >
+          <Text style={styles.valueUnit}>{effort.label}</Text>
+          <Text style={[styles.effortValue, effort.value === null && styles.valueHint]}>
+            {effort.value ?? "–"}
+          </Text>
+          {effort.target !== null && <Text style={styles.valueUnit}>{effort.target}</Text>}
+        </Tap>
+      )}
       <Tap
         accessibilityRole="button"
         accessibilityLabel={logLabel}
@@ -386,7 +418,7 @@ function StripSegment({
       <Tap
         accessibilityRole="button"
         accessibilityLabel={`Type ${field.name}`}
-        accessibilityHint={`${field.text} ${field.unit}`}
+        accessibilityHint={`${field.text} ${field.unit}${field.target ? `, target ${field.target}` : ""}`}
         accessibilityState={{ selected: field.editing }}
         onPress={field.onEdit}
         scaleTo={1}
@@ -407,8 +439,12 @@ function StripSegment({
           {field.text}
         </Text>
         <Text style={styles.valueUnit} numberOfLines={1}>
-          {field.unit}
-          {field.step && !layout.compact ? (
+          {field.target
+            ? layout.compact
+              ? field.target
+              : `${field.unit} · ${field.target}`
+            : field.unit}
+          {field.step && !layout.compact && !field.target ? (
             <Text style={styles.valueStep}>{`  ±${field.step}`}</Text>
           ) : null}
         </Text>
@@ -759,6 +795,15 @@ const sheet = themedStyles((c) => ({
     borderLeftColor: c.line,
   },
   segmentOn: { backgroundColor: c.s2, borderWidth: 1.5, borderColor: c.fg },
+  stripEffort: {
+    flex: 0,
+    width: EFFORT,
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 2,
+  },
+  effortValue: { ...numeral(24, "200"), color: c.fg },
   // Above the value, so the touch each reaches into it with is theirs.
   stepper: { alignItems: "center", justifyContent: "center", zIndex: 1 },
   value: {
