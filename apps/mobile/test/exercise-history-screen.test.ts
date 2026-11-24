@@ -5,8 +5,7 @@ import { expect, it, vi } from "vitest";
 import ExercisesScreen from "../app/exercises.tsx";
 import { builtInTargets, EXERCISES } from "../src/data/exercises.ts";
 
-let params: { from?: string } = {};
-vi.mock("expo-router", () => ({ Link: "Link", useLocalSearchParams: () => params }));
+vi.mock("expo-router", () => ({ Link: "Link" }));
 vi.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0 }),
 }));
@@ -153,32 +152,13 @@ it("filters logged movements with the anatomy figure, chips and search, keeping 
       root.findByProps({ accessibilityLabel: "Clear muscle filter" }).props.onPress(),
     );
     expect(shown()).toHaveLength(1);
-    // Opened from Progress, back leads there.
+    // The exercises list is reached from Progress, so back leads there.
     expect(root.findByType("Back" as never).props).toMatchObject({
       label: "Progress",
       fallback: "/progress",
     });
   } finally {
     await act(() => screen?.unmount());
-    vi.unstubAllGlobals();
-  }
-});
-
-it("leads back to Train when opened from Train's library row", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  params = { from: "train" };
-  let screen: ReactTestRenderer | undefined;
-  try {
-    await act(() => {
-      screen = create(createElement(ExercisesScreen));
-    });
-    expect(screen?.root.findByType("Back" as never).props).toMatchObject({
-      label: "Train",
-      fallback: "/",
-    });
-  } finally {
-    await act(() => screen?.unmount());
-    params = {};
     vi.unstubAllGlobals();
   }
 });
