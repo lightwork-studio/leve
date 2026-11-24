@@ -16,7 +16,7 @@
     "contract:freeze": "node packages/contract/scripts/freeze.ts",
     "check:frozen": "node packages/contract/scripts/check-frozen.ts",
     "dev:sync": "pnpm --filter @leve/sync-playground start",
-    "build:site": "node apps/site/build.mts",
+    "build:site": "pnpm --filter @leve/mobile export:demo && node apps/site/build.mts",
     "dev:app": "pnpm --filter @leve/mobile start",
     "preview:web": "pnpm --filter @leve/mobile export:web && pnpm --filter @leve/mobile serve:web"
   },

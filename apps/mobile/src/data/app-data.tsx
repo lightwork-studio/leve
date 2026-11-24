@@ -149,7 +149,10 @@ export function AppDataProvider({
 
   if (state.status === "loading") return loading;
   if (state.status === "failed")
-    return failed(state.message, engine.current?.exportRecovery ?? exportStoredRecovery);
+    return failed(
+      state.message,
+      buildInfo.webDemo ? null : (engine.current?.exportRecovery ?? exportStoredRecovery),
+    );
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 

@@ -1,0 +1,10 @@
+# Expo Router owns the demo URLs. Match its screens without rewriting the bundle or assets.
+/demo/bodyweight /demo/index.html 200
+/demo/exercises /demo/index.html 200
+/demo/history /demo/index.html 200
+/demo/progress /demo/index.html 200
+/demo/settings /demo/index.html 200
+/demo/exercise/* /demo/index.html 200
+/demo/history/* /demo/index.html 200
+/demo/routine/* /demo/index.html 200
+/demo/workout/* /demo/index.html 200
