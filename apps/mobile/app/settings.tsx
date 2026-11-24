@@ -290,7 +290,7 @@ export default function SettingsScreen() {
               )}
               <ToggleRow
                 label="Show targets"
-                hint="Show routine targets under set values"
+                hint="Routine goals under set values, weight until first logged"
                 on={showTargets}
                 onChange={saveShowTargets}
                 divider
