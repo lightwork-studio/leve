@@ -99,9 +99,11 @@ export function workoutSession(factory: Factory, scheme: string, memory: Activit
             cleanStart = false;
           }
           if (owner !== frame?.workoutId) {
-            if (handle && factory.getInstances().some((a) => a.getId() === handle?.getId()))
+            if (handle && factory.getInstances().some((a) => a.getId() === handle?.getId())) {
               await handle.end("immediate");
-            if (owner !== undefined) memory.forget();
+              // Ended by Leve, not dismissed. A dismissed workout's memory stays.
+              memory.forget();
+            }
             handle = undefined;
             owner = undefined;
             published = "";

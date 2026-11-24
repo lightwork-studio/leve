@@ -229,6 +229,22 @@ describe("workout Live Activity", () => {
     await workoutSession(factory, "leve-preview", memory).publish(frame());
     expect(factory.start).toHaveBeenCalledTimes(2);
   });
+  it("shows the workout again after a relaunch only if Leve, not the user, ended its activity", async () => {
+    // Leve ends it (the workout's data closed), then the app is killed mid-workout.
+    const ended = harness();
+    await ended.session.publish(frame());
+    await ended.session.publish(null);
+    await workoutSession(ended.factory, "leve-preview", ended.memory).publish(frame());
+    expect(ended.factory.start).toHaveBeenCalledOnce();
+    // The user dismisses it first: nothing Leve does afterwards brings it back.
+    const dismissed = harness();
+    dismissed.dismiss();
+    await dismissed.session.publish(frame());
+    dismissed.dismiss();
+    await dismissed.session.publish(null);
+    await workoutSession(dismissed.factory, "leve-preview", dismissed.memory).publish(frame());
+    expect(dismissed.factory.start).toHaveBeenCalledOnce();
+  });
   it("tries again on a later launch when iOS refused the start in the background", async () => {
     const { factory, memory, dismiss } = harness();
     dismiss();
