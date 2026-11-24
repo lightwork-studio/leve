@@ -48,6 +48,7 @@ import { Group, SectionLabel } from "../../src/ui/group.tsx";
 import { ChevronIcon } from "../../src/ui/icons.tsx";
 import { LineChart } from "../../src/ui/line-chart.tsx";
 import { ExerciseMuscles } from "../../src/ui/muscle-map.tsx";
+import { pairGridCell } from "../../src/ui/pair-grid.ts";
 import { RecordMark } from "../../src/ui/record-mark.tsx";
 import { sessionSetLabel } from "../../src/ui/set-values.ts";
 import { Tap } from "../../src/ui/tap.tsx";
@@ -423,6 +424,7 @@ function Summary({
           <View style={styles.grid}>
             {records.map((record, i) => {
               const [figure, figureUnit] = metricParts(record.metric, record.value, unit, prefs);
+              const place = pairGridCell(i, records.length);
               return (
                 <Link
                   key={record.metric}
@@ -444,8 +446,9 @@ function Summary({
                     // One style object: on the web, Link rejects a list of styles.
                     style={StyleSheet.flatten([
                       styles.cell,
-                      i % 2 === 1 && styles.cellLeft,
-                      i >= 2 && styles.cellTop,
+                      place.wide && styles.cellWide,
+                      place.left && styles.cellLeft,
+                      place.top && styles.cellTop,
                     ])}
                   >
                     <View style={styles.cellLabel}>
@@ -648,6 +651,7 @@ const sheet = themedStyles((c) => ({
   pad: { paddingTop: 12, paddingHorizontal: 16, paddingBottom: 14 },
   grid: { flexDirection: "row", flexWrap: "wrap" },
   cell: { width: "50%", paddingTop: 14, paddingBottom: 13, paddingLeft: 16, paddingRight: 14 },
+  cellWide: { width: "100%" },
   cellLeft: { borderLeftWidth: 1, borderLeftColor: c.line },
   cellTop: { borderTopWidth: 1, borderTopColor: c.line },
   cellLabel: { flexDirection: "row", alignItems: "center", gap: 7 },
