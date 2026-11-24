@@ -2,7 +2,12 @@ import { jsonEqual } from "@leve/contract";
 import type { DeviceRecord, DeviceStore, Resolution } from "@leve/storage";
 import { newId } from "./ids.ts";
 import { rejectedWorkoutDeletion, reviewWorkoutId } from "./read.ts";
-import { discardActiveWorkout, workoutRestReadOnlyReason } from "./workout-actions.ts";
+import {
+  beginWorkout,
+  discardActiveWorkout,
+  WorkoutActionError,
+  workoutRestReadOnlyReason,
+} from "./workout-actions.ts";
 import { workoutNoteReadOnlyReason } from "./workout-notes.ts";
 
 export function unavailableReviewFields(store: DeviceStore, row: DeviceRecord) {
@@ -68,6 +73,23 @@ export function discardReviewedActiveWorkout(
   if (!reviewed || !jsonEqual(reviewed, workoutDeletionSnapshot(store, id)))
     throw Error("The active workout changed. Review it before discarding.");
   discardActiveWorkout(store, id);
+}
+
+/**
+ * Discards the active workout, as it was when the person chose to, and starts the routine in its
+ * place. A routine that is gone refuses before anything is deleted.
+ */
+export function replaceReviewedActiveWorkout(
+  store: DeviceStore,
+  id: string,
+  reviewed: ReturnType<typeof workoutDeletionSnapshot>,
+  routineId: string,
+): string {
+  const routine = store.get("routine", routineId);
+  if (!routine?.content || routine.deleted)
+    throw new WorkoutActionError("This routine no longer exists.");
+  discardReviewedActiveWorkout(store, id, reviewed);
+  return beginWorkout(store, routineId);
 }
 
 export function deletedWorkoutReview(store: DeviceStore, workoutId: string) {

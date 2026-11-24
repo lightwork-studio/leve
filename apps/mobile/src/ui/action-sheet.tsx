@@ -9,13 +9,14 @@ import { Tap } from "./tap.tsx";
 import { themedStyles, useStyles } from "./themed.ts";
 
 /**
- * Asking before something that can't be undone: one sentence saying what will happen, the action
- * in red, and the safe choice on a card of its own underneath. It covers the screen, so only its
- * two choices can be reached, and closing it any other way (the scrim, Escape, Android's back
- * button) keeps everything as it was.
+ * Asking before something that can't be undone: one sentence saying what will happen, any other
+ * ways forward, the action in red, and the safe choice on a card of its own underneath. It covers
+ * the screen, so only its choices can be reached, and closing it any other way (the scrim, Escape,
+ * Android's back button) keeps everything as it was.
  */
 export function ActionSheet({
   message,
+  choices = [],
   action,
   keep = "Cancel",
   busy = false,
@@ -24,6 +25,8 @@ export function ActionSheet({
   onClose,
 }: {
   message: string;
+  /** Ways forward that lose nothing, offered above the destructive action. */
+  choices?: { label: string; onPress: () => void }[];
   /** The destructive action, named as what it does: "Discard workout". */
   action: string;
   /** The safe choice: "Keep training". */
@@ -57,6 +60,18 @@ export function ActionSheet({
         >
           <View style={styles.card}>
             <Text style={styles.message}>{message}</Text>
+            {choices.map((choice) => (
+              <Tap
+                key={choice.label}
+                accessibilityRole="button"
+                disabled={busy}
+                onPress={choice.onPress}
+                scaleTo={0.99}
+                style={[styles.choice, styles.divider]}
+              >
+                <Text style={styles.choiceLabel}>{choice.label}</Text>
+              </Tap>
+            ))}
             <Tap
               accessibilityRole="button"
               accessibilityState={{ busy, disabled: busy }}

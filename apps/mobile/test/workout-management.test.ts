@@ -1253,6 +1253,47 @@ it("shows the records before saving, then saves the workout and opens History at
   expect(navigateRoute).toHaveBeenCalledWith({ pathname: "/history", params: { saved: id } });
 });
 
+it.each([true, false])(
+  "saves the workout and then starts the routine chosen on Train (routine still there %s)",
+  async (kept) => {
+    const id = beginWorkout(store);
+    const entry = addExercise(store, id, EXERCISES.bench, 0);
+    const [set] = store.list("workout_set", { parentId: entry });
+    if (!set) throw Error("Missing set");
+    logSet(store, set.id, { weightKg: 60, reps: 5 });
+    const next = createRoutine(
+      store,
+      "Pull day",
+      null,
+      [
+        {
+          id: "row",
+          exercise: EXERCISES.bench,
+          sets: [{ id: "a", values: { weight: "40", reps: "8" } }],
+        },
+      ],
+      readSettings(store),
+    );
+    detailReturn = { next } as typeof detailReturn;
+    await act(() => root.render(h(FinishScreen)));
+    expect(host.textContent).toContain("Pull day starts after saving.");
+    // Deleted on another device while the summary was open: saving still saves.
+    if (!kept) store.delete("routine", next);
+    await press("Save workout");
+    await act(feedback.release);
+    expect(store.get("workout", id)?.content?.endedAt).toEqual(expect.any(String));
+    if (kept) {
+      expect(store.activeWorkout()?.content).toMatchObject({ routineId: next, endedAt: null });
+      expect(pushRoute).toHaveBeenCalledWith("/workout/active");
+      expect(navigateRoute).not.toHaveBeenCalled();
+    } else {
+      expect(store.activeWorkout()).toBeNull();
+      expect(pushRoute).not.toHaveBeenCalled();
+      expect(navigateRoute).toHaveBeenCalledWith({ pathname: "/history", params: { saved: id } });
+    }
+  },
+);
+
 it("sets how long the workout lasted before saving it, by the same rules as a saved one", async () => {
   const id = beginWorkout(store);
   const row = store.get("workout", id);

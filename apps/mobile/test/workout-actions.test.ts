@@ -33,6 +33,10 @@ import {
   updateWorkoutDetails,
   workoutRest,
 } from "../src/data/workout-actions.ts";
+import {
+  replaceReviewedActiveWorkout,
+  workoutDeletionSnapshot,
+} from "../src/data/workout-review.ts";
 import { setProgress } from "../src/model/live.ts";
 
 const SQL = await initSqlJs();
@@ -739,3 +743,50 @@ it("keeps a skipped exercise's saved note in history and the outbox after finish
     store.close();
   }
 });
+
+it("discards the running workout as it was reviewed and starts the chosen routine instead", async () => {
+  const store = await open();
+  const pushId = beginWorkout(store, "seed-routine-push");
+  const firstSet = () => {
+    const tree = readWorkoutTree(store, pushId);
+    const set = tree?.entries[0]?.sets[0];
+    if (!set) throw Error("Missing set");
+    return set;
+  };
+  logSet(store, firstSet().id, { weightKg: 60, reps: 8 });
+
+  // A routine deleted meanwhile refuses before anything is deleted.
+  const missing = workoutDeletionSnapshot(store, pushId);
+  expect(() => replaceReviewedActiveWorkout(store, pushId, missing, "gone")).toThrow(
+    "This routine no longer exists.",
+  );
+  expect(store.activeWorkout()?.id).toBe(pushId);
+
+  // A set logged after the sheet opened refuses too: the person didn't see it.
+  const stale = workoutDeletionSnapshot(store, pushId);
+  const second = readWorkoutTree(store, pushId)?.entries[0]?.sets[1];
+  if (!second) throw Error("Missing second set");
+  logSet(store, second.id, { weightKg: 60, reps: 8 });
+  expect(() => replaceReviewedActiveWorkout(store, pushId, stale, "seed-routine-pull")).toThrow(
+    "The active workout changed. Review it before discarding.",
+  );
+  expect(store.activeWorkout()?.id).toBe(pushId);
+  expect(setProgress(readWorkoutTree(store, pushId) ?? never()).done).toBe(2);
+
+  const reviewed = workoutDeletionSnapshot(store, pushId);
+  const pullId = replaceReviewedActiveWorkout(store, pushId, reviewed, "seed-routine-pull");
+  expect(pullId).not.toBe(pushId);
+  expect(readWorkoutTree(store, pushId)).toBeNull();
+  expect(store.list("workout_exercise", { parentId: pushId })).toEqual([]);
+  expect(store.activeWorkout()?.id).toBe(pullId);
+  expect(liveData(store)?.tree.workout.content).toMatchObject({
+    routineId: "seed-routine-pull",
+    endedAt: null,
+  });
+  expect(setProgress(liveData(store)?.tree ?? never()).done).toBe(0);
+  expect(verifyDeviceRecords(store.db, store.contract)).toEqual([]);
+});
+
+function never(): never {
+  throw Error("Missing workout");
+}

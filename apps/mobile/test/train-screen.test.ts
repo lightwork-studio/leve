@@ -7,6 +7,7 @@ import TrainScreen from "../app/(tabs)/index.tsx";
 
 let reduced = false;
 let activeTitle: string | null = "Bench";
+let activeRoutine: string | null = null;
 let upNext: { id: string; title: string } | null = null;
 const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 vi.mock("react-native-reanimated", () => ({ useReducedMotion: () => reduced }));
@@ -31,7 +32,29 @@ vi.mock("../src/ui/new-folder-dialog.tsx", () => ({ NewFolderDialog: "Dialog" })
 vi.mock("../src/ui/popover-menu.tsx", () => ({ MoreButton: "MoreButton" }));
 vi.mock("../src/ui/group.tsx", () => ({ Group: "Group" }));
 vi.mock("../src/ui/use-now.ts", () => ({ useNow: () => 0 }));
-vi.mock("../src/ui/haptics.ts", () => ({ haptic: { tap: vi.fn(), select: vi.fn() } }));
+vi.mock("../src/ui/haptics.ts", () => ({
+  haptic: { tap: vi.fn(), select: vi.fn(), warning: vi.fn() },
+}));
+// The sheet keeps its choices in the tree, to be pressed by name.
+vi.mock("../src/ui/action-sheet.tsx", () => ({ ActionSheet: "ActionSheet" }));
+vi.mock("../src/ui/after-feedback.ts", () => ({
+  afterFeedback: (run: () => void) => {
+    run();
+    return () => {};
+  },
+}));
+const showToast = vi.fn();
+vi.mock("../src/ui/notice.tsx", () => ({ showToast: (text: string) => showToast(text) }));
+const skipRest = vi.fn();
+vi.mock("../src/data/rest-timer.ts", () => ({
+  restTimer: { skip: (...args: unknown[]) => skipRest(...args) },
+}));
+const snapshot = vi.fn(() => "snapshot");
+const replace = vi.fn();
+vi.mock("../src/data/workout-review.ts", () => ({
+  workoutDeletionSnapshot: (...args: unknown[]) => snapshot(...(args as [])),
+  replaceReviewedActiveWorkout: (...args: unknown[]) => replace(...args),
+}));
 vi.mock("../src/ui/icons.tsx", () => ({
   ChevronIcon: "Chevron",
   EditIcon: "Edit",
@@ -45,16 +68,32 @@ vi.mock("../src/ui/icons.tsx", () => ({
   PlusIcon: "Plus",
   TrayIcon: "Tray",
 }));
-vi.mock("../src/data/app-data.tsx", () => ({ useAppData: () => ({ change }) }));
+const appStore = { name: "store" };
+vi.mock("../src/data/app-data.tsx", () => ({ useAppData: () => ({ change, store: appStore }) }));
 const beginWorkout = vi.fn();
 vi.mock("../src/data/workout-actions.ts", () => ({
   beginWorkout: (...args: unknown[]) => beginWorkout(...args),
 }));
 vi.mock("../src/data/queries.ts", () => ({
+  // The running workout: one set logged of two.
+  useLive: () =>
+    activeTitle === null
+      ? null
+      : {
+          tree: {
+            workout: { content: { title: activeTitle } },
+            entries: [
+              { sets: [{ content: { completedAt: "x" } }, { content: { completedAt: null } }] },
+            ],
+          },
+        },
   useTrain: () => ({
     settings: { weightUnit: "kg" },
     upNext,
-    active: activeTitle === null ? null : { content: { title: activeTitle } },
+    active:
+      activeTitle === null
+        ? null
+        : { id: "w1", content: { title: activeTitle, routineId: activeRoutine } },
     week: {
       workouts: 2,
       minutes: 75,
@@ -239,10 +278,11 @@ it("starts a routine from a tap on its row, and edits it from the row's menu", a
   }
 });
 
-it("starts nothing from a routine while a workout runs, but still edits it", async () => {
+it("asks what to do with the running workout before starting another routine", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  change.mockClear();
-  push.mockClear();
+  // Routine 2 is the one running.
+  activeRoutine = "1";
+  for (const mock of [change, push, snapshot, replace, skipRest, showToast]) mock.mockClear();
   let screen: ReactTestRenderer | undefined;
   try {
     await act(() => {
@@ -250,17 +290,76 @@ it("starts nothing from a routine while a workout runs, but still edits it", asy
     });
     if (!screen) throw Error("Train did not mount");
     const root = screen.root;
-    expect(rowAction(root, "Routine 1")).toBeNull();
-    expect(root.findAll((n) => /^Start Routine/.test(n.props.accessibilityLabel ?? ""))).toEqual(
-      [],
-    );
+    const sheet = () => root.findAllByType("ActionSheet" as never)[0];
+    const tap = (title: string) => act(() => rowAction(root, title)?.props.onPress());
+    // The sheet replaces the note that used to explain why nothing happened.
     expect(
       root.findAll((n) => n.type === Text && /Finish or discard/.test(String(n.props.children))),
-    ).toHaveLength(1);
+    ).toHaveLength(0);
+
+    // The running routine's own row opens that workout again.
+    await tap("Routine 2");
+    expect(push.mock.calls).toEqual([["/workout/active"]]);
+    expect(sheet()).toBeUndefined();
+
+    await tap("Routine 1");
+    expect(sheet()?.props).toMatchObject({
+      message: "Bench is still running, with 1 logged set. Discarding it can’t be undone.",
+      action: "Discard and start Routine 1",
+    });
+    expect(sheet()?.props.choices.map((c: { label: string }) => c.label)).toEqual([
+      "Resume Bench",
+      "Finish, then start Routine 1",
+    ]);
+    // What the person is shown is noted as the sheet opens; nothing is written yet.
+    expect(snapshot).toHaveBeenCalledWith(appStore, "w1");
+    expect(change).not.toHaveBeenCalled();
+
+    await act(() => sheet()?.props.choices[0].onPress());
+    expect(sheet()).toBeUndefined();
+    await tap("Routine 1");
+    await act(() => sheet()?.props.choices[1].onPress());
+    await tap("Routine 1");
+    await act(() => sheet()?.props.onClose());
+    expect(sheet()).toBeUndefined();
+    expect(push.mock.calls.slice(1)).toEqual([
+      ["/workout/active"],
+      [{ pathname: "/workout/finish", params: { next: "0" } }],
+    ]);
+    expect(change).not.toHaveBeenCalled();
+
+    // Discarding replaces the reviewed workout with the routine, then opens it.
+    await tap("Routine 1");
+    await act(() => sheet()?.props.onConfirm());
+    expect(change).toHaveBeenCalledTimes(1);
+    const [apply, scope] = change.mock.calls[0] ?? [];
+    expect(scope).toBe("active-workout");
+    apply(appStore);
+    expect(replace).toHaveBeenCalledWith(appStore, "w1", "snapshot", "0");
+    expect(skipRest).toHaveBeenCalledWith(appStore, "w1");
+    expect(push.mock.calls.at(-1)).toEqual(["/workout/active"]);
+    expect(sheet()).toBeUndefined();
+
+    // A refusal (the workout changed meanwhile) says why and starts nothing.
+    push.mockClear();
+    skipRest.mockClear();
+    change.mockImplementationOnce(() => {
+      throw Error("The active workout changed. Review it before discarding.");
+    });
+    await tap("Routine 3");
+    await act(() => sheet()?.props.onConfirm());
+    expect(showToast).toHaveBeenCalledWith(
+      "The active workout changed. Review it before discarding.",
+    );
+    expect(push).not.toHaveBeenCalled();
+    expect(skipRest).not.toHaveBeenCalled();
+    expect(sheet()).toBeUndefined();
+
+    // Editing from the row's menu still works while a workout runs.
     await act(() => menuOf(root, "Routine 1").props.items[0].onPress());
     expect(push.mock.calls).toEqual([[{ pathname: "/routine/[id]", params: { id: "0" } }]]);
-    expect(change).not.toHaveBeenCalled();
   } finally {
+    activeRoutine = null;
     await act(() => screen?.unmount());
     vi.unstubAllGlobals();
   }
