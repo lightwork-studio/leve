@@ -728,6 +728,25 @@ it("lights a saved workout after a moment when the closing sheet doesn't report 
       viewPosition: 0.5,
       animated: true,
     });
+
+    // Its row hadn't been drawn yet: the list heads for about where it is, then tries once more.
+    const scrollTo = vi.fn();
+    sessionList.getScrollResponder.mockReturnValue({ scrollTo });
+    const failed = { averageItemLength: 90, index: 4, highestMeasuredFrameIndex: 2 };
+    await act(() => list().props.onScrollToIndexFailed(failed));
+    expect(scrollTo).toHaveBeenCalledExactlyOnceWith({ y: 360, animated: false });
+    await act(() => vi.advanceTimersByTime(100));
+    expect(sessionList.scrollToLocation).toHaveBeenCalledTimes(2);
+    expect(sessionList.scrollToLocation).toHaveBeenLastCalledWith({
+      sectionIndex: 1,
+      itemIndex: 1,
+      viewPosition: 0.5,
+      animated: true,
+    });
+    // Failing again doesn't keep retrying.
+    await act(() => list().props.onScrollToIndexFailed(failed));
+    await act(() => vi.advanceTimersByTime(1000));
+    expect(sessionList.scrollToLocation).toHaveBeenCalledTimes(2);
   } finally {
     await act(() => screen?.unmount());
     vi.mocked(useLocalSearchParams).mockReturnValue({});

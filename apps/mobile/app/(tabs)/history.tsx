@@ -1,7 +1,7 @@
 import type { WeightUnit } from "@leve/core";
 import { Link, useLocalSearchParams, useNavigation } from "expo-router";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FlatList, SectionList, StyleSheet, Text, View } from "react-native";
+import { FlatList, Platform, SectionList, StyleSheet, Text, View } from "react-native";
 import { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHistory, useProgress } from "../../src/data/queries.ts";
@@ -43,9 +43,10 @@ const NO_RECORDS: WorkoutRecord[] = [];
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 /**
  * How long the workout just saved waits to be picked out when the finish sheet's closing doesn't
- * say it has finished: long enough for the sheet to be gone.
+ * say it has finished: long enough for the sheet to be gone (280 ms in browsers, about 500 ms on
+ * phones, where the tabs under a running workout aren't told when it closes).
  */
-export const savedSettleMs = 500;
+export const savedSettleMs = Platform.OS === "web" ? 450 : 750;
 
 export default function HistoryScreen() {
   const [query, setQuery] = useState("");
@@ -97,18 +98,22 @@ export default function HistoryScreen() {
   // The row just lit is brought to the middle of the screen, once: on a phone it usually sits
   // below the month card, out of sight. (A section's items count from 1: its header is 0.)
   const scrolledTo = useRef<string | null>(null);
+  // Kept until the scroll has been retried, for a row that hadn't been drawn yet.
+  const retry = useRef<Parameters<SectionList["scrollToLocation"]>[0] | null>(null);
   useEffect(() => {
     if (!lit || scrolledTo.current === lit) return;
     const sectionIndex = sections.findIndex((s) => s.data.some((w) => w.id === lit));
     const section = sections[sectionIndex];
     if (!section) return;
     scrolledTo.current = lit;
-    list.current?.scrollToLocation({
+    const location = {
       sectionIndex,
       itemIndex: section.data.findIndex((w) => w.id === lit) + 1,
       viewPosition: 0.5,
       animated: !reduced,
-    });
+    };
+    retry.current = location;
+    list.current?.scrollToLocation(location);
   }, [lit, sections, reduced]);
   const renderSectionHeader = useCallback(
     ({ section }: { section: { month: Month } }) => (
@@ -130,12 +135,16 @@ export default function HistoryScreen() {
       initialNumToRender={8}
       maxToRenderPerBatch={8}
       windowSize={7}
-      // A row not drawn yet can't be scrolled to exactly: head for about where it is.
-      onScrollToIndexFailed={({ averageItemLength, index: at }) =>
+      // A row not drawn yet can't be scrolled to exactly: head for about where it is, so it gets
+      // drawn, and try once more.
+      onScrollToIndexFailed={({ averageItemLength, index: at }) => {
         list.current
           ?.getScrollResponder()
-          ?.scrollTo({ y: averageItemLength * at, animated: !reduced })
-      }
+          ?.scrollTo({ y: averageItemLength * at, animated: false });
+        const location = retry.current;
+        retry.current = null;
+        if (location) setTimeout(() => list.current?.scrollToLocation(location), 100);
+      }}
       ListHeaderComponent={
         <View style={styles.head}>
           <TabTitle
