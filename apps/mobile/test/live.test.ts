@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   autoTitle,
   currentEntryIndex,
+  hintTarget,
   previousSets,
   restCaption,
   routineTarget,
@@ -146,6 +147,27 @@ describe("starting a workout", () => {
       repRangeMin: 6,
       repRangeMax: 8,
     });
+  });
+
+  it("hints the routine weight only until a weight was logged at that set", () => {
+    const started = startWorkout({ routine, now: 0, newId });
+    const plan = started.workout.content.initialPlan ?? null;
+    const working = started.sets[1];
+    if (!working) throw new Error("Expected a working set");
+    const goals = { repRangeMin: 6, repRangeMax: 8 };
+    expect(hintTarget(plan, working.content, undefined)).toMatchObject({ weightKg: 80, ...goals });
+    const bodyweight = {
+      weightKg: null,
+      reps: 12,
+      durationSeconds: null,
+      distanceMeters: null,
+      count: null,
+    };
+    expect(hintTarget(plan, working.content, bodyweight)).toMatchObject({ weightKg: 80, ...goals });
+    const lifted = { ...bodyweight, weightKg: 92.5, reps: 6 };
+    expect(hintTarget(plan, working.content, lifted)).toMatchObject({ weightKg: null, ...goals });
+    // Logging defaults still read the full routine target.
+    expect(routineTarget(plan, working.content)?.weightKg).toBe(80);
   });
 
   it("starts empty without a routine", () => {

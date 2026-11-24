@@ -72,7 +72,13 @@ import {
   stepText,
   typeKey,
 } from "../../src/model/inline-edit.ts";
-import { routineTarget, setProgress, topOfRepRanges } from "../../src/model/live.ts";
+import {
+  hintTarget,
+  type PreviousSet,
+  routineTarget,
+  setProgress,
+  topOfRepRanges,
+} from "../../src/model/live.ts";
 import { correctionValues, parseTyped, previousValue } from "../../src/model/log-values.ts";
 import {
   asksRir,
@@ -1348,7 +1354,9 @@ export default function ActiveWorkoutScreen() {
     const distanceUnit = distanceUnitOf(entry);
     const fromDock = typingFromDock ? editing : null;
     const timer = readSetStopwatch(store, tree.workout.id, set.id);
-    const planned = showTargets ? routineTarget(initialPlan, set.content) : undefined;
+    const planned = showTargets
+      ? hintTarget(initialPlan, set.content, previous?.get(entry.entry.id)?.sets[setIndex])
+      : undefined;
     const scale = scaleFor(set);
     const currentEffort = effortValue(set.content, scale);
     const plannedEffort = effortCaption(planned, initialPlan?.effortScale);
@@ -1641,6 +1649,7 @@ export default function ActiveWorkoutScreen() {
                         fieldProblem={editing?.setId === fieldProblem?.setId ? null : fieldProblem}
                         viewOf={(set, setIndex, metric) => viewOf(entry, set, setIndex, metric)}
                         previousLine={(setIndex) => previousLine(entry, setIndex)}
+                        previousSet={(setIndex) => previous?.get(entry.entry.id)?.sets[setIndex]}
                         showRir={showsRirColumn({
                           trackRir,
                           type: entry.entry.content.exerciseType,
@@ -1998,6 +2007,7 @@ function EntryCard({
   fieldProblem,
   viewOf,
   previousLine,
+  previousSet,
   showRir,
   canStoreRir,
   rirRowId,
@@ -2049,6 +2059,8 @@ function EntryCard({
   fieldProblem: FieldProblem | null;
   viewOf: (set: LiveSet, setIndex: number, metric: SetMetric) => FieldView;
   previousLine: (setIndex: number) => string;
+  /** Last time's values for a set, when there were any. */
+  previousSet: (setIndex: number) => PreviousSet | undefined;
   /** Whether the sets show a reps in reserve column. */
   showRir: boolean;
   /** Whether reps in reserve can be changed (the account can store it). */
@@ -2341,6 +2353,7 @@ function EntryCard({
                   problem={fieldProblem?.setId === set.id ? fieldProblem.message : null}
                   views={metrics.map((m) => viewOf(set, i, m))}
                   previous={previousLine(i)}
+                  previousSet={previousSet(i)}
                   showRir={showRir}
                   canStoreRir={canStoreRir(set)}
                   rirOpen={rirRowId === set.id}
@@ -2415,6 +2428,7 @@ function SetRow({
   problem,
   views,
   previous,
+  previousSet,
   showRir,
   canStoreRir,
   rirOpen,
@@ -2454,6 +2468,7 @@ function SetRow({
   problem: string | null;
   views: FieldView[];
   previous: string;
+  previousSet: PreviousSet | undefined;
   showRir: boolean;
   canStoreRir: boolean;
   /** Whether the reps in reserve strip is open under this row. */
@@ -2495,7 +2510,7 @@ function SetRow({
     [],
   );
   const timing = running !== undefined;
-  const target = showTargets ? routineTarget(plan, set.content) : undefined;
+  const target = showTargets ? hintTarget(plan, set.content, previousSet) : undefined;
   const highlighted = isCurrent || editing !== null || editorOpen || rirOpen;
   const reserve = effortValue(set.content, effortScale);
   const effortTarget = effortCaption(target, plan?.effortScale);

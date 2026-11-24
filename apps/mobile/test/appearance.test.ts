@@ -189,6 +189,7 @@ it("matches the native transition background to Settings even when the system st
         { name: "(tabs)", transition: "push" },
         { name: "settings", transition: "push" },
         { name: "workout/active", transition: "cover", transparent: true },
+        { name: "workout/finish", transition: "cover" },
       ],
     }),
   );
@@ -201,6 +202,15 @@ it("matches the native transition background to Settings even when the system st
     presentation: "transparentModal",
     contentStyle: { backgroundColor: "transparent" },
   });
+  // Opened above the live workout, the summary still covers the whole screen, not a page sheet.
+  const finish = screen.root.findByProps({ name: "workout/finish" });
+  expect(finish.props.options).toMatchObject({
+    presentation: "fullScreenModal",
+    animation: "slide_from_bottom",
+  });
+  expect(screen.root.findByProps({ name: "settings" }).props.options).not.toHaveProperty(
+    "presentation",
+  );
   await act(() => saveAppearanceSetting("system"));
   expect(background()).toBe(palettes.paper.bg);
   await act(() => system.set("dark"));

@@ -47,10 +47,14 @@ export function AppStack({ screens }: { screens: StackScreen[] }) {
             key={screen.name}
             name={screen.name}
             options={{
-              ...(screen.transparent && {
-                presentation: "transparentModal",
-                contentStyle: { backgroundColor: "transparent" },
-              }),
+              ...(screen.transparent
+                ? {
+                    presentation: "transparentModal",
+                    contentStyle: { backgroundColor: "transparent" },
+                  }
+                : // An opaque cover draws its own sheet. Without a presentation, one opened above
+                  // the live workout's modal would become an iOS page sheet around that sheet.
+                  screen.transition === "cover" && { presentation: "fullScreenModal" }),
               animation: ANIMATION[screen.transition],
               // A cover closes with its own button. A swipe down would have to start anywhere on it
               // (iOS has no edge swipe downwards) and so fight the scrolling list inside.
