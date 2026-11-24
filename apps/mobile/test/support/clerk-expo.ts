@@ -87,7 +87,7 @@ export function AppleAuthenticationButton({
 }) {
   return createElement(
     "button",
-    { onClick: onPress, "data-style": buttonStyle === 2 ? "black" : "white" },
+    { type: "button", onClick: onPress, "data-style": buttonStyle === 2 ? "black" : "white" },
     "Sign in with Apple",
   );
 }
