@@ -1,5 +1,7 @@
 // Preferences kept in this browser only, never synced. Phones use `device-preferences.ts`.
 
+import { buildInfo } from "../build-info.ts";
+
 const KEY = "leve-device-preferences";
 
 /** Track RIR stays in its original key, including for older builds. */
@@ -12,6 +14,7 @@ function readLegacyPreferences(): Record<string, unknown> {
 }
 
 export function loadDevicePreference(key: string): unknown {
+  if (buildInfo.webDemo) return undefined;
   try {
     if (key === "trackRir") return readLegacyPreferences()[key];
     const stored = globalThis.localStorage?.getItem(`${KEY}:${key}`);
@@ -23,6 +26,7 @@ export function loadDevicePreference(key: string): unknown {
 
 /** Separate keys keep tabs from replacing each other's unrelated preferences. */
 export function saveDevicePreference(key: string, value: boolean | string): void {
+  if (buildInfo.webDemo) return;
   try {
     if (key === "trackRir") {
       globalThis.localStorage?.setItem(

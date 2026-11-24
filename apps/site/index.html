@@ -12,6 +12,7 @@
     <link rel="icon" href="./favicon.png" type="image/png" />
     <link rel="stylesheet" href="./theme.css" />
     <link rel="stylesheet" href="./style.css" />
+    <script type="module" src="./demo.js"></script>
   </head>
   <body>
     <a class="skip" href="#main">Skip to content</a>
@@ -45,7 +46,10 @@
           </p>
           <div class="ctas">
             <a class="btn btn-commit" href="#notes">See workout notes <span aria-hidden="true">↓</span></a>
-            <a class="btn btn-ghost" href="#history">See the app</a>
+            <a class="btn btn-ghost" id="hero-gallery" href="#history">See the app</a>
+            <button class="btn btn-ghost" id="demo-open" type="button" aria-controls="hero-demo" aria-expanded="false" hidden>
+              Try the live demo
+            </button>
           </div>
           <ul class="facts" aria-label="Planned">
             <li class="facts-label">Planned</li>
@@ -56,14 +60,25 @@
 
         <div class="hero-art">
           <div class="plate" aria-hidden="true"></div>
-          <div class="phone phone-hero">
-            <img
-              src="./screen-rest.png"
-              width="780"
-              height="1688"
-              alt="A Push day workout in Leve: two bench press sets logged at 87.5 kg for 8, last session’s numbers beside each set, and the rest timer counting down from 2:00 in the dock."
-              fetchpriority="high"
-            />
+          <div class="hero-device">
+            <div class="demo-tools" id="demo-tools" hidden>
+              <p>Sample workouts. Changes reset when you close the demo.</p>
+              <button class="btn btn-ghost btn-small" id="demo-close" type="button">Close demo</button>
+            </div>
+            <div class="phone">
+              <img
+                id="hero-screenshot"
+                src="./screen-rest.png"
+                width="780"
+                height="1688"
+                alt="A Push day workout in Leve: two bench press sets logged at 87.5 kg for 8, last session’s numbers beside each set, and the rest timer counting down from 2:00 in the dock."
+                fetchpriority="high"
+              />
+              <div id="hero-demo" hidden></div>
+              <template id="demo-template">
+                <iframe class="demo-frame" title="Interactive Leve workout tracker" src="./demo/"></iframe>
+              </template>
+            </div>
           </div>
         </div>
       </section>
@@ -202,7 +217,12 @@
         <article id="open" class="panel" tabindex="-1">
           <p class="kicker"><span>04</span> Source and hosting</p>
           <h2>Build from source.</h2>
-          <p class="panel-note">The source includes the iPhone app, this site, and sync prototypes.</p>
+          <p class="panel-note">
+            The <a href="https://github.com/lightwork-studio/leve/tree/main">source for this build</a> includes
+            the iPhone app, this site, and sync prototypes. See the
+            <a href="https://github.com/lightwork-studio/leve/blob/main/THIRD_PARTY_NOTICES.md">third-party notices</a>
+            and the demo’s <a href="./sql.js-LICENSE.txt">SQLite engine license</a>.
+          </p>
           <dl class="specs">
             <div><dt>Development</dt><dd>Try a local web preview with sample workouts or run the app with Expo.</dd></div>
             <div><dt>Data</dt><dd>Workouts are saved on your device.</dd></div>
