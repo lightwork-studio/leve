@@ -74,7 +74,16 @@ import {
 } from "../../src/model/inline-edit.ts";
 import { routineTarget, setProgress, topOfRepRanges } from "../../src/model/live.ts";
 import { correctionValues, parseTyped, previousValue } from "../../src/model/log-values.ts";
-import { asksRir, countsReps, showsRirColumn, stepRir, typeRir } from "../../src/model/rir.ts";
+import {
+  asksRir,
+  countsReps,
+  showsRirColumn,
+  stepRir,
+  stepRpe,
+  typedRpe,
+  typeRir,
+  typeRpe,
+} from "../../src/model/rir.ts";
 import { supersetMemberships } from "../../src/model/supersets.ts";
 import type { WorkoutPlan } from "../../src/model/types.ts";
 import { countsTowardTotals } from "../../src/model/volume.ts";
@@ -195,9 +204,10 @@ interface Editing {
   correction?: { text: string | undefined; opened: Opened };
 }
 
-/** Reps in reserve being typed on the pad (after 5+), for one set. */
+/** Effort being typed on the pad (after RIR 5+ or RPE 6−), for one set. */
 interface RirTyping {
   setId: string;
+  scale: EffortScale;
   text: string;
   /** Just opened: the first key replaces what it shows. */
   fresh: boolean;
@@ -1025,16 +1035,18 @@ export default function ActiveWorkoutScreen() {
     setRirPicker(null);
   };
   /**
-   * 5+: opens the pad on the set's RIR (5 when it has none), for anything up to 10. Nothing is
-   * recorded until Done.
+   * RIR 5+ or RPE 6−: opens the pad on the set's value (RIR 5 or RPE 6 when it has none), for any
+   * RIR up to 10 or any RPE from 1 to 10. Nothing is recorded until Done.
    */
   const moreRir = (entry: Entry, set: LiveSet) => {
     if (editing && !commit(editing)) return;
     closeEditors();
     if (set.content.completedAt === null) focusSet(entry.entry.id, set.id);
     else focusExercise(entry.entry.id);
-    const reserve = set.content.repsInReserve;
-    setRirTyping({ setId: set.id, text: reserve == null ? "5" : String(reserve), fresh: true });
+    const scale = scaleFor(set);
+    const value = effortValue(set.content, scale);
+    const text = value === null ? (scale === "rpe" ? "6" : "5") : String(value);
+    setRirTyping({ setId: set.id, scale, text, fresh: true });
   };
   const toggleRirPicker = (entry: Entry, set: LiveSet, from: "list" | "dock") => {
     if (gate()) return;
@@ -1050,7 +1062,8 @@ export default function ActiveWorkoutScreen() {
   };
   const pressRir = (key: PadKey) => {
     if (!rirTyping) return;
-    const next = typeRir(rirTyping.text, key, rirTyping.fresh);
+    const type = rirTyping.scale === "rpe" ? typeRpe : typeRir;
+    const next = type(rirTyping.text, key, rirTyping.fresh);
     if (next === null) {
       haptic.warning();
       return;
@@ -1062,7 +1075,12 @@ export default function ActiveWorkoutScreen() {
     if (!rirTyping) return;
     const found = find(rirTyping.setId);
     const text = rirTyping.text.trim();
-    if (found && !recordRir(found.set, text === "" ? null : Number(text))) return;
+    const value = rirTyping.scale === "rpe" ? typedRpe(text) : text === "" ? null : Number(text);
+    if (value === undefined) {
+      haptic.warning();
+      return;
+    }
+    if (found && !recordRir(found.set, value)) return;
     if (rirAsk === rirTyping.setId) setRirAsk(null);
     setRirTyping(null);
   };
@@ -1200,28 +1218,36 @@ export default function ActiveWorkoutScreen() {
         </>
       );
     }
-    // Reps in reserve after 5+: the pad, for whole numbers up to 10, with one Done (its last key).
+    // Effort after RIR 5+ or RPE 6−: the pad, for whole RIR up to 10 or RPE from 1 to 10 in half
+    // steps, with one Done (its last key).
     if (rirTyping && typing) {
       const { entry, set, setIndex } = typing;
       const name = setName(entry, set);
+      const rpe = rirTyping.scale === "rpe";
+      const effortName = rpe ? "RPE" : "reps in reserve";
       return (
         <>
           <EditHeader
             chip={labelOf(entry, setIndex)}
             logged={set.content.completedAt !== null}
             exercise={entry.entry.content.exerciseName}
-            detail={`${name} · reps in reserve · 0 to 10`}
-            announcement={`${entry.entry.content.exerciseName}, ${name}, reps in reserve: ${rirTyping.text || "empty"}`}
+            detail={`${name} · ${effortName} · ${rpe ? "1 to 10" : "0 to 10"}`}
+            announcement={`${entry.entry.content.exerciseName}, ${name}, ${effortName}: ${rirTyping.text || "empty"}`}
             onCancel={cancelRir}
           />
           <Keypad
             tall
             metric="reps"
-            step="1"
+            decimal={rpe}
+            step={rpe ? "0.5" : "1"}
             next={{ to: null }}
             onKey={pressRir}
             onStep={(direction) =>
-              setRirTyping({ ...rirTyping, text: stepRir(rirTyping.text, direction), fresh: true })
+              setRirTyping({
+                ...rirTyping,
+                text: (rpe ? stepRpe : stepRir)(rirTyping.text, direction),
+                fresh: true,
+              })
             }
             onNext={doneRir}
           />

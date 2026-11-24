@@ -1,4 +1,4 @@
-import { type EffortScale, type ExerciseType, METRICS_BY_TYPE } from "@leve/core";
+import { type EffortScale, type ExerciseType, METRICS_BY_TYPE, RPE_VALUES } from "@leve/core";
 import { effortValue, RIR_MAX, setEffortScale } from "./effort.ts";
 import type { PadKey } from "./inline-edit.ts";
 import type { WorkoutSet } from "./types.ts";
@@ -10,6 +10,18 @@ export { RIR_MAX } from "./effort.ts";
 
 /** The picks offered at once; the last stands for "5 or more" and leads on to the pad. */
 export const RIR_PICKS = [0, 1, 2, 3, 4, 5] as const;
+
+/**
+ * The RPE picks offered at once; the first stands for "6 or less" and leads on to the pad, which
+ * also takes the values between the picks below 7.
+ */
+export const RPE_PICKS = [6, 7, 7.5, 8, 8.5, 9, 9.5, 10] as const;
+
+/** The strip's pick for a value: what only the pad can enter shows on the pick that opens it. */
+export function effortPick(value: number, scale: EffortScale): number {
+  if (scale === "rpe") return value < 7 ? 6 : value;
+  return Math.min(value, 5);
+}
 
 /** Whether an exercise counts reps, and so can have reps in reserve. */
 export function countsReps(type: string): boolean {
@@ -69,8 +81,35 @@ export function typeRir(text: string, key: PadKey, fresh: boolean): string | nul
 }
 
 /**
+ * The RPE typed so far after a key on the pad, or null when the key is refused: from 1 to 10 in
+ * half steps. A fresh field is replaced by the first digit.
+ */
+export function typeRpe(text: string, key: PadKey, fresh: boolean): string | null {
+  if (key === "delete") return fresh ? "" : text.slice(0, -1);
+  if (fresh && key === ".") return null;
+  const next = fresh ? key : `${text}${key}`;
+  return /^(?:[1-9](?:\.[05]?)?|10(?:\.0?)?)$/.test(next) ? next : null;
+}
+
+/** The RPE on the pad, if it is one Leve can store; empty means none. */
+export function typedRpe(text: string): number | null | undefined {
+  const typed = text.trim();
+  if (typed === "") return null;
+  const value = Number(typed);
+  return RPE_VALUES.find((rating) => rating === value);
+}
+
+/** RPE half a step up or down, kept from 1 to 10. Empty goes up to 1 and stays empty going down. */
+export function stepRpe(text: string, direction: -1 | 1): string {
+  const value = text.trim() === "" ? null : Number(text);
+  if (value === null || Number.isNaN(value)) return direction > 0 ? "1" : "";
+  const next = Math.round(value * 2) / 2 + direction / 2;
+  return String(Math.min(10, Math.max(1, next)));
+}
+
+/**
  * RIR one step up or down, kept from 0 to RIR_MAX; down from 0 leaves it at 0. A value already past
- * RIR_MAX (from an import) can't go further up, and goes down to RIR_MAX.
+ * RIR_MAX (saved before the data format capped it) can't go further up, and goes down to RIR_MAX.
  */
 export function stepRir(text: string, direction: -1 | 1): string {
   const value = text.trim() === "" ? null : Number(text);

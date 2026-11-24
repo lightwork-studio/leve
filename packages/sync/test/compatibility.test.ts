@@ -359,7 +359,9 @@ describe.each(cases)("server $server × archived peer $peer", (matrixCase) => {
     const bad: [string, Json][] = [
       ["unknown field", { ...good, effortRating: 5 }],
       ["unknown enum value", { ...good, type: "cluster" }],
-      ["rpe off the scale", { ...good, rpe: 6.5 }],
+      ["rpe off the scale", { ...good, rpe: 6.25 }],
+      ["rpe below the scale", { ...good, rpe: 0.5 }],
+      ["reps in reserve above 10", { ...good, repsInReserve: 11 }],
       ["weight above maximum", { ...good, weightKg: 2000.5 }],
       ["negative weight", { ...good, weightKg: -1 }],
       ["fractional reps", { ...good, reps: 1.5 }],
