@@ -1,5 +1,5 @@
 import { MUSCLE_GROUPS } from "@leve/core";
-import { Link, useLocalSearchParams } from "expo-router";
+import { Link } from "expo-router";
 import { memo, useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -33,9 +33,6 @@ const exerciseKey = (exercise: ExerciseHistory) => exercise.exerciseId;
  */
 export default function ExercisesScreen() {
   const { index, muscleTargets, equipmentFor } = useProgress();
-  // Opened from Train's library row or from Progress; back goes where it came from.
-  const { from } = useLocalSearchParams<{ from?: string }>();
-  const fromTrain = from === "train";
   const styles = useStyles(sheet);
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
@@ -99,10 +96,7 @@ export default function ExercisesScreen() {
       }
       ListHeaderComponent={
         <View style={styles.header}>
-          <BackLink
-            label={fromTrain ? "Train" : "Progress"}
-            fallback={fromTrain ? "/" : "/progress"}
-          />
+          <BackLink label="Progress" fallback="/progress" />
           {!focused && (
             <View style={styles.titles}>
               <Text style={styles.eyebrow}>Your exercises</Text>
