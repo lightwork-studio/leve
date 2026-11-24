@@ -72,6 +72,10 @@ function RoutineForm({
   const [effortScale, setEffortScale] = useState(draft?.effortScale ?? "rir");
   const [reordering, setReordering] = useState(false);
   const [reorderGripHeld, setReorderGripHeld] = useState(false);
+  // A blank routine opens on its name with the keyboard up. One drafted from a workout already has
+  // a name. Only on opening: the field comes back after reordering without raising the keyboard.
+  const [focusName, setFocusName] = useState(!draft);
+  if (reordering && focusName) setFocusName(false);
   const [problem, setProblem] = useState("");
   const saving = useRef(false);
   const folders = groups.flatMap((group) =>
@@ -142,6 +146,7 @@ function RoutineForm({
               setFolderId={setFolder}
               notes={notes}
               setNotes={setNotes}
+              autoFocus={focusName}
             />
           )}
           <RoutinePlanEditor

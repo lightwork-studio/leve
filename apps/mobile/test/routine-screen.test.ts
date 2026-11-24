@@ -362,6 +362,44 @@ it("selects the last folder in the scrollable form and saves the chosen exercise
   }
 });
 
+it("opens a blank routine on its name with the keyboard up, and not again after reordering", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  store = await openDeviceStore({
+    engine: createSqlJsEngine(await initSqlJs()),
+    path: "/focus-name",
+    appVersion: "test",
+  });
+  let rendered: ReactTestRenderer | undefined;
+  try {
+    await act(() => {
+      rendered = create(createElement(NewRoutine));
+    });
+    if (!rendered) throw new Error("Missing routine form");
+    const root = rendered.root.findByType(ScrollView);
+    const name = () =>
+      root.find((n) => n.type === TextInput && n.props.accessibilityLabel === "Routine name");
+    expect(name().props.autoFocus).toBe(true);
+    await tapText(root, "Add exercise");
+    await act(() =>
+      root
+        .find((n) => typeof n.props.onPickMany === "function")
+        .props.onPickMany([EXERCISES.plank, EXERCISES.bench]),
+    );
+    await act(() => name().props.onChangeText("Friday"));
+    await toggleReorder(rendered);
+    expect(
+      root.findAll((n) => n.type === TextInput && n.props.accessibilityLabel === "Routine name"),
+    ).toEqual([]);
+    await toggleReorder(rendered);
+    expect(name().props.value).toBe("Friday");
+    expect(name().props.autoFocus).toBe(false);
+  } finally {
+    await act(() => rendered?.unmount());
+    store.close();
+    vi.unstubAllGlobals();
+  }
+});
+
 const target = {
   id: "set",
   type: "drop",
@@ -1422,6 +1460,11 @@ it("starts an editable new routine from the logged sets of a completed workout",
     expect(root.findByProps({ accessibilityLabel: "Routine name" }).props.value).toBe(
       "Park session",
     );
+    // Already named from the workout, so the keyboard stays down.
+    expect(
+      root.find((n) => n.type === TextInput && n.props.accessibilityLabel === "Routine name").props
+        .autoFocus,
+    ).toBe(false);
     expect(
       root.findAllByProps({ accessibilityLabel: "Farmer carry rest, 0:45. Change it" }),
     ).toHaveLength(1);

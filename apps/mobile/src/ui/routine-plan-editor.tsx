@@ -107,6 +107,7 @@ export function RoutineDetailsFields({
   setFolderId,
   notes,
   setNotes,
+  autoFocus = false,
 }: {
   title: string;
   setTitle: (title: string) => void;
@@ -115,6 +116,8 @@ export function RoutineDetailsFields({
   setFolderId: (id: string | null) => void;
   notes: string;
   setNotes: (notes: string) => void;
+  /** Focuses the name when the fields appear, so the keyboard opens to type it. */
+  autoFocus?: boolean;
 }) {
   const styles = useStyles(sheet);
   const c = useColors();
@@ -130,6 +133,7 @@ export function RoutineDetailsFields({
         maxLength={LIMITS.titleLength}
         value={title}
         onChangeText={setTitle}
+        autoFocus={autoFocus}
         style={styles.titleField}
       />
       <View style={styles.card}>
