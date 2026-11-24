@@ -149,7 +149,10 @@ vi.mock("../src/ui/enter.tsx", () => ({
 }));
 vi.mock("react-native-reanimated", () => ({
   useReducedMotion: () => true,
-  default: { View: ({ children }: { children: ReactNode }) => children },
+  default: {
+    View: ({ children }: { children: ReactNode }) => children,
+    Text: ({ children }: { children: ReactNode }) => children,
+  },
   useSharedValue: (value: number) => ({ value }),
   useAnimatedStyle: () => ({}),
   Easing: { linear: (value: number) => value },
@@ -160,6 +163,7 @@ vi.mock("react-native-reanimated", () => ({
 vi.mock("../src/ui/motion.ts", () => ({
   easeOut: undefined,
   layout: undefined,
+  layoutDuration: 220,
   sinkOut: undefined,
   spring: undefined,
 }));

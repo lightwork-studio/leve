@@ -1,6 +1,6 @@
 import type { SetMetric } from "@leve/core";
 import { type ReactNode, useEffect, useState } from "react";
-import { Text, View } from "react-native";
+import { Platform, type StyleProp, StyleSheet, Text, View, type ViewStyle } from "react-native";
 import Animated, {
   Easing,
   ReduceMotion,
@@ -21,6 +21,7 @@ import {
   MinusIcon,
   PlusIcon,
 } from "../icons.tsx";
+import { easeOut, layout, layoutDuration } from "../motion.ts";
 import { Tap } from "../tap.tsx";
 import { themedStyles, useColors, useStyles } from "../themed.ts";
 import { clock, useTicker } from "../use-ticker.ts";
@@ -482,12 +483,14 @@ function Ruler({ steps }: { steps: number }) {
  */
 export function RestSlab({
   rest,
+  style,
   band,
   onTime,
   onAdjust,
   onSkip,
 }: {
   rest: Rest;
+  style?: StyleProp<ViewStyle>;
   band?: ReactNode;
   /** Omit in the compact bar above an editor. */
   onTime?: () => void;
@@ -498,6 +501,18 @@ export function RestSlab({
   const c = useColors();
   const now = useTicker();
   const remaining = Math.ceil(restProgress(rest, now).left / 1000);
+  const compact = !onTime;
+  // Web layout transitions scale the whole panel, which would stretch the animated digits.
+  const restLayout = Platform.OS === "web" ? undefined : layout;
+  const size = useSharedValue(compact ? 30 : 50);
+  useEffect(() => {
+    size.value = withTiming(compact ? 30 : 50, { duration: layoutDuration, easing: easeOut });
+  }, [compact, size]);
+  const clockStyle = useAnimatedStyle(() => ({
+    fontSize: size.value,
+    lineHeight: size.value + 1,
+    letterSpacing: -0.04 * size.value,
+  }));
   const fill = useSharedValue(1);
   useEffect(() => {
     const { left } = restProgress(rest, Date.now());
@@ -512,8 +527,12 @@ export function RestSlab({
   // Scaled rather than resized, so moving every frame for minutes never relayouts.
   const fillStyle = useAnimatedStyle(() => ({ transform: [{ scaleX: fill.value }] }));
   const label = `Rest · ${clock(rest.totalSeconds)}`;
+  const announcement = `Rest, ${clock(remaining)} left of ${clock(rest.totalSeconds)}`;
   return (
-    <View style={[styles.restPanel, !onTime && styles.compactPanel]}>
+    <Animated.View
+      layout={restLayout}
+      style={[styles.restPanel, compact && styles.compactPanel, style]}
+    >
       <Animated.View pointerEvents="none" style={[styles.restFill, fillStyle]} />
       {band ? (
         <View style={styles.restBand}>
@@ -521,44 +540,43 @@ export function RestSlab({
           <View style={styles.restBandRule} />
         </View>
       ) : null}
-      <View style={[styles.rest, !onTime && styles.compactRest]}>
-        {onTime ? (
-          <Tap
-            accessibilityRole="button"
-            accessibilityLabel={`Rest, ${clock(remaining)} left of ${clock(rest.totalSeconds)}. Change the rest time`}
-            onPress={onTime}
-            scaleTo={0.98}
-            style={styles.restTime}
+      <Animated.View layout={restLayout} style={[styles.rest, compact && styles.compactRest]}>
+        <View
+          accessible={compact}
+          accessibilityRole={compact ? "timer" : undefined}
+          accessibilityLabel={compact ? announcement : undefined}
+          style={[styles.restTime, compact && styles.compactTime]}
+        >
+          <Animated.Text
+            aria-hidden
+            numberOfLines={1}
+            adjustsFontSizeToFit={compact}
+            style={[styles.restClock, compact && styles.compactClock, clockStyle]}
           >
-            <View style={styles.restLabelRow}>
-              <Text style={styles.restLabel}>{label}</Text>
-              <EditIcon color={c.rest.ink2} size={12} />
-            </View>
-            <Text accessibilityRole="timer" style={styles.restClock}>
-              {clock(remaining)}
-            </Text>
-          </Tap>
-        ) : (
-          <View
-            accessible
-            accessibilityRole="timer"
-            accessibilityLabel={`Rest, ${clock(remaining)} left of ${clock(rest.totalSeconds)}`}
-            style={styles.compactTime}
-          >
-            <Text numberOfLines={1} adjustsFontSizeToFit style={styles.compactClock}>
-              {clock(remaining)}
-            </Text>
+            {clock(remaining)}
+          </Animated.Text>
+          <View aria-hidden style={[styles.restLabelRow, compact && styles.compactLabelRow]}>
             <Text numberOfLines={1} style={[styles.restLabel, styles.compactLabel]}>
               {label}
             </Text>
+            {onTime && <EditIcon color={c.rest.ink2} size={12} />}
           </View>
-        )}
+          {onTime && (
+            <Tap
+              accessibilityRole="button"
+              accessibilityLabel={`${announcement}. Change the rest time`}
+              onPress={onTime}
+              scaleTo={1}
+              style={StyleSheet.absoluteFill}
+            />
+          )}
+        </View>
         <View style={styles.restButtons}>
           <Tap
             accessibilityRole="button"
             accessibilityLabel="15 seconds less"
             onPress={() => onAdjust(-15)}
-            style={[styles.restButton, !onTime && styles.compactButton]}
+            style={[styles.restButton, compact && styles.compactButton]}
           >
             <Text style={styles.restButtonText}>−15</Text>
           </Tap>
@@ -566,7 +584,7 @@ export function RestSlab({
             accessibilityRole="button"
             accessibilityLabel="15 seconds more"
             onPress={() => onAdjust(15)}
-            style={[styles.restButton, !onTime && styles.compactButton]}
+            style={[styles.restButton, compact && styles.compactButton]}
           >
             <Text style={styles.restButtonText}>+15</Text>
           </Tap>
@@ -577,15 +595,15 @@ export function RestSlab({
             style={[
               styles.restButton,
               styles.skip,
-              !onTime && styles.compactButton,
-              !onTime && styles.compactSkip,
+              compact && styles.compactButton,
+              compact && styles.compactSkip,
             ]}
           >
             <Text style={styles.skipText}>Skip</Text>
           </Tap>
         </View>
-      </View>
-    </View>
+      </Animated.View>
+    </Animated.View>
   );
 }
 
@@ -768,14 +786,14 @@ const sheet = themedStyles((c) => ({
   compactPanel: { borderRadius: radius.button },
   compactRest: { height: 54, gap: 6 },
   compactTime: {
-    flex: 1,
-    minWidth: 0,
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
     paddingLeft: 4,
+    justifyContent: "flex-start",
   },
-  compactClock: { ...numeral(30), color: c.rest.ink, maxWidth: "100%" },
+  compactClock: { ...numeral(30), marginTop: 0, maxWidth: "100%" },
+  compactLabelRow: { flexShrink: 1, minWidth: 0 },
   compactLabel: { flexShrink: 1 },
   compactButton: { height: touch, minWidth: 46, borderRadius: 12 },
   compactSkip: { minWidth: 58 },
@@ -810,6 +828,7 @@ const sheet = themedStyles((c) => ({
     flex: 1,
     minWidth: 0,
     alignSelf: "stretch",
+    flexDirection: "column-reverse",
     justifyContent: "center",
     paddingLeft: 10,
     borderRadius: radius.button,
