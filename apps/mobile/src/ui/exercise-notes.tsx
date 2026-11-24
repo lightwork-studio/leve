@@ -1,6 +1,6 @@
 import { LIMITS } from "@leve/core";
 import { useRef, useState } from "react";
-import { Text, TextInput, View } from "react-native";
+import { StyleSheet, Text, TextInput, View } from "react-native";
 import { useAppData } from "../data/app-data.tsx";
 import { addExerciseNote } from "../data/workout-actions.ts";
 import type { WithId, WorkoutEntry } from "../model/types.ts";
@@ -8,6 +8,8 @@ import { font, radius, space, type } from "../theme.ts";
 import { ChevronIcon, NoteIcon } from "./icons.tsx";
 import { Tap } from "./tap.tsx";
 import { themedStyles, useColors, useStyles } from "./themed.ts";
+
+const NOTE_ICON = 15;
 
 export function ExerciseNotes({
   entry,
@@ -47,7 +49,8 @@ export function ExerciseNotes({
   return (
     <View style={styles.panel}>
       {notes.length > 0 && (expanded || editor) && (
-        <>
+        // One card: the open notes stay inside it, under the summary, rather than spilling below.
+        <View style={styles.card}>
           <Tap
             accessibilityRole="button"
             accessibilityLabel={`Exercise notes for ${name}, ${notes.length}`}
@@ -60,8 +63,8 @@ export function ExerciseNotes({
           >
             {/* The note icon stands in for the word, with a count when there are several. */}
             <View style={styles.mark}>
-              <NoteIcon color={c.fg3} size={15} />
-              {notes.length > 1 && <Text style={styles.count}>{notes.length}</Text>}
+              <NoteIcon color={c.fg3} size={NOTE_ICON} />
+              {notes.length > 1 && !showAll && <Text style={styles.count}>{notes.length}</Text>}
             </View>
             <View style={styles.preview}>
               <Text style={styles.peek} numberOfLines={2}>
@@ -72,13 +75,16 @@ export function ExerciseNotes({
             </View>
             <ChevronIcon direction={showAll ? "down" : "right"} color={c.fg2} size={18} />
           </Tap>
-          {showAll &&
-            notes.map((note) => (
-              <Text key={note.id} style={styles.text}>
-                {note.text}
-              </Text>
-            ))}
-        </>
+          {showAll && (
+            <View style={styles.list}>
+              {notes.map((note, i) => (
+                <Text key={note.id} style={[styles.text, i > 0 && styles.divided]}>
+                  {note.text}
+                </Text>
+              ))}
+            </View>
+          )}
+        </View>
       )}
       {editor && draft !== null ? (
         <>
@@ -140,6 +146,7 @@ export function ExerciseNotes({
 }
 const sheet = themedStyles((c) => ({
   panel: { gap: space.xs },
+  card: { borderRadius: space.md, backgroundColor: c.s2 },
   summary: {
     flexDirection: "row",
     alignItems: "center",
@@ -148,15 +155,21 @@ const sheet = themedStyles((c) => ({
     paddingVertical: 9,
     paddingLeft: space.md,
     paddingRight: space.sm,
-    borderRadius: space.md,
-    backgroundColor: c.s2,
   },
   mark: { flexDirection: "row", alignItems: "center", gap: 3, alignSelf: "flex-start" },
   count: { ...type.meta, color: c.fg3 },
   preview: { flex: 1, minWidth: 0 },
   peek: { ...font.body, fontSize: 13, lineHeight: 18, color: c.fg2 },
   label: { ...type.action, color: c.fg },
-  text: { color: c.fg, ...font.body, fontSize: 15 },
+  // Open notes line up with the summary's text: past the card's inset, the icon and the gap.
+  list: {
+    marginTop: -space.xs,
+    paddingLeft: space.md + NOTE_ICON + space.sm,
+    paddingRight: space.lg,
+    paddingBottom: space.md,
+  },
+  text: { ...font.body, fontSize: 14, lineHeight: 20, color: c.fg, paddingVertical: 6 },
+  divided: { borderTopWidth: StyleSheet.hairlineWidth, borderColor: c.line },
   input: {
     padding: space.sm,
     borderWidth: 1,

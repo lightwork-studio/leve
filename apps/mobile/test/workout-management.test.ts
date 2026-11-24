@@ -2291,6 +2291,21 @@ it("shows a routine exercise cue and saves an additional note only on that worko
   expect(panel.textContent).toContain("Pause on the chest");
   expect(panel.textContent).toContain("Plant both feet");
   await press("Manage Bench Press");
+  // Opened in the exercise's sheet, the notes stay in the disclosure's own card, apart from the
+  // note editor below it.
+  const sheetDisclosure = [
+    ...host.querySelectorAll<HTMLButtonElement>(
+      'button[aria-label="Exercise notes for Bench Press, 2"]',
+    ),
+  ].find((button) => button !== disclosure);
+  const card = sheetDisclosure?.parentElement;
+  if (!sheetDisclosure || !card || card === panel) throw Error("Missing sheet cue disclosure");
+  expect(card.textContent).not.toContain("Plant both feet");
+  await act(() => sheetDisclosure.click());
+  expect(sheetDisclosure.getAttribute("aria-expanded")).toBe("true");
+  expect(card.textContent).toContain("Plant both feet");
+  expect(card.textContent).not.toContain("Add exercise note");
+  expect(card.parentElement?.textContent).toContain("Add exercise note");
   await press("Add exercise note");
   const input = host.querySelector<HTMLInputElement>('input[aria-label="Note for Bench Press"]');
   if (!input) throw Error("Missing exercise note input");
