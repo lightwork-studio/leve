@@ -1503,7 +1503,7 @@ it("keeps the web page's scrollbar in place while a reorder grip is held", async
   }
 });
 
-it("moves both routine editors above the keyboard while their last set is typed in", async () => {
+it("lets both routine editors make room for the keyboard below their last set", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   store = await openDeviceStore({
     engine: createSqlJsEngine(await initSqlJs()),
