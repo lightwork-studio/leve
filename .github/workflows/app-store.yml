@@ -1,0 +1,106 @@
+name: App Store
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      store_tag:
+        description: Release tag of the currently approved App Store binary
+        type: string
+        required: true
+      commit:
+        description: Full main commit SHA to publish as an approved OTA fix
+        type: string
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: app-store
+  queue: max
+jobs:
+  verify:
+    if: >-
+      vars.LEVE_APP_STORE_ENABLED == 'true' && vars.LEVE_RELEASE_REPOSITORY == github.repository &&
+      (github.event_name == 'push' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    outputs:
+      commit: ${{ steps.verify.outputs.commit }}
+      tag: ${{ steps.verify.outputs.tag }}
+      mode: ${{ steps.verify.outputs.mode }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify the release revision
+        id: verify
+        env:
+          OTA_TAG: ${{ inputs.store_tag }}
+          OTA_COMMIT: ${{ inputs.commit }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            tag="$GITHUB_REF_NAME"
+            commit="$(git rev-parse HEAD)"
+            mode=build
+          else
+            tag="$OTA_TAG"
+            commit="$OTA_COMMIT"
+            mode=ota
+          fi
+          [[ "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          [[ "$commit" =~ ^[0-9a-f]{40}$ ]]
+          tag_commit="$(git rev-parse --verify "refs/tags/$tag^{commit}")"
+          git merge-base --is-ancestor "$tag_commit" "$commit"
+          git merge-base --is-ancestor "$commit" origin/main
+          if [ "$mode" = build ]; then test "$tag_commit" = "$commit"; fi
+          printf 'tag=%s\ncommit=%s\nmode=%s\n' "$tag" "$commit" "$mode" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ steps.verify.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: app-store
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.verify.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Publish approved OTA or queue a store build
+        working-directory: apps/mobile
+        env:
+          RELEASE_TAG: ${{ needs.verify.outputs.tag }}
+          RELEASE_MODE: ${{ needs.verify.outputs.mode }}
+          LEVE_PRODUCTION_EAS_PROJECT_ID: ${{ vars.LEVE_PRODUCTION_EAS_PROJECT_ID }}
+          LEVE_PRODUCTION_ASC_APP_ID: ${{ vars.LEVE_PRODUCTION_ASC_APP_ID }}
+          LEVE_PRODUCTION_APPLE_TEAM_ID: ${{ vars.LEVE_PRODUCTION_APPLE_TEAM_ID }}
+          EXPO_TOKEN: ${{ secrets.LEVE_STORE_EXPO_TOKEN }}
+          ASC_API_KEY_P8: ${{ secrets.LEVE_STORE_ASC_API_KEY_P8 }}
+          ASC_API_KEY_ID: ${{ secrets.LEVE_STORE_ASC_API_KEY_ID }}
+          ASC_API_ISSUER_ID: ${{ secrets.LEVE_STORE_ASC_API_ISSUER_ID }}
+        run: |
+          if [ "$RELEASE_MODE" = build ]; then
+            : "${ASC_API_KEY_P8:?Configure the production App Store Connect API key.}"
+            umask 077
+            export ASC_API_KEY_PATH="$RUNNER_TEMP/asc-api-key.p8"
+            trap 'rm -f "$ASC_API_KEY_PATH"' EXIT
+            printf '%s\n' "$ASC_API_KEY_P8" > "$ASC_API_KEY_PATH"
+          fi
+          unset ASC_API_KEY_P8
+          bash ./scripts/release-store.sh "$RELEASE_TAG" "$RELEASE_MODE"

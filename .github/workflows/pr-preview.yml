@@ -1,0 +1,90 @@
+name: Branch web preview
+on:
+  workflow_dispatch:
+    inputs:
+      pull_request:
+        description: Pull request number to preview with sample workouts
+        type: string
+        required: true
+permissions:
+  contents: read
+  pull-requests: read
+concurrency:
+  group: web-preview-${{ inputs.pull_request }}
+  cancel-in-progress: true
+jobs:
+  build:
+    if: >-
+      github.ref == 'refs/heads/main' && vars.LEVE_RELEASE_REPOSITORY == github.repository &&
+      vars.LEVE_WEB_PREVIEW_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    # This job runs PR code from a main-branch dispatch. Keep it out of the release cache.
+    cache-mode: none
+    outputs:
+      commit: ${{ steps.resolve.outputs.commit }}
+    steps:
+      - name: Pin the open pull request head
+        id: resolve
+        env:
+          PR: ${{ inputs.pull_request }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [[ "$PR" =~ ^[1-9][0-9]*$ ]]
+          commit="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq 'select(.state == "open") | .head.sha')"
+          [[ "$commit" =~ ^[0-9a-f]{40}$ ]]
+          printf 'commit=%s\n' "$commit" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ steps.resolve.outputs.commit }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+      - run: pnpm install --frozen-lockfile
+      - name: Export static web preview
+        env:
+          LEVE_APP_VARIANT: development
+          EXPO_PUBLIC_SAMPLE_DATA: "on"
+          EXPO_PUBLIC_BUILD_LABEL: Branch preview
+          EXPO_PUBLIC_COMMIT: ${{ steps.resolve.outputs.commit }}
+        run: pnpm --filter @leve/mobile export:web
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: branch-preview
+          path: apps/mobile/dist
+          if-no-files-found: error
+          retention-days: 1
+  publish:
+    needs: build
+    environment: branch-web-preview
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: branch-preview
+          path: preview
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+      - name: Deploy an isolated static preview
+        env:
+          PR: ${{ inputs.pull_request }}
+          COMMIT: ${{ needs.build.outputs.commit }}
+          PROJECT: ${{ vars.LEVE_WEB_PREVIEW_PROJECT }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.LEVE_WEB_PREVIEW_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          [[ "$PR" =~ ^[1-9][0-9]*$ && "$COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$PROJECT" =~ ^[a-z0-9][a-z0-9-]*$ && "$PROJECT" != leve ]]
+          : "${CLOUDFLARE_API_TOKEN:?Configure the branch web preview token.}"
+          : "${CLOUDFLARE_ACCOUNT_ID:?Configure the branch web preview Cloudflare account.}"
+          test -f preview/index.html
+          if [ -n "$(find preview \( -type l -o -name _worker.js -o -name functions -o -name _routes.json -o -name _headers -o -name _redirects \) -print -quit)" ]; then
+            echo 'Only static preview assets may be deployed.' >&2
+            exit 1
+          fi
+          npx --yes wrangler@4.158.0 pages deploy preview \
+            --project-name="$PROJECT" --branch="pr-$PR" --commit-hash="$COMMIT" --commit-dirty=true
+          printf '%s\n\n%s\n' "PR #$PR at \`$COMMIT\`" \
+            "[Open branch preview](https://pr-$PR.$PROJECT.pages.dev/)" >> "$GITHUB_STEP_SUMMARY"

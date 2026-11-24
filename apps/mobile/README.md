@@ -19,10 +19,22 @@ export time, are shown in the app so you can tell which build is running. A new 
 sample data, which the reset in Settings brings back. `EXPO_PUBLIC_SAMPLE_DATA=off` turns that off,
 so the app starts empty and the reset deletes everything; TestFlight builds and their updates set it.
 
-Local builds use the name Leve Dev and bundle ID `app.leve.dev`. They run with sample data and
-OTA updates disabled, independently of the official Leve Preview build (`app.leve.preview`).
-The official release workflow selects the Preview configuration explicitly. If you distribute a
-fork, configure its own bundle ID and scheme and follow the [branding terms](../../TRADEMARKS.md).
+## App identities
+
+| App          | iOS bundle ID         | Delivery                                      |
+| ------------ | --------------------- | --------------------------------------------- |
+| Leve Dev     | `app.leve.dev`        | Local development with sample workouts        |
+| Leve Preview | `app.leve.preview`    | TestFlight and the `preview` update channel   |
+| Leve         | `app.leve.production` | App Store and the `production` update channel |
+
+The apps have separate device storage. Local development uses Leve Dev with OTA updates off.
+To share a native development build, set `LEVE_DEV_EAS_PROJECT_ID` to a separate Expo project
+and use the EAS `development` profile. If you distribute a fork, configure its own bundle ID
+and scheme and follow the [branding terms](../../TRADEMARKS.md).
+
+Use `pnpm preview:web` to try a branch locally with sample workouts. When enabled by maintainers,
+the **Branch web preview** workflow builds the requested PR commit with sample workouts and
+links to its preview in the run summary.
 
 ## TestFlight
 
@@ -52,3 +64,10 @@ kept on EAS.
 CI does not wait for a build: a failed build or TestFlight upload shows up on expo.dev and in
 email, not as a red CI run. Later JavaScript pushes still go out as updates to that build, so after
 such a failure run the workflow manually with "build" set (or resubmit the build with `eas submit`).
+
+## App Store
+
+When App Store publishing is enabled, a version tag such as `v1.0.0` on `main` queues a build
+for that revision. Maintainers use the **App Store** workflow for compatible OTA fixes based on
+the currently approved store tag. Native changes and changes that require App Review use a new
+store build.
