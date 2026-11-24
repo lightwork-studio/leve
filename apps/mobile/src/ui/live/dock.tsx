@@ -864,14 +864,15 @@ const sheet = themedStyles((c) => ({
     paddingLeft: 8,
     paddingRight: 10,
   },
-  // As tall as the tallest panel rather than pinned to its bottom: a resize animates the panel's
-  // frame but lays the fill out at the final size at once, so a pinned fill would leave the panel's
+  // Never shorter than the tallest panel: a resize animates the panel's frame but lays the fill
+  // out at the final size at once, so a fill only as tall as the smaller panel would leave its
   // lower part bare while it shrinks. The panel clips what's left over.
   restFill: {
     position: "absolute",
     left: 0,
     top: 0,
-    height: BAND_HEIGHT + REST_HEIGHT,
+    bottom: 0,
+    minHeight: BAND_HEIGHT + REST_HEIGHT,
     width: "100%",
     backgroundColor: c.rest.fill,
     transformOrigin: "left",
