@@ -43,3 +43,15 @@ TestFlight and site deployments run separately from contributor CI.
 Read the [review workflow](docs/review-and-merge.md) before submitting changes and the
 [data compatibility standard](docs/data-compatibility.md) before changing storage, sync, imports,
 or MCP writes. Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
+
+## Feedback for app writes
+
+Give enabled controls immediate press feedback. Show the result of an everyday edit optimistically
+on activation unless the local commit reliably fits in the first frame. When a provisional result
+would be misleading or hard to reconcile, show an action-specific busy state and give it a frame to
+paint before starting synchronous work.
+
+Use the existing device write path. Apply rapid edits in order and reconcile the preview with the
+committed value. If a write fails, restore the stored value, keep editable input available, and
+show the error. A web edit reaches durable local storage when its IndexedDB transaction completes.
+Test the feedback while the write is pending and verify the saved result or failure recovery.

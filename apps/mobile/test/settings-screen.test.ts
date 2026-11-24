@@ -3,7 +3,7 @@
 import type { JsonObject } from "@leve/contract";
 import { type DeviceStore, openDeviceStore } from "@leve/storage";
 import { createSqlJsEngine } from "@leve/storage/sqljs";
-import { act, createElement as h, type ReactNode } from "react";
+import { act, createElement as h, type ReactNode, useMemo } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import initSqlJs from "sql.js";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -15,10 +15,16 @@ import { SettingsError, saveSettings, settingsContent } from "../src/data/settin
 import { readTrackRir, saveTrackRir } from "../src/data/track-rir.ts";
 import { palettes } from "../src/theme.ts";
 import { File, files } from "./support/expo-file-system.ts";
+import { feedbackScheduler } from "./support/feedback.ts";
 
 let store: DeviceStore;
 let version = 0;
+let holdAppVersion = false;
 const reset = vi.fn(async () => true);
+const feedback = feedbackScheduler();
+vi.mock("../src/ui/after-feedback.ts", () => ({
+  afterFeedback: (run: () => void) => feedback.afterFeedback(run),
+}));
 
 vi.mock("react-native", () => vi.importActual("react-native-web"));
 // Mutable, so tests can stand in for local and deployed bundles.
@@ -38,12 +44,15 @@ vi.mock("../src/data/app-data.tsx", () => ({
     reset,
     change: (write: (value: DeviceStore) => unknown) => {
       const result = write(store);
-      version++;
+      if (!holdAppVersion) version++;
       return result;
     },
   }),
 }));
-vi.mock("../src/data/queries.ts", () => ({ useSettings: () => readSettings(store) }));
+vi.mock("../src/data/queries.ts", () => ({
+  // biome-ignore lint/correctness/useExhaustiveDependencies: version marks stored data changes.
+  useSettings: () => useMemo(() => readSettings(store), [store, version]),
+}));
 vi.mock("react-native-reanimated", () => {
   const passthrough = ({ children }: { children?: ReactNode }) => children ?? null;
   return {
@@ -106,6 +115,8 @@ beforeEach(async () => {
   reset.mockClear();
 });
 afterEach(async () => {
+  await act(feedback.release);
+  holdAppVersion = false;
   build.releaseNumber = undefined;
   build.sampleData = true;
   await act(() => root.unmount());
@@ -213,6 +224,39 @@ it("steps the default rest through the offered times and sets one in the rest di
   // Off can't go lower, and has no timer to preview.
   expect(byLabel("Less default rest")?.getAttribute("aria-disabled")).toBe("true");
   expect(host.textContent).not.toContain("Preview");
+});
+
+it("shows two rapid rest steps before the save and commits them together", async () => {
+  await render();
+  const more = byLabel("More default rest");
+  if (!more) throw Error("Missing rest stepper");
+  feedback.hold();
+  await act(() => {
+    more.click();
+    more.click();
+  });
+  expect(host.textContent).toContain("Preview · 0:45");
+  expect(readSettings(store).defaultRestSeconds).toBe(0);
+  holdAppVersion = true;
+  await act(feedback.release);
+  expect(readSettings(store).defaultRestSeconds).toBe(45);
+  expect(host.textContent).toContain("Preview · 0:45");
+});
+
+it("restores the stored value and explains a refused optimistic setting", async () => {
+  await render();
+  const more = byLabel("More default rest");
+  if (!more) throw Error("Missing rest stepper");
+  vi.spyOn(store, "put").mockImplementationOnce(() => {
+    throw Error("Storage is full.");
+  });
+  feedback.hold();
+  await act(() => more.click());
+  expect(host.textContent).toContain("Preview · 0:30");
+  await act(feedback.release);
+  expect(readSettings(store).defaultRestSeconds).toBe(0);
+  expect(host.textContent).not.toContain("Preview · 0:30");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("Storage is full.");
 });
 
 it("changes the other settings from their rows", async () => {
