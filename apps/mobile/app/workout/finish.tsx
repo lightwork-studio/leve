@@ -1,5 +1,5 @@
 import { LIMITS, type WeightUnit } from "@leve/core";
-import { router, usePreventRemove } from "expo-router";
+import { router, useLocalSearchParams, usePreventRemove } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -7,7 +7,7 @@ import { useAppData } from "../../src/data/app-data.tsx";
 import { useLive } from "../../src/data/queries.ts";
 import { finishPreview } from "../../src/data/read.ts";
 import { restTimer } from "../../src/data/rest-timer.ts";
-import { finishWorkout } from "../../src/data/workout-actions.ts";
+import { beginRoutineWorkout, finishWorkout } from "../../src/data/workout-actions.ts";
 import {
   discardReviewedActiveWorkout,
   workoutDeletionSnapshot,
@@ -52,12 +52,18 @@ type TextDraft = { original: string; value: string };
 /**
  * Finishing a workout: one summary sheet over it. It leads with the records the workout would set
  * (or how it compares with last time), then its figures, the exercises against last time, whether
- * it counts for its routine, and notes. Save workout writes it; Discard asks first.
+ * it counts for its routine, and notes. Save workout writes it; Discard asks first. Opened with
+ * `next` (a routine chosen on Train while this workout ran), saving starts that routine.
  */
 export default function FinishScreen() {
   const data = useLive();
   const { change, store, version } = useAppData();
   const discardReview = useRef<ReturnType<typeof workoutDeletionSnapshot>>(null);
+  const params = useLocalSearchParams<{ next?: string | string[] }>();
+  const next = Array.isArray(params.next) ? params.next[0] : params.next;
+  const nextRoutine = next ? store.get("routine", next) : null;
+  const nextTitle =
+    nextRoutine?.content && !nextRoutine.deleted ? String(nextRoutine.content.title) : null;
   const insets = useSafeAreaInsets();
   const styles = useStyles(sheet);
   const c = useColors();
@@ -168,12 +174,24 @@ export default function FinishScreen() {
     }
     haptic.success();
     restTimer.skip(store, tree.workout.id);
-    // Back to the tabs, on History with the new session picked out.
     setSaving(false);
     allowRemoval();
     goHome();
+    // The routine chosen on Train starts now. If it can't, History shows the saved session instead.
+    if (next) {
+      try {
+        change((store) => beginRoutineWorkout(store, next), "active-workout");
+        router.push("/workout/active");
+        showToast("Workout added to History");
+        return;
+      } catch {
+        showToast(
+          `Workout added to History. ${nextTitle ?? "The chosen routine"} couldn’t be started.`,
+        );
+      }
+    } else showToast("Workout added to History");
+    // Back to the tabs, on History with the new session picked out.
     router.navigate({ pathname: "/history", params: { saved: tree.workout.id } });
-    showToast("Workout added to History");
   };
 
   return (
@@ -306,6 +324,7 @@ export default function FinishScreen() {
               sets will be saved.
             </Text>
           )}
+          {nextTitle && <Text style={styles.footnote}>{nextTitle} starts after saving.</Text>}
           {first && (
             <Tap
               accessibilityRole="button"

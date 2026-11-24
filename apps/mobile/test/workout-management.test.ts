@@ -19,6 +19,7 @@ import { workoutFrame } from "../src/activity/frame.ts";
 import { type WorkoutContent, workoutSession } from "../src/activity/session.ts";
 import { pickerLibrary } from "../src/data/custom-exercises.ts";
 import { type BuiltInExercise, EXERCISES } from "../src/data/exercises.ts";
+import { newId } from "../src/data/ids.ts";
 import {
   applyAppChange,
   historyData,
@@ -126,6 +127,17 @@ vi.mock("../src/data/queries.ts", async (load) => ({
   useProgress: () => progressData(store),
 }));
 vi.mock("../src/ui/line-chart.tsx", () => ({ LineChart: () => null }));
+const toasts: string[] = [];
+vi.mock("../src/ui/notice.tsx", async (load) => {
+  const notice = await load<typeof import("../src/ui/notice.tsx")>();
+  return {
+    ...notice,
+    showToast: (text: string) => {
+      toasts.push(text);
+      notice.showToast(text);
+    },
+  };
+});
 vi.mock("../src/ui/use-now.ts", () => ({ useToday: () => Date.now() }));
 vi.mock("../src/ui/chart-controls.tsx", () => ({
   Segmented: ({
@@ -1252,6 +1264,57 @@ it("shows the records before saving, then saves the workout and opens History at
   expect(store.list("workout_set", { parentId: entry })).toHaveLength(1);
   expect(navigateRoute).toHaveBeenCalledWith({ pathname: "/history", params: { saved: id } });
 });
+
+it.each(["kept", "deleted", "another running"] as const)(
+  "saves the workout and then starts the routine chosen on Train (%s)",
+  async (state) => {
+    const id = beginWorkout(store);
+    const entry = addExercise(store, id, EXERCISES.bench, 0);
+    const [set] = store.list("workout_set", { parentId: entry });
+    if (!set) throw Error("Missing set");
+    logSet(store, set.id, { weightKg: 60, reps: 5 });
+    const next = createRoutine(
+      store,
+      "Pull day",
+      null,
+      [
+        {
+          id: "row",
+          exercise: EXERCISES.bench,
+          sets: [{ id: "a", values: { weight: "40", reps: "8" } }],
+        },
+      ],
+      readSettings(store),
+    );
+    detailReturn = { next } as typeof detailReturn;
+    await act(() => root.render(h(FinishScreen)));
+    expect(host.textContent).toContain("Pull day starts after saving.");
+    // Changed on another device while the summary was open: saving still saves.
+    if (state === "deleted") store.delete("routine", next);
+    const other = newId();
+    if (state === "another running") {
+      const content = store.get("workout", id)?.content;
+      if (!content) throw Error("Missing workout");
+      store.put("workout", other, { ...content, title: "On the iPad" });
+    }
+    toasts.length = 0;
+    await press("Save workout");
+    await act(feedback.release);
+    expect(store.get("workout", id)?.content?.endedAt).toEqual(expect.any(String));
+    if (state === "kept") {
+      expect(store.activeWorkout()?.content).toMatchObject({ routineId: next, endedAt: null });
+      expect(pushRoute).toHaveBeenCalledWith("/workout/active");
+      expect(navigateRoute).not.toHaveBeenCalled();
+      expect(toasts).toEqual(["Workout added to History"]);
+    } else {
+      // Nothing else starts, and the running workout from the iPad isn't opened in its place.
+      expect(store.activeWorkout()?.id ?? null).toBe(state === "deleted" ? null : other);
+      expect(pushRoute).not.toHaveBeenCalled();
+      expect(navigateRoute).toHaveBeenCalledWith({ pathname: "/history", params: { saved: id } });
+      expect(toasts).toEqual(["Workout added to History. Pull day couldn’t be started."]);
+    }
+  },
+);
 
 it("sets how long the workout lasted before saving it, by the same rules as a saved one", async () => {
   const id = beginWorkout(store);
