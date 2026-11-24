@@ -2322,7 +2322,12 @@ function SetRow({
     if (releasing.current !== null) clearTimeout(releasing.current);
     releasing.current = null;
   };
-  useEffect(() => stopReleasing, []);
+  useEffect(
+    () => () => {
+      if (releasing.current !== null) clearTimeout(releasing.current);
+    },
+    [],
+  );
   const timing = running !== undefined;
   const highlighted = isCurrent || editing !== null || editorOpen || rirOpen;
   const reserve = set.content.repsInReserve;
@@ -2708,14 +2713,7 @@ const sheet = themedStyles((c) => ({
   valueHint: { color: c.fg2 },
   missing: { ...font.bodySemi, fontSize: 12, color: c.alert, textDecorationLine: "underline" },
   caret: { width: 2, height: 24, marginLeft: 2, backgroundColor: c.fg },
-  checkHit: {
-    width: 44,
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
-    // Quick taps in a row each log a set instead of being read as a double-tap zoom.
-    ...(Platform.OS === "web" && { touchAction: "manipulation" }),
-  },
+  checkHit: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
   checkBox: {
     width: 36,
     height: 36,
