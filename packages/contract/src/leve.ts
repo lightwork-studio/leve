@@ -4,6 +4,7 @@ import {
   EXERCISE_TYPES,
   LIMITS,
   MUSCLE_GROUPS,
+  RIR_MAX,
   RPE_VALUES,
   SET_TYPES,
 } from "@leve/core";
@@ -66,7 +67,7 @@ const durationSeconds = number({ minimum: 0, maximum: MAX_SECONDS });
 const count = integer(0, MAX_COUNT);
 const rpe = enumOf(RPE_VALUES);
 const effortScale = enumOf(EFFORT_SCALES);
-const repsInReserve = integer(0, MAX_REPS);
+const repsInReserve = integer(0, RIR_MAX);
 const supersetId = integer(0, 1000);
 const restSeconds = integer(0, MAX_REST_SECONDS);
 const exerciseRef = {
@@ -225,7 +226,7 @@ export const LEVE_CONTRACT_DEFINITION = {
       since: v,
       meanings: {
         repsInReserve:
-          "Estimated additional repetitions possible when the set ended; zero means no repetitions remained, null means unrecorded",
+          "Estimated additional repetitions possible when the set ended, from 0 to 10; zero means no repetitions remained, null means unrecorded",
         planSlot:
           "Zero-based exercise and set indices in the workout initial plan, independent of row order; null if unplanned or unknown",
         workoutExerciseId: "The exercise entry this set belongs to (parent)",
@@ -237,7 +238,7 @@ export const LEVE_CONTRACT_DEFINITION = {
         distanceMeters: "Distance in metres; null when unused",
         durationSeconds: "Duration in seconds; null when unused",
         count: "Floors or steps for those exercise types; null when unused",
-        rpe: "Rate of perceived exertion; null if not given",
+        rpe: "Rate of perceived exertion from 1 to 10 in half steps; null if not given",
         completedAt: "When the set was ticked off (UTC); null if not completed",
       },
       parent: { kind: "workout_exercise", field: "workoutExerciseId" },

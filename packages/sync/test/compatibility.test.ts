@@ -359,7 +359,11 @@ describe.each(cases)("server $server × archived peer $peer", (matrixCase) => {
     const bad: [string, Json][] = [
       ["unknown field", { ...good, effortRating: 5 }],
       ["unknown enum value", { ...good, type: "cluster" }],
-      ["rpe off the scale", { ...good, rpe: 6.5 }],
+      ["rpe off the scale", { ...good, rpe: 6.25 }],
+      ["rpe below the scale", { ...good, rpe: 0.5 }],
+      ["rpe above the scale", { ...good, rpe: 10.5 }],
+      ["reps in reserve above 10", { ...good, repsInReserve: 11 }],
+      ["negative reps in reserve", { ...good, repsInReserve: -1 }],
       ["weight above maximum", { ...good, weightKg: 2000.5 }],
       ["negative weight", { ...good, weightKg: -1 }],
       ["fractional reps", { ...good, reps: 1.5 }],
@@ -407,6 +411,26 @@ describe.each(cases)("server $server × archived peer $peer", (matrixCase) => {
         },
       ])) as Json,
     ).toMatchObject({ results: [{ status: "invalid", code: "invalid_content" }] });
+    // The ends of both effort scales, and a half step below the old RPE floor.
+    for (const effort of [
+      { rpe: 1, repsInReserve: 10 },
+      { rpe: 1.5 },
+      { rpe: 6.5, repsInReserve: 0 },
+    ]) {
+      const latest = await writer
+        .pull()
+        .then(() =>
+          writer.put(
+            "workout_set",
+            S1,
+            full("workout_set", set(E, { weightKg: 60, reps: 5, ...effort })),
+          ),
+        );
+      expect(await writer.push([latest]), JSON.stringify(effort)).toMatchObject({
+        results: [{ status: "accepted" }],
+      });
+      expect((await server.row("alice", "workout_set", S1))?.content).toMatchObject(effort);
+    }
   });
 
   it("answers a stale writer with a conflict carrying the current copy", async () => {

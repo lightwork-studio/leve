@@ -3,10 +3,10 @@
     {
       "release": "1.0",
       "files": {
-        "frozen/1.0/contract.json": "b4a2a677e63102444296c7d260bb387e2f8f8a2889d152ebfaa012c693f01df1",
+        "frozen/1.0/contract.json": "60dc9f913f6ca7fb5cd615c4f06607f0b67730191f8435e43ce9cf41e4921d74",
         "frozen/1.0/examples.json": "6a044163f225f5306b6d27ae1590becdb033097acdeaa46486beb604847c74d2",
         "history/1.0/peer.ts": "fa008b467cdb1827a4560af451c80722c921f5ab072436bbb1a6e998521548b2",
-        "history/1.0/contract.json": "b4a2a677e63102444296c7d260bb387e2f8f8a2889d152ebfaa012c693f01df1"
+        "history/1.0/contract.json": "60dc9f913f6ca7fb5cd615c4f06607f0b67730191f8435e43ce9cf41e4921d74"
       }
     }
   ]
