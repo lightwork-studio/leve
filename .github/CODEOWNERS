@@ -14,6 +14,7 @@ package.json @webertim
 /apps/mobile/plugins/ @webertim
 /apps/mobile/modules/ @webertim
 /apps/mobile/scripts/deploy-ios.sh @webertim
+/apps/mobile/scripts/release-store.sh @webertim
 /apps/site/build.mts @webertim
 /apps/sync-cloudflare/wrangler.jsonc @webertim
 /pnpm-lock.yaml @webertim
