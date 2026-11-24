@@ -71,6 +71,8 @@ export function setDefaults(
         : drafts[set.id];
       const typed = parseTyped(metric, draft?.[metric] ?? "", draft?.weightUnit ?? unit);
       if (typeof typed === "number") return typed;
+      // Text that can't be read yet (being typed, or left wrong) stops the search too.
+      if (typed === "invalid") return null;
       const stored = storedValue(set.content, metric);
       if (stored !== null || logged) return stored;
     }
@@ -205,7 +207,7 @@ export interface FieldView {
 
 /**
  * A field of a set as the list and the dock show it. Logged sets show what was logged. Unlogged
- * sets show what was typed, else a suggestion: the stored value, the preceding set's input, last time's, then the routine's
+ * sets show what was typed, else a suggestion: the stored value, an earlier set's input, last time's, then the routine's
  * target (the order Log uses when nothing is typed).
  */
 export function fieldView(options: {
