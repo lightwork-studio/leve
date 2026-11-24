@@ -7,7 +7,7 @@ import { useAppData } from "../../src/data/app-data.tsx";
 import { useLive } from "../../src/data/queries.ts";
 import { finishPreview } from "../../src/data/read.ts";
 import { restTimer } from "../../src/data/rest-timer.ts";
-import { beginWorkout, finishWorkout } from "../../src/data/workout-actions.ts";
+import { beginRoutineWorkout, finishWorkout } from "../../src/data/workout-actions.ts";
 import {
   discardReviewedActiveWorkout,
   workoutDeletionSnapshot,
@@ -177,14 +177,16 @@ export default function FinishScreen() {
     allowRemoval();
     goHome();
     // The routine chosen on Train starts now. If it can't, History shows the saved session instead.
-    if (next && nextTitle) {
+    if (next) {
       try {
-        change((store) => beginWorkout(store, next), "active-workout");
+        change((store) => beginRoutineWorkout(store, next), "active-workout");
         router.push("/workout/active");
         showToast("Workout added to History");
         return;
       } catch {
-        showToast(`Workout added to History. ${nextTitle} couldn’t be started.`);
+        showToast(
+          `Workout added to History. ${nextTitle ?? "The chosen routine"} couldn’t be started.`,
+        );
       }
     } else showToast("Workout added to History");
     // Back to the tabs, on History with the new session picked out.

@@ -8,6 +8,7 @@ import TrainScreen from "../app/(tabs)/index.tsx";
 let reduced = false;
 let activeTitle: string | null = "Bench";
 let activeRoutine: string | null = null;
+let activeId = "w1";
 let upNext: { id: string; title: string } | null = null;
 const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 vi.mock("react-native-reanimated", () => ({ useReducedMotion: () => reduced }));
@@ -37,9 +38,12 @@ vi.mock("../src/ui/haptics.ts", () => ({
 }));
 // The sheet keeps its choices in the tree, to be pressed by name.
 vi.mock("../src/ui/action-sheet.tsx", () => ({ ActionSheet: "ActionSheet" }));
+// Work after feedback runs at once, unless a test holds it to see the busy state first.
+let held: (() => void)[] | null = null;
 vi.mock("../src/ui/after-feedback.ts", () => ({
   afterFeedback: (run: () => void) => {
-    run();
+    if (held) held.push(run);
+    else run();
     return () => {};
   },
 }));
@@ -49,7 +53,9 @@ const skipRest = vi.fn();
 vi.mock("../src/data/rest-timer.ts", () => ({
   restTimer: { skip: (...args: unknown[]) => skipRest(...args) },
 }));
-const snapshot = vi.fn(() => "snapshot");
+// Each snapshot differs, so the one discarded can be traced to the tap that opened the sheet.
+let snapshots = 0;
+const snapshot = vi.fn(() => ({ seen: ++snapshots }));
 const replace = vi.fn();
 vi.mock("../src/data/workout-review.ts", () => ({
   workoutDeletionSnapshot: (...args: unknown[]) => snapshot(...(args as [])),
@@ -93,7 +99,7 @@ vi.mock("../src/data/queries.ts", () => ({
     active:
       activeTitle === null
         ? null
-        : { id: "w1", content: { title: activeTitle, routineId: activeRoutine } },
+        : { id: activeId, content: { title: activeTitle, routineId: activeRoutine } },
     week: {
       workouts: 2,
       minutes: 75,
@@ -297,7 +303,12 @@ it("asks what to do with the running workout before starting another routine", a
       root.findAll((n) => n.type === Text && /Finish or discard/.test(String(n.props.children))),
     ).toHaveLength(0);
 
-    // The running routine's own row opens that workout again.
+    // The running routine's own row opens that workout again; the others ask first.
+    expect(rowAction(root, "Routine 2")?.props.accessibilityLabel).toMatch(/^Resume Routine 2, /);
+    expect(rowAction(root, "Routine 1")?.props).toMatchObject({
+      accessibilityLabel: expect.stringMatching(/^Start Routine 1, /),
+      accessibilityHint: "Asks what to do with the running workout first",
+    });
     await tap("Routine 2");
     expect(push.mock.calls).toEqual([["/workout/active"]]);
     expect(sheet()).toBeUndefined();
@@ -328,14 +339,28 @@ it("asks what to do with the running workout before starting another routine", a
     ]);
     expect(change).not.toHaveBeenCalled();
 
-    // Discarding replaces the reviewed workout with the routine, then opens it.
+    // Discarding replaces the workout as it was shown with the routine, then opens it. The sheet
+    // shows it is busy for a frame first, and a second press meanwhile does nothing.
     await tap("Routine 1");
+    const seen = snapshot.mock.results.at(-1)?.value;
+    const taken = snapshot.mock.calls.length;
+    held = [];
     await act(() => sheet()?.props.onConfirm());
+    await act(() => sheet()?.props.onConfirm());
+    expect(sheet()?.props.busy).toBe(true);
+    expect(held).toHaveLength(1);
+    expect(change).not.toHaveBeenCalled();
+    const queued = held;
+    held = null;
+    await act(() => {
+      for (const run of queued) run();
+    });
     expect(change).toHaveBeenCalledTimes(1);
     const [apply, scope] = change.mock.calls[0] ?? [];
     expect(scope).toBe("active-workout");
     apply(appStore);
-    expect(replace).toHaveBeenCalledWith(appStore, "w1", "snapshot", "0");
+    expect(snapshot).toHaveBeenCalledTimes(taken);
+    expect(replace).toHaveBeenCalledWith(appStore, "w1", seen, "0");
     expect(skipRest).toHaveBeenCalledWith(appStore, "w1");
     expect(push.mock.calls.at(-1)).toEqual(["/workout/active"]);
     expect(sheet()).toBeUndefined();
@@ -355,11 +380,22 @@ it("asks what to do with the running workout before starting another routine", a
     expect(skipRest).not.toHaveBeenCalled();
     expect(sheet()).toBeUndefined();
 
+    // A sheet opened for a workout that has since ended isn't shown for the next one.
+    await tap("Routine 3");
+    expect(sheet()).toBeDefined();
+    activeId = "w2";
+    await act(() => screen?.update(createElement(TrainScreen)));
+    expect(sheet()).toBeUndefined();
+    activeId = "w1";
+    push.mockClear();
+
     // Editing from the row's menu still works while a workout runs.
     await act(() => menuOf(root, "Routine 1").props.items[0].onPress());
     expect(push.mock.calls).toEqual([[{ pathname: "/routine/[id]", params: { id: "0" } }]]);
   } finally {
     activeRoutine = null;
+    activeId = "w1";
+    held = null;
     await act(() => screen?.unmount());
     vi.unstubAllGlobals();
   }

@@ -57,10 +57,18 @@ export default function TrainScreen() {
   const { change, store } = useAppData();
   // The routine tapped while another workout runs, and that workout as it was then: discarding it
   // is refused if it changed while the sheet was open.
-  const [switchTo, setSwitchTo] = useState<string | null>(null);
+  const [switching, setSwitching] = useState<{
+    routineId: string;
+    workoutId: string;
+    reviewed: ReturnType<typeof workoutDeletionSnapshot>;
+  } | null>(null);
   const [discarding, setDiscarding] = useState(false);
-  const reviewed = useRef<ReturnType<typeof workoutDeletionSnapshot>>(null);
-  const runningRoutine = (active?.content as { routineId?: string | null } | undefined)?.routineId;
+  // Set at once, so a second press before the next render can't discard again.
+  const discardingNow = useRef(false);
+  // The routine the running workout came from: null for an empty workout, undefined when none runs.
+  const runningRoutine = active
+    ? ((active.content as { routineId?: string | null } | null)?.routineId ?? null)
+    : undefined;
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [renaming, setRenaming] = useState<RoutineGroup["folder"]>(null);
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
@@ -73,8 +81,11 @@ export default function TrainScreen() {
     (routineId?: string) => {
       if (active && routineId !== undefined && routineId !== runningRoutine) {
         haptic.select();
-        reviewed.current = workoutDeletionSnapshot(store, active.id);
-        setSwitchTo(routineId);
+        setSwitching({
+          routineId,
+          workoutId: active.id,
+          reviewed: workoutDeletionSnapshot(store, active.id),
+        });
         return;
       }
       if (!active) change((store) => beginWorkout(store, routineId), "active-workout");
@@ -83,24 +94,25 @@ export default function TrainScreen() {
     },
     [active, runningRoutine, change, store],
   );
+  // Asked only while the workout it was opened for still runs.
+  const pending = switching && switching.workoutId === active?.id ? switching : null;
   const switchTitle =
-    switchTo &&
-    groups.flatMap((group) => group.routines).find((routine) => routine.id === switchTo)?.title;
+    pending &&
+    groups.flatMap((group) => group.routines).find((routine) => routine.id === pending.routineId)
+      ?.title;
   const closeSwitch = () => {
-    if (discarding) return;
-    reviewed.current = null;
-    setSwitchTo(null);
+    if (discardingNow.current) return;
+    setSwitching(null);
   };
   const discardAndStart = () => {
-    if (!active || !switchTo || discarding) return;
-    const workoutId = active.id;
-    const routineId = switchTo;
-    const shown = reviewed.current;
+    if (!pending || discardingNow.current) return;
+    const { workoutId, routineId, reviewed } = pending;
+    discardingNow.current = true;
     setDiscarding(true);
     afterFeedback(() => {
       try {
         change(
-          (store) => replaceReviewedActiveWorkout(store, workoutId, shown, routineId),
+          (store) => replaceReviewedActiveWorkout(store, workoutId, reviewed, routineId),
           "active-workout",
         );
       } catch (error) {
@@ -108,9 +120,9 @@ export default function TrainScreen() {
         showToast((error as Error).message);
         return;
       } finally {
-        reviewed.current = null;
+        discardingNow.current = false;
         setDiscarding(false);
-        setSwitchTo(null);
+        setSwitching(null);
       }
       restTimer.skip(store, workoutId);
       haptic.tap();
@@ -190,7 +202,7 @@ export default function TrainScreen() {
             ]}
           />
         </View>
-        {active && switchTo && switchTitle && (
+        {pending && switchTitle && (
           <SwitchSheet
             routine={switchTitle}
             busy={discarding}
@@ -201,7 +213,7 @@ export default function TrainScreen() {
             }}
             onFinish={() => {
               closeSwitch();
-              router.push({ pathname: "/workout/finish", params: { next: switchTo } });
+              router.push({ pathname: "/workout/finish", params: { next: pending.routineId } });
             }}
             onDiscard={discardAndStart}
             onClose={closeSwitch}
@@ -250,6 +262,7 @@ export default function TrainScreen() {
                     group={group}
                     onToggle={toggle}
                     onStart={start}
+                    running={runningRoutine}
                   />
                 </Enter>
               </View>
@@ -437,12 +450,15 @@ const OpenGroup = memo(function OpenGroup({
   group,
   onToggle,
   onStart,
+  running,
   onRename,
 }: {
   onRename: (folder: NonNullable<RoutineGroup["folder"]>) => void;
   group: RoutineGroup;
   onToggle: (key: string) => void;
   onStart: (routineId: string) => void;
+  /** The running workout's routine: null for an empty workout, undefined when none runs. */
+  running: string | null | undefined;
 }) {
   const styles = useStyles(sheet);
   const c = useColors();
@@ -473,6 +489,7 @@ const OpenGroup = memo(function OpenGroup({
               index={i}
               first={i === 0}
               onStart={onStart}
+              running={running === undefined ? "idle" : running === routine.id ? "this" : "other"}
             />
           ))}
         </View>
@@ -558,11 +575,14 @@ const RoutineRow = memo(function RoutineRow({
   index,
   first,
   onStart,
+  running,
 }: {
   routine: RoutineCard;
   index: number;
   first: boolean;
   onStart: (routineId: string) => void;
+  /** Whether a workout runs, and if so whether it came from this routine. */
+  running: "idle" | "this" | "other";
 }) {
   const styles = useStyles(sheet);
   const shown = routine.exerciseNames.slice(0, 3);
@@ -575,7 +595,10 @@ const RoutineRow = memo(function RoutineRow({
           first (or opens that workout, for its own routine). */}
       <Tap
         accessibilityRole="button"
-        accessibilityLabel={`Start ${spoken}`}
+        accessibilityLabel={`${running === "this" ? "Resume" : "Start"} ${spoken}`}
+        {...(running === "other" && {
+          accessibilityHint: "Asks what to do with the running workout first",
+        })}
         style={styles.routineDetails}
         scaleTo={0.98}
         onPress={() => onStart(routine.id)}

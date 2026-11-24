@@ -3,6 +3,7 @@ import { createSqlJsEngine } from "@leve/storage/sqljs";
 import initSqlJs from "sql.js";
 import { expect, it, vi } from "vitest";
 import { EXERCISES } from "../src/data/exercises.ts";
+import { newId } from "../src/data/ids.ts";
 import {
   liveData,
   progressData,
@@ -18,6 +19,7 @@ import {
   addExerciseNote,
   addSelectedExercises,
   addSet,
+  beginRoutineWorkout,
   beginWorkout,
   discardActiveWorkout,
   discardWorkout,
@@ -785,6 +787,44 @@ it("discards the running workout as it was reviewed and starts the chosen routin
   });
   expect(setProgress(liveData(store)?.tree ?? never()).done).toBe(0);
   expect(verifyDeviceRecords(store.db, store.contract)).toEqual([]);
+});
+
+it("keeps the running workout when the replacement can't be written, or another workout runs", async () => {
+  const store = await open();
+  const pushId = beginWorkout(store, "seed-routine-push");
+  const set = readWorkoutTree(store, pushId)?.entries[0]?.sets[0];
+  if (!set) throw Error("Missing set");
+  logSet(store, set.id, { weightKg: 60, reps: 8 });
+
+  // The discard and the start are one write: a failed write leaves the workout as it was.
+  const write = vi.spyOn(store, "putAndDelete").mockImplementationOnce(() => {
+    throw Error("disk full");
+  });
+  const reviewed = workoutDeletionSnapshot(store, pushId);
+  expect(() => replaceReviewedActiveWorkout(store, pushId, reviewed, "seed-routine-pull")).toThrow(
+    "disk full",
+  );
+  write.mockRestore();
+  expect(store.activeWorkout()?.id).toBe(pushId);
+  expect(setProgress(readWorkoutTree(store, pushId) ?? never()).done).toBe(1);
+
+  // An unfinished workout synced from another device would be opened instead of the routine.
+  const other = store.get("workout", pushId)?.content;
+  if (!other) throw Error("Missing workout");
+  store.put("workout", newId(), { ...other, title: "On the iPad" });
+  expect(() =>
+    replaceReviewedActiveWorkout(
+      store,
+      pushId,
+      workoutDeletionSnapshot(store, pushId),
+      "seed-routine-pull",
+    ),
+  ).toThrow("Another workout is running. Finish or discard it first.");
+  expect(readWorkoutTree(store, pushId)).not.toBeNull();
+  // Starting a chosen routine refuses too, rather than opening a running workout.
+  expect(() => beginRoutineWorkout(store, "seed-routine-pull")).toThrow(
+    "Another workout is running. Finish or discard it first.",
+  );
 });
 
 function never(): never {
