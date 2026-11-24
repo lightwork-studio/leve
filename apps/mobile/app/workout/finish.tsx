@@ -59,7 +59,8 @@ export default function FinishScreen() {
   const data = useLive();
   const { change, store, version } = useAppData();
   const discardReview = useRef<ReturnType<typeof workoutDeletionSnapshot>>(null);
-  const { next } = useLocalSearchParams<{ next?: string }>();
+  const params = useLocalSearchParams<{ next?: string | string[] }>();
+  const next = Array.isArray(params.next) ? params.next[0] : params.next;
   const nextRoutine = next ? store.get("routine", next) : null;
   const nextTitle =
     nextRoutine?.content && !nextRoutine.deleted ? String(nextRoutine.content.title) : null;

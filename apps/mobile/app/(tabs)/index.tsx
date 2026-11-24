@@ -1,6 +1,6 @@
 import { router } from "expo-router";
 import { type ComponentRef, memo, useCallback, useRef, useState } from "react";
-import { type ScrollView, Text, View } from "react-native";
+import { Platform, type ScrollView, Text, View } from "react-native";
 import { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppData } from "../../src/data/app-data.tsx";
@@ -126,7 +126,7 @@ export default function TrainScreen() {
       }
       restTimer.skip(store, workoutId);
       haptic.tap();
-      router.push("/workout/active");
+      afterSheet(() => router.push("/workout/active"));
     });
   };
   // The first folder starts open, as the place most routines live; the rest start closed.
@@ -207,13 +207,16 @@ export default function TrainScreen() {
             routine={switchTitle}
             busy={discarding}
             onResume={() => {
+              if (discardingNow.current) return;
               closeSwitch();
               haptic.tap();
-              router.push("/workout/active");
+              afterSheet(() => router.push("/workout/active"));
             }}
             onFinish={() => {
+              if (discardingNow.current) return;
+              const next = pending.routineId;
               closeSwitch();
-              router.push({ pathname: "/workout/finish", params: { next: pending.routineId } });
+              afterSheet(() => router.push({ pathname: "/workout/finish", params: { next } }));
             }}
             onDiscard={discardAndStart}
             onClose={closeSwitch}
@@ -344,6 +347,12 @@ function SwitchSheet({
     />
   );
 }
+
+/** iOS can't show another screen while a sheet is still closing. */
+const afterSheet = (go: () => void) => {
+  if (Platform.OS === "ios") setTimeout(go, 320);
+  else go();
+};
 
 const openSettings = () => router.push("/settings");
 /** Opens the new routine form, filed in `folderId` to start with when one is given. */

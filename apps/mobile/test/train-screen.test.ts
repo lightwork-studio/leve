@@ -17,6 +17,7 @@ const change = vi.fn();
 vi.mock("expo-router", () => ({ router: { push: (...args: unknown[]) => push(...args) } }));
 vi.mock("react-native", () => ({
   useColorScheme: () => "dark",
+  Platform: { OS: "web" },
   View: "View",
   Text: "Text",
   StyleSheet: { create: (s: object) => s },
