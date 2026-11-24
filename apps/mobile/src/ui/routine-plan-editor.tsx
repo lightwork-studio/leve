@@ -71,6 +71,9 @@ const usesRange = (entry: PlannedExercise) =>
 const typeOf = (set: PlannedExercise["sets"][number]): SetType =>
   set.type ?? set.original?.type ?? "normal";
 
+/** A column of a planned set that takes a typed target. */
+type PlanField = SetMetric | "repRangeMin" | "repRangeMax" | "effort";
+
 function toggleRepRange(entry: PlannedExercise): PlannedExercise {
   const useRepRange = !usesRange(entry);
   const from = useRepRange ? "reps" : "repRangeMin";
@@ -438,13 +441,6 @@ function ExerciseBlock({
     if (type === "normal" || type === "failure") number += 1;
     return number;
   });
-  const setValue = (setId: string, field: string, value: string) =>
-    edit((e) => ({
-      ...e,
-      sets: e.sets.map((s) =>
-        s.id === setId ? { ...s, values: { ...s.values, [field]: value } } : s,
-      ),
-    }));
   const stored = (
     set: PlannedExercise["sets"][number],
     metric: SetMetric,
@@ -456,6 +452,42 @@ function ExerciseBlock({
         ? String(set.original[field] ?? "")
         : inputValue(set.original, metric, settings.weightUnit, distanceUnit)
       : "");
+  const shown = (set: PlannedExercise["sets"][number], field: PlanField) =>
+    field === "effort"
+      ? (set.effortText ?? String(effortValue(set.original, effortScale) ?? ""))
+      : stored(set, field === "repRangeMin" || field === "repRangeMax" ? "reps" : field, field);
+  // While one cell is typed in, the other sets of its kind (warm-up or not) that were blank in
+  // that column when typing started take the same value, so a target is entered once.
+  const filling = useRef<{ cell: string; sets: string[] } | null>(null);
+  const setValue = (setId: string, field: PlanField, value: string) => {
+    const cell = `${setId} ${field}`;
+    if (filling.current?.cell !== cell) {
+      const source = entry.sets.find((s) => s.id === setId);
+      const warmup = source !== undefined && typeOf(source) === "warmup";
+      filling.current = {
+        cell,
+        sets: entry.sets
+          .filter(
+            (s) => s.id !== setId && (typeOf(s) === "warmup") === warmup && shown(s, field) === "",
+          )
+          .map((s) => s.id),
+      };
+    }
+    const targets = new Set([setId, ...filling.current.sets]);
+    edit((e) => ({
+      ...e,
+      sets: e.sets.map((s) =>
+        !targets.has(s.id)
+          ? s
+          : field === "effort"
+            ? { ...s, effortText: value }
+            : { ...s, values: { ...s.values, [field]: value } },
+      ),
+    }));
+  };
+  const doneTyping = () => {
+    filling.current = null;
+  };
 
   return (
     <View style={styles.block}>
@@ -603,6 +635,7 @@ function ExerciseBlock({
                           label={`${name} set ${i + 1} Min reps`}
                           value={stored(set, metric, "repRangeMin")}
                           onChange={(value) => setValue(set.id, "repRangeMin", value)}
+                          onBlur={doneTyping}
                         />
                         <Text style={styles.dash}>–</Text>
                         <PlanCell
@@ -611,6 +644,7 @@ function ExerciseBlock({
                           label={`${name} set ${i + 1} Max reps`}
                           value={stored(set, metric, "repRangeMax")}
                           onChange={(value) => setValue(set.id, "repRangeMax", value)}
+                          onBlur={doneTyping}
                         />
                       </View>
                     );
@@ -621,6 +655,7 @@ function ExerciseBlock({
                         label={`${name} set ${i + 1} ${label}`}
                         value={stored(set, metric, metric)}
                         onChange={(value) => setValue(set.id, metric, value)}
+                        onBlur={doneTyping}
                       />
                     </View>
                   );
@@ -635,13 +670,9 @@ function ExerciseBlock({
                       placeholder="—"
                       placeholderTextColor={c.fg3}
                       style={styles.rpe}
-                      value={set.effortText ?? String(effortValue(set.original, effortScale) ?? "")}
-                      onChangeText={(effortText) =>
-                        edit((e) => ({
-                          ...e,
-                          sets: e.sets.map((s) => (s.id === set.id ? { ...s, effortText } : s)),
-                        }))
-                      }
+                      value={shown(set, "effort")}
+                      onChangeText={(effortText) => setValue(set.id, "effort", effortText)}
+                      onBlur={doneTyping}
                     />
                   </View>
                 ) : null}
@@ -733,12 +764,14 @@ function PlanCell({
   label,
   value,
   onChange,
+  onBlur,
   narrow = false,
 }: {
   metric: SetMetric;
   label: string;
   value: string;
   onChange: (value: string) => void;
+  onBlur: () => void;
   narrow?: boolean;
 }) {
   const styles = useStyles(sheet);
@@ -753,7 +786,10 @@ function PlanCell({
       value={value}
       onChangeText={onChange}
       onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
+      onBlur={() => {
+        setFocused(false);
+        onBlur();
+      }}
       style={[styles.cell, narrow && styles.cellNarrow, focused && styles.cellOn]}
     />
   );

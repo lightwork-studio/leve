@@ -598,6 +598,107 @@ it("adds the first effort target to a stored set without changing its other targ
   }
 });
 
+it("fills a typed target into the blank sets of its kind and leaves set values alone", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  store = await openDeviceStore({
+    engine: createSqlJsEngine(await initSqlJs()),
+    path: "/fill-blank-sets",
+    appVersion: "test",
+  });
+  let rendered: ReactTestRenderer | undefined;
+  try {
+    await act(() => {
+      rendered = create(createElement(NewRoutine));
+    });
+    if (!rendered) throw new Error("Missing routine form");
+    const root = rendered.root;
+    const field = (label: string) =>
+      root.findByProps({ accessibilityLabel: `Bench Press ${label}` });
+    const type = async (label: string, ...steps: string[]) => {
+      for (const text of steps) await act(() => field(label).props.onChangeText(text));
+      await act(() => field(label).props.onBlur());
+    };
+    const column = (heading: string) =>
+      [1, 2, 3, 4].map((n) => field(`set ${n} ${heading}`).props.value);
+    await act(() =>
+      root.findByProps({ accessibilityLabel: "Routine name" }).props.onChangeText("Push"),
+    );
+    await tapText(root, "Add exercise");
+    await act(() =>
+      root
+        .find((n) => typeof n.props.onPickMany === "function")
+        .props.onPickMany([EXERCISES.bench]),
+    );
+    for (let n = 0; n < 3; n++)
+      await act(() =>
+        root.findByProps({ accessibilityLabel: "Add set to Bench Press" }).props.onPress(),
+      );
+    await act(() => field("set 1 type: Working").props.onPress());
+    await tapText(root, "Warm-up");
+    await type("set 3 REPS", "5");
+    // Every keystroke reaches the sets that were blank when typing started, the warm-up excepted.
+    await type("set 2 KG", "1", "10", "100");
+    expect(column("REPS")).toEqual(["", "5", "5", "5"]);
+    expect(column("KG")).toEqual(["", "100", "100", "100"]);
+    // Once every working set has a weight, a new one changes only its own set.
+    await type("set 4 KG", "105");
+    expect(column("KG")).toEqual(["", "100", "100", "105"]);
+    await type("set 1 KG", "40");
+    expect(column("KG")).toEqual(["40", "100", "100", "105"]);
+    await act(() => root.findByProps({ label: "Effort scale" }).props.onChoose("rpe"));
+    await type("set 4 target RPE", "8");
+    expect(column("target RPE")).toEqual(["", "8", "8", "8"]);
+    await tapText(root, "Save routine");
+    expect(store.list("routine")[0]?.content?.exercises).toMatchObject([
+      {
+        sets: [
+          { type: "warmup", weightKg: 40, reps: null, rpe: null },
+          { weightKg: 100, reps: 5, rpe: 8 },
+          { weightKg: 100, reps: 5, rpe: 8 },
+          { weightKg: 105, reps: 5, rpe: 8 },
+        ],
+      },
+    ]);
+  } finally {
+    await act(() => rendered?.unmount());
+    store.close();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("keeps stored targets when a blank stored set gets a typed value", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  store = await openDeviceStore({
+    engine: createSqlJsEngine(await initSqlJs()),
+    path: "/fill-stored-sets",
+    appVersion: "test",
+  });
+  let rendered: ReactTestRenderer | undefined;
+  try {
+    const plain = entry;
+    store.put("routine", "routine", { ...routine, exercises: [plain] });
+    await act(() => {
+      rendered = create(createElement(RoutineDetails));
+    });
+    if (!rendered) throw Error("Missing routine editor");
+    const root = rendered.root;
+    const weight = root.findByProps({ accessibilityLabel: "Old press set 2 KG" });
+    expect(weight.props.value).toBe("");
+    await act(() => weight.props.onChangeText("50"));
+    expect(root.findByProps({ accessibilityLabel: "Old press set 1 KG" }).props.value).not.toBe(
+      "50",
+    );
+    await tapText(root, "Save routine");
+    expect(store.get("routine", "routine")?.content?.exercises).toEqual([
+      { ...plain, sets: [target, { ...target, id: "second", weightKg: 50 }] },
+    ]);
+  } finally {
+    await act(() => rendered?.unmount());
+    store.close();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("edits template cues for the next workout and leaves the current workout's cues intact", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   store = await openDeviceStore({
