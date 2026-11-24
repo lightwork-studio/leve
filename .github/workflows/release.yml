@@ -43,7 +43,8 @@ jobs:
           ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
           ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
         run: |
-          ready="$(bash .github/scripts/release-credentials.sh             EXPO_TOKEN ASC_API_KEY_P8 ASC_API_KEY_ID ASC_API_ISSUER_ID)"
+          ready="$(bash .github/scripts/release-credentials.sh \
+            EXPO_TOKEN ASC_API_KEY_P8 ASC_API_KEY_ID ASC_API_ISSUER_ID)"
           if [ "$ready" = false ]; then
             echo "::warning::TestFlight secrets are not configured. Skipping the iOS deploy."
           fi
@@ -99,7 +100,8 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          ready="$(bash .github/scripts/release-credentials.sh             CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID)"
+          ready="$(bash .github/scripts/release-credentials.sh \
+            CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID)"
           if [ "$ready" = false ]; then
             echo "::warning::Cloudflare secrets are not configured. Skipping the site deploy."
           fi

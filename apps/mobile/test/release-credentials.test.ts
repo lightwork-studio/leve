@@ -27,7 +27,11 @@ it("publishes only with every credential, skips without any, and rejects a parti
   expect(fork.status).toBe(0);
   expect(fork.stdout).toBe("false\n");
 
-  // An empty secret reads as missing, as GitHub passes unset secrets as empty strings.
+  // Actions passes a missing secret as an empty string rather than leaving the variable unset.
+  const empty = check({ TEST_RELEASE_TOKEN: "", TEST_RELEASE_ACCOUNT: "" });
+  expect(empty.status).toBe(0);
+  expect(empty.stdout).toBe("false\n");
+
   const partial = check({ TEST_RELEASE_TOKEN: "token", TEST_RELEASE_ACCOUNT: "" });
   expect(partial.status).toBe(1);
   expect(partial.stdout).toBe("");
