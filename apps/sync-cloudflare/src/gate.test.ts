@@ -47,6 +47,8 @@ async function sign(
     iss: ISSUER,
     sub: "user_alice",
     sid: "sess_1",
+    sts: "active",
+    v: 2,
     iat: now(),
     nbf: now() - 5,
     exp: now() + 60,
@@ -145,6 +147,13 @@ describe("signing in to sync", () => {
       "not yet valid": await sign({ nbf: now() + 60, exp: now() + 120 }),
       "no expiry": await sign({ exp: undefined }),
       "unfinished session": await sign({ sts: "pending" }),
+      "JWT template (no session)": await sign({ sid: undefined, sts: undefined, v: undefined }),
+      "other token version": await sign({ v: 3 }),
+      "access token": await sign({}, { header: { alg: "RS256", typ: "at+jwt" } }),
+      "unknown critical header": await sign(
+        {},
+        { header: { alg: "RS256", typ: "JWT", crit: ["x"] } as never },
+      ),
       "unknown web origin": await sign({ azp: "https://evil.test" }),
       "odd account id": await sign({ sub: "../user_bob" }),
       "operator token": ADMIN_TOKEN,
@@ -166,18 +175,55 @@ describe("signing in to sync", () => {
   });
 
   it("tolerates a few seconds of clock difference", async () => {
-    const token = await sign({ iat: now() + 3, nbf: now() + 3, exp: now() + 60 });
+    const t = 1_800_000_000;
     const config = { issuer: ISSUER, publicKeyPem: trusted.pem };
-    expect(await verifySessionToken(token, config)).toEqual({ account: "user_alice" });
-    const expiredJustNow = await sign({ exp: now() - 2 });
-    expect(await verifySessionToken(expiredJustNow, config)).toEqual({ account: "user_alice" });
-    expect(await verifySessionToken(expiredJustNow, config, Date.now() + 10_000)).toBeNull();
+    const issued = await sign({ iat: t, nbf: t, exp: t + 60 });
+    // Issued by a clock 3 seconds ahead: accepted. Expired 3 seconds ago: still accepted.
+    expect(await verifySessionToken(issued, config, (t - 3) * 1000)).toEqual({
+      account: "user_alice",
+    });
+    expect(await verifySessionToken(issued, config, (t + 63) * 1000)).toEqual({
+      account: "user_alice",
+    });
+    expect(await verifySessionToken(issued, config, (t - 10) * 1000)).toBeNull();
+    expect(await verifySessionToken(issued, config, (t + 70) * 1000)).toBeNull();
   });
 
-  it("is unavailable, not open, when sign-in isn't configured", async () => {
-    const { send, reached } = setup({ CLERK_JWT_KEY: undefined });
-    expect((await send("/sync/hello", await sign({}))).status).toBe(503);
+  it("accepts the scheme name in any case", async () => {
+    const { send } = setup();
+    const token = await sign({});
+    const response = await handleRequest(
+      new Request("https://sync.test/sync/hello", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `bearer ${token}` },
+        body: "{}",
+      }),
+      { ACCOUNTS: fakeAccounts().accounts, CLERK_ISSUER: ISSUER, CLERK_JWT_KEY: trusted.pem },
+    );
+    expect(response.status).toBe(200);
+    expect((await send("/sync/hello", token)).status).toBe(200);
+  });
+
+  it("can't reach the admin endpoints through a sync path", async () => {
+    const { send, reached } = setup();
+    for (const path of ["/sync/../admin/delete", "/sync/%2e%2e/admin/delete"]) {
+      const response = await send(path, await sign({}), { "x-leve-account": "user_bob" });
+      expect([path, response.status]).toEqual([path, 401]);
+    }
     expect(reached).toEqual([]);
+  });
+
+  it("is unavailable, not open, when sign-in isn't configured or its key is broken", async () => {
+    const broken = "-----BEGIN PUBLIC KEY-----\nbm90IGEga2V5\n-----END PUBLIC KEY-----";
+    for (const overrides of [
+      { CLERK_JWT_KEY: undefined },
+      { CLERK_ISSUER: undefined },
+      { CLERK_JWT_KEY: broken },
+    ]) {
+      const { send, reached } = setup(overrides);
+      expect((await send("/sync/hello", await sign({}))).status).toBe(503);
+      expect(reached).toEqual([]);
+    }
   });
 
   it("still requires JSON after signing in", async () => {
@@ -207,10 +253,13 @@ describe("the operator's admin endpoints", () => {
     expect(reached).toEqual([]);
   });
 
-  it("are closed when no operator token is set", async () => {
-    const { send, reached } = setup({ ADMIN_TOKEN: undefined });
-    expect((await send("/admin/stats", "", { [ACCOUNT_HEADER]: "user_bob" })).status).toBe(401);
-    expect(reached).toEqual([]);
+  it("are closed when no operator token, or a short one, is set", async () => {
+    for (const token of [undefined, "short"]) {
+      const { send, reached } = setup({ ADMIN_TOKEN: token });
+      const response = await send("/admin/stats", token ?? "", { [ACCOUNT_HEADER]: "user_bob" });
+      expect(response.status).toBe(401);
+      expect(reached).toEqual([]);
+    }
   });
 });
 

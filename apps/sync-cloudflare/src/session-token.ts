@@ -70,8 +70,9 @@ function jsonPart(part: string): Record<string, unknown> | null {
 }
 
 /**
- * The account a session token signs in, or null when the token isn't one this instance issued
- * and still valid. `now` is in milliseconds.
+ * The account a session token signs in, or null when the token isn't a still valid session token
+ * this instance issued. Throws when the configured public key can't be used, which is the
+ * operator's problem, not the client's. `now` is in milliseconds.
  */
 export async function verifySessionToken(
   token: string,
@@ -81,16 +82,20 @@ export async function verifySessionToken(
   const parts = token.split(".");
   if (parts.length !== 3) return null;
   const [headerPart, payloadPart, signaturePart] = parts as [string, string, string];
+  const key = await importKey(config.publicKeyPem);
   const header = jsonPart(headerPart);
   // Only the algorithm Clerk signs with: never "none" or a symmetric one keyed by the public key.
   if (header?.alg !== "RS256") return null;
+  // Not an access token or another typed JWT, and no extensions this check doesn't understand.
+  if (header.typ !== undefined && header.typ !== "JWT") return null;
+  if (header.crit !== undefined) return null;
   const signature = fromBase64Url(signaturePart);
   if (!signature) return null;
   let valid: boolean;
   try {
     valid = await crypto.subtle.verify(
       "RSASSA-PKCS1-v1_5",
-      await importKey(config.publicKeyPem),
+      key,
       signature,
       new TextEncoder().encode(`${headerPart}.${payloadPart}`),
     );
@@ -106,8 +111,11 @@ export async function verifySessionToken(
   if (typeof claims.exp !== "number" || claims.exp + LEEWAY_SECONDS <= seconds) return null;
   if (typeof claims.nbf === "number" && claims.nbf - LEEWAY_SECONDS > seconds) return null;
   if (typeof claims.iat === "number" && claims.iat - LEEWAY_SECONDS > seconds) return null;
-  // A session with steps still to finish (for example accepting new terms) isn't signed in yet.
-  if (claims.sts !== undefined && claims.sts !== "active") return null;
+  // Only session tokens: the instance key also signs JWT templates, which can live for years and
+  // are handed to other services. Session tokens name their session and its status; a session
+  // with steps still to finish (for example accepting new terms) isn't signed in yet.
+  if (typeof claims.sid !== "string" || claims.v !== 2) return null;
+  if (claims.sts !== "active") return null;
   if (claims.azp !== undefined) {
     const allowed = config.authorizedParties ?? [];
     if (typeof claims.azp !== "string" || !allowed.includes(claims.azp)) return null;

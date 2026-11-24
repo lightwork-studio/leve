@@ -17,7 +17,7 @@ export interface GateEnv {
   CLERK_JWT_KEY?: string;
   /** Comma-separated origins allowed to ask for tokens, for a web client. */
   CLERK_AUTHORIZED_PARTIES?: string;
-  /** The operator's token for the admin endpoints. Without it they are closed. */
+  /** The operator's token for the admin endpoints, at least 32 characters. Without it they are closed. */
   ADMIN_TOKEN?: string;
 }
 
@@ -44,7 +44,7 @@ function sameSecret(given: string, expected: string): boolean {
 export async function handleRequest(request: Request, env: GateEnv): Promise<Response> {
   const url = new URL(request.url);
   if (request.method !== "POST") return reply(400, errorReply("invalid_request", "use POST").body);
-  const bearer = request.headers.get("authorization")?.match(/^Bearer (.+)$/)?.[1] ?? "";
+  const bearer = request.headers.get("authorization")?.match(/^Bearer (.+)$/i)?.[1] ?? "";
 
   let account: string;
   if (url.pathname.startsWith("/sync/")) {
@@ -52,14 +52,21 @@ export async function handleRequest(request: Request, env: GateEnv): Promise<Res
       console.error("sign-in is not configured: set CLERK_ISSUER and CLERK_JWT_KEY");
       return reply(503, errorReply("unavailable", "sync is temporarily unavailable").body);
     }
-    const session = await verifySessionToken(bearer, {
-      issuer: env.CLERK_ISSUER,
-      publicKeyPem: env.CLERK_JWT_KEY,
-      authorizedParties: (env.CLERK_AUTHORIZED_PARTIES ?? "")
-        .split(",")
-        .map((party) => party.trim())
-        .filter(Boolean),
-    });
+    let session: { account: string } | null;
+    try {
+      session = await verifySessionToken(bearer, {
+        issuer: env.CLERK_ISSUER,
+        publicKeyPem: env.CLERK_JWT_KEY,
+        authorizedParties: (env.CLERK_AUTHORIZED_PARTIES ?? "")
+          .split(",")
+          .map((party) => party.trim())
+          .filter(Boolean),
+      });
+    } catch (error) {
+      // A broken key would otherwise send every client back to sign in, again and again.
+      console.error("CLERK_JWT_KEY can't be used", error);
+      return reply(503, errorReply("unavailable", "sync is temporarily unavailable").body);
+    }
     if (!session) return unauthorized();
     account = session.account;
     const type = request.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
@@ -67,7 +74,8 @@ export async function handleRequest(request: Request, env: GateEnv): Promise<Res
       return reply(400, errorReply("invalid_request", "send application/json").body);
     }
   } else if (url.pathname.startsWith("/admin/")) {
-    if (!env.ADMIN_TOKEN || !sameSecret(bearer, env.ADMIN_TOKEN)) return unauthorized();
+    const operator = env.ADMIN_TOKEN ?? "";
+    if (operator.length < 32 || !sameSecret(bearer, operator)) return unauthorized();
     account = request.headers.get(ACCOUNT_HEADER) ?? "";
     if (!ACCOUNT_ID.test(account)) {
       return reply(

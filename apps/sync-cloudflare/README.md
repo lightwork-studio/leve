@@ -7,13 +7,19 @@ account.
 
 - **Sync** (`/sync/*`) needs a Clerk session token as `Authorization: Bearer …`. The Worker checks
   it without a network call against the instance's public key, and the account is the signed-in
-  Clerk user: a request can't name any other account. A session with steps left to finish, and a
-  web origin not listed in `CLERK_AUTHORIZED_PARTIES`, are refused.
-- **Admin** (`/admin/*`) needs the operator token (`ADMIN_TOKEN`) and names the account in the
-  `x-leve-account` header. Without `ADMIN_TOKEN` the admin endpoints are closed.
+  Clerk user: a request can't name any other account. Only session tokens of an active session
+  count: JWT templates and access tokens signed by the same instance, a session with steps left to
+  finish, and a web origin not listed in `CLERK_AUTHORIZED_PARTIES` are refused.
+- **Admin** (`/admin/*`) needs the operator token (`ADMIN_TOKEN`, at least 32 characters) and names
+  the account in the `x-leve-account` header. Without it the admin endpoints are closed.
 
-Missing Clerk settings make sync answer 503 rather than let anyone in. To roll back sign-in
-changes, deploy the previous version with `npx wrangler@4.158.0 rollback`.
+Missing or broken Clerk settings make sync answer 503 rather than let anyone in.
+
+**Turning it off:** `npx wrangler@4.158.0 secret delete CLERK_JWT_KEY` stops all sync (503), and
+`secret delete ADMIN_TOKEN` closes the admin endpoints. `npx wrangler@4.158.0 rollback` returns to
+an earlier version of `leve-sync`; never deploy a build from before Clerk sign-in, which let the
+client name its account. Clerk can rotate the instance key: then put the new PEM in
+`CLERK_JWT_KEY`.
 
 ## Layout
 
@@ -33,7 +39,7 @@ changes, deploy the previous version with `npx wrangler@4.158.0 rollback`.
 ```sh
 export CLOUDFLARE_ACCOUNT_ID=… CLOUDFLARE_API_TOKEN=…   # token from the "Edit Cloudflare Workers" template
 pnpm --filter @leve/sync-cloudflare deploy
-npx wrangler@4.158.0 secret put CLERK_ISSUER   # the instance's Frontend API URL
+npx wrangler@4.158.0 secret put CLERK_ISSUER   # Frontend API URL, e.g. https://x.clerk.accounts.dev (no trailing /)
 npx wrangler@4.158.0 secret put CLERK_JWT_KEY  # API keys → JWT public key → PEM
 npx wrangler@4.158.0 secret put ADMIN_TOKEN    # any long random value, for the operator
 ```
