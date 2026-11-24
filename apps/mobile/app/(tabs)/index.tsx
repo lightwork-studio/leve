@@ -26,7 +26,6 @@ import {
   FolderPlusIcon,
   GearIcon,
   LibraryIcon,
-  MoreIcon,
   PlusIcon,
   TrayIcon,
 } from "../../src/ui/icons.tsx";
@@ -117,24 +116,23 @@ export default function TrainScreen() {
                 : ""}
             </Text>
           </View>
-          <View style={styles.sectionActions}>
-            <Tap
-              accessibilityRole="button"
-              accessibilityLabel="New folder"
-              onPress={() => setCreatingFolder(true)}
-              style={styles.iconButton}
-            >
-              <FolderPlusIcon color={c.fg} size={22} />
-            </Tap>
-            <Tap
-              accessibilityRole="button"
-              accessibilityLabel="New routine"
-              onPress={() => router.push("/routine/new")}
-              style={styles.iconButton}
-            >
-              <PlusIcon color={c.fg} size={24} />
-            </Tap>
-          </View>
+          {/* One + for everything that can be added here, so the heading keeps a single tile. */}
+          <MoreButton
+            label="Add routine or folder"
+            icon={(color, size) => <PlusIcon color={color} size={size + 2} />}
+            items={[
+              {
+                label: "New routine",
+                icon: (color) => <PlusIcon color={color} size={18} />,
+                onPress: () => newRoutine(),
+              },
+              {
+                label: "New folder",
+                icon: (color) => <FolderPlusIcon color={color} size={18} />,
+                onPress: () => setCreatingFolder(true),
+              },
+            ]}
+          />
         </View>
         {active && (
           <Text style={styles.note}>
@@ -228,6 +226,11 @@ export default function TrainScreen() {
 }
 
 const openSettings = () => router.push("/settings");
+/** Opens the new routine form, filed in `folderId` to start with when one is given. */
+const newRoutine = (folderId?: string) =>
+  router.push(
+    folderId ? { pathname: "/routine/new", params: { folder: folderId } } : "/routine/new",
+  );
 const openLibrary = () => router.push({ pathname: "/exercises", params: { from: "train" } });
 
 /** The tallest a day's bar is, in points; an untrained day is a stub. */
@@ -352,7 +355,7 @@ const OpenGroup = memo(function OpenGroup({
           <View style={styles.flex} />
           <Text style={styles.label}>{group.routines.length}</Text>
         </Tap>
-        <RenameFolderButton folder={group.folder} onRename={onRename} />
+        <FolderMenu folder={group.folder} onRename={onRename} />
       </View>
       {group.routines.length > 0 && (
         <View style={styles.card}>
@@ -371,7 +374,8 @@ const OpenGroup = memo(function OpenGroup({
   );
 });
 
-function RenameFolderButton({
+/** A folder's ⋯ menu: add a routine straight into it, or rename it. */
+function FolderMenu({
   folder,
   onRename,
 }: {
@@ -379,17 +383,27 @@ function RenameFolderButton({
   onRename: (folder: NonNullable<RoutineGroup["folder"]>) => void;
 }) {
   const styles = useStyles(sheet);
-  const c = useColors();
   if (!folder) return null;
   return (
-    <Tap
-      accessibilityRole="button"
-      accessibilityLabel={`Rename ${folder.content.title}`}
-      style={styles.iconButton}
-      onPress={() => onRename(folder)}
-    >
-      <MoreIcon color={c.fg3} size={20} />
-    </Tap>
+    <View style={styles.folderMenu}>
+      <MoreButton
+        small
+        label={`${folder.content.title} folder options`}
+        title={folder.content.title}
+        items={[
+          {
+            label: "New routine",
+            icon: (color) => <PlusIcon color={color} size={18} />,
+            onPress: () => newRoutine(folder.id),
+          },
+          {
+            label: "Rename folder",
+            icon: (color) => <EditIcon color={color} size={18} />,
+            onPress: () => onRename(folder),
+          },
+        ]}
+      />
+    </View>
   );
 }
 
@@ -427,7 +441,7 @@ const ClosedGroup = memo(function ClosedGroup({
         <Text style={styles.closedCount}>{group.routines.length}</Text>
         <ChevronIcon color={c.fg3} size={16} strokeWidth={2} />
       </Tap>
-      <RenameFolderButton folder={group.folder} onRename={onRename} />
+      <FolderMenu folder={group.folder} onRename={onRename} />
     </View>
   );
 });
@@ -556,9 +570,8 @@ const sheet = themedStyles((c) => ({
   sectionTitle: { flexDirection: "row", alignItems: "baseline", gap: space.md, flexShrink: 1 },
   section: { ...type.heading, color: c.fg },
   sectionAside: { ...type.label, color: c.fg3 },
-  sectionActions: { flexDirection: "row", gap: space.xs },
   note: { ...type.meta, color: c.fg3 },
-  iconButton: { width: touch, height: touch, alignItems: "center", justifyContent: "center" },
+  folderMenu: { width: touch, height: touch, alignItems: "center", justifyContent: "center" },
   headerRow: { flexDirection: "row", alignItems: "center" },
   groupHeader: {
     flexDirection: "row",

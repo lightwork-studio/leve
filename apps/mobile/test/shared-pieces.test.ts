@@ -206,6 +206,33 @@ describe("the ⋯ menu", () => {
     expect(rename).toHaveBeenCalledTimes(1);
     expect(document.querySelector('[role="menu"]')).toBeNull();
   });
+
+  it("draws a given icon on the tile in place of the ⋯", async () => {
+    const drawn: [string, number][] = [];
+    await act(() =>
+      root.render(
+        h("div", null, [
+          h(MoreButton, {
+            key: "add",
+            label: "Add routine or folder",
+            icon: (color: string, size: number) => {
+              drawn.push([color, size]);
+              return h("span", { "data-icon": "plus" });
+            },
+            items: [{ label: "New routine", onPress: () => {} }],
+          }),
+          h(MoreButton, { key: "more", label: "Routine options", items: [] }),
+        ]),
+      ),
+    );
+    const tile = (label: string) =>
+      document.querySelector(`[aria-label="${label}"]`) as HTMLElement;
+    expect(tile("Add routine or folder").querySelector('[data-icon="plus"]')).not.toBeNull();
+    expect(tile("Add routine or folder").querySelector("svg")).toBeNull();
+    expect(drawn.at(-1)?.[1]).toBe(20);
+    // Without one, the tile keeps its ⋯.
+    expect(tile("Routine options").querySelector("svg")).not.toBeNull();
+  });
 });
 
 describe("rows and controls", () => {

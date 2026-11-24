@@ -48,10 +48,15 @@ vi.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ top: 47, bottom: 34 }),
 }));
 let sourceWorkout: string | undefined;
+let folderParam: string | undefined;
 vi.mock("expo-router", () => {
   const navigation = { isFocused: () => true, addListener: () => () => {} };
   return {
-    useLocalSearchParams: () => ({ id: "routine", fromWorkout: sourceWorkout }),
+    useLocalSearchParams: () => ({
+      id: "routine",
+      fromWorkout: sourceWorkout,
+      folder: folderParam,
+    }),
     router: { canGoBack: () => true, back: vi.fn() },
     useNavigation: () => navigation,
   };
@@ -1633,3 +1638,56 @@ it("compares two phones' routine targets and syncs the chosen local version", as
     vi.unstubAllGlobals();
   }
 });
+
+it.each([
+  ["strength", "Strength", "strength"],
+  // A folder deleted (or never synced) since the link was made starts the form unfiled.
+  ["gone", "Not in a folder", null],
+])(
+  "starts a routine added from a folder in that folder (%s)",
+  async (param, shown, savedFolder) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    store = await openDeviceStore({
+      engine: createSqlJsEngine(await initSqlJs()),
+      path: `/from-folder-${param}`,
+      appVersion: "test",
+    });
+    folderParam = param;
+    let rendered: ReactTestRenderer | undefined;
+    try {
+      store.put("routine_folder", "strength", { title: "Strength", position: 1 });
+      store.put("routine_folder", "travel", { title: "Travel", position: 2 });
+      await act(() => {
+        rendered = create(createElement(NewRoutine));
+      });
+      if (!rendered) throw new Error("Missing routine form");
+      const root = rendered.root.findByType(ScrollView);
+      const folder = () =>
+        root.find((n) => n.type === ("MenuRow" as never) && n.props.label === "Folder");
+      expect(folder().props.value).toBe(shown);
+      expect(
+        folder()
+          .props.menu.items.filter((item: { checked: boolean }) => item.checked)
+          .map((item: { label: string }) => item.label),
+      ).toEqual([shown]);
+      await act(() =>
+        root.findByProps({ accessibilityLabel: "Routine name" }).props.onChangeText("Push"),
+      );
+      await tapText(root, "Add exercise");
+      await act(() =>
+        root
+          .find((n) => typeof n.props.onPickMany === "function")
+          .props.onPickMany([EXERCISES.bench]),
+      );
+      await tapText(root, "Save routine");
+      expect(store.list("routine").map((r) => r.content)).toMatchObject([
+        { title: "Push", folderId: savedFolder },
+      ]);
+    } finally {
+      folderParam = undefined;
+      await act(() => rendered?.unmount());
+      store.close();
+      vi.unstubAllGlobals();
+    }
+  },
+);

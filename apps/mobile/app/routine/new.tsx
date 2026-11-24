@@ -21,8 +21,12 @@ import { ScreenHeader } from "../../src/ui/screen.tsx";
 import { themedStyles, useColors, useStyles } from "../../src/ui/themed.ts";
 
 export default function NewRoutine() {
-  const { fromWorkout } = useLocalSearchParams<{ fromWorkout?: string }>();
-  return fromWorkout ? <WorkoutRoutine key={fromWorkout} id={fromWorkout} /> : <RoutineForm />;
+  const { fromWorkout, folder } = useLocalSearchParams<{ fromWorkout?: string; folder?: string }>();
+  return fromWorkout ? (
+    <WorkoutRoutine key={fromWorkout} id={fromWorkout} />
+  ) : (
+    <RoutineForm {...(folder ? { inFolder: folder } : {})} />
+  );
 }
 
 type WorkoutSource = ReturnType<typeof routineFromWorkout>;
@@ -41,7 +45,16 @@ function WorkoutRoutine({ id }: { id: string }) {
   );
 }
 
-function RoutineForm({ fromWorkout, source }: { fromWorkout?: string; source?: WorkoutSource }) {
+function RoutineForm({
+  fromWorkout,
+  source,
+  inFolder,
+}: {
+  fromWorkout?: string;
+  source?: WorkoutSource;
+  /** The folder the routine was added from, chosen to start with while it still exists. */
+  inFolder?: string;
+}) {
   const styles = useStyles(sheet);
   const c = useColors();
   const insets = useSafeAreaInsets();
@@ -52,7 +65,9 @@ function RoutineForm({ fromWorkout, source }: { fromWorkout?: string; source?: W
   const draft = source && "plan" in source ? source : null;
   const [name, setName] = useState(draft?.name ?? "");
   const [notes, setNotes] = useState("");
-  const [folder, setFolder] = useState<string | null>(null);
+  const [folder, setFolder] = useState<string | null>(() =>
+    inFolder && groups.some((group) => group.folder?.id === inFolder) ? inFolder : null,
+  );
   const [plan, setPlan] = useState<PlannedExercise[]>(draft?.plan ?? []);
   const [effortScale, setEffortScale] = useState(draft?.effortScale ?? "rir");
   const [reordering, setReordering] = useState(false);
