@@ -15,12 +15,27 @@ reverted or recovered. Pure copy changes can use an author check where the confi
 rules permit it.
 
 Before a squash merge, verify that CI reports a successful `check` for the head being merged and
-that outstanding feedback has been resolved. That head should include the current base. When the
-base has moved on since its last update, the head can still merge if two things hold: the
-commits added to the base since then change none of the files the pull request changes, and the
-pull request merges into the current base without conflicts. Otherwise, bring it up to date and
-wait for `check` again. The push to `main` runs `check` once more; if it fails, fix or revert
-before merging anything else.
+that outstanding feedback has been resolved. Merge only when that head includes the current
+base, or when all of these hold:
+
+- The base's new commits change none of the pull request's files. With
+  `mb=$(git merge-base origin/main <head>)`, the lists from
+  `git diff --no-renames --name-only "$mb" <head>` and
+  `git diff --no-renames --name-only "$mb" origin/main` share no path.
+- The pull request merges into the current base without conflicts (`gh pr view --json mergeable`
+  reports `MERGEABLE`; `UNKNOWN` means wait).
+- If the pull request changes an input of the iOS simulator check (the paths in
+  `.github/scripts/requires-ios-check.sh`), the base's new commits change none of those inputs.
+  The run on `main` doesn't repeat the iOS check.
+- Neither side changes `frozen-paths.json` or the frozen contract files it lists.
+
+Otherwise, bring the head up to date and wait for `check` again.
+
+Each push to `main` runs the Release workflow's `check` on the merged commit, and deploys wait for
+it. Before merging, confirm that the newest finished `check` on `main` passed. If it failed, merge
+only the fix or revert for that failure, and the author of the change that broke it makes that
+fix first. Tag App Store releases and dispatch updates only from a `main` commit whose `check`
+passed.
 
 Re-review substantive changes made after approval. Changes to the review gates and merge
 automation require explicit maintainer approval of the final change. Keep protected branches
