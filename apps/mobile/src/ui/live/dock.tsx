@@ -709,6 +709,10 @@ export function Strong({ children }: { children: string }) {
   return <Text style={styles.strong}>{children}</Text>;
 }
 
+/** The reps-in-reserve band over the countdown, and the full countdown under it. */
+const BAND_HEIGHT = 46;
+const REST_HEIGHT = 92;
+
 const sheet = themedStyles((c) => ({
   pad: { gap: 6, marginTop: 10 },
   padRow: { flexDirection: "row", gap: 6 },
@@ -842,7 +846,7 @@ const sheet = themedStyles((c) => ({
   compactLabel: { flexShrink: 1 },
   compactButton: { height: touch, minWidth: 46, borderRadius: 12 },
   compactSkip: { minWidth: 58 },
-  restBand: { height: 46 },
+  restBand: { height: BAND_HEIGHT },
   restBandRule: {
     position: "absolute",
     left: 0,
@@ -853,18 +857,21 @@ const sheet = themedStyles((c) => ({
     opacity: 0.2,
   },
   rest: {
-    height: 92,
+    height: REST_HEIGHT,
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
     paddingLeft: 8,
     paddingRight: 10,
   },
+  // As tall as the tallest panel rather than pinned to its bottom: a resize animates the panel's
+  // frame but lays the fill out at the final size at once, so a pinned fill would leave the panel's
+  // lower part bare while it shrinks. The panel clips what's left over.
   restFill: {
     position: "absolute",
     left: 0,
     top: 0,
-    bottom: 0,
+    height: BAND_HEIGHT + REST_HEIGHT,
     width: "100%",
     backgroundColor: c.rest.fill,
     transformOrigin: "left",

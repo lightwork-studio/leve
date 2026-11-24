@@ -972,6 +972,36 @@ describe("reps in reserve", () => {
     expect(prompt(ui, 1)).toBe(false);
   });
 
+  it("keeps the drain fill over the whole rest panel while a pick shrinks it", async () => {
+    benchWorkout();
+    saveTrackRir(store, true);
+    const ui = await mount();
+    await ui.press("Log set 1 of Bench Press");
+    const style = (node: { props: { style?: unknown } }) =>
+      Object.assign({}, ...[node.props.style].flat(3).filter(Boolean));
+    /** The panel's drain fill, and how tall the rows stacked in it are. */
+    const panel = () => {
+      const [box] = ui.root.findByType(RestSlab).children;
+      if (typeof box === "string" || !box) throw new Error("no rest panel");
+      const parts = box.children.filter((n) => typeof n !== "string");
+      const fill = parts.find((n) => style(n).position === "absolute");
+      if (!fill) throw new Error("no drain fill");
+      const rows = parts.filter((n) => n !== fill).map((n) => style(n).height as number);
+      return { fill: style(fill), height: rows.reduce((sum, h) => sum + h, 0) };
+    };
+    // A resize animates the panel from its old height, but lays the fill out at the new one at
+    // once. So the fill can't be sized from the panel: it has to cover the tallest panel already.
+    const asking = panel();
+    expect(asking.fill.bottom).toBeUndefined();
+    expect(asking.fill.height).toBeGreaterThanOrEqual(asking.height);
+
+    await ui.press("2 reps in reserve");
+    const picked = panel();
+    expect(picked.height).toBeLessThan(asking.height);
+    expect(picked.fill.bottom).toBeUndefined();
+    expect(picked.fill.height).toBeGreaterThanOrEqual(asking.height);
+  });
+
   it("records nothing on Skip, when the rest ends, or when the next set is logged", async () => {
     const { workout, sets } = benchWorkout();
     saveTrackRir(store, true);
