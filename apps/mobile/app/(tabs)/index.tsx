@@ -1,12 +1,18 @@
 import { router } from "expo-router";
 import { type ComponentRef, memo, useCallback, useRef, useState } from "react";
-import { type ScrollView, Text, View } from "react-native";
+import { Platform, type ScrollView, Text, View } from "react-native";
 import { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppData } from "../../src/data/app-data.tsx";
 import { finishFolderCreation, finishFolderRename } from "../../src/data/folder-actions.ts";
-import { useTrain } from "../../src/data/queries.ts";
+import { useLive, useTrain } from "../../src/data/queries.ts";
+import { restTimer } from "../../src/data/rest-timer.ts";
 import { beginWorkout } from "../../src/data/workout-actions.ts";
+import {
+  replaceReviewedActiveWorkout,
+  workoutDeletionSnapshot,
+} from "../../src/data/workout-review.ts";
+import { setProgress } from "../../src/model/live.ts";
 import {
   lastDoneLabel,
   type RoutineCard,
@@ -15,6 +21,8 @@ import {
 } from "../../src/model/train.ts";
 import type { Settings } from "../../src/model/types.ts";
 import { numeral, radius, space, touch, type } from "../../src/theme.ts";
+import { ActionSheet } from "../../src/ui/action-sheet.tsx";
+import { afterFeedback } from "../../src/ui/after-feedback.ts";
 import { Enter } from "../../src/ui/enter.tsx";
 import { dayLabel, minutesLabel, readoutWeight } from "../../src/ui/format.ts";
 import { Group } from "../../src/ui/group.tsx";
@@ -31,6 +39,7 @@ import {
 } from "../../src/ui/icons.tsx";
 import { MainAction } from "../../src/ui/main-action.tsx";
 import { NewFolderDialog } from "../../src/ui/new-folder-dialog.tsx";
+import { showToast } from "../../src/ui/notice.tsx";
 import { MoreButton } from "../../src/ui/popover-menu.tsx";
 import { HeaderButton, TabScreen } from "../../src/ui/screen.tsx";
 import { StartActions } from "../../src/ui/start-actions.tsx";
@@ -45,22 +54,81 @@ export default function TrainScreen() {
   const styles = useStyles(sheet);
   const c = useColors();
   const { week, groups, upNext, active, settings } = useTrain(now);
-  const { change } = useAppData();
+  const { change, store } = useAppData();
+  // The routine tapped while another workout runs, and that workout as it was then: discarding it
+  // is refused if it changed while the sheet was open.
+  const [switching, setSwitching] = useState<{
+    routineId: string;
+    workoutId: string;
+    reviewed: ReturnType<typeof workoutDeletionSnapshot>;
+  } | null>(null);
+  const [discarding, setDiscarding] = useState(false);
+  // Set at once, so a second press before the next render can't discard again.
+  const discardingNow = useRef(false);
+  // The routine the running workout came from: null for an empty workout, undefined when none runs.
+  const runningRoutine = active
+    ? ((active.content as { routineId?: string | null } | null)?.routineId ?? null)
+    : undefined;
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [renaming, setRenaming] = useState<RoutineGroup["folder"]>(null);
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
   const routinesY = useRef(0);
   const reveal = useRef<string | null>(null);
-  // A device runs one workout at a time: starting while one runs opens it again.
+  // A device runs one workout at a time. Tapping the running routine opens it again; tapping
+  // another asks what to do with the running one first.
   // Stable callbacks, so rows that didn't change skip rendering again.
   const start = useCallback(
     (routineId?: string) => {
+      if (active && routineId !== undefined && routineId !== runningRoutine) {
+        haptic.select();
+        setSwitching({
+          routineId,
+          workoutId: active.id,
+          reviewed: workoutDeletionSnapshot(store, active.id),
+        });
+        return;
+      }
       if (!active) change((store) => beginWorkout(store, routineId), "active-workout");
       haptic.tap();
       router.push("/workout/active");
     },
-    [active, change],
+    [active, runningRoutine, change, store],
   );
+  // Asked only while the workout it was opened for still runs.
+  const pending = switching && switching.workoutId === active?.id ? switching : null;
+  const switchTitle =
+    pending &&
+    groups.flatMap((group) => group.routines).find((routine) => routine.id === pending.routineId)
+      ?.title;
+  const closeSwitch = () => {
+    if (discardingNow.current) return;
+    setSwitching(null);
+  };
+  const discardAndStart = () => {
+    if (!pending || discardingNow.current) return;
+    const { workoutId, routineId, reviewed } = pending;
+    discardingNow.current = true;
+    setDiscarding(true);
+    afterFeedback(() => {
+      try {
+        change(
+          (store) => replaceReviewedActiveWorkout(store, workoutId, reviewed, routineId),
+          "active-workout",
+        );
+      } catch (error) {
+        haptic.warning();
+        showToast((error as Error).message);
+        return;
+      } finally {
+        discardingNow.current = false;
+        setDiscarding(false);
+        setSwitching(null);
+      }
+      restTimer.skip(store, workoutId);
+      haptic.tap();
+      afterSheet(() => router.push("/workout/active"));
+    });
+  };
   // The first folder starts open, as the place most routines live; the rest start closed.
   const [open, setOpen] = useState<Set<string>>(
     () => new Set(groups[0] ? [groupKey(groups[0])] : []),
@@ -134,10 +202,25 @@ export default function TrainScreen() {
             ]}
           />
         </View>
-        {active && (
-          <Text style={styles.note}>
-            Finish or discard your current workout to start another routine.
-          </Text>
+        {pending && switchTitle && (
+          <SwitchSheet
+            routine={switchTitle}
+            busy={discarding}
+            onResume={() => {
+              if (discardingNow.current) return;
+              closeSwitch();
+              haptic.tap();
+              afterSheet(() => router.push("/workout/active"));
+            }}
+            onFinish={() => {
+              if (discardingNow.current) return;
+              const next = pending.routineId;
+              closeSwitch();
+              afterSheet(() => router.push({ pathname: "/workout/finish", params: { next } }));
+            }}
+            onDiscard={discardAndStart}
+            onClose={closeSwitch}
+          />
         )}
         {renaming && (
           <NewFolderDialog
@@ -181,7 +264,8 @@ export default function TrainScreen() {
                     onRename={setRenaming}
                     group={group}
                     onToggle={toggle}
-                    onStart={active ? undefined : start}
+                    onStart={start}
+                    running={runningRoutine}
                   />
                 </Enter>
               </View>
@@ -224,6 +308,51 @@ export default function TrainScreen() {
     </TabScreen>
   );
 }
+
+/**
+ * Tapping a routine while another workout runs: carry on with the running one, finish it and then
+ * start the routine, or discard it and start the routine now.
+ */
+function SwitchSheet({
+  routine,
+  busy,
+  onResume,
+  onFinish,
+  onDiscard,
+  onClose,
+}: {
+  routine: string;
+  busy: boolean;
+  onResume: () => void;
+  onFinish: () => void;
+  onDiscard: () => void;
+  onClose: () => void;
+}) {
+  const live = useLive();
+  if (!live) return null;
+  const title = live.tree.workout.content.title || "Workout";
+  const { done } = setProgress(live.tree);
+  return (
+    <ActionSheet
+      message={`${title} is still running, with ${done} logged ${done === 1 ? "set" : "sets"}. Discarding it can’t be undone.`}
+      choices={[
+        { label: `Resume ${title}`, onPress: onResume },
+        { label: `Finish, then start ${routine}`, onPress: onFinish },
+      ]}
+      action={`Discard and start ${routine}`}
+      busy={busy}
+      busyLabel="Discarding…"
+      onConfirm={onDiscard}
+      onClose={onClose}
+    />
+  );
+}
+
+/** iOS can't show another screen while a sheet is still closing. */
+const afterSheet = (go: () => void) => {
+  if (Platform.OS === "ios") setTimeout(go, 320);
+  else go();
+};
 
 const openSettings = () => router.push("/settings");
 /** Opens the new routine form, filed in `folderId` to start with when one is given. */
@@ -330,12 +459,15 @@ const OpenGroup = memo(function OpenGroup({
   group,
   onToggle,
   onStart,
+  running,
   onRename,
 }: {
   onRename: (folder: NonNullable<RoutineGroup["folder"]>) => void;
   group: RoutineGroup;
   onToggle: (key: string) => void;
-  onStart?: ((routineId: string) => void) | undefined;
+  onStart: (routineId: string) => void;
+  /** The running workout's routine: null for an empty workout, undefined when none runs. */
+  running: string | null | undefined;
 }) {
   const styles = useStyles(sheet);
   const c = useColors();
@@ -366,6 +498,7 @@ const OpenGroup = memo(function OpenGroup({
               index={i}
               first={i === 0}
               onStart={onStart}
+              running={running === undefined ? "idle" : running === routine.id ? "this" : "other"}
             />
           ))}
         </View>
@@ -451,55 +584,50 @@ const RoutineRow = memo(function RoutineRow({
   index,
   first,
   onStart,
+  running,
 }: {
   routine: RoutineCard;
   index: number;
   first: boolean;
-  onStart?: ((routineId: string) => void) | undefined;
+  onStart: (routineId: string) => void;
+  /** Whether a workout runs, and if so whether it came from this routine. */
+  running: "idle" | "this" | "other";
 }) {
   const styles = useStyles(sheet);
   const shown = routine.exerciseNames.slice(0, 3);
   const more = routine.exerciseNames.length - shown.length;
   const summary = `${routine.exerciseCount} ${routine.exerciseCount === 1 ? "exercise" : "exercises"} · ${lastDoneLabel(routine.daysSinceLast).toLowerCase()}`;
   const spoken = [routine.title, ...shown, summary].join(", ");
-  const details = (
-    <>
-      <Text style={styles.routineIndex}>{String(index + 1).padStart(2, "0")}</Text>
-      <View style={styles.flex}>
-        <Text style={styles.routineTitle} numberOfLines={2}>
-          {routine.title}
-        </Text>
-        <Text style={styles.routineMeta} numberOfLines={1}>
-          {summary}
-        </Text>
-        {shown.length > 0 && (
-          <Text style={styles.routineNames} numberOfLines={1}>
-            {shown.join(" · ")}
-            {more > 0 ? ` +${more}` : ""}
-          </Text>
-        )}
-      </View>
-    </>
-  );
   return (
     <View style={[styles.routine, !first && styles.divider]}>
-      {/* The row starts the routine, as the start button did; while a workout runs it starts
-          nothing, as the start button wasn't offered then. */}
-      {onStart ? (
-        <Tap
-          accessibilityRole="button"
-          accessibilityLabel={`Start ${spoken}`}
-          style={styles.routineDetails}
-          scaleTo={0.98}
-          onPress={() => onStart(routine.id)}
-        >
-          {details}
-        </Tap>
-      ) : (
-        <View accessible accessibilityLabel={spoken} style={styles.routineDetails}>
-          {details}
+      {/* The row starts the routine, as the start button did. While a workout runs, Train asks
+          first (or opens that workout, for its own routine). */}
+      <Tap
+        accessibilityRole="button"
+        accessibilityLabel={`${running === "this" ? "Resume" : "Start"} ${spoken}`}
+        {...(running === "other" && {
+          accessibilityHint: "Asks what to do with the running workout first",
+        })}
+        style={styles.routineDetails}
+        scaleTo={0.98}
+        onPress={() => onStart(routine.id)}
+      >
+        <Text style={styles.routineIndex}>{String(index + 1).padStart(2, "0")}</Text>
+        <View style={styles.flex}>
+          <Text style={styles.routineTitle} numberOfLines={2}>
+            {routine.title}
+          </Text>
+          <Text style={styles.routineMeta} numberOfLines={1}>
+            {summary}
+          </Text>
+          {shown.length > 0 && (
+            <Text style={styles.routineNames} numberOfLines={1}>
+              {shown.join(" · ")}
+              {more > 0 ? ` +${more}` : ""}
+            </Text>
+          )}
         </View>
-      )}
+      </Tap>
       <MoreButton
         small
         label={`${routine.title} options`}
@@ -570,7 +698,6 @@ const sheet = themedStyles((c) => ({
   sectionTitle: { flexDirection: "row", alignItems: "baseline", gap: space.md, flexShrink: 1 },
   section: { ...type.heading, color: c.fg },
   sectionAside: { ...type.label, color: c.fg3 },
-  note: { ...type.meta, color: c.fg3 },
   folderMenu: { width: touch, height: touch, alignItems: "center", justifyContent: "center" },
   headerRow: { flexDirection: "row", alignItems: "center" },
   groupHeader: {

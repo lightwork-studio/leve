@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { describeFrozenRelease, exampleMessages } from "../src/frozen.ts";
@@ -44,7 +44,10 @@ describe("frozen releases", () => {
     for (const entry of registry.releases) {
       const files = ["frozen", "history"].flatMap((top) =>
         sourceOrDataFiles(join(root, top, entry.release)).map((file) =>
-          file.slice(root.length + 1),
+          file
+            .slice(root.length + 1)
+            .split(sep)
+            .join("/"),
         ),
       );
       expect(files.sort()).toEqual(Object.keys(entry.files).sort());

@@ -29,24 +29,50 @@ const content = <T>(store: DeviceStore, kind: string, id: string): T => {
 export function beginWorkout(store: DeviceStore, routineId?: string): string {
   const running = store.activeWorkout();
   if (running) return running.id;
+  const { id, records } = workoutStart(store, routineId);
+  store.putMany(records);
+  return id;
+}
+
+/**
+ * Starts the routine, refusing while any workout is running (where `beginWorkout` would open that
+ * one instead): the person asked for this routine.
+ */
+export function beginRoutineWorkout(store: DeviceStore, routineId: string): string {
+  if (store.activeWorkout())
+    throw new WorkoutActionError("Another workout is running. Finish or discard it first.");
+  const { id, records } = workoutStart(store, routineId);
+  store.putMany(records);
+  return id;
+}
+
+/** The records a new workout starts with, from the routine when there is one, not yet stored. */
+export function workoutStart(store: DeviceStore, routineId?: string) {
+  if (routineId) {
+    const routine = store.get("routine", routineId);
+    if (!routine?.content || routine.deleted)
+      throw new WorkoutActionError("This routine no longer exists.");
+  }
   const routine = routineId
     ? { id: routineId, content: content<Routine>(store, "routine", routineId) }
     : undefined;
   const started = startWorkout({ ...(routine ? { routine } : {}), now: Date.now(), newId });
-  store.putMany([
-    { kind: "workout", id: started.workout.id, content: asJson(started.workout.content) },
-    ...started.entries.map(({ id, content }) => ({
-      kind: "workout_exercise",
-      id,
-      content: entryContent(content),
-    })),
-    ...started.sets.map(({ id, content }) => ({
-      kind: "workout_set",
-      id,
-      content: asJson(content),
-    })),
-  ]);
-  return started.workout.id;
+  return {
+    id: started.workout.id,
+    records: [
+      { kind: "workout", id: started.workout.id, content: asJson(started.workout.content) },
+      ...started.entries.map(({ id, content }) => ({
+        kind: "workout_exercise",
+        id,
+        content: entryContent(content),
+      })),
+      ...started.sets.map(({ id, content }) => ({
+        kind: "workout_set",
+        id,
+        content: asJson(content),
+      })),
+    ],
+  };
 }
 
 export function canRecordSetReserve(store: DeviceStore, scale: "rir" | "rpe" = "rir"): boolean {
@@ -512,6 +538,12 @@ export function discardWorkout(store: DeviceStore, workoutId: string): void {
 
 /** A stale screen must never discard a finished or replacement session. */
 export function discardActiveWorkout(store: DeviceStore, workoutId: string) {
+  checkActiveDiscard(store, workoutId);
+  discardWorkout(store, workoutId);
+}
+
+/** Refuses unless the workout is the active one and can be discarded as it stands. */
+export function checkActiveDiscard(store: DeviceStore, workoutId: string) {
   const active = store.activeWorkout();
   if (
     active?.id !== workoutId ||
@@ -519,7 +551,6 @@ export function discardActiveWorkout(store: DeviceStore, workoutId: string) {
     (active.server && (active.server.state !== "live" || active.server.content?.endedAt != null))
   )
     throw new WorkoutActionError("The active workout changed. Review it before discarding.");
-  discardWorkout(store, workoutId);
 }
 
 type WorkoutDetailsPatch = Partial<Pick<Workout, "title" | "description">> & {
