@@ -1,7 +1,7 @@
 import { type DeviceStore, openDeviceStore } from "@leve/storage";
 import { createSqlJsEngine } from "@leve/storage/sqljs";
 import { act, createElement, type ReactElement, type Ref, useImperativeHandle } from "react";
-import { Modal, SectionList, Text } from "react-native";
+import { FlatList, Modal, Text } from "react-native";
 import { create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 import initSqlJs from "sql.js";
 import { expect, it, vi } from "vitest";
@@ -29,31 +29,25 @@ vi.mock("react-native", () => ({
   KeyboardAvoidingView: "Keyboard",
   Platform: { OS: "web" },
   useWindowDimensions: () => ({ width: 390, height: 844 }),
-  SectionList: ({
+  FlatList: ({
     ref,
-    sections,
+    data,
+    keyExtractor,
     renderItem,
     ListHeaderComponent,
   }: {
-    ref?: Ref<{ getScrollResponder: () => { scrollTo: typeof scrollTo } }>;
-    sections: { data: BuiltInExercise[] }[];
-    renderItem: (props: {
-      item: BuiltInExercise;
-      index: number;
-      section: { data: BuiltInExercise[] };
-    }) => ReactElement;
+    ref?: Ref<{ scrollToOffset: typeof scrollTo }>;
+    data: unknown[];
+    keyExtractor: (item: unknown) => string;
+    renderItem: (props: { item: unknown }) => ReactElement;
     ListHeaderComponent?: ReactElement;
   }) => {
-    useImperativeHandle(ref, () => ({ getScrollResponder: () => ({ scrollTo }) }));
+    useImperativeHandle(ref, () => ({ scrollToOffset: scrollTo }));
     return [
       ListHeaderComponent,
-      ...sections.flatMap((section) =>
-        section.data
-          .slice(0, 5)
-          .map((item, index) =>
-            createElement("Row", { key: item.id }, renderItem({ item, index, section })),
-          ),
-      ),
+      ...data
+        .slice(0, 15)
+        .map((item) => createElement("Row", { key: keyExtractor(item) }, renderItem({ item }))),
     ];
   },
   StyleSheet: { create: (s: object) => s, absoluteFill: {} },
@@ -488,8 +482,8 @@ it("shows filtered results as soon as the pinned picker search receives focus", 
 
     scrollTo.mockClear();
     await act(() => field.props.onFocus());
-    expect(root.findByType(SectionList).findAllByProps(searchLabel)).toHaveLength(0);
-    expect(scrollTo).toHaveBeenCalledWith({ y: 0, animated: false });
+    expect(root.findByType(FlatList).findAllByProps(searchLabel)).toHaveLength(0);
+    expect(scrollTo).toHaveBeenCalledWith({ offset: 0, animated: false });
     expect(field.props.value).toBe("");
     expect(figure()).toHaveLength(0);
     expect(
@@ -510,7 +504,7 @@ it("shows filtered results as soon as the pinned picker search receives focus", 
 
     scrollTo.mockClear();
     await act(() => field.props.onChangeText("flyes"));
-    expect(scrollTo).toHaveBeenCalledWith({ y: 0, animated: false });
+    expect(scrollTo).toHaveBeenCalledWith({ offset: 0, animated: false });
     await pressIn(root, "Dumbbell Flyes, Weight and reps, Chest (primary)");
     await pressIn(root, "Clear exercise search");
     expect(field.props.value).toBe("");
