@@ -7,7 +7,7 @@
  */
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describeFrozenRelease, exampleMessages } from "../src/frozen.ts";
 import { leveContract, type ReleaseId } from "../src/index.ts";
@@ -62,7 +62,10 @@ const registry = existsSync(registryPath)
   : { releases: [] };
 const files: Record<string, string> = {};
 for (const path of written) {
-  files[relative(root, path)] = createHash("sha256").update(readFileSync(path)).digest("hex");
+  // Registry keys are "/"-separated on every OS, so a freeze on Windows matches one on Linux.
+  files[relative(root, path).split(sep).join("/")] = createHash("sha256")
+    .update(readFileSync(path))
+    .digest("hex");
 }
 const entry = { release, files };
 const existing = registry.releases.findIndex(
