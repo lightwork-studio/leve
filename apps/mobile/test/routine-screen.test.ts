@@ -619,7 +619,11 @@ it("fills a typed target into the blank sets of its kind and leaves set values a
       await act(() => field(label).props.onBlur());
     };
     const column = (heading: string) =>
-      [1, 2, 3, 4].map((n) => field(`set ${n} ${heading}`).props.value);
+      [1, 2, 3, 4, 5].map((n) => field(`set ${n} ${heading}`).props.value);
+    const warmUp = async (n: number) => {
+      await act(() => field(`set ${n} type: Working`).props.onPress());
+      await tapText(root, "Warm-up");
+    };
     await act(() =>
       root.findByProps({ accessibilityLabel: "Routine name" }).props.onChangeText("Push"),
     );
@@ -629,33 +633,39 @@ it("fills a typed target into the blank sets of its kind and leaves set values a
         .find((n) => typeof n.props.onPickMany === "function")
         .props.onPickMany([EXERCISES.bench]),
     );
-    for (let n = 0; n < 3; n++)
+    for (let n = 0; n < 4; n++)
       await act(() =>
         root.findByProps({ accessibilityLabel: "Add set to Bench Press" }).props.onPress(),
       );
-    await act(() => field("set 1 type: Working").props.onPress());
-    await tapText(root, "Warm-up");
-    await type("set 3 REPS", "5");
-    // Every keystroke reaches the sets that were blank when typing started, the warm-up excepted.
-    await type("set 2 KG", "1", "10", "100");
-    expect(column("REPS")).toEqual(["", "5", "5", "5"]);
-    expect(column("KG")).toEqual(["", "100", "100", "100"]);
-    // Once every working set has a weight, a new one changes only its own set.
-    await type("set 4 KG", "105");
-    expect(column("KG")).toEqual(["", "100", "100", "105"]);
+    await warmUp(1);
+    await warmUp(2);
+    // Warm-ups and working sets each fill only their own kind.
     await type("set 1 KG", "40");
-    expect(column("KG")).toEqual(["40", "100", "100", "105"]);
+    expect(column("KG")).toEqual(["40", "40", "", "", ""]);
+    await type("set 3 REPS", "5");
+    expect(column("REPS")).toEqual(["", "", "5", "5", "5"]);
+    // Every keystroke reaches the sets that were blank when typing started.
+    await type("set 4 KG", "1", "10", "100");
+    expect(column("KG")).toEqual(["40", "40", "100", "100", "100"]);
+    // Once every working set has a weight, a new one changes only its own set.
+    await type("set 5 KG", "105");
+    expect(column("KG")).toEqual(["40", "40", "100", "100", "105"]);
+    // A set turned into a warm-up while the keyboard stays up stops following.
     await act(() => root.findByProps({ label: "Effort scale" }).props.onChoose("rpe"));
-    await type("set 4 target RPE", "8");
-    expect(column("target RPE")).toEqual(["", "8", "8", "8"]);
+    await act(() => field("set 3 target RPE").props.onChangeText("7"));
+    expect(column("target RPE")).toEqual(["", "", "7", "7", "7"]);
+    await warmUp(5);
+    await type("set 3 target RPE", "8");
+    expect(column("target RPE")).toEqual(["", "", "8", "8", "7"]);
     await tapText(root, "Save routine");
     expect(store.list("routine")[0]?.content?.exercises).toMatchObject([
       {
         sets: [
           { type: "warmup", weightKg: 40, reps: null, rpe: null },
+          { type: "warmup", weightKg: 40, reps: null, rpe: null },
           { weightKg: 100, reps: 5, rpe: 8 },
           { weightKg: 100, reps: 5, rpe: 8 },
-          { weightKg: 105, reps: 5, rpe: 8 },
+          { type: "warmup", weightKg: 105, reps: 5, rpe: 7 },
         ],
       },
     ]);

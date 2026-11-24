@@ -473,17 +473,22 @@ function ExerciseBlock({
           .map((s) => s.id),
       };
     }
-    const targets = new Set([setId, ...filling.current.sets]);
-    edit((e) => ({
-      ...e,
-      sets: e.sets.map((s) =>
-        !targets.has(s.id)
-          ? s
-          : field === "effort"
-            ? { ...s, effortText: value }
-            : { ...s, values: { ...s.values, [field]: value } },
-      ),
-    }));
+    const followers = new Set(filling.current.sets);
+    edit((e) => {
+      // A set whose kind changed while the keyboard stayed up stops following.
+      const source = e.sets.find((s) => s.id === setId);
+      const warmup = source !== undefined && typeOf(source) === "warmup";
+      return {
+        ...e,
+        sets: e.sets.map((s) =>
+          s.id !== setId && !(followers.has(s.id) && (typeOf(s) === "warmup") === warmup)
+            ? s
+            : field === "effort"
+              ? { ...s, effortText: value }
+              : { ...s, values: { ...s.values, [field]: value } },
+        ),
+      };
+    });
   };
   const doneTyping = () => {
     filling.current = null;
