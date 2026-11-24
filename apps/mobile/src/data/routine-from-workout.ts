@@ -1,5 +1,13 @@
-import { type ExerciseType, isRepBased, LIMITS, RPE_VALUES, usesMetric } from "@leve/core";
+import {
+  type EffortScale,
+  type ExerciseType,
+  isRepBased,
+  LIMITS,
+  RPE_VALUES,
+  usesMetric,
+} from "@leve/core";
 import type { DeviceStore } from "@leve/storage";
+import { routineEffortScale } from "../model/effort.ts";
 import { newId } from "./ids.ts";
 import { readWorkoutTree } from "./read.ts";
 import { openPlan, type PlannedExercise, type StoredPlan } from "./routine-actions.ts";
@@ -7,7 +15,7 @@ import { openPlan, type PlannedExercise, type StoredPlan } from "./routine-actio
 export function routineFromWorkout(
   store: DeviceStore,
   workoutId: string,
-): { name: string; plan: PlannedExercise[] } | { error: string } {
+): { name: string; plan: PlannedExercise[]; effortScale: EffortScale } | { error: string } {
   const tree = readWorkoutTree(store, workoutId);
   if (!tree?.workout.content.endedAt) return { error: "Choose a completed workout from History." };
   const entryIds = new Set(tree.entries.map(({ entry }) => entry.id));
@@ -59,11 +67,19 @@ export function routineFromWorkout(
         distanceMeters: usesMetric(exerciseType, "distance") ? set.distanceMeters : null,
         count: usesMetric(exerciseType, "count") ? set.count : null,
         rpe: repBased ? (RPE_VALUES.find((value) => value === set.rpe) ?? null) : null,
+        ...(repBased && set.repsInReserve != null && { repsInReserve: set.repsInReserve }),
         repRangeMin: null,
         repRangeMax: null,
       })),
     });
   }
   if (!exercises.length) return { error: "This workout has no logged sets to use in a routine." };
-  return { name: tree.workout.content.title, plan: openPlan(exercises) };
+  return {
+    name: tree.workout.content.title,
+    plan: openPlan(exercises),
+    effortScale: routineEffortScale({
+      effortScale: tree.workout.content.initialPlan?.effortScale,
+      exercises,
+    }),
+  };
 }

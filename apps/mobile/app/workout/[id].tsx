@@ -1,4 +1,5 @@
 import { jsonEqual } from "@leve/contract";
+import type { EffortScale } from "@leve/core";
 import { Link, router, useLocalSearchParams } from "expo-router";
 import { useRef, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
@@ -285,6 +286,7 @@ export default function WorkoutDetailScreen() {
             <ExerciseCard
               key={entry.id}
               workoutId={id}
+              effortScale={data.tree.workout.content.initialPlan?.effortScale}
               group={groups[index]}
               finished={!!ended}
               entry={entry}
@@ -373,6 +375,7 @@ function AddHistoricalExercise({
 function ExerciseCard({
   group,
   workoutId,
+  effortScale,
   entry,
   finished,
   sets,
@@ -382,6 +385,7 @@ function ExerciseCard({
   group: string | undefined;
   entry: WithId<WorkoutEntry>;
   workoutId: string;
+  effortScale?: EffortScale | null | undefined;
   finished: boolean;
   sets: WithId<WorkoutSet>[];
   unit: Unit;
@@ -412,6 +416,7 @@ function ExerciseCard({
         {finished && !!entry.content.notes?.length && <ExerciseNotes entry={entry} expanded />}
         <SetTable
           workoutId={workoutId}
+          effortScale={effortScale}
           {...(finished ? { addTo: { workoutId, entryId: entry.id } } : {})}
           editableExercise={exerciseName}
           type={exerciseType}

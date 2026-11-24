@@ -62,7 +62,7 @@ vi.mock("../src/ui/toggle.tsx", () => ({ Toggle: "SwitchIndicator" }));
 vi.mock("../src/ui/tap.tsx", () => ({ Tap: "Tap" }));
 // Menus, sheets and dialogs keep what they would show in the tree, to be read and pressed.
 vi.mock("../src/ui/popover-menu.tsx", () => ({ MoreButton: "MoreButton" }));
-vi.mock("../src/ui/choice-row.tsx", () => ({ MenuRow: "MenuRow" }));
+vi.mock("../src/ui/choice-row.tsx", () => ({ ChoiceRow: "ChoiceRow", MenuRow: "MenuRow" }));
 vi.mock("../src/ui/bottom-sheet.tsx", async () => {
   const { createElement: h } = await import("react");
   return {
@@ -266,6 +266,7 @@ it("selects the last folder in the scrollable form and saves the chosen exercise
     expect(
       root.findByProps({ accessibilityLabel: "Bench Press set 1 type: Warm-up" }),
     ).toBeDefined();
+    await act(() => root.findByProps({ label: "Effort scale" }).props.onChoose("rpe"));
     const rpe = root.findByProps({ accessibilityLabel: "Bench Press set 1 target RPE" });
     expect(rpe.props.value).toBe("");
     expect(root.findAllByProps({ accessibilityLabel: "Plank set 1 target RPE" })).toHaveLength(0);
@@ -379,7 +380,14 @@ const entry = {
   useRepRange: true,
   sets: [target, { ...target, id: "second", weightKg: null }],
 };
-const routine = { title: "Monday", folderId: null, notes: "Cue", position: 6, exercises: [entry] };
+const routine = {
+  title: "Monday",
+  folderId: null,
+  notes: "Cue",
+  position: 6,
+  exercises: [entry],
+  effortScale: null,
+};
 
 it("opens a routine that arrives after its link and keeps edits through later updates", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -485,6 +493,76 @@ it("clears saved routine notes and retains the draft if another edit arrived", a
   }
 });
 
+it("requires confirmation to clear an incompatible target and preserves the running plan", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  store = await openDeviceStore({
+    engine: createSqlJsEngine(await initSqlJs()),
+    path: "/routine-scale",
+    appVersion: "test",
+  });
+  let rendered: ReactTestRenderer | undefined;
+  try {
+    const initial = {
+      ...routine,
+      effortScale: "rpe",
+      exercises: [
+        {
+          ...entry,
+          sets: [
+            { ...target, rpe: 8 },
+            { ...target, id: "second", rpe: 8.5 },
+          ],
+        },
+      ],
+    };
+    store.put("routine", "routine", initial);
+    const active = beginWorkout(store, "routine");
+    await act(() => {
+      rendered = create(createElement(RoutineDetails));
+    });
+    if (!rendered) throw Error("Missing routine editor");
+    const root = rendered.root;
+    const choosing = () => root.findByProps({ label: "Effort scale" });
+    const switchToRir = () => act(() => choosing().props.onChoose("rir"));
+    const dialog = () => root.findByType("Dialog" as never);
+    await switchToRir();
+    expect(choosing().props.value).toBe("rpe");
+    await act(() => dialog().props.onClose());
+    expect(root.findByProps({ accessibilityLabel: "Old press set 2 target RPE" }).props.value).toBe(
+      "8.5",
+    );
+    await switchToRir();
+    await act(() => dialog().props.confirm.onPress());
+    expect(root.findByProps({ accessibilityLabel: "Old press set 1 target RIR" }).props.value).toBe(
+      "2",
+    );
+    expect(root.findByProps({ accessibilityLabel: "Old press set 2 target RIR" }).props.value).toBe(
+      "",
+    );
+    await tapText(root, "Save routine");
+    expect(store.get("routine", "routine")?.content).toMatchObject({
+      effortScale: "rir",
+      exercises: [
+        {
+          sets: [
+            { rpe: null, repsInReserve: 2 },
+            { rpe: null, repsInReserve: null },
+          ],
+        },
+      ],
+    });
+    expect(liveData(store)?.tree.workout.id).toBe(active);
+    expect(liveData(store)?.initialPlan?.effortScale).toBe("rpe");
+    expect(liveData(store)?.initialPlan?.exercises[0]?.sets.map((set) => set.rpe)).toEqual([
+      8, 8.5,
+    ]);
+  } finally {
+    await act(() => rendered?.unmount());
+    store.close();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("adds the first effort target to a stored set without changing its other targets", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   store = await openDeviceStore({
@@ -501,12 +579,12 @@ it("adds the first effort target to a stored set without changing its other targ
     });
     if (!rendered) throw Error("Missing routine editor");
     const root = rendered.root;
-    const field = root.findByProps({ accessibilityLabel: "Old press set 1 target RPE" });
+    const field = root.findByProps({ accessibilityLabel: "Old press set 1 target RIR" });
     expect(field.props.value).toBe("");
-    await act(() => field.props.onChangeText("9"));
+    await act(() => field.props.onChangeText("0"));
     await tapText(root, "Save routine");
     expect(store.get("routine", "routine")?.content?.exercises).toEqual([
-      { ...entry, sets: [{ ...existing, rpe: 9 }] },
+      { ...entry, sets: [{ ...existing, repsInReserve: 0 }] },
     ]);
   } finally {
     await act(() => rendered?.unmount());
@@ -966,6 +1044,7 @@ it("saves a named copy of the edited routine while leaving its original and runn
     const saved = store.list("routine").find((row) => row.id !== "routine");
     expect(saved?.content).toEqual({
       ...source,
+      effortScale: "rpe",
       title: "Friday strength",
       notes: "Travel setup",
       folderId: "travel",

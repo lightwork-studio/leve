@@ -133,6 +133,17 @@ export function repHint(target: Target): string | null {
   return target?.reps !== null && target?.reps !== undefined ? String(target.reps) : null;
 }
 
+export function targetCaption(
+  target: Target,
+  metric: SetMetric,
+  unit: WeightUnit,
+  distanceUnit: SetDistanceUnit,
+): string | null {
+  return metric === "reps"
+    ? repHint(target)
+    : show(metric, targetValue(target, metric), unit, distanceUnit) || null;
+}
+
 /** The time typed or measured for a set, as text. */
 export function timeText(timer: Measurement | undefined): string {
   return timer?.seconds === undefined ? (timer?.text ?? "") : durationLabel(timer.seconds);
@@ -217,14 +228,8 @@ export function fieldView(options: {
     storedValue(set, metric) ??
     previousValue(options.previous, metric) ??
     targetValue(options.target, metric);
-  // A rep range reads better as itself than as its lower end.
-  const hint = metric === "reps" ? repHint(options.target) : null;
-  const fromBefore = storedValue(set, metric) ?? previousValue(options.previous, metric);
   return {
-    text:
-      (fromBefore === null && hint) ||
-      show(metric, suggested, unit, distanceUnit) ||
-      (metric === "duration" ? "m:ss" : "–"),
+    text: show(metric, suggested, unit, distanceUnit) || (metric === "duration" ? "m:ss" : "–"),
     firm: false,
     value: shownNumber(metric, suggested, unit, distanceUnit),
     missing: false,

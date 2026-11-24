@@ -1,5 +1,5 @@
 import { jsonEqual, MAX_POSITION } from "@leve/contract";
-import { LIMITS } from "@leve/core";
+import { type EffortScale, LIMITS } from "@leve/core";
 import type { DeviceStore } from "@leve/storage";
 
 import type { StoredPlan } from "./routine-actions.ts";
@@ -8,6 +8,7 @@ export interface RoutineLocation {
   title: string;
   folderId: string | null;
   notes?: string;
+  effortScale?: EffortScale | null;
 }
 
 /** Apply only the fields the user changed to the latest local copy. */
@@ -22,7 +23,8 @@ export function organizeRoutine(
   const move = draft.folderId !== opened.folderId;
   const editPlan = plan && !jsonEqual(plan.opened, plan.next);
   const editNotes = draft.notes !== undefined && draft.notes !== opened.notes;
-  if (!rename && !move && !editPlan && !editNotes) return;
+  const editScale = draft.effortScale !== undefined && draft.effortScale !== opened.effortScale;
+  if (!rename && !move && !editPlan && !editNotes && !editScale) return;
   const record = store.get("routine", id);
   if (record?.deleted || !record?.content) throw new Error("This routine is no longer available.");
   if (record.problem || record.fromRestore)
@@ -40,12 +42,18 @@ export function organizeRoutine(
       throw new Error("The routine notes changed. Reopen the routine to see the latest notes.");
     next.notes = draft.notes;
   }
-  if (editPlan) {
-    if (!jsonEqual(current.exercises, plan.opened))
+  if (editPlan || editScale) {
+    if (
+      (current.effortScale ?? null) !== (opened.effortScale ?? null) ||
+      (plan && !jsonEqual(current.exercises, plan.opened))
+    )
       throw new Error("The plan changed. Reopen the routine to see the latest exercises.");
+  }
+  if (editPlan) {
     if (!plan.next.length) throw new Error("Add an exercise to the routine.");
     next.exercises = plan.next;
   }
+  if (editScale) next.effortScale = draft.effortScale;
   if (rename) {
     const title = draft.title.trim();
     if (!title || title.length > LIMITS.titleLength)

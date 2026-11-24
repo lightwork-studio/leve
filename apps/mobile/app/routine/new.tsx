@@ -54,6 +54,7 @@ function RoutineForm({ fromWorkout, source }: { fromWorkout?: string; source?: W
   const [notes, setNotes] = useState("");
   const [folder, setFolder] = useState<string | null>(null);
   const [plan, setPlan] = useState<PlannedExercise[]>(draft?.plan ?? []);
+  const [effortScale, setEffortScale] = useState(draft?.effortScale ?? "rir");
   const [reordering, setReordering] = useState(false);
   const [reorderGripHeld, setReorderGripHeld] = useState(false);
   const [problem, setProblem] = useState("");
@@ -71,7 +72,7 @@ function RoutineForm({ fromWorkout, source }: { fromWorkout?: string; source?: W
     if (saving.current) return;
     saving.current = true;
     try {
-      change((store) => createRoutine(store, name, folder, plan, settings, notes));
+      change((store) => createRoutine(store, name, folder, plan, settings, notes, effortScale));
     } catch (error) {
       saving.current = false;
       haptic.warning();
@@ -129,6 +130,8 @@ function RoutineForm({ fromWorkout, source }: { fromWorkout?: string; source?: W
           <RoutinePlanEditor
             plan={plan}
             setPlan={setPlan}
+            effortScale={effortScale}
+            setEffortScale={setEffortScale}
             settings={settings}
             reordering={reordering}
             onReorder={() => setReordering(true)}

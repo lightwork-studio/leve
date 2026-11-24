@@ -1,4 +1,6 @@
+import { type EffortScale, RPE_VALUES } from "@leve/core";
 import { Text, View } from "react-native";
+import { effortLabel } from "../../model/effort.ts";
 import { RIR_PICKS } from "../../model/rir.ts";
 import { numeral, radius, type } from "../../theme.ts";
 import { Tap } from "../tap.tsx";
@@ -14,6 +16,8 @@ export function RirPicks({
   tone,
   label,
   value,
+  scale = "rir",
+  target,
   onPick,
   onMore,
 }: {
@@ -22,12 +26,15 @@ export function RirPicks({
   label: string;
   /** The set's RIR now, to show which pick it is. */
   value: number | null;
+  scale?: EffortScale;
+  target?: number | null;
   onPick: (value: number) => void;
   onMore: () => void;
 }) {
   const styles = useStyles(sheet);
   const bone = tone === "bone";
-  const chosen = value === null ? null : Math.min(value, 5);
+  const chosen = value === null || scale === "rpe" ? value : Math.min(value, 5);
+  const planned = target == null || scale === "rpe" ? target : Math.min(target, 5);
   return (
     <View
       role="group"
@@ -35,15 +42,19 @@ export function RirPicks({
       accessibilityLabel={label}
       style={bone ? styles.band : styles.strip}
     >
-      {RIR_PICKS.map((pick, i) => {
-        const more = pick === 5;
+      {(scale === "rpe" ? RPE_VALUES : RIR_PICKS).map((pick, i) => {
+        const more = scale === "rir" && pick === 5;
         const on = chosen === pick;
         return (
           <Tap
             key={pick}
             accessibilityRole="button"
             accessibilityLabel={
-              more ? "5 or more: opens the number pad" : `${pick} reps in reserve`
+              more
+                ? "5 or more: opens the number pad"
+                : scale === "rpe"
+                  ? `RPE ${pick}`
+                  : `${pick} reps in reserve`
             }
             accessibilityState={{ selected: on }}
             onPress={() => (more ? onMore() : onPick(pick))}
@@ -51,7 +62,15 @@ export function RirPicks({
             style={[styles.pick, on && !bone && styles.pickOn]}
           >
             {i > 0 && <View style={[styles.divider, bone ? styles.dividerBone : null]} />}
-            <Text style={[styles.number, bone ? styles.numberBone : null, on && styles.numberOn]}>
+            <Text
+              style={[
+                styles.number,
+                scale === "rpe" && styles.rpeNumber,
+                bone ? styles.numberBone : null,
+                on && styles.numberOn,
+                planned === pick && styles.targetNumber,
+              ]}
+            >
               {pick}
               {more ? <Text style={[styles.plus, bone ? styles.plusBone : null]}>+</Text> : null}
             </Text>
@@ -63,22 +82,30 @@ export function RirPicks({
 }
 
 /** The line over the picks: what is asked, about which set, and Skip, which records nothing. */
-export function RirQuestion({ about, onSkip }: { about: string; onSkip: () => void }) {
+export function RirQuestion({
+  about,
+  scale = "rir",
+  onSkip,
+}: {
+  about: string;
+  scale?: EffortScale;
+  onSkip: () => void;
+}) {
   const styles = useStyles(sheet);
   return (
     <View style={styles.question}>
       <Text style={styles.asked} numberOfLines={1}>
-        <Text style={styles.askedStrong}>RIR</Text>
+        <Text style={styles.askedStrong}>{effortLabel(scale)}</Text>
         {` · ${about}`}
       </Text>
       <Tap
         accessibilityRole="button"
-        accessibilityLabel={`Skip, no reps in reserve for ${about.split(" · ")[0]}`}
+        accessibilityLabel={`Skip, no ${scale === "rpe" ? "RPE" : "reps in reserve"} for ${about.split(" · ")[0]}`}
         hitSlop={{ top: 12, bottom: 12, left: 12, right: 8 }}
         onPress={onSkip}
         style={styles.skip}
       >
-        <Text style={styles.skipText}>Skip</Text>
+        <Text style={styles.skipText}>Skip effort</Text>
       </Tap>
     </View>
   );
@@ -108,6 +135,8 @@ const sheet = themedStyles((c) => ({
   number: { ...numeral(20, "300"), color: c.fg },
   numberBone: { color: c.rest.ink },
   numberOn: { fontWeight: "400" },
+  rpeNumber: { fontSize: 16 },
+  targetNumber: { textDecorationLine: "underline" },
   plus: { fontSize: 13, color: c.fg2 },
   plusBone: { color: c.rest.ink, opacity: 0.8 },
   question: {

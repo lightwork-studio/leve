@@ -167,6 +167,16 @@
       "content": {
         "type": "object",
         "properties": {
+          "effortScale": {
+            "type": "nullable",
+            "of": {
+              "type": "enum",
+              "values": [
+                "rir",
+                "rpe"
+              ]
+            }
+          },
           "exercises": {
             "type": "array",
             "of": {
@@ -306,6 +316,15 @@
                           "maximum": 10000
                         }
                       },
+                      "repsInReserve": {
+                        "type": "nullable",
+                        "of": {
+                          "type": "number",
+                          "integer": true,
+                          "minimum": 0,
+                          "maximum": 10000
+                        }
+                      },
                       "rpe": {
                         "type": "nullable",
                         "of": {
@@ -410,6 +429,7 @@
           }
         },
         "required": [
+          "effortScale",
           "exercises",
           "folderId",
           "notes",
@@ -418,7 +438,8 @@
         ]
       },
       "meanings": {
-        "exercises": "The routine's exercises in order, each with target sets (weights in kilograms, distances in metres, durations in seconds, rep ranges as min/max)",
+        "effortScale": "Effort scale for this routine's targets and workouts started from it; absent or null for older routines",
+        "exercises": "The routine's exercises in order, each with target sets (weights in kilograms, distances in metres, durations in seconds, rep ranges as min/max, and optional RPE or reps in reserve)",
         "folderId": "The folder holding the routine; null when unfiled or the folder is gone",
         "notes": "Free-text notes on the routine",
         "position": "Order within its folder; lower first, ties ordered by id",
@@ -571,6 +592,13 @@
             "of": {
               "type": "object",
               "properties": {
+                "effortScale": {
+                  "type": "enum",
+                  "values": [
+                    "rir",
+                    "rpe"
+                  ]
+                },
                 "exercises": {
                   "type": "array",
                   "of": {
@@ -658,6 +686,15 @@
                               }
                             },
                             "reps": {
+                              "type": "nullable",
+                              "of": {
+                                "type": "number",
+                                "integer": true,
+                                "minimum": 0,
+                                "maximum": 10000
+                              }
+                            },
+                            "repsInReserve": {
                               "type": "nullable",
                               "of": {
                                 "type": "number",
@@ -786,7 +823,7 @@
       "meanings": {
         "description": "Free-text notes about the whole workout",
         "endedAt": "startedAt plus the active duration; null while the workout is in progress",
-        "initialPlan": "Routine title and ordered exercise and set targets captured at start; null when unknown or unplanned",
+        "initialPlan": "Routine title, effort scale, and ordered exercise and set targets captured at start; null when unknown or unplanned",
         "routineId": "The routine the workout was started from, if any; a soft reference",
         "startedAt": "When the workout started (UTC)",
         "title": "Workout name shown in history"
