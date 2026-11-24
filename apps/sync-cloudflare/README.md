@@ -13,13 +13,16 @@ account.
 - **Admin** (`/admin/*`) needs the operator token (`ADMIN_TOKEN`, at least 32 characters) and names
   the account in the `x-leve-account` header. Without it the admin endpoints are closed.
 
-Missing or broken Clerk settings make sync answer 503 rather than let anyone in.
+A missing setting, or a key that can't be read, makes sync answer 503 rather than let anyone in.
+A valid key from the wrong instance, an issuer with a trailing `/`, or a token version other than 2
+(`v`) refuses every client with 401 instead: if all sign-ins fail, check these first.
 
 **Turning it off:** `npx wrangler@4.158.0 secret delete CLERK_JWT_KEY` stops all sync (503), and
 `secret delete ADMIN_TOKEN` closes the admin endpoints. `npx wrangler@4.158.0 rollback` returns to
 an earlier version of `leve-sync`; never deploy a build from before Clerk sign-in, which let the
-client name its account. Clerk can rotate the instance key: then put the new PEM in
-`CLERK_JWT_KEY`.
+client name its account. Each version keeps the secrets it was deployed with, so rolling back
+past a `secret delete` brings the deleted secret back. Clerk can rotate the instance key: then put
+the new PEM in `CLERK_JWT_KEY`.
 
 ## Layout
 
