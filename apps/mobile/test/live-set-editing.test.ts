@@ -3,7 +3,7 @@ import { type DeviceStore, openDeviceStore } from "@leve/storage";
 import { createSqlJsEngine } from "@leve/storage/sqljs";
 import { router } from "expo-router";
 import { act, createElement, type ReactElement, useState } from "react";
-import { Text } from "react-native";
+import { Platform, Text } from "react-native";
 import { withTiming } from "react-native-reanimated";
 import { create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 import initSqlJs from "sql.js";
@@ -334,6 +334,37 @@ describe("the workout row", () => {
     expect(mark()).toHaveLength(0);
     expect(sets()[0]?.completedAt).toBeNull();
     expect(alerts(ui)).toContain("Save refused");
+  });
+
+  it("keeps the check on the web from release until the click logs it", async () => {
+    const { sets } = benchWorkout();
+    const platform = Platform.OS;
+    Platform.OS = "web";
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const ui = await mount();
+      const button = () => ui.control(sets()[0]?.completedAt ? "Undo logged set 1" : "Log set 1");
+      const mark = () => button().findAll((node) => (node.type as unknown) === "Icon");
+      // The click follows the release: the check never leaves before the set is logged.
+      await act(() => button().props.onPressIn());
+      await act(() => button().props.onPressOut());
+      expect(mark()).toHaveLength(1);
+      await ui.press("Log set 1");
+      expect(sets()[0]?.completedAt).not.toBeNull();
+      expect(mark()).toHaveLength(1);
+      await act(() => vi.advanceTimersByTime(1000));
+      expect(mark()).toHaveLength(1);
+      // A touch that never becomes a click withdraws the check soon after release.
+      await ui.press("Undo logged set 1");
+      await act(() => button().props.onPressIn());
+      await act(() => button().props.onPressOut());
+      expect(mark()).toHaveLength(1);
+      await act(() => vi.advanceTimersByTime(1000));
+      expect(mark()).toHaveLength(0);
+      expect(sets()[0]?.completedAt).toBeNull();
+    } finally {
+      Platform.OS = platform;
+    }
   });
 
   it("counts logged sets only, half for secondary muscles, warm-ups as Settings says", async () => {
