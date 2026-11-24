@@ -8,6 +8,7 @@ import { withTiming } from "react-native-reanimated";
 import { create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 import initSqlJs from "sql.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import Yoga, { Edge, FlexDirection } from "yoga-layout";
 import { previewContract } from "../../../packages/contract/test/support/preview-contract.ts";
 import { World } from "../../../packages/sync/test/support/harness.ts";
 import ActiveWorkoutScreen from "../app/workout/active.tsx";
@@ -1291,8 +1292,51 @@ describe("the logging strip", () => {
     onStep: () => {},
     onEdit: () => {},
   });
-  /** The strip laid out on a phone this wide, each part measured from what it is drawn as. */
-  const stripOn = async (phone: number) => {
+  type Style = Record<string, number | string | undefined>;
+  const flat = (style: unknown): Style =>
+    Object.assign({}, ...[style].flat(Number.POSITIVE_INFINITY).filter(Boolean));
+  /** The views a component draws, skipping the components between. */
+  const drawn = (node: ReactTestInstance): ReactTestInstance[] =>
+    node.children.flatMap((child) =>
+      typeof child === "string" ? [] : typeof child.type === "string" ? [child] : drawn(child),
+    );
+  /**
+   * Lays the strip's columns out with Yoga, the engine that places views on a phone, at `width`:
+   * how wide each is drawn, whatever the strip measured itself as.
+   */
+  const layOut = (strip: ReactTestInstance, width: number) => {
+    const config = Yoga.Config.create();
+    config.setPointScaleFactor(0);
+    const node = (style: Style) => {
+      const n = Yoga.Node.create(config);
+      if (typeof style.flex === "number") n.setFlex(style.flex);
+      if (typeof style.flexGrow === "number") n.setFlexGrow(style.flexGrow);
+      if (typeof style.flexShrink === "number") n.setFlexShrink(style.flexShrink);
+      if (typeof style.flexBasis === "number") n.setFlexBasis(style.flexBasis);
+      if (typeof style.width === "number") n.setWidth(style.width);
+      if (typeof style.minWidth === "number") n.setMinWidth(style.minWidth);
+      if (typeof style.maxWidth === "number") n.setMaxWidth(style.maxWidth);
+      if (typeof style.borderWidth === "number") n.setBorder(Edge.All, style.borderWidth);
+      if (typeof style.borderLeftWidth === "number") n.setBorder(Edge.Left, style.borderLeftWidth);
+      return n;
+    };
+    const root = node({ ...flat(strip.props.style), width });
+    root.setFlexDirection(FlexDirection.Row);
+    const columns = drawn(strip).map((column) => {
+      const n = node(flat(column.props.style));
+      root.insertChild(n, root.getChildCount());
+      return [column, n] as const;
+    });
+    root.calculateLayout(width, 72);
+    const widths = new Map(columns.map(([column, n]) => [column, n.getComputedWidth()]));
+    root.freeRecursive();
+    return widths;
+  };
+  /**
+   * The strip laid out on a phone this wide, each part measured from what it is drawn as. It
+   * reports `measured` as its own width (the phone's strip unless said otherwise).
+   */
+  const stripOn = async (phone: number, measured = phone - 28) => {
     let strip: ReactTestRenderer | undefined;
     await act(() => {
       strip = create(
@@ -1310,11 +1354,12 @@ describe("the logging strip", () => {
       root.find((node) => typeof node.type === "string" && node.props.accessibilityLabel === label);
     // The strip itself is the outermost view that measures itself.
     const outer = root.find((node) => typeof node.type === "string" && node.props.onLayout);
-    await act(() => outer.props.onLayout({ nativeEvent: { layout: { width: phone - 28 } } }));
+    await act(() => outer.props.onLayout({ nativeEvent: { layout: { width: measured } } }));
+    const columns = layOut(outer, phone - 28);
     const slop = (label: string, side: "left" | "right") =>
       (tap(label).props.hitSlop?.[side] as number | undefined) ?? 0;
     const widthOf = (node: ReactTestInstance) =>
-      [node.props.style].flat(2).reduce((w, s) => s?.width ?? w, 0) as number;
+      columns.get(node) ?? (flat(node.props.style).width as number | undefined) ?? 0;
     /** How wide each part of a field is to touch: −, value and +. */
     const touch = (name: "weight" | "reps") => {
       const step = name === "weight" ? ", 2.5 kg" : "";
@@ -1375,6 +1420,27 @@ describe("the logging strip", () => {
       expect(Math.min(strip.weight.value, strip.reps.value)).toBeGreaterThanOrEqual(44);
     await strip.unmount();
   });
+
+  // A phone can report the strip's width before the strip has its place, and nothing after. Sized
+  // from that, both fields were drawn 0 pt wide: the check sat at the strip's start, the rest
+  // stood empty, and the fields' − and + spilled over the effort column.
+  it.each([
+    // phone, the width the strip reported, weight and reps drawn
+    [390, 2, 152, 152],
+    [390, 104, 152, 152],
+    [390, 300, 183, 121],
+    // Measured wider than it is: both give way in proportion to their measured widths.
+    [375, 420, 182.8, 106.2],
+  ])(
+    "fills a %i pt phone's strip whatever it was measured as (%i pt)",
+    async (phone, measured, weight, reps) => {
+      const strip = await stripOn(phone, measured);
+      expect(strip.weight.box).toBeCloseTo(weight, 1);
+      expect(strip.reps.box).toBeCloseTo(reps, 1);
+      expect(strip.weight.box + strip.reps.box + 56 + 2).toBeCloseTo(phone - 28, 3);
+      await strip.unmount();
+    },
+  );
 
   it.each([390, 375, 320])("has no set column on a %i pt phone", async (phone) => {
     const strip = await stripOn(phone);

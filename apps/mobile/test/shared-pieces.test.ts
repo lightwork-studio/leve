@@ -617,9 +617,11 @@ describe("the dock's logging strip on the web", () => {
     expect(columns.map((column) => getComputedStyle(column).flexBasis)).toEqual(
       want.map((box) => `${box}px`),
     );
-    for (const column of columns) {
-      expect(getComputedStyle(column).flexGrow).toBe("0");
-      expect(getComputedStyle(column).flexShrink).toBe("0");
-    }
+    // The weight takes any room the measurement left; reps and the effort column keep theirs.
+    expect(columns.map((column) => getComputedStyle(column).flexGrow)).toEqual([
+      "1",
+      "0",
+      ...(effort ? ["0"] : []),
+    ]);
   });
 });
