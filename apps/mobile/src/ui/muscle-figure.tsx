@@ -29,7 +29,7 @@ export interface MuscleFigureProps {
   /** The height of each side, in points; the width follows. */
   height: number;
   sides?: readonly Side[];
-  /** A muscle to pick out: the others dim, and it gets an outline and lines between its parts. */
+  /** A muscle to pick out: the others dim and it gets an outline. */
   selected?: string | null;
   /**
    * Makes the figure answer taps: a tap picks the muscle under it, or the nearest one within about
@@ -46,9 +46,9 @@ export interface MuscleFigureProps {
 
 /**
  * The body from the front and back, each muscle shaded by how much it was trained. Selection dims
- * the other muscles and rings the chosen one, which keeps its own shade. The ring is drawn under the
- * muscle and fine lines in the body's colour over it, so a muscle drawn in parts (the abs, say)
- * still shows them when its shade is as light as the ring.
+ * the other muscles and rings the chosen one, which keeps its own shade. The ring stands a point
+ * off the muscle and stays out of the gaps between its parts, so a muscle drawn in parts (the abs,
+ * say) still shows them when its shade is the ring's ink.
  */
 export const MuscleFigure = memo(function MuscleFigure({
   amounts,
@@ -145,13 +145,25 @@ function FigureSide({
         )}
         {chosen && selected ? (
           <>
-            {/* Half the ring is hidden under the muscle, so 3 points show as 1.5 outside it. */}
+            {/*
+              Both strokes sit under the muscle, so only their outer halves show: a point of the
+              body's colour around it, then a point of ink. Between the parts the body's colour
+              covers the ring, so the gaps look as they do when nothing is chosen.
+            */}
             <Path
               testID={`muscle-${side}-selected`}
               d={chosen}
               fill="none"
               stroke={c.fg}
-              strokeWidth={point * 3}
+              strokeWidth={point * 4}
+              strokeLinejoin="round"
+            />
+            <Path
+              testID={`muscle-${side}-selected-gaps`}
+              d={chosen}
+              fill="none"
+              stroke={body}
+              strokeWidth={point * 2}
               strokeLinejoin="round"
             />
             <Path
@@ -159,13 +171,6 @@ function FigureSide({
               d={chosen}
               fill={c.muscle.ramp[steps.get(selected) ?? 0]}
               opacity={1}
-            />
-            <Path
-              testID={`muscle-${side}-selected-parts`}
-              d={chosen}
-              fill="none"
-              stroke={body}
-              strokeWidth={point * 0.75}
             />
           </>
         ) : null}

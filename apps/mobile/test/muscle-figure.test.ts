@@ -79,7 +79,7 @@ describe("shading", () => {
     expect(html).not.toContain("muscle-front-selected");
   });
 
-  it("dims the other muscles and draws an outline over the chosen one, keeping its fill", () => {
+  it("dims the other muscles and outlines the chosen one, keeping its fill", () => {
     const html = renderToStaticMarkup(
       createElement(MuscleFigure, {
         amounts: { chest: 4, triceps: 2 },
@@ -98,7 +98,7 @@ describe("shading", () => {
     }
   });
 
-  it("keeps the lines between a chosen muscle's parts when it is shaded as light as its outline", () => {
+  it("keeps the gaps between a chosen muscle's parts when it is shaded in the outline's ink", () => {
     // The filter shades the chosen muscle at the top step, which is the outline's ink.
     expect(ramp[4]).toBe(dark.fg);
     const html = renderToStaticMarkup(
@@ -117,17 +117,19 @@ describe("shading", () => {
       return index;
     };
     const point = 1276 / 168;
-    // The outline goes under the muscle, so it can't fill the gaps between the parts in ink …
+    // Ink drawn over the parts, or left in the gaps between them, would join them into one shape.
+    // So the outline goes under the muscle, with the body's colour over it, narrower, to keep the
+    // gaps clear and set the ring off the muscle; then the muscle itself.
     const outline = at(
-      `testID="muscle-front-selected" d="${abs}" fill="none" stroke="${dark.fg}" stroke-width="${point * 3}"`,
+      `testID="muscle-front-selected" d="${abs}" fill="none" stroke="${dark.fg}" stroke-width="${point * 4}"`,
+    );
+    const gaps = at(
+      `testID="muscle-front-selected-gaps" d="${abs}" fill="none" stroke="${dark.muscle.body}" stroke-width="${point * 2}"`,
     );
     const muscle = at(`testID="muscle-front-abdominals" d="${abs}" fill="${ramp[4]}" opacity="1"`);
-    // … and lines in the body's colour, drawn over it, keep the parts apart.
-    const parts = at(
-      `testID="muscle-front-selected-parts" d="${abs}" fill="none" stroke="${dark.muscle.body}"`,
-    );
-    expect(outline).toBeLessThan(muscle);
-    expect(muscle).toBeLessThan(parts);
+    expect(outline).toBeLessThan(gaps);
+    expect(gaps).toBeLessThan(muscle);
+    expect(html.indexOf(`stroke="${dark.fg}"`, muscle)).toBe(-1);
     // The muscle is drawn once, after the dimmed rest.
     expect(html.split(`d="${abs}" fill="${ramp[4]}"`)).toHaveLength(2);
     expect(at(`testID="muscle-front-chest"`)).toBeLessThan(outline);
