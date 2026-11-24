@@ -137,18 +137,24 @@ describe("the exercise selected after a set is logged", () => {
 
   it("alternates through a superset, warm-ups included, and the dock follows", () => {
     const t = tree();
-    expect(exerciseAfterLog(t, "bench", "bench1")).toBe("row");
+    // What the dock offers once the exercise selected after a log is shown.
+    const after = (id: string) => {
+      const next = exerciseAfterLog(t, id);
+      return dockTarget(
+        t,
+        t.entries.findIndex((e) => e.entry.id === next),
+      );
+    };
     log(t, "bench1");
-    expect(dockTarget(t, 2)).toMatchObject({ entryIndex: 2, setIndex: 0 });
-    expect(exerciseAfterLog(t, "row", "row1")).toBe("bench");
+    expect(after("bench")).toMatchObject({ entryIndex: 2, setIndex: 0 });
     log(t, "row1");
-    expect(dockTarget(t, 1)).toMatchObject({ entryIndex: 1, setIndex: 1, label: "1" });
+    expect(after("row")).toMatchObject({ entryIndex: 1, setIndex: 1, label: "1" });
   });
 
   it("stays on an exercise once the rest of its superset is finished", () => {
     const t = tree();
     for (const id of ["bench1", "row1", "bench2", "row2"]) log(t, id);
-    expect(exerciseAfterLog(t, "bench", "bench3")).toBe("bench");
+    expect(exerciseAfterLog(t, "bench")).toBe("bench");
   });
 
   it("passes over a finished member in a larger superset", () => {
@@ -157,17 +163,17 @@ describe("the exercise selected after a set is logged", () => {
       entry("b", "B", [{ completedAt: done }], 1),
       entry("c", "C", [{}], 1),
     ]);
-    expect(exerciseAfterLog(t, "a", "a1")).toBe("c");
-    expect(exerciseAfterLog(t, "c", "c1")).toBe("a");
+    expect(exerciseAfterLog(t, "a")).toBe("c");
+    expect(exerciseAfterLog(t, "c")).toBe("a");
   });
 
   it("stays on an exercise that is not in a superset", () => {
-    expect(exerciseAfterLog(tree(), "curl", "curl1")).toBe("curl");
+    expect(exerciseAfterLog(tree(), "curl")).toBe("curl");
   });
 
   it("skips a partner whose only open set waits for a sync review", () => {
     const t = workout([entry("a", "A", [{}, {}], 1), entry("b", "B", [{}], 1)]);
     Object.assign(t.entries[1]?.sets[0] ?? {}, { needsSyncReview: true });
-    expect(exerciseAfterLog(t, "a", "a1")).toBe("a");
+    expect(exerciseAfterLog(t, "a")).toBe("a");
   });
 });

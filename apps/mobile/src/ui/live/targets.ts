@@ -127,16 +127,16 @@ export function dockTarget(
 /**
  * The exercise to select once a set is logged. In a superset the lifter alternates, so it is the
  * next member, in order and wrapping around, that still has a set to log. Otherwise, or when every
- * other member is finished, it stays the exercise that was logged. `tree` may still show the
- * logged set as open, so that set doesn't count.
+ * other member is finished, it stays the exercise that was logged. The logged exercise itself is
+ * never checked, so `tree` may still show the logged set as open.
  */
-export function exerciseAfterLog(tree: WorkoutTree, entryId: string, loggedSetId: string): string {
+export function exerciseAfterLog(tree: WorkoutTree, entryId: string): string {
   const groups = supersetMemberships(tree.entries.map(({ entry }) => entry.content.supersetId));
   const start = tree.entries.findIndex(({ entry }) => entry.id === entryId);
   let index = groups[start]?.next;
   while (index !== undefined && index !== start) {
     const member = tree.entries[index];
-    if (member?.sets.some((set) => set.id !== loggedSetId && loggable(set))) return member.entry.id;
+    if (member?.sets.some(loggable)) return member.entry.id;
     index = groups[index]?.next;
   }
   return entryId;

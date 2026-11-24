@@ -156,7 +156,7 @@ export function useWorkoutPlayer() {
       return ask((error as Error).message);
     }
     haptic.tap();
-    focusExercise(exerciseAfterLog(tree, entry.entry.id, set.id));
+    focusExercise(exerciseAfterLog(tree, entry.entry.id));
     afterLog(store, tree.workout.id, entry, set.id, setDrafts);
     return true;
   };

@@ -929,7 +929,7 @@ export default function ActiveWorkoutScreen() {
     setRirPicker(null);
     setRirTyping(null);
     setFieldProblem(null);
-    focusExercise(exerciseAfterLog(tree, entry.entry.id, set.id));
+    focusExercise(exerciseAfterLog(tree, entry.entry.id));
     haptic.tap();
     afterLog(store, tree.workout.id, entry, set.id, setDrafts);
     // Asked about this set now; a question about an earlier one goes unanswered.
