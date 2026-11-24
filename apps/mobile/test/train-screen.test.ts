@@ -107,7 +107,7 @@ it.each([false, true])(
         root.findAll((n) => n.type === View && typeof n.props.onLayout === "function");
       const layout = (y: number, height: number) => ({ nativeEvent: { layout: { y, height } } });
       layouts()[0]?.props.onLayout(layout(270, 2500));
-      await act(() => choose(root, "Gym options", "Rename folder"));
+      await act(() => choose(root, "Gym folder options", "Rename folder"));
       const closedFolderDialog = root.findByProps({ initialName: "Gym" });
       expect(root.find((n) => n.props.accessibilityState?.expanded === false)).toBeDefined();
       expect(nextFrame).toBeUndefined();
@@ -119,7 +119,7 @@ it.each([false, true])(
       expect(scrollTo).not.toHaveBeenCalled();
       nextFrame?.();
       expect(scrollTo).toHaveBeenCalledWith({ y: 1282, animated: !preference });
-      await act(() => choose(root, "Gym options", "Rename folder"));
+      await act(() => choose(root, "Gym folder options", "Rename folder"));
       expect(root.findByProps({ initialName: "Gym" })).toBeDefined();
       expect(root.findAll((n) => n.props.accessibilityState?.expanded === true)).toHaveLength(2);
       // While a workout runs, the slot shows it (with its own Resume), so Train offers no start.
@@ -435,12 +435,12 @@ it("adds a routine or a folder from the one + menu, and a routine straight into 
       ["Gym", "Gym"],
     ]) {
       push.mockClear();
-      const menu = root.findByProps({ label: `${title} options` });
+      const menu = root.findByProps({ label: `${title} folder options` });
       expect(menu.props.items.map((item: { label: string }) => item.label)).toEqual([
         "New routine",
         "Rename folder",
       ]);
-      await act(() => choose(root, `${title} options`, "New routine"));
+      await act(() => choose(root, `${title} folder options`, "New routine"));
       expect(push.mock.calls).toEqual([[{ pathname: "/routine/new", params: { folder: id } }]]);
     }
     expect(change).not.toHaveBeenCalled();

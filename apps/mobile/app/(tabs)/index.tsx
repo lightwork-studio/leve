@@ -388,7 +388,7 @@ function FolderMenu({
     <View style={styles.folderMenu}>
       <MoreButton
         small
-        label={`${folder.content.title} options`}
+        label={`${folder.content.title} folder options`}
         title={folder.content.title}
         items={[
           {
