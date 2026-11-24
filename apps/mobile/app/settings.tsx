@@ -12,7 +12,8 @@ import {
   saveAppearanceSetting,
   useAppearanceSetting,
 } from "../src/data/appearance-setting.ts";
-import { useSettings } from "../src/data/queries.ts";
+import { useOptimisticSettings } from "../src/data/optimistic-settings.ts";
+import { readSettings } from "../src/data/read.ts";
 import {
   type Choice,
   DISTANCE_CHOICES,
@@ -22,7 +23,6 @@ import {
   restLabel,
   SHORT_DISTANCE_CHOICES,
   type StoredSettings,
-  saveSettings,
   startAgain,
   stepChoice,
   WEEKDAY_CHOICES,
@@ -99,8 +99,11 @@ const APPEARANCE_CHOICES: readonly Choice<AppearanceSetting>[] = [
 
 export default function SettingsScreen() {
   const styles = useStyles(sheet);
-  const settings = useSettings();
   const { store, change, reset } = useAppData();
+  const optimistic = useOptimisticSettings(store);
+  // The optimistic draft can settle before the provider's version update is rendered.
+  const committed = readSettings(store);
+  const settings = { ...committed, ...optimistic.patch };
   const insets = useSafeAreaInsets();
   const [problem, setProblem] = useState<string | null>(null);
   const [trackRir, setTrackRir] = useTrackRir();
@@ -124,16 +127,18 @@ export default function SettingsScreen() {
     announce(message);
   };
 
-  /** Saves a change, showing what went wrong instead of failing silently. */
-  const save = (patch: Partial<StoredSettings>) => {
-    try {
-      change((store) => saveSettings(store, patch));
+  const queue = (edit: Parameters<typeof optimistic.enqueue>[0]) => {
+    if (
+      optimistic.enqueue(edit, change, (message) => {
+        haptic.warning();
+        announce(message);
+      })
+    ) {
       haptic.select();
       setProblem(null);
-    } catch (error) {
-      showProblem((error as Error).message);
     }
   };
+  const save = (patch: NonNullable<typeof optimistic.patch>) => queue(() => patch);
 
   const fresh = useConfirmation(async () => {
     const failed = await startAgain(reset);
@@ -147,10 +152,16 @@ export default function SettingsScreen() {
   });
 
   const rest = settings.defaultRestSeconds;
-  const stepRest = (direction: -1 | 1) => {
-    const next = stepChoice(REST_CHOICES, rest, direction);
-    if (next !== null) save({ defaultRestSeconds: next });
-  };
+  const stepRest = (direction: -1 | 1) =>
+    queue((pending) => {
+      const next = stepChoice(
+        REST_CHOICES,
+        pending.defaultRestSeconds ?? committed.defaultRestSeconds,
+        direction,
+      );
+      return next === null ? null : { defaultRestSeconds: next };
+    });
+  const saveProblem = problem ?? optimistic.problem;
 
   return (
     <StillOnOpen>
@@ -160,7 +171,7 @@ export default function SettingsScreen() {
           contentContainerStyle={{
             paddingTop: insets.top + space.sm,
             // Room to scroll the last rows clear of a problem banner.
-            paddingBottom: insets.bottom + space.xxl + (problem ? PROBLEM_ROOM : 0),
+            paddingBottom: insets.bottom + space.xxl + (saveProblem ? PROBLEM_ROOM : 0),
           }}
         >
           <View style={styles.nav}>
@@ -190,7 +201,13 @@ export default function SettingsScreen() {
                       accessibilityRole="button"
                       accessibilityLabel={`${reading.label} in ${unit}`}
                       accessibilityHint={other ? `Switches to ${other.label}` : undefined}
-                      onPress={() => other && save({ [reading.key]: other.value })}
+                      onPress={() =>
+                        queue((pending) => {
+                          const current = pending[reading.key] ?? committed[reading.key];
+                          const choice = reading.choices.find((item) => item.value !== current);
+                          return choice ? { [reading.key]: choice.value } : null;
+                        })
+                      }
                       scaleTo={0.98}
                       style={[
                         styles.reading,
@@ -277,7 +294,11 @@ export default function SettingsScreen() {
                 label="Warm-ups in stats"
                 hint="Count warm-up sets in volume and set totals"
                 on={settings.countWarmups}
-                onChange={(on) => save({ countWarmups: on })}
+                onChange={() =>
+                  queue((pending) => ({
+                    countWarmups: !(pending.countWarmups ?? committed.countWarmups),
+                  }))
+                }
                 divider
               />
               <ChoiceRow
@@ -314,9 +335,16 @@ export default function SettingsScreen() {
           style={[styles.problemDock, { bottom: insets.bottom + space.md }]}
           pointerEvents="box-none"
         >
-          {problem && (
+          {saveProblem && (
             <Enter leaves>
-              <Banner label="Not saved" message={problem} onDismiss={() => setProblem(null)} />
+              <Banner
+                label="Not saved"
+                message={saveProblem}
+                onDismiss={() => {
+                  setProblem(null);
+                  optimistic.dismiss();
+                }}
+              />
             </Enter>
           )}
         </View>
