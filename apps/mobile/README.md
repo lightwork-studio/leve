@@ -19,10 +19,27 @@ export time, are shown in the app so you can tell which build is running. A new 
 sample data, which the reset in Settings brings back. `EXPO_PUBLIC_SAMPLE_DATA=off` turns that off,
 so the app starts empty and the reset deletes everything; TestFlight builds and their updates set it.
 
-Local builds use the name Leve Dev and bundle ID `app.leve.dev`. They run with sample data and
-OTA updates disabled, independently of the official Leve Preview build (`app.leve.preview`).
-The official release workflow selects the Preview configuration explicitly. If you distribute a
-fork, configure its own bundle ID and scheme and follow the [branding terms](../../TRADEMARKS.md).
+## App identities
+
+| App          | iOS bundle ID         | Delivery                                      |
+| ------------ | --------------------- | --------------------------------------------- |
+| Leve Dev     | `app.leve.dev`        | Local development with sample workouts        |
+| Leve Preview | `app.leve.preview`    | TestFlight and the `preview` update channel   |
+| Leve         | `app.leve.production` | App Store and the `production` update channel |
+
+The apps have separate device storage. Local development uses Leve Dev with OTA updates off.
+To share a native development build, set `LEVE_DEV_EAS_PROJECT_ID` to a separate Expo project
+in both your shell and that project's EAS `development` environment. Set `LEVE_EXPO_OWNER`
+in both places if the project uses a different Expo owner. Run `eas build --profile development`
+from this directory. If you distribute a fork, configure its own bundle ID and scheme and follow
+the [branding terms](../../TRADEMARKS.md).
+
+Use `pnpm preview:web` to try a branch locally with sample workouts. When enabled by maintainers,
+the **Branch web preview** workflow builds the requested PR commit with sample workouts and
+links to its exact deployment in the run summary. Before enabling the workflow, set up a
+dedicated Pages project with `main` as its production branch in a separate Cloudflare account.
+Keep the deployment token in the `branch-web-preview` GitHub environment, restrict the
+environment to `main`, and require approval from a reviewer who has checked the selected PR.
 
 ## TestFlight
 
@@ -52,3 +69,22 @@ kept on EAS.
 CI does not wait for a build: a failed build or TestFlight upload shows up on expo.dev and in
 email, not as a red CI run. Later JavaScript pushes still go out as updates to that build, so after
 such a failure run the workflow manually with "build" set (or resubmit the build with `eas submit`).
+
+## App Store
+
+When App Store publishing is enabled, pushing a version tag such as `v1.0.0` starts a release
+request. The **App Store** workflow on `main` verifies that the tag points to the final commit
+of a merged pull request on `main` before starting a build. Protect release tags against moves
+and deletions before enabling publishing.
+
+Keep Apple and Expo production credentials in the `app-store` GitHub environment. Restrict
+that environment to the `main` branch, require a separate reviewer, and disable administrator
+bypass. After confirming the live version and build in App Store Connect, set
+`LEVE_APPROVED_STORE_TAG` and `LEVE_APPROVED_STORE_BUILD_NUMBER` in the GitHub environment. For
+an OTA fix, dispatch the workflow from `main` with that tag and the final commit of the merged
+fix. EAS checks that the fix matches the approved build's native runtime. Use a new store build
+for native changes and changes that require App Review.
+
+Keep release-specific values such as `LEVE_STORE_VERSION`, `LEVE_APP_VARIANT` and
+`EXPO_PUBLIC_RELEASE_NUMBER` in the release script or build profile so that EAS environment
+variables cannot override them during OTA publishing.

@@ -66,15 +66,17 @@
               <button class="btn btn-ghost btn-small" id="demo-close" type="button">Close demo</button>
             </div>
             <div class="phone">
-              <img
-                id="hero-screenshot"
-                src="./screen-rest.png"
-                width="780"
-                height="1688"
-                alt="A Push day workout in Leve: two bench press sets logged at 87.5 kg for 8, last session’s numbers beside each set, and the rest timer counting down from 2:00 in the dock."
-                fetchpriority="high"
-              />
-              <div id="hero-demo" hidden></div>
+              <div class="hero-screen">
+                <img
+                  id="hero-screenshot"
+                  src="./screen-rest.png"
+                  width="780"
+                  height="1688"
+                  alt="A Push day workout in Leve: two bench press sets logged at 87.5 kg for 8, last session’s numbers beside each set, and the rest timer counting down from 2:00 in the dock."
+                  fetchpriority="high"
+                />
+                <div id="hero-demo" hidden></div>
+              </div>
               <template id="demo-template">
                 <iframe class="demo-frame" title="Interactive Leve workout tracker" src="./demo/"></iframe>
               </template>

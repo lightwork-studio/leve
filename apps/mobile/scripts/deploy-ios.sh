@@ -48,7 +48,9 @@ commit_count="$(git rev-list --first-parent --count HEAD)"
 release="$((release_base + commit_count))"
 message="Release $release ($commit) $subject"
 
-runtime="$(npx expo-updates runtimeversion:resolve --platform ios |
+runtime="$(eas env:exec preview \
+  'EXPO_NO_DOTENV=1 pnpm exec expo-updates runtimeversion:resolve --platform ios --workflow managed' \
+  --non-interactive |
   node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).runtimeVersion))')"
 if [ -z "$runtime" ]; then
   echo "Could not resolve the iOS runtime version." >&2
@@ -66,11 +68,18 @@ if [ "${FORCE_BUILD:-false}" != "true" ]; then
       console.log(JSON.parse(s||"[]").filter(b=>ok.has(b.status)).length)})')"
 fi
 
+report() {
+  if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+    printf '%s\n' "$1" >> "$GITHUB_STEP_SUMMARY"
+  fi
+}
+
 if [ "$usable_builds" -gt 0 ]; then
   echo "A build for this runtime exists; publishing an update."
   EXPO_PUBLIC_COMMIT="$commit" EXPO_PUBLIC_RELEASE_NUMBER="$release" \
     eas update --channel preview --platform ios --environment preview \
     --message "$message" --non-interactive
+  report "Release $release OTA published."
   exit 0
 fi
 
@@ -105,3 +114,4 @@ COMMIT="$commit" RELEASE_NUMBER="$release" node -e '
 '
 eas build --platform ios --profile preview --auto-submit --non-interactive --no-wait \
   --message "$message"
+report "Release $release build queued. Check EAS and TestFlight for delivery."
