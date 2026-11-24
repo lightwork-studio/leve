@@ -370,10 +370,6 @@ h1 {
   width: min(100%, 330px);
 }
 
-.hero-device:has(.demo-frame) {
-  width: min(100%, 408px);
-}
-
 .demo-tools {
   display: flex;
   gap: 12px;
@@ -391,18 +387,32 @@ h1 {
   flex-shrink: 0;
 }
 
+.hero-screen {
+  position: relative;
+  overflow: hidden;
+  border-radius: 38px;
+}
+
+#hero-demo {
+  position: absolute;
+  inset: 0;
+}
+
 .demo-frame {
   display: block;
   width: 100%;
-  height: clamp(400px, 76svh, 720px);
+  height: 100%;
   border: 0;
-  border-radius: 38px;
   background: var(--bg);
 }
 
-.btn[hidden],
+/* Keep the screen and its controls in the layout when their content is hidden. */
 .demo-tools[hidden],
-.phone img[hidden] {
+#hero-screenshot[hidden] {
+  visibility: hidden;
+}
+
+.btn[hidden] {
   display: none;
 }
 

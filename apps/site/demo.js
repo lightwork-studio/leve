@@ -19,8 +19,8 @@ if (window.isSecureContext && window.location.protocol !== "file:") {
       open.setAttribute("aria-expanded", "true");
     }
     close.focus({ preventScroll: true });
-    const controls = tools.getBoundingClientRect();
-    if (controls.top < 0 || demo.getBoundingClientRect().bottom > window.innerHeight) {
+    const screen = demo.getBoundingClientRect();
+    if (screen.top >= window.innerHeight || screen.bottom <= 0) {
       tools.scrollIntoView({ block: "start", behavior: "instant" });
     }
   });
@@ -32,6 +32,6 @@ if (window.isSecureContext && window.location.protocol !== "file:") {
     screenshot.hidden = false;
     tools.hidden = true;
     open.setAttribute("aria-expanded", "false");
-    open.focus();
+    open.focus({ preventScroll: true });
   });
 }
