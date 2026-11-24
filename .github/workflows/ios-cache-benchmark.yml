@@ -1,0 +1,104 @@
+name: iOS compilation cache benchmark
+on:
+  push:
+    branches: [benchmark/ios-compilation-cache]
+
+permissions:
+  contents: read
+
+jobs:
+  cold:
+    name: Cold / ${{ matrix.variant }}
+    runs-on: macos-26
+    timeout-minutes: 60
+    strategy: &variants
+      fail-fast: false
+      matrix:
+        include:
+          - variant: development
+            app: LeveDev
+          - variant: preview
+            app: LevePreview
+    env:
+      PHASE: cold
+      LEVE_APP_VARIANT: ${{ matrix.variant }}
+    steps: &build_steps
+      - name: Check out the app revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: 5ac205c899b675c8626ed33fc88e00992f7f70e3
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Generate the iOS workspace
+        working-directory: apps/mobile
+        run: pnpm exec expo prebuild --platform ios --no-install
+      - name: Install CocoaPods dependencies
+        working-directory: apps/mobile/ios
+        run: pod install
+      - name: Identify the toolchain and inputs
+        id: cache
+        working-directory: apps/mobile/ios
+        env:
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          {
+            xcodebuild -version
+            xcrun --sdk iphonesimulator --show-sdk-build-version
+            uname -m
+            pod --version
+            git rev-parse HEAD
+            shasum -a 256 Podfile.lock ../../../pnpm-lock.yaml
+          } | tee "$RUNNER_TEMP/leve-toolchain.txt"
+          digest="$(shasum -a 256 "$RUNNER_TEMP/leve-toolchain.txt" | cut -d ' ' -f 1)"
+          echo "key=leve-ios-benchmark-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$VARIANT-$digest" >> "$GITHUB_OUTPUT"
+      - name: Restore Xcode compiler outputs
+        if: env.PHASE == 'warm'
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ${{ runner.temp }}/leve-compilation-cache
+          key: ${{ steps.cache.outputs.key }}
+          fail-on-cache-miss: true
+      - name: Compile and link
+        shell: bash
+        working-directory: apps/mobile/ios
+        env:
+          APP: ${{ matrix.app }}
+        run: |
+          test ! -e "$RUNNER_TEMP/leve-derived-data"
+          if [ "$PHASE" = cold ]; then test ! -e "$RUNNER_TEMP/leve-compilation-cache"; fi
+          log="$RUNNER_TEMP/leve-xcode.log"
+          xcodebuild -workspace "$APP.xcworkspace" -scheme "$APP" -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/leve-derived-data" \
+            -showBuildTimingSummary ARCHS=arm64 CODE_SIGNING_ALLOWED=NO \
+            COMPILATION_CACHE_ENABLE_CACHING=YES COMPILATION_CACHE_ENABLE_DIAGNOSTIC_REMARKS=YES \
+            COMPILATION_CACHE_CAS_PATH="$RUNNER_TEMP/leve-compilation-cache" build 2>&1 | tee "$log"
+          {
+            printf '### %s / %s\n\n' "$PHASE" "$APP"
+            printf 'Xcode wall time: %ss\n\n' "$SECONDS"
+            printf 'Cache hit diagnostic lines: %s\n' "$(grep -Eic 'cache (hit|hits)' "$log" || true)"
+            printf 'Cache miss diagnostic lines: %s\n' "$(grep -Eic 'cache (miss|misses)' "$log" || true)"
+            du -sh "$RUNNER_TEMP/leve-compilation-cache"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Save Xcode compiler outputs
+        if: env.PHASE == 'cold'
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ${{ runner.temp }}/leve-compilation-cache
+          key: ${{ steps.cache.outputs.key }}
+
+  warm:
+    name: Warm / ${{ matrix.variant }}
+    needs: cold
+    runs-on: macos-26
+    timeout-minutes: 60
+    strategy: *variants
+    env:
+      PHASE: warm
+      LEVE_APP_VARIANT: ${{ matrix.variant }}
+    steps: *build_steps
