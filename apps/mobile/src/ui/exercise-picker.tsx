@@ -9,7 +9,7 @@ import { BottomSheet } from "./bottom-sheet.tsx";
 import { Button } from "./buttons.tsx";
 import { CustomExerciseForm } from "./custom-exercise-form.tsx";
 import { TYPE_NAMES } from "./exercise-metrics.ts";
-import { ExerciseFilters, ExerciseSearch } from "./exercise-search.tsx";
+import { ExerciseFilters, ExerciseSearch, keepExerciseSearchFocused } from "./exercise-search.tsx";
 import { FieldError } from "./field.tsx";
 import { SectionLabel } from "./group.tsx";
 import { CheckIcon, PlusIcon } from "./icons.tsx";
@@ -43,7 +43,11 @@ export function ExercisePicker({
   const styles = useStyles(sheet);
   const c = useColors();
   const submitted = useRef<PickerExercise[] | null>(null);
+  const list = useRef<SectionList<PickerExercise>>(null);
   const [query, setQuery] = useState("");
+  const [focused, setFocused] = useState(false);
+  const searching = focused || !!query.trim();
+  const scrollToTop = () => list.current?.getScrollResponder()?.scrollTo({ y: 0, animated: false });
   const [selected, setSelected] = useState<PickerExercise[]>([]);
   const [error, setError] = useState("");
   const selectedIds = useMemo(() => new Set(selected.map((item) => item.id)), [selected]);
@@ -113,7 +117,10 @@ export function ExercisePicker({
   const [page, setPage] = useState<keyof typeof PAGE_TITLES>("browse");
   const back = () => {
     if (page === "browse") onClose();
-    else setPage("browse");
+    else {
+      setFocused(false);
+      setPage("browse");
+    }
   };
 
   if (nextPage)
@@ -149,7 +156,10 @@ export function ExercisePicker({
         onPickMany && page !== "create" ? (
           <>
             <FieldError message={error} />
-            <View style={styles.selbar}>
+            <View
+              style={styles.selbar}
+              {...keepExerciseSearchFocused(focused && page === "browse", setFocused)}
+            >
               {page === "browse" && selected.length > 0 && (
                 <Button
                   label={`Selected · ${selected.length}`}
@@ -173,6 +183,22 @@ export function ExercisePicker({
         ) : undefined
       }
     >
+      {page === "browse" && (
+        <View style={styles.search} {...keepExerciseSearchFocused(focused, setFocused)}>
+          <ExerciseSearch
+            value={query}
+            placeholder="Name or muscle"
+            onChange={(text) => {
+              setQuery(text);
+              scrollToTop();
+            }}
+            onFocusChange={(next) => {
+              setFocused(next);
+              if (next) scrollToTop();
+            }}
+          />
+        </View>
+      )}
       {page === "create" ? (
         <CustomExerciseForm
           initialName={query}
@@ -181,12 +207,15 @@ export function ExercisePicker({
             setQuery(saved.name);
             setEquipment("");
             setMuscle("");
+            setFocused(false);
             setPage("browse");
           }}
         />
       ) : (
         <SectionList
           key={page}
+          ref={list}
+          {...keepExerciseSearchFocused(focused && page === "browse", setFocused)}
           style={styles.list}
           contentContainerStyle={styles.listContent}
           sections={
@@ -201,11 +230,10 @@ export function ExercisePicker({
           stickySectionHeadersEnabled={false}
           ListHeaderComponent={
             page === "browse" ? (
-              <View style={styles.filter}>
-                <ExerciseSearch value={query} onChange={setQuery} placeholder="Name or muscle" />
+              <View style={[styles.filter, focused && styles.compactFilter]}>
                 <ExerciseFilters
-                  key={query.trim()}
-                  searching={!!query.trim()}
+                  key={searching ? `search:${query.trim()}` : "browse"}
+                  searching={searching}
                   muscle={muscle}
                   value={equipment}
                   onChange={setEquipment}
@@ -221,15 +249,17 @@ export function ExercisePicker({
                               primary: sections.find((s) => s.key === "primary")?.data.length ?? 0,
                               also: sections.find((s) => s.key === "also")?.data.length ?? 0,
                             }
-                          : { total: available.length }
+                          : { total: results.length }
                       }
                     />
                   </View>
                 </ExerciseFilters>
-                <Text style={styles.meta}>
-                  {count(results.length)}
-                  {query.trim() ? " match" : ""}
-                </Text>
+                {!focused && (
+                  <Text style={styles.meta}>
+                    {count(results.length)}
+                    {query.trim() ? " match" : ""}
+                  </Text>
+                )}
               </View>
             ) : undefined
           }
@@ -321,6 +351,7 @@ const sheet = themedStyles((c) => ({
   review: { flex: 1 },
   add: { flex: 1.6 },
   list: { flex: 1 },
+  search: { paddingHorizontal: 12, paddingBottom: space.sm },
   listContent: { paddingHorizontal: 12, paddingBottom: space.lg },
   checkbox: {
     width: 24,
@@ -333,6 +364,7 @@ const sheet = themedStyles((c) => ({
   },
   checked: { backgroundColor: c.fg, borderColor: c.fg },
   filter: { gap: space.md, marginBottom: space.lg },
+  compactFilter: { marginBottom: space.sm },
   filterCard: {
     backgroundColor: c.s1,
     borderWidth: 1,
