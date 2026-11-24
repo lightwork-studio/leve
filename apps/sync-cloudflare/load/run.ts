@@ -3,13 +3,19 @@ import { join } from "node:path";
 import { type DeviceStore, openDeviceStore } from "@leve/storage";
 import { createNodeSqliteEngine } from "@leve/storage/node";
 import { SyncClient, type Transport, TransportError, WRITTEN_REVISIONS_HEADER } from "@leve/sync";
+import { clerkTestUsers } from "./clerk.ts";
 import { history, workoutRecords } from "./history.ts";
 
 /*
- * Drives the real phone storage and sync client against the deployed spike Worker and logs what
+ * Drives the real phone storage and sync client against a deployed sync server and logs what
  * every request cost. Usage:
  *
- *   SPIKE_URL=https://… SPIKE_TOKEN_FILE=… node load/run.ts <scenario> <account> [weeks]
+ *   SPIKE_URL=https://… CLERK_SECRET_KEY_FILE=… ADMIN_TOKEN_FILE=… node load/run.ts <scenario> <account> [weeks]
+ *
+ * With CLERK_SECRET_KEY_FILE (the Cloudflare Worker), each account is a test user of a Clerk
+ * development instance, signed in with real session tokens, and the admin scenarios use the
+ * operator token. With SPIKE_TOKEN_FILE instead (the self-hosted server), every request uses that
+ * shared token and names its account.
  *
  * Scenarios: upload (a fresh phone with `weeks` of history syncs it all), download (a second, empty
  * phone downloads everything), log (phone A logs one workout and syncs; phone B then syncs),
@@ -20,7 +26,26 @@ import { history, workoutRecords } from "./history.ts";
 
 const URL_BASE = process.env.SPIKE_URL ?? "";
 if (!URL_BASE) throw new Error("set SPIKE_URL to the deployed Worker");
-const TOKEN = readFileSync(process.env.SPIKE_TOKEN_FILE ?? "", "utf8").trim();
+const secret = (variable: string) => {
+  const file = process.env[variable];
+  return file ? readFileSync(file, "utf8").trim() : "";
+};
+const SHARED_TOKEN = secret("SPIKE_TOKEN_FILE");
+const CLERK_SECRET_KEY = secret("CLERK_SECRET_KEY_FILE");
+const ADMIN_TOKEN = secret("ADMIN_TOKEN_FILE");
+if (!SHARED_TOKEN && !CLERK_SECRET_KEY) {
+  throw new Error("set CLERK_SECRET_KEY_FILE (and ADMIN_TOKEN_FILE), or SPIKE_TOKEN_FILE");
+}
+const clerk = CLERK_SECRET_KEY ? clerkTestUsers(CLERK_SECRET_KEY) : null;
+
+/** The headers that sign a request in as `name`, or as the operator acting on it. */
+async function credentials(name: string, admin: boolean): Promise<Record<string, string>> {
+  if (!clerk) return { authorization: `Bearer ${SHARED_TOKEN}`, "x-leve-account": name };
+  const user = await clerk.user(name);
+  if (!admin) return { authorization: `Bearer ${await user.token()}` };
+  if (!ADMIN_TOKEN) throw new Error("set ADMIN_TOKEN_FILE for the admin scenarios");
+  return { authorization: `Bearer ${ADMIN_TOKEN}`, "x-leve-account": user.account };
+}
 const DIR = process.env.SPIKE_DIR ?? join(process.env.HOME ?? ".", ".cache", "leve-cf-spike");
 const engine = createNodeSqliteEngine();
 
@@ -50,14 +75,11 @@ const logFile = join(DIR, "samples.ndjson");
 function call(path: string, body: unknown, phone = "-", forAccount = account) {
   return async () => {
     const text = JSON.stringify(body);
+    const headers = await credentials(forAccount, path.startsWith("/admin/"));
     const started = performance.now();
     const response = await fetch(new URL(path, URL_BASE), {
       method: "POST",
-      headers: {
-        authorization: `Bearer ${TOKEN}`,
-        "x-leve-account": forAccount,
-        "content-type": "application/json",
-      },
+      headers: { ...headers, "content-type": "application/json" },
       body: text,
     });
     const answer = await response.text();
