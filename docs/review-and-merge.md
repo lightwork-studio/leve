@@ -14,9 +14,15 @@ merging. The PR records validation, review scope and findings, risk, and how the
 reverted or recovered. Pure copy changes can use an author check where the configured branch
 rules permit it.
 
-Before a squash merge, verify that the reviewed head includes the current base, CI reports a
-successful `check` for that revision, and outstanding feedback has been resolved. Re-review
-substantive changes made after approval. Changes to the review gates and merge
+Before a squash merge, verify that CI reports a successful `check` for the head being merged and
+that outstanding feedback has been resolved. That head should include the current base. When the
+base has moved on since its last update, the head can still merge if two things hold: the
+commits added to the base since then change none of the files the pull request changes, and the
+pull request merges into the current base without conflicts. Otherwise, bring it up to date and
+wait for `check` again. The push to `main` runs `check` once more; if it fails, fix or revert
+before merging anything else.
+
+Re-review substantive changes made after approval. Changes to the review gates and merge
 automation require explicit maintainer approval of the final change. Keep protected branches
 free of direct pushes and bypasses.
 

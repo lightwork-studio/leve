@@ -15,4 +15,6 @@ recover and what recovery was tested.
 ## Review
 
 Record the reviewer, reviewed commit, findings and dispositions. Note any changes after review.
-Before merging, verify the final head and current base, a passing `check`, and resolved feedback.
+Before merging, verify a passing `check` on the final head and resolved feedback. The head includes
+the current base, or the base only moved through changes to other files and the merge has no
+conflicts.
