@@ -150,7 +150,10 @@ vi.mock("../src/ui/enter.tsx", () => ({
 }));
 vi.mock("react-native-reanimated", () => ({
   useReducedMotion: () => true,
-  default: { View: ({ children }: { children: ReactNode }) => children },
+  default: {
+    View: ({ children }: { children: ReactNode }) => children,
+    Text: ({ children }: { children: ReactNode }) => children,
+  },
   useSharedValue: (value: number) => ({ value }),
   useAnimatedStyle: () => ({}),
   Easing: { linear: (value: number) => value },
@@ -161,6 +164,7 @@ vi.mock("react-native-reanimated", () => ({
 vi.mock("../src/ui/motion.ts", () => ({
   easeOut: undefined,
   layout: undefined,
+  layoutDuration: 220,
   sinkOut: undefined,
   spring: undefined,
 }));
@@ -2023,7 +2027,7 @@ it("keeps the original effort scale and numbers in a running workout and in hist
       {
         id: "bench",
         exercise: EXERCISES.bench,
-        restSecondsText: "0",
+        restSecondsText: "60",
         sets: [{ id: "work1", values: { reps: "10" }, effortText: "8.5" }],
       },
     ],
@@ -2052,6 +2056,8 @@ it("keeps the original effort scale and numbers in a running workout and in hist
   expect(field("reps in reserve for set 1")).toBeNull();
   expect(fieldTarget("RPE for set 1")).toBe("8.5");
   await press("Log set 1");
+  expect(field("Skip rest")).not.toBeNull();
+  expect(field("Skip, no RPE for set 1")).not.toBeNull();
   expect(readWorkoutTree(store, nextId)?.entries[0]?.sets[0]?.content.rpe).toBeNull();
   await press("RPE 8.5");
   expect(readWorkoutTree(store, nextId)?.entries[0]?.sets[0]?.content.rpe).toBe(8.5);
