@@ -4,12 +4,13 @@ import { act, createElement, type ReactElement } from "react";
 import { FlatList, SectionList, Text, TextInput, View } from "react-native";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { expect, it, vi } from "vitest";
-import HistoryScreen from "../app/(tabs)/history.tsx";
+import HistoryScreen, { savedSettleMs } from "../app/(tabs)/history.tsx";
 import WorkoutCalendar, { CalendarMonth } from "../app/history/calendar.tsx";
 import type { useHistory } from "../src/data/queries.ts";
 import type { WorkoutSummary } from "../src/model/past-workouts.ts";
 import type { WorkoutRecord } from "../src/model/progress.ts";
 import { palettes } from "../src/theme.ts";
+import { flashDuration } from "../src/ui/flash.tsx";
 
 /** The palette on screen while the system is in dark mode, as these tests set it. */
 const dark = palettes.dark;
@@ -17,16 +18,45 @@ const dark = palettes.dark;
 let historyMonths: ReturnType<typeof useHistory>["months"] = [];
 let fixtureRecords = new Map<string, WorkoutRecord[]>();
 
+// The History tab's navigation (its route params, and the stack it sits in), and its list.
+const { navigation, stackEvents, sessionList } = vi.hoisted(() => {
+  const stackEvents: { type: string; listener: (event: unknown) => void }[] = [];
+  return {
+    stackEvents,
+    navigation: {
+      setParams: vi.fn(),
+      getParent: () => ({
+        addListener: (type: string, listener: (event: unknown) => void) => {
+          const entry = { type, listener };
+          stackEvents.push(entry);
+          return () => stackEvents.splice(stackEvents.indexOf(entry), 1);
+        },
+      }),
+    },
+    sessionList: { scrollToLocation: vi.fn(), getScrollResponder: vi.fn() },
+  };
+});
+
 vi.mock("expo-router", () => ({
   Link: "Link",
   useLocalSearchParams: vi.fn(() => ({})),
+  useNavigation: () => navigation,
   router: { canGoBack: () => false, replace: vi.fn() },
 }));
+vi.mock("react-native-reanimated", () => ({ useReducedMotion: () => false }));
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 0 }) }));
 vi.mock("react-native", () => ({
   useColorScheme: () => "dark",
-  SectionList: ({ ListHeaderComponent }: { ListHeaderComponent: ReactElement }) =>
+  SectionList: ({
     ListHeaderComponent,
+    ref,
+  }: {
+    ListHeaderComponent: ReactElement;
+    ref?: { current: unknown } | null;
+  }) => {
+    if (ref) ref.current = sessionList;
+    return ListHeaderComponent;
+  },
   FlatList: "Pages",
   Platform: { OS: "web" },
   View: "View",
@@ -42,7 +72,7 @@ vi.mock("../src/ui/icons.tsx", () => ({
   SearchIcon: "Search",
   CloseIcon: "Close",
 }));
-vi.mock("../src/ui/flash.tsx", () => ({ Flash: "Flash" }));
+vi.mock("../src/ui/flash.tsx", () => ({ Flash: "Flash", flashDuration: 2400 }));
 vi.mock("../src/ui/screen.tsx", () => ({
   TabTitle: "Title",
   BackButton: "BackButton",
@@ -585,3 +615,125 @@ it.each([
     }
   },
 );
+
+it("picks out the workout just saved once the finish sheet has gone, in view, and only once", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.useFakeTimers();
+  historyMonths = [
+    monthOf(2026, 10, [
+      session("Push", [2026, 10, 10, 18], {
+        exercises: [{ id: "bench", name: "Bench Press", sets: 3, bars: [] }],
+      }),
+      session("Legs", [2026, 10, 8, 18]),
+    ]),
+  ];
+  let screen: ReactTestRenderer | undefined;
+  try {
+    await act(() => {
+      screen = create(createElement(HistoryScreen));
+    });
+    if (!screen) throw Error("Missing History");
+    const root = screen.root;
+    const list = () => root.findByType(SectionList);
+    const lit = () =>
+      list()
+        .props.sections.flatMap((section: { data: { id: string }[] }) =>
+          section.data.map((item, index) => list().props.renderItem({ item, index, section })),
+        )
+        .filter((row: ReactElement<{ flash: boolean }>) => row.props.flash)
+        .map((row: ReactElement<{ workout: { id: string } }>) => row.props.workout.id);
+    const finishSheetClosed = (closing: boolean) =>
+      act(() => {
+        for (const { type, listener } of [...stackEvents]) {
+          if (type === "transitionEnd") listener({ data: { closing } });
+        }
+      });
+
+    // Searching for Legs before training: the Push saved next would be hidden by it.
+    await act(() => root.findByType(TextInput).props.onChangeText("legs"));
+    expect(list().props.sections[0].data.map((w: { id: string }) => w.id)).toEqual(["Legs"]);
+
+    vi.mocked(useLocalSearchParams).mockReturnValue({ saved: "Push" });
+    await act(() => screen?.update(createElement(HistoryScreen)));
+    expect(root.findByType(TextInput).props.value).toBe("");
+    expect(navigation.setParams).toHaveBeenCalledWith({ saved: undefined });
+    // Nothing lights up under the finish sheet while it is still closing.
+    expect(lit()).toEqual([]);
+    await finishSheetClosed(true);
+    expect(lit()).toEqual([]);
+    expect(sessionList.scrollToLocation).not.toHaveBeenCalled();
+
+    await finishSheetClosed(false);
+    expect(lit()).toEqual(["Push"]);
+    // The list's first item counts as 1 (its month's header is 0).
+    expect(sessionList.scrollToLocation).toHaveBeenCalledExactlyOnceWith({
+      sectionIndex: 0,
+      itemIndex: 1,
+      viewPosition: 0.5,
+      animated: true,
+    });
+    // The fallback doesn't light it a second time.
+    await act(() => vi.advanceTimersByTime(savedSettleMs));
+    expect(lit()).toEqual(["Push"]);
+    await act(() => vi.advanceTimersByTime(flashDuration - savedSettleMs));
+    expect(lit()).toEqual([]);
+
+    // With its id taken off the route, History doesn't play it again.
+    vi.mocked(useLocalSearchParams).mockReturnValue({});
+    await act(() => screen?.update(createElement(HistoryScreen)));
+    await act(() => vi.advanceTimersByTime(savedSettleMs + flashDuration));
+    expect(lit()).toEqual([]);
+    expect(sessionList.scrollToLocation).toHaveBeenCalledTimes(1);
+  } finally {
+    await act(() => screen?.unmount());
+    vi.mocked(useLocalSearchParams).mockReturnValue({});
+    vi.clearAllMocks();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    historyMonths = [];
+  }
+});
+
+it("lights a saved workout after a moment when the closing sheet doesn't report it, keeping a search that shows it", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.useFakeTimers();
+  historyMonths = [
+    monthOf(2026, 10, [session("Legs", [2026, 10, 8, 18])]),
+    monthOf(2026, 9, [session("Hike", [2026, 9, 20, 9]), session("Easy legs", [2026, 9, 2, 9])]),
+  ];
+  let screen: ReactTestRenderer | undefined;
+  try {
+    await act(() => {
+      screen = create(createElement(HistoryScreen));
+    });
+    if (!screen) throw Error("Missing History");
+    const root = screen.root;
+    const list = () => root.findByType(SectionList);
+    await act(() => root.findByType(TextInput).props.onChangeText("legs"));
+    // Synced in from another device while this one was training: an older workout.
+    vi.mocked(useLocalSearchParams).mockReturnValue({ saved: "Easy legs" });
+    await act(() => screen?.update(createElement(HistoryScreen)));
+    expect(root.findByType(TextInput).props.value).toBe("legs");
+    await act(() => vi.advanceTimersByTime(savedSettleMs - 1));
+    expect(sessionList.scrollToLocation).not.toHaveBeenCalled();
+    await act(() => vi.advanceTimersByTime(1));
+    const october = list().props.sections[1];
+    expect(october.data.map((w: { id: string }) => w.id)).toEqual(["Easy legs"]);
+    expect(
+      list().props.renderItem({ item: october.data[0], index: 0, section: october }).props.flash,
+    ).toBe(true);
+    expect(sessionList.scrollToLocation).toHaveBeenCalledExactlyOnceWith({
+      sectionIndex: 1,
+      itemIndex: 1,
+      viewPosition: 0.5,
+      animated: true,
+    });
+  } finally {
+    await act(() => screen?.unmount());
+    vi.mocked(useLocalSearchParams).mockReturnValue({});
+    vi.clearAllMocks();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    historyMonths = [];
+  }
+});
