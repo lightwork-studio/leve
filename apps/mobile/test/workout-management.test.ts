@@ -4080,7 +4080,7 @@ describe("the minimised workout", () => {
       },
     };
     const factory = { getInstances: () => [handle], start: () => handle };
-    const memory = { shown: () => undefined, remember: () => {} };
+    const memory = { shown: () => undefined, remember: () => {}, forget: () => {} };
     let session = workoutSession(factory, "leve-preview", memory);
     let pending = Promise.resolve();
     const capture = (frame: ReturnType<typeof workoutFrame>) => {
@@ -4150,7 +4150,7 @@ describe("the minimised workout", () => {
       const session = workoutSession(
         { getInstances: () => [handle], start: () => handle },
         "leve-preview",
-        { shown: () => undefined, remember: () => {} },
+        { shown: () => undefined, remember: () => {}, forget: () => {} },
       );
       let ready = Promise.resolve();
       const capture = (frame: ReturnType<typeof workoutFrame>) => {
@@ -4194,7 +4194,7 @@ describe("the minimised workout", () => {
         },
       },
       "leve-preview",
-      { shown: () => undefined, remember: () => {} },
+      { shown: () => undefined, remember: () => {}, forget: () => {} },
     );
     await session.publish(null);
     let pending = Promise.resolve();

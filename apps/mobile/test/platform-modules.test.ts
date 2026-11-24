@@ -1,6 +1,6 @@
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { basename, dirname, join, relative, sep } from "node:path";
+import { basename, dirname, join, relative, resolve as resolvePath, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 
@@ -44,7 +44,7 @@ function resolveFor(origin: string, specifier: string, platform: string): string
   const result = resolve(
     {
       allowHaste: false,
-      assetExts,
+      assetExts: new Set(assetExts),
       customResolverOptions: {},
       disableHierarchicalLookup: false,
       doesFileExist: () => false,
@@ -82,8 +82,9 @@ function resolveFor(origin: string, specifier: string, platform: string): string
   return result.filePath;
 }
 
+const files = [...sourceFiles(join(app, "app")), ...sourceFiles(join(app, "src"))];
+
 it("bundles each platform's own file wherever a module is split by platform", () => {
-  const files = [...sourceFiles(join(app, "app")), ...sourceFiles(join(app, "src"))];
   const split = files.filter((file) => SPLIT.test(basename(file)));
   expect(split.length).toBeGreaterThan(0);
   const misses: string[] = [];
@@ -102,4 +103,37 @@ it("bundles each platform's own file wherever a module is split by platform", ()
     }
   }
   expect(misses).toEqual([]);
+});
+
+// Metro takes a file named with its extension as it is, so `./workout-activity.tsx` would bundle
+// the placeholder on iPhone too. A split module is imported by its name alone, except by its own
+// platform files, which may build on the shared one.
+it("imports a module split by platform without naming one of its files", () => {
+  const variants = new Set(
+    files.flatMap((file) => {
+      const [, stem] = basename(file).match(SPLIT) ?? [];
+      return stem ? [join(dirname(file), stem)] : [];
+    }),
+  );
+  const named: string[] = [];
+  for (const file of files) {
+    const [, ownStem] = basename(file).match(SPLIT) ?? [];
+    const own = ownStem ? join(dirname(file), ownStem) : undefined;
+    const source = readFileSync(file, "utf8");
+    for (const [, specifier] of source.matchAll(
+      /(?:from\s+|import\s*\(\s*|require\s*\(\s*)["'](\.{1,2}\/[^"']+)["']/g,
+    )) {
+      if (!specifier) continue;
+      const target = resolvePath(dirname(file), specifier);
+      const shared = target.replace(/\.[jt]sx?$/, "");
+      if (
+        shared !== target &&
+        shared !== own &&
+        variants.has(shared) &&
+        !SPLIT.test(basename(target))
+      )
+        named.push(`${posix(file)} imports ${specifier}`);
+    }
+  }
+  expect(named).toEqual([]);
 });

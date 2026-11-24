@@ -23,11 +23,14 @@ function loadWidgets() {
   const activity = workoutSession(workoutActivity, scheme, {
     shown: () => {
       const id = readDevicePreference(ACTIVITY_WORKOUT);
-      return typeof id === "string" ? id : undefined;
+      return typeof id === "string" && id ? id : undefined;
     },
     remember: (id) => {
       if (readDevicePreference(ACTIVITY_WORKOUT) !== id)
         writeDevicePreference(ACTIVITY_WORKOUT, id);
+    },
+    forget: () => {
+      if (readDevicePreference(ACTIVITY_WORKOUT)) writeDevicePreference(ACTIVITY_WORKOUT, "");
     },
   });
   return {

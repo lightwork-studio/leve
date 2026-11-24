@@ -40,6 +40,9 @@ function phoneMemory(): ActivityMemory {
     remember: (id) => {
       shown = id;
     },
+    forget: () => {
+      shown = undefined;
+    },
   };
 }
 function harness(scheme = "leve-preview") {
@@ -47,12 +50,17 @@ function harness(scheme = "leve-preview") {
   const handle = {
     getId: () => "island-A",
     update: vi.fn(async (_props: WorkoutContent) => {}),
-    end: vi.fn(async (_policy: "immediate") => {}),
+    end: vi.fn(async (_policy: "immediate") => {
+      visible = false;
+    }),
   };
   let visible = true;
   const factory = {
     getInstances: () => (visible ? [handle] : []),
-    start: vi.fn((_props: WorkoutContent, _url: string, _stale?: Date) => handle),
+    start: vi.fn((_props: WorkoutContent, _url: string, _stale?: Date) => {
+      visible = true;
+      return handle;
+    }),
   };
   return {
     handle,
@@ -61,10 +69,6 @@ function harness(scheme = "leve-preview") {
     session: workoutSession(factory, scheme, memory),
     dismiss: () => {
       visible = false;
-    },
-    // A system activity left from an earlier launch, or none at all.
-    show: () => {
-      visible = true;
     },
   };
 }
@@ -204,6 +208,26 @@ describe("workout Live Activity", () => {
     dismiss();
     await workoutSession(factory, "leve-preview", memory).publish(frame());
     expect(factory.start).toHaveBeenCalledOnce();
+  });
+  it("keeps an activity left from an earlier build hidden once it is dismissed", async () => {
+    // Visible at launch, though this phone has no record of showing it.
+    const { factory, memory, dismiss } = harness();
+    await workoutSession(factory, "leve-preview", memory).publish(frame());
+    expect(factory.start).not.toHaveBeenCalled();
+    dismiss();
+    await workoutSession(factory, "leve-preview", memory).publish(frame());
+    expect(factory.start).not.toHaveBeenCalled();
+  });
+  it("shows the workout again on a later launch when Leve ended its activity itself", async () => {
+    const { factory, memory, session } = harness();
+    await session.publish(null);
+    await session.publish(frame());
+    expect(factory.start).toHaveBeenCalledOnce();
+    // The next launch can't open the workout's data, so it ends the activity it found.
+    await workoutSession(factory, "leve-preview", memory).publish(null, true);
+    // The launch after that can, and the workout is still running.
+    await workoutSession(factory, "leve-preview", memory).publish(frame());
+    expect(factory.start).toHaveBeenCalledTimes(2);
   });
   it("tries again on a later launch when iOS refused the start in the background", async () => {
     const { factory, memory, dismiss } = harness();

@@ -30,12 +30,14 @@ interface Factory {
   start(content: WorkoutContent, url: string, staleDate?: Date): WorkoutActivity;
 }
 /**
- * Which workout this phone last showed a Live Activity for, kept across launches. Only the
- * workout's local ID is kept, on this phone.
+ * Which workout this phone last showed a Live Activity for, kept across launches so that only the
+ * user's dismissal keeps a workout's activity away. Only the workout's local ID is kept, on this
+ * phone, and it is forgotten when Leve ends the activity itself.
  */
 export interface ActivityMemory {
   shown(): string | undefined;
   remember(workoutId: string): void;
+  forget(): void;
 }
 export type ActivityAction = "log" | "skip" | "more" | "less";
 export interface ActivityFrame {
@@ -92,11 +94,14 @@ export function workoutSession(factory: Factory, scheme: string, memory: Activit
             owner =
               frame && (handle || memory.shown() === frame.workoutId) ? frame.workoutId : undefined;
             if (owner) memory.remember(owner);
+            // Ended by Leve (no workout to show), not dismissed: a later launch may show it again.
+            else if (!frame && existing.length > 0) memory.forget();
             cleanStart = false;
           }
           if (owner !== frame?.workoutId) {
             if (handle && factory.getInstances().some((a) => a.getId() === handle?.getId()))
               await handle.end("immediate");
+            if (owner !== undefined) memory.forget();
             handle = undefined;
             owner = undefined;
             published = "";
