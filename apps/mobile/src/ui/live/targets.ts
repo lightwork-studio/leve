@@ -28,7 +28,7 @@ function originalExerciseSlot(sets: Entry["sets"]) {
 }
 
 /** What changes the previous values: which exercises are in the workout, not what was logged. */
-export function previousKey(
+function previousKey(
   tree: WorkoutTree,
   settings: Pick<Settings, "previousValues">,
   plan: WorkoutPlan | null,
@@ -45,6 +45,11 @@ export function previousKey(
   ].join("|");
 }
 
+const previousCache = new WeakMap<
+  WorkoutTree[],
+  { key: string; data: Map<string, (PreviousSet | undefined)[]> }
+>();
+
 /** Last time's sets for every exercise of the workout, by entry. */
 export function previousForWorkout(
   history: WorkoutTree[],
@@ -52,6 +57,9 @@ export function previousForWorkout(
   settings: Pick<Settings, "previousValues">,
   plan: WorkoutPlan | null,
 ): Map<string, (PreviousSet | undefined)[]> {
+  const key = previousKey(tree, settings, plan);
+  const cached = previousCache.get(history);
+  if (cached?.key === key) return cached.data;
   const map = new Map<string, (PreviousSet | undefined)[]>();
   for (const { entry, sets } of tree.entries) {
     map.set(
@@ -66,6 +74,7 @@ export function previousForWorkout(
       }),
     );
   }
+  previousCache.set(history, { key, data: map });
   return map;
 }
 

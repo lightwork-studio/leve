@@ -63,7 +63,7 @@ import {
   stepText,
   typeKey,
 } from "../../src/model/inline-edit.ts";
-import { type PreviousSet, routineTarget, setProgress } from "../../src/model/live.ts";
+import { routineTarget, setProgress } from "../../src/model/live.ts";
 import { correctionValues, parseTyped, previousValue } from "../../src/model/log-values.ts";
 import { asksRir, showsRirColumn, stepRir, typeRir } from "../../src/model/rir.ts";
 import { supersetMemberships } from "../../src/model/supersets.ts";
@@ -123,7 +123,6 @@ import {
   labelOf,
   pendingAsk,
   previousForWorkout,
-  previousKey,
 } from "../../src/ui/live/targets.ts";
 import { UndoToast } from "../../src/ui/live/undo-toast.tsx";
 import { layout } from "../../src/ui/motion.ts";
@@ -215,9 +214,9 @@ export default function ActiveWorkoutScreen() {
   const styles = useStyles(sheet);
   const c = useColors();
   const data = useLive();
-  // The whole history waits until the screen has slid in, so opening it doesn't stall.
+  // A cold history read waits until the screen has slid in.
   const settled = useSettled();
-  const history = usePastWorkouts(settled);
+  const history = usePastWorkouts(settled && !!data);
   const { change, store, version, historyVersion } = useAppData();
   const discardReview = useRef<ReturnType<typeof workoutDeletionSnapshot>>(null);
   const insets = useSafeAreaInsets();
@@ -312,15 +311,10 @@ export default function ActiveWorkoutScreen() {
   /** The set with reps in reserve to pick under its row. */
   const [rirRow, setRirRow] = useState<string | null>(null);
   const [rirTyping, setRirTyping] = useState<RirTyping | null>(null);
-  const prevKey = data ? previousKey(data.tree, data.settings, data.initialPlan) : "";
-  // biome-ignore lint/correctness/useExhaustiveDependencies: prevKey stands for what is read from data.
-  const previous = useMemo(
-    () =>
-      data && history
-        ? previousForWorkout(history, data.tree, data.settings, data.initialPlan)
-        : new Map<string, (PreviousSet | undefined)[]>(),
-    [prevKey, history],
-  );
+  const previous =
+    data && history
+      ? previousForWorkout(history, data.tree, data.settings, data.initialPlan)
+      : null;
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: set edits leave prior journals unchanged.
   const journal = useMemo(
@@ -538,7 +532,7 @@ export default function ActiveWorkoutScreen() {
 
   const { tree, settings, initialPlan, summary } = data;
   const unit = settings.weightUnit;
-  const ready = history !== null;
+  const ready = previous !== null;
   const plannedTimedSession =
     tree.entries.length > 0 &&
     tree.entries.every(({ entry }) =>
@@ -585,7 +579,7 @@ export default function ActiveWorkoutScreen() {
       index,
       drafts,
       unit,
-      previous.get(entry.entry.id)?.[index],
+      previous?.get(entry.entry.id)?.[index],
       correction,
     );
   };
@@ -1098,7 +1092,7 @@ export default function ActiveWorkoutScreen() {
       unit,
     );
   const previousLine = (entry: Entry, setIndex: number) => {
-    const prev = previous.get(entry.entry.id)?.[setIndex];
+    const prev = previous?.get(entry.entry.id)?.[setIndex];
     if (!prev) return "–";
     const distanceUnit = distanceUnitOf(entry);
     return metricsOf(entry.entry.content.exerciseType)

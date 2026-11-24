@@ -1,5 +1,5 @@
 import { type ReactNode, useMemo, useRef, useState } from "react";
-import { Modal, SectionList, Text, View } from "react-native";
+import { Modal, Text, View } from "react-native";
 import { useAppData } from "../data/app-data.tsx";
 import { choiceLabel, createCustomExercise, pickerLibrary } from "../data/custom-exercises.ts";
 import { type BuiltInExercise, findExercises, type PickerExercise } from "../data/exercises.ts";
@@ -9,9 +9,9 @@ import { BottomSheet } from "./bottom-sheet.tsx";
 import { Button } from "./buttons.tsx";
 import { CustomExerciseForm } from "./custom-exercise-form.tsx";
 import { TYPE_NAMES } from "./exercise-metrics.ts";
+import { ExerciseResults, type ExerciseResultsList } from "./exercise-results.tsx";
 import { ExerciseFilters, ExerciseSearch, keepExerciseSearchFocused } from "./exercise-search.tsx";
 import { FieldError } from "./field.tsx";
-import { SectionLabel } from "./group.tsx";
 import { CheckIcon, PlusIcon } from "./icons.tsx";
 import { MuscleFilter, MusclePreview } from "./muscle-filter.tsx";
 import { Tap } from "./tap.tsx";
@@ -22,6 +22,8 @@ const PAGE_TITLES = {
   create: "New exercise",
   selected: "Selected exercises",
 } as const;
+
+const exerciseKey = (exercise: PickerExercise) => exercise.id;
 
 type PickerProps = {
   included: string[];
@@ -43,11 +45,11 @@ export function ExercisePicker({
   const styles = useStyles(sheet);
   const c = useColors();
   const submitted = useRef<PickerExercise[] | null>(null);
-  const list = useRef<SectionList<PickerExercise>>(null);
+  const list = useRef<ExerciseResultsList<PickerExercise>>(null);
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
   const searching = focused || !!query.trim();
-  const scrollToTop = () => list.current?.getScrollResponder()?.scrollTo({ y: 0, animated: false });
+  const scrollToTop = () => list.current?.scrollToOffset({ offset: 0, animated: false });
   const [selected, setSelected] = useState<PickerExercise[]>([]);
   const [error, setError] = useState("");
   const selectedIds = useMemo(() => new Set(selected.map((item) => item.id)), [selected]);
@@ -64,15 +66,13 @@ export function ExercisePicker({
     () => (equipment ? library.filter((item) => item.equipment === equipment) : library),
     [library, equipment],
   );
-  const results = useMemo(
-    () => findExercises(query, muscle, available),
-    [query, muscle, available],
-  );
+  const matches = useMemo(() => findExercises(query, "", available), [query, available]);
   // With a muscle chosen, the exercises that target it come first, then those that also work it.
   const sections = useMemo(
-    () => muscleSections(results, muscle, (item) => item, choiceLabel),
-    [results, muscle],
+    () => muscleSections(matches, muscle, (item) => item, choiceLabel),
+    [matches, muscle],
   );
+  const resultCount = sections.reduce((total, section) => total + section.data.length, 0);
   const choose = (item: PickerExercise) => {
     if (onPick) return onPick(item);
     if (
@@ -212,22 +212,17 @@ export function ExercisePicker({
           }}
         />
       ) : (
-        <SectionList
+        <ExerciseResults
           key={page}
           ref={list}
           {...keepExerciseSearchFocused(focused && page === "browse", setFocused)}
           style={styles.list}
           contentContainerStyle={styles.listContent}
           sections={
-            page === "selected"
-              ? selected.length
-                ? [{ key: "selected", title: "", data: selected }]
-                : []
-              : sections.filter((section) => section.data.length > 0)
+            page === "selected" ? [{ key: "selected", title: "", data: selected }] : sections
           }
-          keyExtractor={(e) => e.id}
+          exerciseKey={exerciseKey}
           keyboardShouldPersistTaps="handled"
-          stickySectionHeadersEnabled={false}
           ListHeaderComponent={
             page === "browse" ? (
               <View style={[styles.filter, focused && styles.compactFilter]}>
@@ -249,30 +244,20 @@ export function ExercisePicker({
                               primary: sections.find((s) => s.key === "primary")?.data.length ?? 0,
                               also: sections.find((s) => s.key === "also")?.data.length ?? 0,
                             }
-                          : { total: results.length }
+                          : { total: resultCount }
                       }
                     />
                   </View>
                 </ExerciseFilters>
                 {!focused && (
                   <Text style={styles.meta}>
-                    {count(results.length)}
+                    {count(resultCount)}
                     {query.trim() ? " match" : ""}
                   </Text>
                 )}
               </View>
             ) : undefined
           }
-          renderSectionHeader={({ section }) =>
-            section.title ? (
-              <View style={styles.sectionHead}>
-                <SectionLabel aside={String(section.data.length)} header>
-                  {section.title}
-                </SectionLabel>
-              </View>
-            ) : null
-          }
-          renderSectionFooter={() => <View style={styles.sectionGap} />}
           ListEmptyComponent={
             <Text style={styles.empty}>
               {page === "selected"
@@ -282,7 +267,7 @@ export function ExercisePicker({
                   : "No matching exercises. Try another search or muscle group."}
             </Text>
           }
-          renderItem={({ item, index: i, section }) => {
+          renderExercise={({ exercise: item, first, last }) => {
             const includedAlready = included.includes(item.id);
             const selectedMuscle =
               page === "browse" &&
@@ -298,9 +283,9 @@ export function ExercisePicker({
                 scaleTo={0.98}
                 style={[
                   styles.row,
-                  i === 0 && styles.rowFirst,
-                  i > 0 && styles.divider,
-                  i === section.data.length - 1 && styles.rowLast,
+                  first && styles.rowFirst,
+                  !first && styles.divider,
+                  last && styles.rowLast,
                 ]}
               >
                 <MusclePreview targets={item} />
@@ -372,8 +357,6 @@ const sheet = themedStyles((c) => ({
     borderRadius: radius.card,
     overflow: "hidden",
   },
-  sectionHead: { paddingHorizontal: 6, paddingBottom: 9 },
-  sectionGap: { height: space.lg },
   row: {
     flexDirection: "row",
     alignItems: "center",
