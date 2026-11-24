@@ -2198,6 +2198,65 @@ it("shows planned effort in the dock and can record actual effort with captions 
   expect(fieldText("RPE for set 1")).toBe("8.5");
 });
 
+it("records RPE 6 or less on the pad that 6− opens, in half steps from 1 to 10", async () => {
+  const routine = createRoutine(
+    store,
+    "Easy",
+    null,
+    [
+      {
+        id: "bench",
+        exercise: EXERCISES.bench,
+        restSecondsText: "0",
+        sets: [
+          { id: "light", values: { reps: "8" }, effortText: "4.5" },
+          { id: "next", values: { reps: "8" }, effortText: "6" },
+        ],
+      },
+    ],
+    readSettings(store),
+    "",
+    "rpe",
+  );
+  saveSettings(store, { trackRepsInReserve: true });
+  const workout = beginWorkout(store, routine);
+  const rpe = () => readWorkoutTree(store, workout)?.entries[0]?.sets[0]?.content.rpe;
+  await act(() => root.render(h(ActiveWorkoutScreen)));
+  expect(fieldTarget("RPE for set 1")).toBe("4.5");
+  await press("Log set 1");
+  // The strip offers 6− in place of a plain 6, and nothing below it.
+  expect(field("RPE 6")).toBeNull();
+  expect(field("RPE 5")).toBeNull();
+  await press("6 or less: opens the number pad");
+  // The pad opens on 6, takes a decimal point, and records only on Done.
+  expect(fieldText("RPE for set 1")).toBe("6");
+  expect(field("Decimal point")).not.toBeNull();
+  expect(rpe()).toBeNull();
+  // 0 isn't an RPE, and only halves follow the point: 4.3 is refused, 4.5 kept.
+  await pressKey("0");
+  expect(fieldText("RPE for set 1")).toBe("6");
+  await pressKey("4");
+  await pressKey("Decimal point");
+  await pressKey("3");
+  await pressKey("5");
+  expect(fieldText("RPE for set 1")).toBe("4.5");
+  await press("Done");
+  expect(rpe()).toBe(4.5);
+  // It reopens on the logged value; steps go by half and stop at 1.
+  await press("RPE for set 1");
+  await press("6 or less: opens the number pad");
+  expect(fieldText("RPE for set 1")).toBe("4.5");
+  for (let i = 0; i < 9; i++) await press("Step down 0.5");
+  expect(fieldText("RPE for set 1")).toBe("1");
+  await press("Step up 0.5");
+  await press("Done");
+  expect(rpe()).toBe(1.5);
+  // Values the strip already offers are still picked directly.
+  await press("RPE for set 1");
+  await press("RPE 7.5");
+  expect(rpe()).toBe(7.5);
+});
+
 it("shows a legacy RPE target beside the actual RIR without reinterpreting either", async () => {
   const routine = createRoutine(
     store,

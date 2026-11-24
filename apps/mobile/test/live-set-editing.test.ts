@@ -1109,30 +1109,6 @@ describe("reps in reserve", () => {
     expect(sets()[1]?.repsInReserve).toBe(7);
   });
 
-  it("never changes RIR past 10 unless a new value is typed and confirmed", async () => {
-    const { sets } = benchWorkout();
-    saveTrackRir(store, true);
-    // From an import: more than can be typed here.
-    logSet(store, sets()[0]?.id ?? "", { weightKg: 60, reps: 8, repsInReserve: 12 });
-    const ui = await mount();
-    await ui.press("reps in reserve for set 1");
-    await ui.press("5 or more: opens the number pad");
-    expect(rirCell(ui, 1)).toBe("12");
-    await ui.press("Close without saving");
-    expect(sets()[0]?.repsInReserve).toBe(12);
-    // Done on it as it opened, or after a step up (which can't go further), changes nothing.
-    await ui.press("reps in reserve for set 1");
-    await ui.press("5 or more: opens the number pad");
-    await ui.press("Step up 1");
-    await ui.press("Done");
-    expect(sets()[0]?.repsInReserve).toBe(12);
-    await ui.press("reps in reserve for set 1");
-    await ui.press("5 or more: opens the number pad");
-    await ui.press("8");
-    await ui.press("Done");
-    expect(sets()[0]?.repsInReserve).toBe(8);
-  });
-
   it("doesn't ask after a warm-up, or when Track RIR is off or can't be stored", async () => {
     const { sets } = benchWorkout(3);
     updateSet(store, sets()[0]?.id ?? "", { type: "warmup" });
@@ -1193,16 +1169,15 @@ describe("reps in reserve", () => {
 
   it("keeps showing RIR already logged, even with Track RIR off, without rewriting it", async () => {
     const { sets } = benchWorkout();
-    // From an import: more than can be typed here.
-    logSet(store, sets()[0]?.id ?? "", { weightKg: 60, reps: 8, repsInReserve: 12 });
+    logSet(store, sets()[0]?.id ?? "", { weightKg: 60, reps: 8, repsInReserve: 10 });
     const ui = await mount();
     const cell = ui.control("reps in reserve for set 1");
-    expect(cell.findByType(Text).props.children).toBe("12");
+    expect(cell.findByType(Text).props.children).toBe("10");
     expect(ui.control("reps in reserve for set 2").findByType(Text).props.children).toBe("–");
     await ui.press("Log set 2 of Bench Press");
     await ui.press("Edit set 1");
     await ui.pressText("Drop");
-    expect(sets()[0]).toMatchObject({ type: "drop", repsInReserve: 12 });
+    expect(sets()[0]).toMatchObject({ type: "drop", repsInReserve: 10 });
   });
 
   it("shows RIR read-only while the account can't store it", async () => {

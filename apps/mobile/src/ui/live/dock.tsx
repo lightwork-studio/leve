@@ -42,6 +42,7 @@ export function Keypad({
   step,
   next,
   tall = false,
+  decimal = takesDecimal(metric),
   onKey,
   onStep,
   onNext,
@@ -51,6 +52,8 @@ export function Keypad({
   step: string;
   next: NextKey;
   tall?: boolean;
+  /** Offers the decimal point; the metric decides unless this is given. */
+  decimal?: boolean;
   onKey: (key: PadKey) => void;
   onStep: (direction: -1 | 1) => void;
   onNext: () => void;
@@ -102,7 +105,7 @@ export function Keypad({
         {fn("Delete", <DeleteIcon color={c.fg2} size={20} />, () => onKey("delete"))}
       </View>
       <View style={styles.padRow}>
-        {takesDecimal(metric) ? (
+        {decimal ? (
           <Tap
             accessibilityRole="button"
             accessibilityLabel="Decimal point"

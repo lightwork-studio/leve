@@ -10,8 +10,12 @@ export interface Synced {
 export const SET_TYPES = ["normal", "warmup", "failure", "drop"] as const;
 export type SetType = (typeof SET_TYPES)[number];
 
-/** RPE values a user can pick. */
-export const RPE_VALUES = [6, 7, 7.5, 8, 8.5, 9, 9.5, 10] as const;
+/** RPE values a user can pick: 1 to 10 in half steps. */
+export const RPE_VALUES = [
+  1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10,
+] as const;
+/** Reps in reserve are whole numbers from 0 to this. */
+export const RIR_MAX = 10;
 export const EFFORT_SCALES = ["rir", "rpe"] as const;
 export type EffortScale = (typeof EFFORT_SCALES)[number];
 
