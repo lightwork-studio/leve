@@ -96,7 +96,7 @@ import {
   SetStrip,
   Strong,
 } from "../../src/ui/live/dock.tsx";
-import { EditingRest } from "../../src/ui/live/editing-rest.tsx";
+import { EditingRest, RestCompletion } from "../../src/ui/live/editing-rest.tsx";
 import { WorkoutNotesTile } from "../../src/ui/live/notes-tile.tsx";
 import { RestDialog } from "../../src/ui/live/rest-dialog.tsx";
 import { RirPicks, RirQuestion } from "../../src/ui/live/rir.tsx";
@@ -236,7 +236,6 @@ export default function ActiveWorkoutScreen() {
   useSetStopwatch(store, workoutId ?? "");
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
   const scrollY = useRef(0);
-  const dock = useRef<ComponentRef<typeof View>>(null);
   const headings = useRef(new Map<string, ComponentRef<typeof View>>());
   const rows = useRef(new Map<string, ComponentRef<typeof View>>());
   /** Each set's own control (its number), for focus to come back to. */
@@ -506,8 +505,9 @@ export default function ActiveWorkoutScreen() {
         return;
       }
       row.measureInWindow?.((_x, y, _w, height) => {
-        dock.current?.measureInWindow?.((_dx, dockTop) => {
-          const below = y + height + space.sm - dockTop;
+        // The viewport is already laid out at its final size while the dock is animating.
+        scroll.current?.measureInWindow?.((_sx, top, _sw, viewportHeight) => {
+          const below = y + height + space.sm - (top + viewportHeight);
           if (below > 0)
             scroll.current?.scrollTo({ y: scrollY.current + below, animated: !reduced });
         });
@@ -1111,6 +1111,9 @@ export default function ActiveWorkoutScreen() {
   const typingFromDock = editing?.from === "dock" && editing.setId === target?.set.id;
   const editorOpen =
     (editing?.from === "list" && editingFound) || typingFromDock || typing || editorFound;
+  // Keep the slab in the same dock slot as an editor opens so the countdown can resize in place.
+  const fullRest = !editorOpen && rest && resting ? rest : null;
+  const dockRest = editorOpen ? rest : fullRest;
   const dockContent = (): ReactNode => {
     // Typing a set from the list: the dock becomes the pad.
     if (editing && editing.from === "list" && editingFound) {
@@ -1207,51 +1210,7 @@ export default function ActiveWorkoutScreen() {
         />
       );
     }
-    // Resting: the countdown is the whole dock, with the reps in reserve question on top of it.
-    if (rest && resting && !typingFromDock) {
-      const next = target;
-      return (
-        <>
-          {asked ? (
-            <RirQuestion about={askedAbout(asked)} onSkip={() => setRirAsk(null)} />
-          ) : (
-            <DockLine
-              left={
-                next ? (
-                  <Text>
-                    {"Up next · "}
-                    <Strong>{next.entry.entry.content.exerciseName}</Strong>
-                    {` · ${setOf(next)}`}
-                  </Text>
-                ) : (
-                  "All sets logged"
-                )
-              }
-              right={
-                next ? (
-                  <Strong>{fieldsLine(next.entry, next.set, next.setIndex)}</Strong>
-                ) : undefined
-              }
-            />
-          )}
-          <RestSlab
-            rest={rest}
-            band={asked ? rirPicks(asked, "bone") : undefined}
-            onTime={() =>
-              setRestFor({
-                entryId: rest.source.entryId,
-                running: true,
-                originalSeconds:
-                  tree.entries.find((e) => e.entry.id === rest.source.entryId)?.entry.content
-                    .restSeconds ?? 0,
-              })
-            }
-            onAdjust={(seconds) => restTimer.adjust(store, rest, seconds)}
-            onSkip={() => restTimer.skip(store, tree.workout.id, rest.source)}
-          />
-        </>
-      );
-    }
+    if (fullRest) return null;
     if (!target) {
       if (tree.entries.length === 0)
         return (
@@ -1381,16 +1340,11 @@ export default function ActiveWorkoutScreen() {
   const runningRest =
     restFor?.running && rest && rest.source.entryId === restFor.entryId ? rest : null;
 
+  const restNext = target
+    ? `${target.entry.entry.content.exerciseName} · ${setOf(target)} · ${fieldsLine(target.entry, target.set, target.setIndex)}`
+    : "All sets logged";
   const editingRest = (
-    <EditingRest
-      key={tree.workout.id}
-      workoutId={tree.workout.id}
-      next={
-        target
-          ? `${target.entry.entry.content.exerciseName} · ${setOf(target)} · ${fieldsLine(target.entry, target.set, target.setIndex)}`
-          : "All sets logged"
-      }
-    />
+    <EditingRest key={tree.workout.id} workoutId={tree.workout.id} next={restNext} />
   );
   const screen = (
     <StillOnOpen>
@@ -1741,9 +1695,13 @@ export default function ActiveWorkoutScreen() {
               </View>
             </StillOnOpen>
           </ScrollView>
-          <View
-            ref={dock}
-            style={[styles.dock, { paddingBottom: Math.max(insets.bottom, space.md) + space.sm }]}
+          <Animated.View
+            layout={dockRest && Platform.OS !== "web" ? layout : undefined}
+            style={[
+              styles.dock,
+              dockRest && Platform.OS !== "web" && styles.clipDock,
+              { paddingBottom: Math.max(insets.bottom, space.md) + space.sm },
+            ]}
           >
             {removed && (
               <UndoToast
@@ -1757,10 +1715,62 @@ export default function ActiveWorkoutScreen() {
                 }}
               />
             )}
-            {editorOpen && editingRest}
             {askAbove}
+            {fullRest &&
+              (asked ? (
+                <RirQuestion about={askedAbout(asked)} onSkip={() => setRirAsk(null)} />
+              ) : (
+                <DockLine
+                  left={
+                    target ? (
+                      <Text>
+                        {"Up next · "}
+                        <Strong>{target.entry.entry.content.exerciseName}</Strong>
+                        {` · ${setOf(target)}`}
+                      </Text>
+                    ) : (
+                      "All sets logged"
+                    )
+                  }
+                  right={
+                    target ? (
+                      <Strong>{fieldsLine(target.entry, target.set, target.setIndex)}</Strong>
+                    ) : undefined
+                  }
+                />
+              ))}
+            {dockRest && (
+              <RestSlab
+                key={`timer-${tree.workout.id}`}
+                rest={dockRest}
+                style={[styles.dockTimer, !fullRest && styles.restAboveEditor]}
+                band={fullRest && asked ? rirPicks(asked, "bone") : undefined}
+                onTime={
+                  fullRest
+                    ? () =>
+                        setRestFor({
+                          entryId: fullRest.source.entryId,
+                          running: true,
+                          originalSeconds:
+                            tree.entries.find((e) => e.entry.id === fullRest.source.entryId)?.entry
+                              .content.restSeconds ?? 0,
+                        })
+                    : undefined
+                }
+                onAdjust={(seconds) => restTimer.adjust(store, dockRest, seconds)}
+                onSkip={() => restTimer.skip(store, tree.workout.id, dockRest.source)}
+              />
+            )}
+            {editorOpen && (
+              <RestCompletion
+                key={`rest-end-${tree.workout.id}`}
+                rest={rest}
+                next={restNext}
+                style={styles.restAboveEditor}
+              />
+            )}
             {dockContent()}
-          </View>
+          </Animated.View>
           <SheetOutline radius={radius.hero} sides />
         </Animated.View>
         {restFor && restEntry && (
@@ -2746,6 +2756,9 @@ const sheet = themedStyles((c) => ({
     borderTopWidth: 1,
     borderTopColor: c.line,
   },
+  clipDock: { overflow: "hidden" },
+  dockTimer: { zIndex: 1 },
+  restAboveEditor: { marginBottom: space.sm },
   // The question about reps in reserve without a rest timer, with a hairline under it.
   ask: {
     paddingBottom: 12,
