@@ -1,4 +1,5 @@
 import {
+  type EffortScale,
   type ExerciseType,
   METRICS_BY_TYPE,
   type SetDistanceUnit,
@@ -36,6 +37,7 @@ import {
   holdSetRemoval,
   undoSetRemoval,
 } from "../../src/data/set-removal.ts";
+import { useShowTargets } from "../../src/data/show-targets.ts";
 import { canChangeTrackRir, useTrackRir } from "../../src/data/track-rir.ts";
 import {
   addSelectedExercises,
@@ -55,6 +57,13 @@ import {
   workoutDeletionSnapshot,
 } from "../../src/data/workout-review.ts";
 import {
+  effortCaption,
+  effortField,
+  effortLabel,
+  effortValue,
+  setEffortScale,
+} from "../../src/model/effort.ts";
+import {
   fieldOrder,
   nextField,
   type PadKey,
@@ -63,10 +72,11 @@ import {
   stepText,
   typeKey,
 } from "../../src/model/inline-edit.ts";
-import { routineTarget, setProgress } from "../../src/model/live.ts";
+import { routineTarget, setProgress, topOfRepRanges } from "../../src/model/live.ts";
 import { correctionValues, parseTyped, previousValue } from "../../src/model/log-values.ts";
-import { asksRir, showsRirColumn, stepRir, typeRir } from "../../src/model/rir.ts";
+import { asksRir, countsReps, showsRirColumn, stepRir, typeRir } from "../../src/model/rir.ts";
 import { supersetMemberships } from "../../src/model/supersets.ts";
+import type { WorkoutPlan } from "../../src/model/types.ts";
 import { countsTowardTotals } from "../../src/model/volume.ts";
 import { font, gutter, numeral, radius, space, type } from "../../src/theme.ts";
 import { DestructiveButton } from "../../src/ui/action-sheet.tsx";
@@ -108,6 +118,7 @@ import {
   metricsOf,
   setDefaults,
   show,
+  targetCaption,
   typedNumber,
   valuesLine,
 } from "../../src/ui/live/set-fields.ts";
@@ -291,6 +302,7 @@ export default function ActiveWorkoutScreen() {
   };
   const [problem, setProblem] = useState<string | null>(null);
   const [trackRir] = useTrackRir();
+  const showTargets = useShowTargets();
   /** The set whose editor the dock is showing (its type, and Remove set). */
   const [setEditor, setSetEditor] = useState<string | null>(null);
   /** The row slid open to show Remove. */
@@ -310,8 +322,7 @@ export default function ActiveWorkoutScreen() {
   const [rirAsk, setRirAsk] = useState<string | null>(null);
   /** Whether the rest has run while asking: once it ends, the question goes. */
   const askedDuringRest = useRef(false);
-  /** The set with reps in reserve to pick under its row. */
-  const [rirRow, setRirRow] = useState<string | null>(null);
+  const [rirPicker, setRirPicker] = useState<{ setId: string; from: "list" | "dock" } | null>(null);
   const [rirTyping, setRirTyping] = useState<RirTyping | null>(null);
   const previous =
     data && history
@@ -550,10 +561,16 @@ export default function ActiveWorkoutScreen() {
   );
   const title = tree.workout.content.title || "Workout";
   const target = dockTarget(tree, focusIndex, pickedSetId);
-  const canStoreRir = canRecordSetReserve(store);
+  const effortScale = initialPlan?.effortScale ?? "rir";
+  const scaleFor = (set: LiveSet) => setEffortScale(set.content, initialPlan?.effortScale);
+  const canStore = {
+    rir: canRecordSetReserve(store),
+    rpe: canRecordSetReserve(store, "rpe"),
+  };
+  const canStoreEffort = (set: LiveSet) => canStore[scaleFor(set)];
   // The question also needs Track RIR to be changeable here: a server that can store RIR but not
   // the setting hides the switch, and the question must not keep asking with no way to stop it.
-  const asksForRir = canStoreRir && canChangeTrackRir(store);
+  const asksForRir = canStore[effortScale] && canChangeTrackRir(store);
 
   // ---- Reading a field ----
   const distanceUnitOf = (entry: Entry) =>
@@ -581,7 +598,7 @@ export default function ActiveWorkoutScreen() {
       index,
       drafts,
       unit,
-      previous?.get(entry.entry.id)?.[index],
+      previous?.get(entry.entry.id)?.sets[index],
       correction,
     );
   };
@@ -698,7 +715,7 @@ export default function ActiveWorkoutScreen() {
     if (logged) focusExercise(entry.entry.id);
     else focusSet(entry.entry.id, set.id);
     setSetEditor(null);
-    setRirRow(null);
+    setRirPicker(null);
     setRirTyping(null);
     setEditing({
       entryId: entry.entry.id,
@@ -892,7 +909,7 @@ export default function ActiveWorkoutScreen() {
     if (!attempt((db) => logSet(db, set.id, result.values))) return;
     setEditing(null);
     setSetEditor(null);
-    setRirRow(null);
+    setRirPicker(null);
     setRirTyping(null);
     setFieldProblem(null);
     focusExercise(entry.entry.id);
@@ -906,6 +923,7 @@ export default function ActiveWorkoutScreen() {
         canStore: asksForRir,
         type: entry.entry.content.exerciseType,
         set: set.content,
+        scale: scaleFor(set),
       })
         ? set.id
         : null,
@@ -932,7 +950,7 @@ export default function ActiveWorkoutScreen() {
   const closeEditors = () => {
     setEditing(null);
     setSetEditor(null);
-    setRirRow(null);
+    setRirPicker(null);
     setRirTyping(null);
   };
   const openSetEditor = (entry: Entry, set: LiveSet) => {
@@ -973,7 +991,7 @@ export default function ActiveWorkoutScreen() {
     settleRemoval();
     if (editing?.setId === set.id) setEditing(null);
     if (setEditor === set.id) setSetEditor(null);
-    if (rirRow === set.id) setRirRow(null);
+    if (rirPicker?.setId === set.id) setRirPicker(null);
     if (rirTyping?.setId === set.id) setRirTyping(null);
     if (rirAsk === set.id) setRirAsk(null);
     const message = `${setName(entry, set)} removed`;
@@ -995,15 +1013,16 @@ export default function ActiveWorkoutScreen() {
 
   // ---- Reps in reserve ----
   const recordRir = (set: LiveSet, value: number | null): boolean => {
-    if ((set.content.repsInReserve ?? null) === value) return true;
-    return attempt((db) => updateSet(db, set.id, { repsInReserve: value }));
+    const scale = scaleFor(set);
+    if (effortValue(set.content, scale) === value) return true;
+    return attempt((db) => updateSet(db, set.id, { [effortField(scale)]: value }));
   };
   /** A pick from the strip: records it and closes the strip (and the question). */
   const pickRir = (set: LiveSet, value: number) => {
     if (!recordRir(set, value)) return;
     haptic.select();
     if (rirAsk === set.id) setRirAsk(null);
-    setRirRow(null);
+    setRirPicker(null);
   };
   /**
    * 5+: opens the pad on the set's RIR (5 when it has none), for anything up to 10. Nothing is
@@ -1012,21 +1031,22 @@ export default function ActiveWorkoutScreen() {
   const moreRir = (entry: Entry, set: LiveSet) => {
     if (editing && !commit(editing)) return;
     closeEditors();
-    focusExercise(entry.entry.id);
+    if (set.content.completedAt === null) focusSet(entry.entry.id, set.id);
+    else focusExercise(entry.entry.id);
     const reserve = set.content.repsInReserve;
     setRirTyping({ setId: set.id, text: reserve == null ? "5" : String(reserve), fresh: true });
   };
-  /** A set's RIR cell opens (or closes) the strip under its row. */
-  const toggleRirRow = (entry: Entry, set: LiveSet) => {
+  const toggleRirPicker = (entry: Entry, set: LiveSet, from: "list" | "dock") => {
     if (gate()) return;
     if (editing && !commit(editing)) return;
-    const opening = rirRow !== set.id;
+    const opening = rirPicker?.setId !== set.id || rirPicker.from !== from;
     closeEditors();
-    focusExercise(entry.entry.id);
+    if (set.content.completedAt === null) focusSet(entry.entry.id, set.id);
+    else focusExercise(entry.entry.id);
     if (!opening) return;
-    // The strip under the row answers the dock's question too, so it isn't asked twice.
+    // Manual editing also answers the dock's question for this set.
     if (rirAsk === set.id) setRirAsk(null);
-    setRirRow(set.id);
+    setRirPicker({ setId: set.id, from });
   };
   const pressRir = (key: PadKey) => {
     if (!rirTyping) return;
@@ -1072,18 +1092,39 @@ export default function ActiveWorkoutScreen() {
   const asked = rirAsk && trackRir && asksForRir ? find(rirAsk) : null;
   const askedAbout = ({ entry, set, setIndex }: NonNullable<typeof asked>) =>
     `${setName(entry, set).toLowerCase()} · ${fieldsLine(entry, set, setIndex)}`;
-  const rirPicks = ({ entry, set }: { entry: Entry; set: LiveSet }, tone: "bone" | "plain") => (
-    <RirPicks
-      tone={tone}
-      label={`Reps in reserve for ${setName(entry, set).toLowerCase()} of ${entry.entry.content.exerciseName}`}
-      value={set.content.repsInReserve ?? null}
-      onPick={(value) => {
-        if (!gate()) pickRir(set, value);
-      }}
-      onMore={() => {
-        if (!gate()) moreRir(entry, set);
-      }}
-    />
+  const rirPicks = ({ entry, set }: { entry: Entry; set: LiveSet }, tone: "bone" | "plain") => {
+    const scale = scaleFor(set);
+    return (
+      <RirPicks
+        tone={tone}
+        scale={scale}
+        label={`${scale === "rir" ? "Reps in reserve" : "RPE"} for ${setName(entry, set).toLowerCase()} of ${entry.entry.content.exerciseName}`}
+        target={showTargets ? effortValue(routineTarget(initialPlan, set.content), scale) : null}
+        value={effortValue(set.content, scale)}
+        onPick={(value) => {
+          if (!gate()) pickRir(set, value);
+        }}
+        onMore={() => {
+          if (!gate()) moreRir(entry, set);
+        }}
+      />
+    );
+  };
+  const manualRirPicks = (entry: Entry, set: LiveSet) => (
+    <>
+      {rirPicks({ entry, set }, "plain")}
+      {effortValue(set.content, scaleFor(set)) !== null && (
+        <Tap
+          accessibilityRole="button"
+          accessibilityLabel="Clear effort"
+          onPress={() => {
+            if (!gate() && recordRir(set, null)) setRirPicker(null);
+          }}
+        >
+          <Text style={styles.target}>Clear effort</Text>
+        </Tap>
+      )}
+    </>
   );
   const fieldsLine = (entry: Entry, set: LiveSet, setIndex: number) =>
     valuesLine(
@@ -1094,7 +1135,7 @@ export default function ActiveWorkoutScreen() {
       unit,
     );
   const previousLine = (entry: Entry, setIndex: number) => {
-    const prev = previous?.get(entry.entry.id)?.[setIndex];
+    const prev = previous?.get(entry.entry.id)?.sets[setIndex];
     if (!prev) return "–";
     const distanceUnit = distanceUnitOf(entry);
     return metricsOf(entry.entry.content.exerciseType)
@@ -1104,9 +1145,14 @@ export default function ActiveWorkoutScreen() {
 
   const typing = rirTyping ? find(rirTyping.setId) : null;
   const editorFound = setEditor ? find(setEditor) : null;
+  const dockRir = rirPicker?.from === "dock" ? find(rirPicker.setId) : null;
   const typingFromDock = editing?.from === "dock" && editing.setId === target?.set.id;
   const editorOpen =
-    (editing?.from === "list" && editingFound) || typingFromDock || typing || editorFound;
+    (editing?.from === "list" && editingFound) ||
+    typingFromDock ||
+    typing ||
+    editorFound ||
+    dockRir;
   // Keep the slab in the same dock slot as an editor opens so the countdown can resize in place.
   const fullRest = !editorOpen && rest && resting ? rest : null;
   const dockRest = editorOpen ? rest : fullRest;
@@ -1182,11 +1228,30 @@ export default function ActiveWorkoutScreen() {
         </>
       );
     }
+    if (dockRir) {
+      const { entry, set, setIndex } = dockRir;
+      const name = entry.entry.content.exerciseName;
+      const detail = `${setName(entry, set)} · ${effortLabel(scaleFor(set))}`;
+      return (
+        <>
+          <EditHeader
+            chip={labelOf(entry, setIndex)}
+            logged={set.content.completedAt !== null}
+            exercise={name}
+            detail={detail}
+            announcement={`${name}, ${detail}`}
+            onCancel={() => setRirPicker(null)}
+          />
+          {manualRirPicks(entry, set)}
+        </>
+      );
+    }
     // The set's own editor, from its number: its type, and Remove set.
     if (editorFound) {
       const { entry, set, setIndex } = editorFound;
       const logged = set.content.completedAt !== null;
-      const reserve = set.content.repsInReserve;
+      const scale = scaleFor(set);
+      const reserve = effortValue(set.content, scale);
       return (
         <SetEditorDock
           chip={labelOf(entry, setIndex)}
@@ -1195,12 +1260,20 @@ export default function ActiveWorkoutScreen() {
           detail={[
             setName(entry, set),
             logged ? `logged · ${fieldsLine(entry, set, setIndex)}` : "not logged",
-            reserve != null ? `RIR ${reserve}` : null,
+            reserve != null ? `${effortLabel(scale)} ${reserve}` : null,
           ]
             .filter(Boolean)
             .join(" · ")}
           value={set.content.type}
           onType={(kind) => chooseType(entry, set, kind)}
+          effort={
+            canStoreEffort(set) && countsReps(entry.entry.content.exerciseType)
+              ? {
+                  label: `Edit ${effortLabel(scale)}`,
+                  onPress: () => toggleRirPicker(entry, set, "dock"),
+                }
+              : undefined
+          }
           onRemove={() => removeSet(entry, set)}
           onDone={() => setSetEditor(null)}
         />
@@ -1249,6 +1322,10 @@ export default function ActiveWorkoutScreen() {
     const distanceUnit = distanceUnitOf(entry);
     const fromDock = typingFromDock ? editing : null;
     const timer = readSetStopwatch(store, tree.workout.id, set.id);
+    const planned = showTargets ? routineTarget(initialPlan, set.content) : undefined;
+    const scale = scaleFor(set);
+    const currentEffort = effortValue(set.content, scale);
+    const plannedEffort = effortCaption(planned, initialPlan?.effortScale);
     const fields = metricsOf(type).map((metric) => {
       const view = viewOf(entry, set, setIndex, metric);
       const size = stepSize(metric, unit, distanceUnit);
@@ -1257,6 +1334,7 @@ export default function ActiveWorkoutScreen() {
         name: fieldName(metric, type),
         text: view.text,
         firm: view.firm,
+        target: targetCaption(planned, metric, unit, distanceUnit) ?? undefined,
         unit:
           metric === "weight"
             ? unit
@@ -1300,6 +1378,18 @@ export default function ActiveWorkoutScreen() {
         />
         <SetStrip
           fields={fields}
+          effort={
+            countsReps(type) && (plannedEffort !== null || currentEffort !== null)
+              ? {
+                  label: effortLabel(scale),
+                  value: currentEffort,
+                  target: plannedEffort,
+                  onEdit: canStoreEffort(set)
+                    ? () => toggleRirPicker(entry, set, "dock")
+                    : undefined,
+                }
+              : undefined
+          }
           logLabel={`Log ${what} of ${entry.entry.content.exerciseName}`}
           canLog={ready && timer?.startedAt === undefined}
           onLog={() => {
@@ -1326,9 +1416,9 @@ export default function ActiveWorkoutScreen() {
   };
   /** Without a rest timer, the question sits above the logging strip. */
   const askAbove =
-    asked && !resting && !editing && !rirTyping && !setEditor ? (
+    asked && !resting && !editing && !rirTyping && !setEditor && !dockRir ? (
       <View style={styles.ask}>
-        <RirQuestion about={askedAbout(asked)} onSkip={() => setRirAsk(null)} />
+        <RirQuestion scale={effortScale} about={askedAbout(asked)} onSkip={() => setRirAsk(null)} />
         {rirPicks(asked, "plain")}
       </View>
     ) : null;
@@ -1513,6 +1603,10 @@ export default function ActiveWorkoutScreen() {
                         }
                         drafts={drafts}
                         workoutId={tree.workout.id}
+                        plan={initialPlan}
+                        previousTopOfRange={previous?.get(entry.entry.id)?.topOfRange ?? null}
+                        effortScale={effortScale}
+                        showTargets={showTargets}
                         legacyRoutine={!!tree.workout.content.routineId && !initialPlan}
                         ready={ready}
                         currentSetId={target?.set.id}
@@ -1525,13 +1619,23 @@ export default function ActiveWorkoutScreen() {
                           trackRir,
                           type: entry.entry.content.exerciseType,
                           sets: entry.sets,
+                          ...(initialPlan?.effortScale && { scale: initialPlan.effortScale }),
+                          hasTarget:
+                            showTargets &&
+                            entry.sets.some(
+                              ({ content }) =>
+                                effortCaption(
+                                  routineTarget(initialPlan, content),
+                                  initialPlan?.effortScale,
+                                ) !== null,
+                            ),
                         })}
-                        canStoreRir={canStoreRir}
-                        rirRowId={rirRow}
+                        canStoreRir={canStoreEffort}
+                        rirRowId={rirPicker?.from === "list" ? rirPicker.setId : null}
                         rirTyping={rirTyping}
-                        rirPicks={(set) => rirPicks({ entry, set }, "plain")}
+                        rirPicks={(set) => manualRirPicks(entry, set)}
                         swipedId={swiped}
-                        canSwipe={!editing && !setEditor && !rirTyping && !rirRow}
+                        canSwipe={!editing && !setEditor && !rirTyping && !rirPicker}
                         editorSetId={setEditor ?? rirTyping?.setId ?? null}
                         onSwipe={(set, opened) => {
                           if (opened) settleRemoval();
@@ -1539,7 +1643,7 @@ export default function ActiveWorkoutScreen() {
                         }}
                         onRemoveSet={(set) => removeSet(entry, set)}
                         onEditSet={(set) => openSetEditor(entry, set)}
-                        onRirCell={(set) => toggleRirRow(entry, set)}
+                        onRirCell={(set) => toggleRirPicker(entry, set, "list")}
                         onGate={gate}
                         onInteract={() => focusExercise(entry.entry.id)}
                         onPick={(set) => {
@@ -1714,7 +1818,11 @@ export default function ActiveWorkoutScreen() {
             {askAbove}
             {fullRest &&
               (asked ? (
-                <RirQuestion about={askedAbout(asked)} onSkip={() => setRirAsk(null)} />
+                <RirQuestion
+                  scale={effortScale}
+                  about={askedAbout(asked)}
+                  onSkip={() => setRirAsk(null)}
+                />
               ) : (
                 <DockLine
                   left={
@@ -1853,6 +1961,10 @@ function EntryCard({
   otherDistanceUnit,
   drafts,
   workoutId,
+  plan,
+  previousTopOfRange,
+  effortScale,
+  showTargets,
   legacyRoutine,
   ready,
   currentSetId,
@@ -1899,6 +2011,10 @@ function EntryCard({
   otherDistanceUnit: SetDistanceUnit;
   drafts: SetDrafts;
   workoutId: string;
+  plan: WorkoutPlan | null;
+  previousTopOfRange: number | null;
+  effortScale: EffortScale;
+  showTargets: boolean;
   legacyRoutine: boolean;
   ready: boolean;
   /** The set the dock logs next. */
@@ -1910,7 +2026,7 @@ function EntryCard({
   /** Whether the sets show a reps in reserve column. */
   showRir: boolean;
   /** Whether reps in reserve can be changed (the account can store it). */
-  canStoreRir: boolean;
+  canStoreRir: (set: LiveSet) => boolean;
   /** The set with the reps in reserve strip open under its row. */
   rirRowId: string | null;
   /** Reps in reserve being typed on the pad, shown in its set's cell. */
@@ -1984,6 +2100,10 @@ function EntryCard({
     );
   });
   const complete = done === entry.sets.length && entry.sets.length > 0;
+  const topOfRange = topOfRepRanges(entry, plan);
+  const rangeCount = topOfRange ?? previousTopOfRange;
+  const labelLegacyEffort =
+    !plan?.effortScale && entry.sets.some(({ content }) => content.rpe != null);
   return (
     // A different exercise slides in; its rows start in place and move only as sets change.
     <Enter style={styles.card}>
@@ -2027,6 +2147,12 @@ function EntryCard({
             <MoreIcon color={c.fg2} size={18} />
           </Tap>
         </View>
+        {rangeCount !== null && (
+          <Text style={styles.rangeResult}>
+            {topOfRange === null ? "Last time · " : ""}
+            {`Top of range in all ${setCount(rangeCount)}`}
+          </Text>
+        )}
         {managing && (
           <BottomSheet
             title={name}
@@ -2142,10 +2268,12 @@ function EntryCard({
               )}
               {showRir && (
                 <Text
-                  aria-label="Reps in reserve"
+                  aria-label={
+                    labelLegacyEffort ? "Effort" : effortScale === "rir" ? "Reps in reserve" : "RPE"
+                  }
                   style={[styles.headCell, styles.center, styles.rirCol]}
                 >
-                  RIR
+                  {labelLegacyEffort ? "Effort" : effortLabel(effortScale)}
                 </Text>
               )}
               <Text style={[styles.headCell, styles.center, styles.doneCol]}>DONE</Text>
@@ -2177,6 +2305,10 @@ function EntryCard({
                   metrics={metrics}
                   unit={unit}
                   distanceUnit={distanceUnit}
+                  plan={plan}
+                  effortScale={setEffortScale(set.content, plan?.effortScale)}
+                  labelLegacyEffort={labelLegacyEffort}
+                  showTargets={showTargets}
                   ready={ready}
                   running={readSetStopwatch(store, workoutId, set.id)?.startedAt}
                   editing={editing?.setId === set.id ? editing : null}
@@ -2184,7 +2316,7 @@ function EntryCard({
                   views={metrics.map((m) => viewOf(set, i, m))}
                   previous={previousLine(i)}
                   showRir={showRir}
-                  canStoreRir={canStoreRir}
+                  canStoreRir={canStoreRir(set)}
                   rirOpen={rirRowId === set.id}
                   rirTyped={rirTyping?.setId === set.id ? rirTyping : null}
                   rirPicks={rirRowId === set.id ? rirPicks(set) : null}
@@ -2247,6 +2379,10 @@ function SetRow({
   metrics,
   unit,
   distanceUnit,
+  plan,
+  effortScale,
+  labelLegacyEffort,
+  showTargets,
   ready,
   running,
   editing,
@@ -2281,6 +2417,10 @@ function SetRow({
   metrics: readonly SetMetric[];
   unit: Unit;
   distanceUnit: SetDistanceUnit;
+  plan: WorkoutPlan | null;
+  effortScale: EffortScale;
+  labelLegacyEffort: boolean;
+  showTargets: boolean;
   ready: boolean;
   /** When the set's stopwatch started, while it runs. */
   running: number | undefined;
@@ -2329,10 +2469,26 @@ function SetRow({
     [],
   );
   const timing = running !== undefined;
+  const target = showTargets ? routineTarget(plan, set.content) : undefined;
   const highlighted = isCurrent || editing !== null || editorOpen || rirOpen;
-  const reserve = set.content.repsInReserve;
+  const reserve = effortValue(set.content, effortScale);
+  const effortTarget = effortCaption(target, plan?.effortScale);
+  const effortName = effortScale === "rir" ? "reps in reserve" : "RPE";
   // While it is typed on the pad, the cell shows what is typed; it is recorded on Done.
   const rirShown = rirTyped ? rirTyped.text || null : reserve == null ? null : String(reserve);
+  const displayedEffort =
+    labelLegacyEffort && rirShown !== null ? `${effortLabel(effortScale)} ${rirShown}` : rirShown;
+  const otherLegacyEffort =
+    labelLegacyEffort && effortScale === "rir" && set.content.rpe != null
+      ? `RPE ${set.content.rpe}`
+      : null;
+  const effortDetails = `${displayedEffort ?? "Empty"}${otherLegacyEffort === null ? "" : `, ${otherLegacyEffort}`}${effortTarget === null ? "" : `. Target ${effortTarget}`}`;
+  const effortStyle =
+    displayedEffort === null
+      ? styles.rirEmpty
+      : labelLegacyEffort
+        ? styles.legacyEffortValue
+        : [styles.value, styles.rirValue];
   // Every part of the row offers Remove set to a screen reader, wherever its focus is.
   const removable = {
     accessibilityActions: REMOVE_ACTIONS,
@@ -2377,32 +2533,46 @@ function SetRow({
               const view = views[i];
               if (!view) return null;
               const on = editing?.metric === metric;
+              const caption = targetCaption(target, metric, unit, distanceUnit);
               return (
                 <Tap
                   key={metric}
                   accessibilityRole="button"
                   accessibilityLabel={`${HEADINGS[metric](unit, distanceUnit).toLowerCase()} for set ${label}`}
-                  accessibilityHint={view.firm ? undefined : "Suggested"}
+                  accessibilityHint={
+                    [view.firm ? null : "Suggested", caption && `Target ${caption}`]
+                      .filter(Boolean)
+                      .join(". ") || undefined
+                  }
                   accessibilityState={{ selected: on }}
                   onPress={() => onCell(metric)}
                   scaleTo={0.97}
                   style={[styles.cell, valueWidth(metrics, metric, showRir), on && styles.cellOn]}
                   {...removable}
                 >
-                  <Text
-                    numberOfLines={1}
-                    style={[
-                      styles.value,
-                      view.firm && !view.missing && styles.valueFirm,
-                      isDone && styles.valueFirm,
-                      view.missing && styles.missing,
-                      on && editing.fresh && !view.firm && styles.valueHint,
-                    ]}
-                  >
-                    {view.text}
-                  </Text>
-                  {on && !editing.fresh && <View style={styles.caret} />}
-                  {!on && !isDone && <View style={styles.cellRule} />}
+                  <View style={styles.cellValue}>
+                    <Text
+                      numberOfLines={1}
+                      style={[
+                        styles.value,
+                        view.firm && !view.missing && styles.valueFirm,
+                        isDone && styles.valueFirm,
+                        view.missing && styles.missing,
+                        on && editing.fresh && !view.firm && styles.valueHint,
+                      ]}
+                    >
+                      {view.text}
+                    </Text>
+                    {on && !editing.fresh && <View style={styles.caret} />}
+                  </View>
+                  {caption && (
+                    <Text numberOfLines={1} style={styles.cellTarget}>
+                      {caption}
+                    </Text>
+                  )}
+                  {!on && !isDone && (
+                    <View style={[styles.cellRule, caption && styles.cellRuleWithTarget]} />
+                  )}
                 </Tap>
               );
             })}
@@ -2410,34 +2580,38 @@ function SetRow({
               (canStoreRir ? (
                 <Tap
                   accessibilityRole="button"
-                  accessibilityLabel={`reps in reserve for set ${label}`}
-                  accessibilityHint={rirShown ?? "Empty"}
+                  accessibilityLabel={`${effortName} for set ${label}`}
+                  accessibilityHint={effortDetails}
                   accessibilityState={{ expanded: rirOpen }}
                   onPress={onRirCell}
                   scaleTo={0.97}
                   style={[styles.cell, styles.rirCol, (rirOpen || rirTyped) && styles.cellOn]}
                   {...removable}
                 >
-                  <Text
-                    numberOfLines={1}
-                    style={rirShown == null ? styles.rirEmpty : [styles.value, styles.rirValue]}
-                  >
-                    {rirShown ?? "–"}
-                  </Text>
-                  {rirTyped && !rirTyped.fresh && <View style={styles.caret} />}
+                  <View style={styles.cellValue}>
+                    <Text numberOfLines={1} style={effortStyle}>
+                      {displayedEffort ?? "–"}
+                    </Text>
+                    {rirTyped && !rirTyped.fresh && <View style={styles.caret} />}
+                  </View>
+                  {otherLegacyEffort && (
+                    <Text style={styles.legacyEffortValue}>{otherLegacyEffort}</Text>
+                  )}
+                  {effortTarget !== null && <Text style={styles.cellTarget}>{effortTarget}</Text>}
                 </Tap>
               ) : (
                 <View
                   accessible
-                  accessibilityLabel={`reps in reserve for set ${label}, ${reserve == null ? "empty" : reserve}`}
+                  accessibilityLabel={`${effortName} for set ${label}, ${effortDetails}`}
                   style={[styles.cell, styles.rirCol]}
                 >
-                  <Text
-                    numberOfLines={1}
-                    style={reserve == null ? styles.rirEmpty : [styles.value, styles.rirValue]}
-                  >
-                    {reserve == null ? "–" : String(reserve)}
+                  <Text numberOfLines={1} style={effortStyle}>
+                    {displayedEffort ?? "–"}
                   </Text>
+                  {otherLegacyEffort && (
+                    <Text style={styles.legacyEffortValue}>{otherLegacyEffort}</Text>
+                  )}
+                  {effortTarget !== null && <Text style={styles.cellTarget}>{effortTarget}</Text>}
                 </View>
               ))}
             <View style={[styles.doneCol, styles.center]}>
@@ -2670,6 +2844,7 @@ const sheet = themedStyles((c) => ({
   rowOpen: { borderBottomLeftRadius: 0, borderBottomRightRadius: 0 },
   rirCol: { width: 44 },
   rirValue: { ...numeral(21, "300"), color: c.fg },
+  legacyEffortValue: { ...font.mono, fontSize: 9, lineHeight: 12, color: c.fg },
   rirEmpty: { ...font.mono, fontSize: 15, color: c.fg3 },
   rirStrip: {
     backgroundColor: c.s2,
@@ -2696,8 +2871,9 @@ const sheet = themedStyles((c) => ({
     borderRadius: 11,
     alignItems: "center",
     justifyContent: "center",
-    flexDirection: "row",
   },
+  cellValue: { flexDirection: "row", alignItems: "center", maxWidth: "100%" },
+  cellTarget: { ...font.mono, fontSize: 10, lineHeight: 12, color: c.fg2 },
   cellOn: { backgroundColor: c.bg, borderWidth: 1.5, borderColor: c.fg },
   cellRule: {
     position: "absolute",
@@ -2708,6 +2884,7 @@ const sheet = themedStyles((c) => ({
     borderStyle: "dashed",
     borderColor: c.line2,
   },
+  cellRuleWithTarget: { bottom: 16 },
   value: { ...numeral(24, "300"), color: c.fg3 },
   valueFirm: { color: c.fg },
   valueHint: { color: c.fg2 },
@@ -2726,6 +2903,16 @@ const sheet = themedStyles((c) => ({
   checkCurrent: { borderColor: c.fg },
   checked: { borderColor: c.fg, backgroundColor: c.fg },
   target: { ...type.meta, color: c.fg2, textAlign: "center", marginVertical: space.xs },
+  rangeResult: {
+    ...type.meta,
+    color: c.fg2,
+    marginHorizontal: 10,
+    marginBottom: space.xs,
+    paddingHorizontal: space.sm,
+    paddingVertical: space.xs,
+    backgroundColor: c.s2,
+    borderRadius: radius.chip,
+  },
   addSet: {
     marginTop: 4,
     minHeight: 46,

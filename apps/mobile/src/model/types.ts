@@ -1,10 +1,12 @@
 import type { RecordContent } from "@leve/contract";
+import type { EffortScale } from "@leve/core";
 
 // Shapes of record content as the screens read them (the contract validates them on write).
 
 export type PlanTarget = Omit<RoutineSet, "id">;
 export interface WorkoutPlan {
   title: string;
+  effortScale?: EffortScale;
   exercises: (Omit<RoutineExercise, "id" | "sets" | "notes"> & { sets: PlanTarget[] })[];
 }
 
@@ -51,6 +53,7 @@ export interface WorkoutSet {
 
 export interface RoutineSet {
   rpe?: number | null;
+  repsInReserve?: number | null;
   count?: number | null;
   id: string;
   type: WorkoutSet["type"];
@@ -75,6 +78,7 @@ export interface RoutineExercise {
 }
 
 export interface Routine {
+  effortScale?: EffortScale | null;
   title: string;
   notes: string;
   folderId: string | null;

@@ -10,8 +10,14 @@ import {
   removeWorkoutSet,
   updateSet,
 } from "../data/workout-actions.ts";
+import {
+  effortField,
+  effortLabel,
+  effortValue,
+  parseEffort,
+  setEffortScale,
+} from "../model/effort.ts";
 import { correctionValues, type Draft, resolveLog, storedValue } from "../model/log-values.ts";
-import { RIR_MAX } from "../model/rir.ts";
 import type { WithId, WorkoutSet } from "../model/types.ts";
 import { font, radius, space, type } from "../theme.ts";
 import { DestructiveButton } from "./action-sheet.tsx";
@@ -50,18 +56,32 @@ export function SetEditor({
   const styles = useStyles(sheet);
   const c = useColors();
   const { change, store } = useAppData();
-  const canRecordReserve = canRecordSetReserve(store);
-  const [opened] = useState(() => ({
-    id: set.id,
-    values: set.content,
-    parent: store.get("workout_exercise", set.content.workoutExerciseId)?.content ?? null,
-    exercise,
-    exerciseType,
-    rowLabel,
-    unit: currentUnit,
-    distanceUnit: currentDistanceUnit,
-  }));
-  const { unit, distanceUnit } = opened;
+  const [opened] = useState(() => {
+    const parent = store.get("workout_exercise", set.content.workoutExerciseId)?.content ?? null;
+    const workoutId = addToWorkout ?? parent?.workoutId;
+    const plan =
+      typeof workoutId === "string" ? store.get("workout", workoutId)?.content?.initialPlan : null;
+    const scale =
+      plan && typeof plan === "object" && "effortScale" in plan ? plan.effortScale : null;
+    const effortScale = setEffortScale(
+      set.content,
+      scale === "rir" || scale === "rpe" ? scale : undefined,
+    );
+    return {
+      id: set.id,
+      values: set.content,
+      parent,
+      effortScale,
+      exercise,
+      exerciseType,
+      rowLabel,
+      unit: currentUnit,
+      distanceUnit: currentDistanceUnit,
+    } as const;
+  });
+  const { unit, distanceUnit, effortScale } = opened;
+  const canRecordReserve = canRecordSetReserve(store, effortScale);
+  const recordedEffort = effortValue(opened.values, effortScale);
   const [reserve, setReserve] = useState<string>();
   const insets = useSafeAreaInsets();
   const [kind, setKind] = useState(opened.values.type);
@@ -95,10 +115,7 @@ export function SetEditor({
         values = correctionValues(draft, unit, distanceUnit);
       }
       if (reserve !== undefined) {
-        const text = reserve.trim();
-        if (text && (!/^\d+$/.test(text) || Number(text) > RIR_MAX))
-          throw Error(`Enter a whole number from 0 to ${RIR_MAX} for reps in reserve.`);
-        values.repsInReserve = text ? Number(text) : null;
+        values[effortField(effortScale)] = parseEffort(reserve, effortScale);
       }
       if (kind !== opened.values.type) values.type = kind;
       if (addToWorkout || Object.keys(values).length)
@@ -167,14 +184,14 @@ export function SetEditor({
                 </View>
               );
             })}
-          {countsReps && (canRecordReserve || opened.values.repsInReserve != null) && (
+          {countsReps && (canRecordReserve || recordedEffort !== null) && (
             <View style={styles.cell}>
-              <Text style={styles.label}>RIR</Text>
+              <Text style={styles.label}>{effortLabel(effortScale)}</Text>
               <TextInput
-                accessibilityLabel="Reps in reserve"
-                inputMode="numeric"
+                accessibilityLabel={effortScale === "rpe" ? "RPE" : "Reps in reserve"}
+                inputMode={effortScale === "rpe" ? "decimal" : "numeric"}
                 editable={canRecordReserve}
-                value={reserve ?? String(opened.values.repsInReserve ?? "")}
+                value={reserve ?? String(recordedEffort ?? "")}
                 onChangeText={setReserve}
                 placeholder="–"
                 placeholderTextColor={c.fg2}

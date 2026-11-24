@@ -1,5 +1,5 @@
 import type { JsonObject } from "@leve/contract";
-import { LIMITS } from "@leve/core";
+import { type EffortScale, LIMITS } from "@leve/core";
 import { router, useLocalSearchParams } from "expo-router";
 import { type ReactNode, useRef, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
@@ -13,6 +13,7 @@ import {
   type StoredPlan,
   writePlan,
 } from "../../src/data/routine-actions.ts";
+import { routineEffortScale } from "../../src/model/effort.ts";
 import { space, type } from "../../src/theme.ts";
 import { DestructiveButton } from "../../src/ui/action-sheet.tsx";
 import { Button } from "../../src/ui/buttons.tsx";
@@ -135,14 +136,19 @@ function RoutineEditor({
   const styles = useStyles(sheet);
   const c = useColors();
   const { store, change } = useAppData();
+  const savedScale: EffortScale | null =
+    initial.effortScale === "rir" || initial.effortScale === "rpe" ? initial.effortScale : null;
   const opened = {
     exercises: (initial.exercises ?? []) as StoredPlan,
+    effortScale: savedScale,
     title: String(initial.title ?? ""),
     notes: String(initial.notes ?? ""),
     folderId: typeof initial.folderId === "string" ? initial.folderId : null,
   };
   const [settings] = useState(() => readSettings(store));
   const [plan, setPlan] = useState(() => openPlan(opened.exercises));
+  const openedScale = routineEffortScale(opened);
+  const [effortScale, setEffortScale] = useState(openedScale);
   const [title, setTitle] = useState(opened.title);
   const [notes, setNotes] = useState(opened.notes);
   const [folderId, setFolderId] = useState(opened.folderId);
@@ -158,13 +164,18 @@ function RoutineEditor({
     .map((folder) => ({ id: folder.id, title: String(folder.content?.title ?? "") }));
   const save = () => {
     try {
+      const exercises = writePlan(plan, settings, effortScale);
+      const scale =
+        effortScale !== openedScale || routineEffortScale({ exercises }) !== effortScale
+          ? effortScale
+          : opened.effortScale;
       change((db) =>
         organizeRoutine(
           db,
           id,
           opened,
-          { title, folderId, notes },
-          { opened: opened.exercises, next: writePlan(plan, settings) },
+          { title, folderId, notes, effortScale: scale },
+          { opened: opened.exercises, next: exercises },
         ),
       );
     } catch (e) {
@@ -178,7 +189,7 @@ function RoutineEditor({
     if (savingCopy.current || copyName === null) return;
     savingCopy.current = true;
     try {
-      change((db) => createRoutine(db, copyName, folderId, plan, settings, notes));
+      change((db) => createRoutine(db, copyName, folderId, plan, settings, notes, effortScale));
     } catch (cause) {
       savingCopy.current = false;
       haptic.warning();
@@ -233,6 +244,8 @@ function RoutineEditor({
       <RoutinePlanEditor
         plan={plan}
         setPlan={setPlan}
+        effortScale={effortScale}
+        setEffortScale={setEffortScale}
         settings={settings}
         reordering={reordering}
         onReorder={() => setReordering(true)}

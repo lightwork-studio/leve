@@ -1,4 +1,5 @@
 import type { JsonObject } from "@leve/contract";
+import { routineEffortScale } from "./effort.ts";
 import type { WorkoutTree } from "./past-workouts.ts";
 import type { Routine, WithId, Workout, WorkoutEntry, WorkoutPlan, WorkoutSet } from "./types.ts";
 
@@ -44,6 +45,7 @@ export function startWorkout(options: {
       initialPlan: routine
         ? {
             title: routine.content.title,
+            effortScale: routineEffortScale(routine.content),
             exercises: routine.content.exercises.map(
               ({ id: _id, notes: _notes, sets, ...exercise }) => ({
                 ...exercise,
@@ -116,6 +118,46 @@ export type PreviousSet = Pick<
   "weightKg" | "reps" | "durationSeconds" | "distanceMeters" | "count"
 >;
 
+export interface PreviousExercise {
+  sets: (PreviousSet | undefined)[];
+  topOfRange: number | null;
+}
+
+/** Count the original working sets only when each has reached its own planned upper bound. */
+export function topOfRepRanges(
+  entry: WorkoutTree["entries"][number],
+  plan: WorkoutPlan | null | undefined,
+): number | null {
+  const slot = entry.sets.find(({ content }) => content.planSlot)?.content.planSlot?.exercise;
+  const exercise = slot === undefined ? undefined : plan?.exercises[slot];
+  if (!exercise?.useRepRange || exercise.exerciseId !== entry.entry.content.exerciseId) return null;
+  const targets = exercise.sets
+    .map((target, index) => ({ target, index }))
+    .filter(({ target }) => setGroup(target.type) === "normal");
+  if (!targets.length) return null;
+  for (const { target, index } of targets) {
+    if (
+      target.repRangeMin === null ||
+      target.repRangeMax === null ||
+      target.repRangeMin > target.repRangeMax
+    )
+      return null;
+    const logged = entry.sets.find(
+      ({ content }) => content.planSlot?.exercise === slot && content.planSlot?.set === index,
+    );
+    if (
+      !logged ||
+      logged.hasSyncConflict ||
+      logged.content.completedAt === null ||
+      setGroup(logged.content.type) !== "normal" ||
+      logged.content.reps === null ||
+      logged.content.reps < target.repRangeMax
+    )
+      return null;
+  }
+  return targets.length;
+}
+
 /** Normal and failure sets share working-set numbers on the logging screen. */
 const setGroup = (type: WorkoutSet["type"]) => (type === "failure" ? "normal" : type);
 
@@ -130,7 +172,7 @@ function movementSlots(plan: WorkoutPlan | null | undefined, exerciseId: string)
  * What the user did last time for an exercise, set by set: from the latest finished workout that
  * has it, or only from workouts of the same routine when the setting says so.
  */
-export function previousSets(
+export function previousExercise(
   history: WorkoutTree[],
   exerciseId: string,
   options: {
@@ -141,7 +183,7 @@ export function previousSets(
     plan?: WorkoutPlan | null;
     exerciseSlot?: number;
   },
-): (PreviousSet | undefined)[] {
+): PreviousExercise {
   const slots = options.exerciseSlot === undefined ? [] : movementSlots(options.plan, exerciseId);
   const occurrence = slots.length > 1 ? slots.indexOf(options.exerciseSlot ?? -1) : -1;
   const candidates = history
@@ -179,9 +221,18 @@ export function previousSets(
       });
       byType.set(setGroup(content.type), group);
     }
-    return options.plannedTypes.map((type) => byType.get(setGroup(type))?.shift());
+    return {
+      sets: options.plannedTypes.map((type) => byType.get(setGroup(type))?.shift()),
+      topOfRange: topOfRepRanges(entry, tree.workout.content.initialPlan),
+    };
   }
-  return [];
+  return { sets: [], topOfRange: null };
+}
+
+export function previousSets(
+  ...args: Parameters<typeof previousExercise>
+): (PreviousSet | undefined)[] {
+  return previousExercise(...args).sets;
 }
 
 /** The exercise to work on: the first with a set still to do, or the last one when all are done. */

@@ -18,6 +18,7 @@ export function SetEditorDock({
   detail,
   value,
   onType,
+  effort,
   onRemove,
   onDone,
 }: {
@@ -28,6 +29,7 @@ export function SetEditorDock({
   detail: string;
   value: SetType;
   onType: (type: SetType) => void;
+  effort?: { label: string; onPress: () => void } | undefined;
   onRemove: () => void;
   onDone: () => void;
 }) {
@@ -72,6 +74,11 @@ export function SetEditorDock({
           );
         })}
       </View>
+      {effort && (
+        <Tap accessibilityRole="button" onPress={effort.onPress} style={styles.effort}>
+          <Text style={styles.effortText}>{effort.label}</Text>
+        </Tap>
+      )}
       <Tap accessibilityRole="button" onPress={onRemove} scaleTo={0.98} style={styles.remove}>
         <Text style={styles.removeText}>Remove set</Text>
       </Tap>
@@ -121,6 +128,8 @@ const sheet = themedStyles((c) => ({
     color: c.fg3,
   },
   typeTextOn: { color: c.bg },
+  effort: { minHeight: 44, alignItems: "center", justifyContent: "center" },
+  effortText: { ...type.action, color: c.fg },
   remove: { minHeight: 44, marginTop: 6, alignItems: "center", justifyContent: "center" },
   removeText: { ...type.action, letterSpacing: 1.47, color: c.danger },
 }));

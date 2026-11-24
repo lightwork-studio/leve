@@ -119,11 +119,16 @@ export function workoutJournalData(
 }
 
 /** Older sets can omit the timestamp. Screens use null for an unfinished set. */
-function displayedSet(record: DeviceRecord): WithId<WorkoutSet> {
+function displayedSet(record: DeviceRecord): WorkoutTree["entries"][number]["sets"][number] {
   const content = record.content as unknown as WorkoutSet;
   return {
     id: record.id,
     content: content.completedAt === undefined ? { ...content, completedAt: null } : content,
+    ...(record.status === "conflict" && { hasSyncConflict: true as const }),
+    ...(record.status === "conflict" &&
+    (record.server?.state === "live" || record.server?.state === "deleted")
+      ? { needsSyncReview: true as const }
+      : {}),
   };
 }
 
@@ -134,13 +139,7 @@ export function readWorkoutTree(store: DeviceStore, workoutId: string): WorkoutT
   // Every entry's sets in one read, then shared out (in position order) by entry.
   const sets = new Map<string, WorkoutTree["entries"][number]["sets"]>();
   for (const record of store.list("workout_set", { parentIds: entries.map((e) => e.id) })) {
-    const set = {
-      ...displayedSet(record),
-      ...(record.status === "conflict" &&
-      (record.server?.state === "live" || record.server?.state === "deleted")
-        ? { needsSyncReview: true as const }
-        : {}),
-    };
+    const set = displayedSet(record);
     const list = sets.get(set.content.workoutExerciseId) ?? [];
     list.push(set);
     sets.set(set.content.workoutExerciseId, list);
@@ -153,7 +152,7 @@ export function readWorkoutTree(store: DeviceStore, workoutId: string): WorkoutT
 
 /** Every workout's tree from three reads, however long the history is. */
 export function readAllWorkoutTrees(store: DeviceStore): WorkoutTree[] {
-  const setsByEntry = new Map<string, WithId<WorkoutSet>[]>();
+  const setsByEntry = new Map<string, WorkoutTree["entries"][number]["sets"]>();
   for (const record of store.list("workout_set")) {
     const set = displayedSet(record);
     const list = setsByEntry.get(set.content.workoutExerciseId) ?? [];
