@@ -1869,6 +1869,10 @@ it("hints a routine weight only where no weight was logged last time", async () 
   expect(fieldTarget("kg for set 2")).toBe("0");
   expect(fieldTarget("reps for set 2")).toBe("10–12");
   expect(fieldText("reps for set 2")).toBe("10");
+  // The dock follows the same rule for the set it logs next.
+  expect(field("Type weight")?.textContent).toMatch(/^92\.5kg/);
+  expect(field("Type weight")?.textContent).not.toContain("·");
+  expect(field("Type reps")?.textContent).toBe("6reps · 8–10");
   await act(() => saveShowTargets(false));
   expect(fieldTarget("kg for set 1")).toBeNull();
   expect(fieldTarget("reps for set 1")).toBeNull();
@@ -1890,6 +1894,7 @@ it("hints a routine weight only where no weight was logged last time", async () 
   });
   expect(fieldTarget("lbs for set 1")).toBeNull();
   expect(fieldTarget("lbs for set 2")).toBe("0");
+  expect(field("Type weight")?.textContent).toMatch(/lbs · 0$/);
 });
 
 it("keeps previous running values and the next set’s planned duration in the fields", async () => {
