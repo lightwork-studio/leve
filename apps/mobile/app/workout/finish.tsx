@@ -1,6 +1,6 @@
 import { LIMITS, type WeightUnit } from "@leve/core";
-import { router } from "expo-router";
-import { useMemo, useRef, useState } from "react";
+import { router, usePreventRemove } from "expo-router";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppData } from "../../src/data/app-data.tsx";
@@ -16,11 +16,13 @@ import { autoTitle, setLabel, setNumbers, setProgress } from "../../src/model/li
 import { measurementName, missingMeasurements } from "../../src/model/log-values.ts";
 import { radius, space, type } from "../../src/theme.ts";
 import { DestructiveButton } from "../../src/ui/action-sheet.tsx";
+import { afterFeedback } from "../../src/ui/after-feedback.ts";
 import { ToggleRow } from "../../src/ui/choice-row.tsx";
 import { CommitButton } from "../../src/ui/commit-button.tsx";
 import { DurationSheet } from "../../src/ui/duration-editor.tsx";
 import { Enter } from "../../src/ui/enter.tsx";
 import { FieldError, TitleField } from "../../src/ui/field.tsx";
+import { outOfReach } from "../../src/ui/focus.ts";
 import {
   dayLabel,
   distanceUnitFor,
@@ -75,6 +77,10 @@ export default function FinishScreen() {
   const [problem, setProblem] = useState<string | null>(null);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [refusals, setRefusals] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const scheduledSave = useRef<(() => void) | null>(null);
+  const allowRemoval = usePreventRemove(saving);
+  useEffect(() => () => scheduledSave.current?.(), []);
   const counting = countForRoutine && !!data?.tree.workout.content.routineId;
   // What saving would show, worked out from the workout as it stands, before anything is written.
   // biome-ignore lint/correctness/useExhaustiveDependencies: version marks every data change.
@@ -83,7 +89,11 @@ export default function FinishScreen() {
     [store, version, counting, data],
   );
 
-  const back = () => (router.canGoBack() ? router.back() : router.replace("/workout/active"));
+  const back = () => {
+    if (scheduledSave.current) return;
+    if (router.canGoBack()) router.back();
+    else router.replace("/workout/active");
+  };
 
   if (!data) {
     return (
@@ -123,6 +133,13 @@ export default function FinishScreen() {
   const startedAt = tree.workout.content.startedAt;
 
   const save = () => {
+    if (scheduledSave.current) return;
+    setSaving(true);
+    setProblem(null);
+    scheduledSave.current = afterFeedback(commit);
+  };
+
+  const commit = () => {
     try {
       change((store) =>
         finishWorkout(
@@ -145,14 +162,18 @@ export default function FinishScreen() {
       haptic.warning();
       setProblem((error as Error).message);
       setRefusals((n) => n + 1);
+      scheduledSave.current = null;
+      setSaving(false);
       return;
     }
     haptic.success();
     restTimer.skip(store, tree.workout.id);
-    // Saved: back to the tabs, on History with the new session picked out.
+    // Back to the tabs, on History with the new session picked out.
+    setSaving(false);
+    allowRemoval();
     goHome();
     router.navigate({ pathname: "/history", params: { saved: tree.workout.id } });
-    showToast("Workout saved");
+    showToast("Workout added to History");
   };
 
   return (
@@ -161,14 +182,24 @@ export default function FinishScreen() {
         <View style={styles.grabber} />
         <View style={styles.bar}>
           <View style={styles.side}>
-            <BackButton label="Log more" accessibilityLabel="Back to the workout" onPress={back} />
+            <BackButton
+              label="Log more"
+              accessibilityLabel="Back to the workout"
+              disabled={saving}
+              onPress={back}
+            />
           </View>
           <Text accessibilityRole="header" style={styles.barTitle}>
             Summary
           </Text>
           <View style={styles.side} />
         </View>
-        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={styles.content}
+          pointerEvents={saving ? "none" : "auto"}
+          {...outOfReach(saving)}
+        >
           <View style={styles.hero}>
             <Text style={styles.label}>
               Workout complete · {dayLabel(startedAt)} · {timeLabel(startedAt)}
@@ -177,6 +208,7 @@ export default function FinishScreen() {
               accessibilityLabel="Workout name"
               maxLength={LIMITS.titleLength}
               value={title}
+              editable={!saving}
               onChangeText={(value) => edit("title", value)}
               placeholder={autoTitle(startedAt)}
             />
@@ -257,6 +289,7 @@ export default function FinishScreen() {
               accessibilityLabel="Workout description"
               maxLength={LIMITS.descriptionLength}
               value={notes}
+              editable={!saving}
               onChangeText={(value) => edit("description", value)}
               multiline
               placeholder="How did it go?"
@@ -276,6 +309,7 @@ export default function FinishScreen() {
           {first && (
             <Tap
               accessibilityRole="button"
+              disabled={saving}
               onPress={() => setReviewingId(first.set.id)}
               scaleTo={0.98}
               style={styles.review}
@@ -316,18 +350,19 @@ export default function FinishScreen() {
             </Enter>
           )}
           <CommitButton
-            label="Save workout"
+            label={saving ? "Saving workout…" : "Save workout"}
             detail={[
               [effort.amount, effort.unit].filter(Boolean).join(" "),
               `${summary.sets} ${summary.sets === 1 ? "set" : "sets"}`,
             ].join(" · ")}
-            accessibilityLabel="Save workout"
             icon={<CheckIcon color={c.commitInk} size={24} strokeWidth={2.4} />}
+            busy={saving}
             onPress={save}
           />
           <DestructiveButton
             key={tree.workout.id}
             label="Discard workout"
+            disabled={saving}
             message={`This workout and its ${progress.done} logged ${progress.done === 1 ? "set" : "sets"} will be deleted. This can’t be undone.`}
             keep="Keep training"
             busyLabel="Discarding…"
@@ -336,6 +371,7 @@ export default function FinishScreen() {
             }}
             capture
             onConfirm={() => {
+              if (scheduledSave.current) return;
               try {
                 change(
                   (store) =>
