@@ -116,6 +116,7 @@ jobs:
           RELEASE_MODE: ${{ needs.verify.outputs.mode }}
           LEVE_STORE_TAG_COMMIT: ${{ needs.verify.outputs.tag_commit }}
           LEVE_APPROVED_STORE_TAG: ${{ vars.LEVE_APPROVED_STORE_TAG }}
+          LEVE_APPROVED_STORE_BUILD_NUMBER: ${{ vars.LEVE_APPROVED_STORE_BUILD_NUMBER }}
           LEVE_PRODUCTION_EAS_PROJECT_ID: ${{ vars.LEVE_PRODUCTION_EAS_PROJECT_ID }}
           LEVE_PRODUCTION_ASC_APP_ID: ${{ vars.LEVE_PRODUCTION_ASC_APP_ID }}
           LEVE_PRODUCTION_APPLE_TEAM_ID: ${{ vars.LEVE_PRODUCTION_APPLE_TEAM_ID }}

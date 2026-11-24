@@ -68,6 +68,7 @@ jobs:
         with:
           node-version: 24
       - name: Deploy an isolated static preview
+        shell: bash
         env:
           PR: ${{ inputs.pull_request }}
           COMMIT: ${{ needs.build.outputs.commit }}
@@ -79,10 +80,18 @@ jobs:
           [[ "$PROJECT" =~ ^[a-z0-9][a-z0-9-]*$ && "$PROJECT" != leve ]]
           : "${CLOUDFLARE_API_TOKEN:?Configure the branch web preview token.}"
           : "${CLOUDFLARE_ACCOUNT_ID:?Configure the branch web preview Cloudflare account.}"
+          [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[0-9a-f]{32}$ ]]
           test -f preview/index.html
           unexpected="$(find preview \( -type l -o -name _worker.js -o -name functions -o -name _routes.json -o -name _headers -o -name _redirects \) -print -quit)"
           if [ -n "$unexpected" ]; then
             echo 'Only static preview assets may be deployed.' >&2
+            exit 1
+          fi
+          if ! curl --fail --silent --show-error --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/$PROJECT" |
+            jq -e --arg project "$PROJECT" \
+              '.success and .result.name == $project and .result.production_branch == "main"' >/dev/null; then
+            echo 'The preview project must have main as its production branch.' >&2
             exit 1
           fi
           output="$(mktemp)"

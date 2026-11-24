@@ -40,17 +40,19 @@ export EXPO_PUBLIC_RELEASE_NUMBER="$(git rev-list --first-parent --count HEAD)"
 eas() { npx --yes eas-cli@27.11.0 "$@"; }
 
 if [ "$mode" = ota ]; then
+  : "${LEVE_APPROVED_STORE_BUILD_NUMBER:?Configure the currently approved App Store build number.}"
   runtime="$(eas env:exec production \
     'EXPO_NO_DOTENV=1 pnpm exec expo-updates runtimeversion:resolve --platform ios --workflow managed' \
     --non-interactive |
     node -e 'console.log(JSON.parse(require("node:fs").readFileSync(0, "utf8")).runtimeVersion ?? "")')"
   : "${runtime:?Could not resolve the production runtime.}"
   usable="$(eas build:list --platform ios --channel production --runtime-version "$runtime" \
-    --distribution store --app-version "$LEVE_STORE_VERSION" --git-commit-hash "$tag_commit" \
+    --distribution store --app-version "$LEVE_STORE_VERSION" \
+    --app-build-version "$LEVE_APPROVED_STORE_BUILD_NUMBER" --git-commit-hash "$tag_commit" \
     --limit 50 --json --non-interactive |
     node -e 'console.log(JSON.parse(require("node:fs").readFileSync(0, "utf8")).some(build => build.status === "FINISHED"))')"
   if [ "$usable" != true ]; then
-    echo 'No finished EAS build from the release tag matches this runtime. Make a store build first.' >&2
+    echo 'No finished EAS build for the approved tag and build number matches this runtime.' >&2
     exit 1
   fi
   eas update --channel production --platform ios --environment production --message "$tag" --non-interactive

@@ -79,11 +79,11 @@ and deletions before enabling publishing.
 
 Keep Apple and Expo production credentials in the `app-store` GitHub environment. Restrict
 that environment to the `main` branch, require a separate reviewer, and disable administrator
-bypass. Set the environment variable `LEVE_APPROVED_STORE_TAG` in GitHub to the tag of the live
-version and build after confirming it in App Store Connect. For an OTA fix, dispatch the workflow
-from `main` with that tag and the final commit of the merged fix. EAS checks that the fix matches
-the tagged build's native runtime. Use a new store build for native changes and changes that
-require App Review.
+bypass. After confirming the live version and build in App Store Connect, set
+`LEVE_APPROVED_STORE_TAG` and `LEVE_APPROVED_STORE_BUILD_NUMBER` in the GitHub environment. For
+an OTA fix, dispatch the workflow from `main` with that tag and the final commit of the merged
+fix. EAS checks that the fix matches the approved build's native runtime. Use a new store build
+for native changes and changes that require App Review.
 
 Keep release-specific values such as `LEVE_STORE_VERSION`, `LEVE_APP_VARIANT` and
 `EXPO_PUBLIC_RELEASE_NUMBER` in the release script or build profile so that EAS environment
