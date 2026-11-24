@@ -1,0 +1,10 @@
+name: App Store tag
+on:
+  push:
+    tags: ["v*"]
+permissions: {}
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "The App Store workflow on main will verify this release tag."

@@ -52,7 +52,15 @@ if (args[2] === "env:exec" && args[3] === "production" && args[4].includes("runt
     git("update-ref", "refs/remotes/origin/main", "HEAD");
 
     const tagCommit = git("rev-parse", "v1.2.3").trim();
-    const release = (mode: string, builds = "[]", buildCommit = tagCommit) =>
+    const release = (
+      mode: string,
+      {
+        builds = "[]",
+        buildCommit = tagCommit,
+        verifiedTag = tagCommit,
+        approvedTag = "v1.2.3",
+      } = {},
+    ) =>
       spawnSync("bash", [script, "v1.2.3", mode], {
         cwd,
         encoding: "utf8",
@@ -62,6 +70,8 @@ if (args[2] === "env:exec" && args[3] === "production" && args[4].includes("runt
           LEVE_PRODUCTION_EAS_PROJECT_ID: "11111111-1111-4111-8111-111111111111",
           LEVE_PRODUCTION_ASC_APP_ID: "123",
           LEVE_PRODUCTION_APPLE_TEAM_ID: "test",
+          LEVE_STORE_TAG_COMMIT: verifiedTag,
+          LEVE_APPROVED_STORE_TAG: approvedTag,
           EXPO_TOKEN: "test",
           ASC_API_KEY_PATH: "/tmp/test.p8",
           ASC_API_KEY_ID: "test",
@@ -84,15 +94,25 @@ if (args[2] === "env:exec" && args[3] === "production" && args[4].includes("runt
     expect(readFileSync(join(cwd, "eas.json"), "utf8")).toBe(config);
 
     git("commit", "-q", "--allow-empty", "-m", "Hotfix");
+    const hotfix = git("rev-parse", "HEAD").trim();
+    const finished = '[{"status":"FINISHED"}]';
     expect(release("ota").stderr).toContain("must use a main commit");
     git("update-ref", "refs/remotes/origin/main", "HEAD");
     expect(release("build").status).toBe(1);
-    expect(release("ota", '[{"status":"IN_QUEUE"}]').stderr).toContain("No finished EAS build");
-    expect(
-      release("ota", '[{"status":"FINISHED"}]', git("rev-parse", "HEAD").trim()).stderr,
-    ).toContain("No finished EAS build");
+    expect(release("ota", { builds: finished, approvedTag: "v1.2.2" }).stderr).toContain(
+      "OTA requires the currently approved App Store tag",
+    );
+    expect(release("ota", { builds: finished, verifiedTag: hotfix }).stderr).toContain(
+      "release tag changed after verification",
+    );
+    expect(release("ota", { builds: '[{"status":"IN_QUEUE"}]' }).stderr).toContain(
+      "No finished EAS build",
+    );
+    expect(release("ota", { builds: finished, buildCommit: hotfix }).stderr).toContain(
+      "No finished EAS build",
+    );
 
-    const ota = release("ota", '[{"status":"FINISHED"}]');
+    const ota = release("ota", { builds: finished });
     expect(ota.status, ota.stderr).toBe(0);
     expect(JSON.parse(ota.stdout)).toMatchObject({
       version: "1.2.3",

@@ -12,8 +12,16 @@ if [ "$mode" != build ] && [ "$mode" != ota ]; then
   echo 'Expected build or ota.' >&2
   exit 1
 fi
+if [ "$mode" = ota ] && [ "$tag" != "${LEVE_APPROVED_STORE_TAG:-}" ]; then
+  echo 'OTA requires the currently approved App Store tag.' >&2
+  exit 1
+fi
 
 tag_commit="$(git rev-parse --verify "refs/tags/$tag^{commit}")"
+if [ -n "${LEVE_STORE_TAG_COMMIT:-}" ] && [ "$tag_commit" != "$LEVE_STORE_TAG_COMMIT" ]; then
+  echo 'The release tag changed after verification.' >&2
+  exit 1
+fi
 commit="$(git rev-parse HEAD)"
 if ! git merge-base --is-ancestor "$tag_commit" "$commit" ||
   ! git merge-base --is-ancestor "$commit" origin/main ||

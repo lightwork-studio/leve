@@ -80,11 +80,19 @@ jobs:
           : "${CLOUDFLARE_API_TOKEN:?Configure the branch web preview token.}"
           : "${CLOUDFLARE_ACCOUNT_ID:?Configure the branch web preview Cloudflare account.}"
           test -f preview/index.html
-          if [ -n "$(find preview \( -type l -o -name _worker.js -o -name functions -o -name _routes.json -o -name _headers -o -name _redirects \) -print -quit)" ]; then
+          unexpected="$(find preview \( -type l -o -name _worker.js -o -name functions -o -name _routes.json -o -name _headers -o -name _redirects \) -print -quit)"
+          if [ -n "$unexpected" ]; then
             echo 'Only static preview assets may be deployed.' >&2
             exit 1
           fi
-          npx --yes wrangler@4.158.0 pages deploy preview \
+          output="$(mktemp)"
+          trap 'rm -f "$output"' EXIT
+          WRANGLER_OUTPUT_FILE_PATH="$output" npx --yes wrangler@4.158.0 pages deploy preview \
             --project-name="$PROJECT" --branch="pr-$PR" --commit-hash="$COMMIT" --commit-dirty=true
+          url="$(jq -ers --arg project "$PROJECT" --arg commit "$COMMIT" '
+            map(select(.type == "pages-deploy-detailed" and .pages_project == $project and
+              .environment == "preview" and .deployment_trigger.metadata.commit_hash == $commit))
+            | last | .url' "$output")"
+          [[ "$url" =~ ^https://[a-f0-9]+\.$PROJECT\.pages\.dev/?$ ]]
           printf '%s\n\n%s\n' "PR #$PR at \`$COMMIT\`" \
-            "[Open branch preview](https://pr-$PR.$PROJECT.pages.dev/)" >> "$GITHUB_STEP_SUMMARY"
+            "[Open this deployment]($url)" >> "$GITHUB_STEP_SUMMARY"
