@@ -1,5 +1,6 @@
-import { EXERCISE_TYPES } from "@leve/core";
+import { EXERCISE_TYPES, MUSCLE_GROUPS } from "@leve/core";
 import { describe, expect, it } from "vitest";
+import catalog from "../src/data/exercise-catalog.json";
 import {
   builtInExercise,
   EXERCISES,
@@ -16,8 +17,9 @@ describe("workout exercise library", () => {
   });
 
   it("ships the 876 distinct source movements with supported logging fields", () => {
-    expect(exerciseLibrary).toHaveLength(876);
-    expect(new Set(exerciseLibrary.map((item) => item.sourceId)).size).toBe(876);
+    const sourced = exerciseLibrary.filter((item) => item.sourceId !== undefined);
+    expect(sourced).toHaveLength(876);
+    expect(new Set(sourced.map((item) => item.sourceId)).size).toBe(876);
     for (const item of exerciseLibrary) expect(EXERCISE_TYPES).toContain(item.type);
     expect(builtInExercise("builtin:running-treadmill")?.type).toBe("distance_duration");
     expect(builtInExercise("builtin:farmers-walk")?.type).toBe("weight_distance");
@@ -75,11 +77,63 @@ describe("workout exercise library", () => {
     expect(findExercises("  chEst bench ", "triceps").map((e) => e.name)).toContain("Bench Press");
     expect(findExercises("chest flyes", "chest").map((e) => e.name)).toContain("Dumbbell Flyes");
     expect(findExercises("plank", "triceps").map((e) => e.id)).toEqual([
+      "builtin:plank-shoulder-tap",
+      "builtin:plank-up-down",
       "builtin:push-up-to-side-plank",
     ]);
     expect(findExercises("bench", "unknown group")).toEqual([]);
     expect(findExercises("pull-up", "upper_back").map((e) => e.id)).toContain(EXERCISES.pullup.id);
     expect(builtInExercise("builtin:dumbbell-flyes")?.type).toBe("weight_reps");
+  });
+});
+
+describe("Leve's own catalog additions", () => {
+  const additions = catalog.filter((item) => !("sourceId" in item));
+  const known = new Set([
+    ...MUSCLE_GROUPS.map((group) => group.replaceAll("_", " ")),
+    "middle back",
+  ]);
+  const equipment = new Set(catalog.filter((item) => "sourceId" in item).map((e) => e.equipment));
+
+  it("adds common movements with their own ids, muscles and logging fields", () => {
+    expect(additions.length).toBeGreaterThan(150);
+    for (const item of additions) {
+      expect(item.id).toMatch(/^builtin:[a-z0-9-]+$/);
+      expect(item.id.length).toBeLessThanOrEqual(64);
+      expect(item.muscles).toHaveLength(1);
+      expect(equipment).toContain(item.equipment);
+      expect(EXERCISE_TYPES).toContain(item.type);
+      for (const label of [...item.muscles, ...item.secondaryMuscles])
+        expect(known).toContain(label.toLowerCase());
+    }
+    const names = exerciseLibrary.map((item) => item.name.toLowerCase());
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it("logs each addition the way the movement is measured", () => {
+    expect(builtInExercise("builtin:clamshell")).toMatchObject({
+      type: "bodyweight_reps",
+      primaryMuscles: ["glutes"],
+    });
+    expect(builtInExercise("builtin:running")?.type).toBe("distance_duration");
+    expect(builtInExercise("builtin:wall-sit")?.type).toBe("duration");
+    expect(builtInExercise("builtin:dumbbell-suitcase-carry")?.type).toBe("weight_distance");
+    expect(builtInExercise("builtin:weighted-chin-up")).toMatchObject({
+      type: "weighted_bodyweight",
+      usesBodyweight: true,
+    });
+    expect(builtInExercise("builtin:assisted-pull-up")).toMatchObject({
+      type: "assisted_bodyweight",
+      usesBodyweight: true,
+    });
+  });
+
+  it("finds additions by name and muscle alongside the source movements", () => {
+    expect(findExercises("clamshell", "")[0]?.id).toBe("builtin:clamshell");
+    expect(findExercises("jumping jacks", "")[0]?.id).toBe("builtin:jumping-jacks");
+    expect(findExercises("lateral raise", "shoulders").map((e) => e.id)).toEqual(
+      expect.arrayContaining(["builtin:cable-lateral-raise", "builtin:lateral-raise"]),
+    );
   });
 });
 

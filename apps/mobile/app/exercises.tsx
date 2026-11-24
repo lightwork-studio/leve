@@ -151,7 +151,7 @@ export default function ExercisesScreen() {
       ListFooterComponent={
         index.exercises.length > 0 ? (
           <Text style={styles.credit}>
-            Equipment and muscles from free-exercise-db, under the Unlicense.
+            Most equipment and muscle data from free-exercise-db, under the Unlicense.
           </Text>
         ) : undefined
       }
