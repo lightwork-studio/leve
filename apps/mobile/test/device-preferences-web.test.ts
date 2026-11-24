@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
 
+const build = vi.hoisted(() => ({ webDemo: false }));
+vi.mock("../src/build-info.ts", () => ({ buildInfo: build }));
 vi.mock("../src/data/device-preferences", () => import("../src/data/device-preferences.web.ts"));
 
 async function openTab() {
@@ -8,7 +10,10 @@ async function openTab() {
   return import("../src/data/device-preference-store.ts");
 }
 
-afterEach(() => localStorage.clear());
+afterEach(() => {
+  build.webDemo = false;
+  localStorage.clear();
+});
 
 it("preserves the other tab's changes when Appearance and Track RIR are written separately", async () => {
   const legacyKey = "leve-device-preferences";
@@ -41,4 +46,17 @@ it("leaves unreadable shared preferences in storage even when setting Track RIR 
   tab.writeDevicePreference("trackRir", false);
   expect(tab.readDevicePreference("trackRir")).toBe(false);
   expect(localStorage.getItem(legacyKey)).toBe(unreadable);
+});
+
+it("keeps demo preferences in the session and never reads or writes the browser's saved settings", async () => {
+  const key = "leve-device-preferences:appearance";
+  localStorage.setItem(key, '"dark"');
+  build.webDemo = true;
+
+  const demo = await openTab();
+  expect(demo.readDevicePreference("appearance")).toBeUndefined();
+  demo.writeDevicePreference("appearance", "light");
+  expect(demo.readDevicePreference("appearance")).toBe("light");
+  expect(localStorage.getItem(key)).toBe('"dark"');
+  expect((await openTab()).readDevicePreference("appearance")).toBeUndefined();
 });
