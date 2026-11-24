@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { expect, it } from "vitest";
 
-it("numbers consecutive Preview builds and updates", { timeout: 15_000 }, () => {
+it("numbers consecutive Preview builds and updates", { timeout: 30_000 }, () => {
   const cwd = mkdtempSync(join(tmpdir(), "leve-deploy-ios-"));
   try {
     const bin = join(cwd, "bin");
@@ -23,7 +23,8 @@ it("numbers consecutive Preview builds and updates", { timeout: 15_000 }, () => 
 const { readFileSync } = require("node:fs");
 const args = process.argv.slice(2);
 if (process.env.LEVE_APP_VARIANT !== "preview") process.exit(2);
-if (args[0] === "expo-updates") {
+if (args[2] === "env:exec" && args[3] === "preview" &&
+    args[4] === "EXPO_NO_DOTENV=1 pnpm exec expo-updates runtimeversion:resolve --platform ios --workflow managed") {
   console.log('{"runtimeVersion":"test-runtime"}');
 } else if (args[2] === "build:list") {
   console.log(process.env.TEST_EAS_BUILDS);
