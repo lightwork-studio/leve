@@ -15,6 +15,7 @@ recover and what recovery was tested.
 ## Review
 
 Record the reviewer, reviewed commit, findings and dispositions. Note any changes after review.
-Before merging, verify a passing `check` on the final head, resolved feedback, a passing `check` on
-`main`, and that the head includes the current base or meets the exceptions in
-`docs/review-and-merge.md`; otherwise update it and wait for `check` again.
+Before merging, verify a passing `check` on the final head, resolved feedback, and that the newest
+finished `check` on `main` passed (unless this PR fixes or reverts that failure). The head must
+include the current base or meet every condition in `docs/review-and-merge.md`; otherwise update it
+and wait for `check` again.
