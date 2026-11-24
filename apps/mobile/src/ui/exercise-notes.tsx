@@ -50,7 +50,8 @@ export function ExerciseNotes({
     <View style={styles.panel}>
       {notes.length > 0 && (expanded || editor) && (
         // One card: the open notes stay inside it, under the summary, rather than spilling below.
-        <View style={styles.card}>
+        // Closed, the summary carries the card's fill itself, so the whole card gives under a press.
+        <View style={showAll && styles.card}>
           <Tap
             accessibilityRole="button"
             accessibilityLabel={`Exercise notes for ${name}, ${notes.length}`}
@@ -59,7 +60,7 @@ export function ExerciseNotes({
               onInteract?.();
               setShowAll(!showAll);
             }}
-            style={styles.summary}
+            style={[styles.summary, !showAll && styles.card]}
           >
             {/* The note icon stands in for the word, with a count when there are several. */}
             <View style={styles.mark}>
@@ -166,10 +167,10 @@ const sheet = themedStyles((c) => ({
     marginTop: -space.xs,
     paddingLeft: space.md + NOTE_ICON + space.sm,
     paddingRight: space.lg,
-    paddingBottom: space.md,
+    paddingBottom: space.sm,
   },
   text: { ...font.body, fontSize: 14, lineHeight: 20, color: c.fg, paddingVertical: 6 },
-  divided: { borderTopWidth: StyleSheet.hairlineWidth, borderColor: c.line },
+  divided: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: c.line2 },
   input: {
     padding: space.sm,
     borderWidth: 1,
