@@ -55,14 +55,6 @@ export const PlusIcon = (props: IconProps) => (
   </Svg>
 );
 
-export const FolderPlusIcon = (props: IconProps) => (
-  <Svg {...frame(props)}>
-    <Path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-    <Line x1="12" y1="10.5" x2="12" y2="15.5" />
-    <Line x1="9.5" y1="13" x2="14.5" y2="13" />
-  </Svg>
-);
-
 export const ChevronIcon = ({
   direction = "right",
   ...props
@@ -258,14 +250,6 @@ export const WarnIcon = (props: IconProps) => (
 export const GripIcon = (props: IconProps) => (
   <Svg {...frame({ strokeWidth: 2.2, ...props })}>
     <Path d="M9 7h.01M15 7h.01M9 12h.01M15 12h.01M9 17h.01M15 17h.01" />
-  </Svg>
-);
-
-/** The exercise library: books on a shelf. */
-export const LibraryIcon = (props: IconProps) => (
-  <Svg {...frame(props)}>
-    <Path d="M5 4v16M10 4v16M14.5 5.2l4.6 14.2" />
-    <Path d="M3.5 20h17" />
   </Svg>
 );
 

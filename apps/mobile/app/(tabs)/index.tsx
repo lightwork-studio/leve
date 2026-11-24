@@ -276,9 +276,9 @@ export default function TrainScreen() {
           </View>
         ) : (
           groupRuns.at(-1)?.open && (
-            <View style={styles.card}>
+            <Enter leaves style={styles.card}>
               <NewFolderRow first onPress={newFolder} />
-            </View>
+            </Enter>
           )
         )}
       </View>

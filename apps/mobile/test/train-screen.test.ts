@@ -64,9 +64,7 @@ vi.mock("../src/data/workout-review.ts", () => ({
 vi.mock("../src/ui/icons.tsx", () => ({
   ChevronIcon: "Chevron",
   EditIcon: "Edit",
-  LibraryIcon: "Library",
   FolderIcon: "Folder",
-  FolderPlusIcon: "FolderPlus",
   ForwardIcon: "Forward",
   GearIcon: "Gear",
   MoreIcon: "More",
@@ -562,7 +560,7 @@ it("adds a routine at the end of each open folder, and a folder after the closed
     );
     expect(labelled(root, /^Add routine/)).toEqual(["Add routine to Home", "Add routine to Gym"]);
     expect(labelled(root, /^New folder$/)).toHaveLength(1);
-    expect(cardOf(root, "New folder")?.type).toBe(View);
+    expect(cardOf(root, "New folder")?.findAllByType("Tap" as never)).toHaveLength(1);
     push.mockClear();
     await act(() => press(root, "Add routine to Gym"));
     expect(push.mock.calls).toEqual([[{ pathname: "/routine/new", params: { folder: "Gym" } }]]);
@@ -604,6 +602,50 @@ it.each([
     expect(push.mock.calls).toEqual([["/routine/new"]]);
     await act(() => press(root, "New folder"));
     expect(root.findByType("Dialog" as never).props.initialName).toBeUndefined();
+  } finally {
+    groupsOverride = null;
+    await act(() => screen?.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("offers Add routine in an open empty folder, and New folder once after a closed run between open ones", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const folder = (id: string, position: number) => ({ id, content: { title: id, position } });
+  groupsOverride = [
+    { folder: folder("Arms", 1), routines: [] },
+    {
+      folder: folder("Legs", 2),
+      routines: [
+        { id: "l", title: "Squat day", exerciseNames: [], exerciseCount: 0, daysSinceLast: null },
+      ],
+    },
+    { folder: folder("Mobility", 3), routines: [] },
+  ];
+  let screen: ReactTestRenderer | undefined;
+  try {
+    await act(() => {
+      screen = create(createElement(TrainScreen));
+    });
+    if (!screen) throw Error("Train did not mount");
+    const root = screen.root;
+    // Arms starts open with nothing in it: its card still holds the row that fills it.
+    expect(cardOf(root, "Add routine to Arms")?.findAllByType("Tap" as never)).toHaveLength(1);
+    // Open Mobility, leaving Legs as a closed run between two open folders.
+    const closed = () =>
+      root.findAll(
+        (n) => n.type === ("Tap" as never) && n.props.accessibilityState?.expanded === false,
+      );
+    expect(closed()).toHaveLength(2);
+    await act(() => closed()[1]?.props.onPress());
+    expect(closed()).toHaveLength(1);
+    expect(labelled(root, /^Add routine/)).toEqual([
+      "Add routine to Arms",
+      "Add routine to Mobility",
+    ]);
+    // New folder ends the section on its own, not the card of Legs in the middle.
+    expect(labelled(root, /^New folder$/)).toHaveLength(1);
+    expect(cardOf(root, "New folder")?.findAllByType("Tap" as never)).toHaveLength(1);
   } finally {
     groupsOverride = null;
     await act(() => screen?.unmount());
