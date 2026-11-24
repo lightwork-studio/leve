@@ -1,16 +1,20 @@
 import { fileURLToPath } from "node:url";
 import { defineProject } from "vitest/config";
 
+const support = (file: string) => fileURLToPath(new URL(`./test/support/${file}`, import.meta.url));
+
 export default defineProject({
   resolve: {
-    alias: {
-      "node:sqlite": fileURLToPath(new URL("./test/support/node-sqlite.ts", import.meta.url)),
+    alias: [
+      { find: "node:sqlite", replacement: support("node-sqlite.ts") },
       // Native-only modules get Node stand-ins in tests.
-      "expo-crypto": fileURLToPath(new URL("./test/support/expo-crypto.ts", import.meta.url)),
-      "expo-file-system": fileURLToPath(
-        new URL("./test/support/expo-file-system.ts", import.meta.url),
-      ),
-    },
+      { find: "expo-crypto", replacement: support("expo-crypto.ts") },
+      { find: "expo-file-system", replacement: support("expo-file-system.ts") },
+      {
+        find: /^(@clerk\/expo(\/apple|\/token-cache)?|expo-apple-authentication)$/,
+        replacement: support("clerk-expo.ts"),
+      },
+    ],
   },
   test: { name: "mobile", include: ["test/**/*.test.ts"] },
 });

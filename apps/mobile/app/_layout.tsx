@@ -2,6 +2,8 @@ import { StatusBar } from "expo-status-bar";
 import { useLayoutEffect, useRef, useState } from "react";
 import { Platform, ScrollView, Text, View } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
+// Without an extension, so browsers get the version without sign-in.
+import { AccountProvider } from "../src/account/account-provider";
 import { UnavailableWorkoutActivity, WorkoutActivityHost } from "../src/activity/workout-activity";
 import { AppDataProvider, useAppData } from "../src/data/app-data.tsx";
 import { gutter, space, type } from "../src/theme.ts";
@@ -36,33 +38,35 @@ export default function RootLayout() {
     <SafeAreaProvider>
       {/* Dark status bar text on paper, light text on graphite. */}
       <StatusBar style={appearance === "paper" ? "dark" : "light"} />
-      <AppDataProvider
-        loading={blank}
-        failed={(message, exportRecovery) => (
-          <>
-            <UnavailableWorkoutActivity />
-            <Recovery message={message} exportRecovery={exportRecovery} />
-          </>
-        )}
-      >
-        <WorkoutActivityHost />
-        <SaveProblemBanner />
-        <AppStack
-          screens={[
-            { name: "(tabs)", transition: "push" },
-            { name: "bodyweight", transition: "push" },
-            { name: "history/calendar", transition: "push" },
-            { name: "workout/[id]", transition: "push" },
-            { name: "workout/active", transition: "cover", transparent: true },
-            { name: "workout/notes/[id]", transition: "push" },
-            { name: "workout/finish", transition: "cover" },
-            { name: "exercises", transition: "push" },
-            { name: "exercise/[id]", transition: "push" },
-            { name: "settings", transition: "push" },
-          ]}
-        />
-        <ToastHost />
-      </AppDataProvider>
+      <AccountProvider>
+        <AppDataProvider
+          loading={blank}
+          failed={(message, exportRecovery) => (
+            <>
+              <UnavailableWorkoutActivity />
+              <Recovery message={message} exportRecovery={exportRecovery} />
+            </>
+          )}
+        >
+          <WorkoutActivityHost />
+          <SaveProblemBanner />
+          <AppStack
+            screens={[
+              { name: "(tabs)", transition: "push" },
+              { name: "bodyweight", transition: "push" },
+              { name: "history/calendar", transition: "push" },
+              { name: "workout/[id]", transition: "push" },
+              { name: "workout/active", transition: "cover", transparent: true },
+              { name: "workout/notes/[id]", transition: "push" },
+              { name: "workout/finish", transition: "cover" },
+              { name: "exercises", transition: "push" },
+              { name: "exercise/[id]", transition: "push" },
+              { name: "settings", transition: "push" },
+            ]}
+          />
+          <ToastHost />
+        </AppDataProvider>
+      </AccountProvider>
     </SafeAreaProvider>
   );
 }

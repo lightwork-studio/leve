@@ -3,6 +3,8 @@ import { router } from "expo-router";
 import { useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+// Without an extension, so browsers get the version without sign-in.
+import { AccountSection } from "../src/account/account-section";
 import { buildInfo } from "../src/build-info.ts";
 import { useAppData } from "../src/data/app-data.tsx";
 import {
@@ -170,6 +172,8 @@ export default function SettingsScreen() {
 
           {/* Values shown on opening are simply there; only later changes animate. */}
           <StillOnOpen>
+            <AccountSection />
+
             <Group
               label="Reads as"
               aside="Tap to switch"
