@@ -4080,7 +4080,8 @@ describe("the minimised workout", () => {
       },
     };
     const factory = { getInstances: () => [handle], start: () => handle };
-    let session = workoutSession(factory, "leve-preview");
+    const memory = { shown: () => undefined, remember: () => {} };
+    let session = workoutSession(factory, "leve-preview", memory);
     let pending = Promise.resolve();
     const capture = (frame: ReturnType<typeof workoutFrame>) => {
       pending = session.publish(frame);
@@ -4108,7 +4109,7 @@ describe("the minimised workout", () => {
       store.setNegotiated("1.0", [], scenario === "restored lineage" ? "lineage-B" : "lineage-A");
     }
     const versionBefore = store.editVersion("workout_set", set.id);
-    session = workoutSession(factory, "leve-preview");
+    session = workoutSession(factory, "leve-preview", memory);
     await act(() => root.render(h(PlayerProbe, { capture })));
     await pending;
     const accepted = session.interact(handle.getId(), ticket);
@@ -4149,6 +4150,7 @@ describe("the minimised workout", () => {
       const session = workoutSession(
         { getInstances: () => [handle], start: () => handle },
         "leve-preview",
+        { shown: () => undefined, remember: () => {} },
       );
       let ready = Promise.resolve();
       const capture = (frame: ReturnType<typeof workoutFrame>) => {
@@ -4192,6 +4194,7 @@ describe("the minimised workout", () => {
         },
       },
       "leve-preview",
+      { shown: () => undefined, remember: () => {} },
     );
     await session.publish(null);
     let pending = Promise.resolve();

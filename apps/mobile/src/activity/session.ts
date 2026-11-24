@@ -29,6 +29,14 @@ interface Factory {
   getInstances(): WorkoutActivity[];
   start(content: WorkoutContent, url: string, staleDate?: Date): WorkoutActivity;
 }
+/**
+ * Which workout this phone last showed a Live Activity for, kept across launches. Only the
+ * workout's local ID is kept, on this phone.
+ */
+export interface ActivityMemory {
+  shown(): string | undefined;
+  remember(workoutId: string): void;
+}
 export type ActivityAction = "log" | "skip" | "more" | "less";
 export interface ActivityFrame {
   workoutId: string;
@@ -42,7 +50,7 @@ export interface ActivityFrame {
 
 // Serialize native operations. A queued tap must still belong to the same activity and exact
 // displayed set/rest when it reaches the workout. Never resurrect a user-dismissed activity.
-export function workoutSession(factory: Factory, scheme: string) {
+export function workoutSession(factory: Factory, scheme: string, memory: ActivityMemory) {
   const activeUrl = `${scheme}:///workout/active`;
   const finishUrl = `${scheme}:///workout/finish`;
   let current: ActivityFrame | null = null;
@@ -79,8 +87,11 @@ export function workoutSession(factory: Factory, scheme: string) {
             for (const previous of existing) {
               if (previous !== handle) await previous.end("immediate");
             }
-            // If iOS has already dismissed it, keep this workout dismissed across launches.
-            owner = frame?.workoutId;
+            // A workout that already had an activity, now gone, was dismissed: keep it hidden
+            // across launches. One that never had one (begun before this launch) gets one now.
+            owner =
+              frame && (handle || memory.shown() === frame.workoutId) ? frame.workoutId : undefined;
+            if (owner) memory.remember(owner);
             cleanStart = false;
           }
           if (owner !== frame?.workoutId) {
@@ -105,6 +116,7 @@ export function workoutSession(factory: Factory, scheme: string) {
           if (!owner) {
             handle = factory.start(props, activeUrl, stale);
             owner = frame.workoutId;
+            memory.remember(owner);
           } else if (handle && factory.getInstances().some((a) => a.getId() === handle?.getId())) {
             await handle.update(props, stale);
           } else {

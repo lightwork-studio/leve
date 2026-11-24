@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { activityDelivery } from "../src/activity/delivery.ts";
 import {
   type ActivityFrame,
+  type ActivityMemory,
   type WorkoutContent,
   workoutSession,
 } from "../src/activity/session.ts";
@@ -31,7 +32,18 @@ function frame(): ActivityFrame {
     },
   };
 }
+/** What the phone keeps across launches: the workout it last showed an activity for. */
+function phoneMemory(): ActivityMemory {
+  let shown: string | undefined;
+  return {
+    shown: () => shown,
+    remember: (id) => {
+      shown = id;
+    },
+  };
+}
 function harness(scheme = "leve-preview") {
+  const memory = phoneMemory();
   const handle = {
     getId: () => "island-A",
     update: vi.fn(async (_props: WorkoutContent) => {}),
@@ -45,9 +57,14 @@ function harness(scheme = "leve-preview") {
   return {
     handle,
     factory,
-    session: workoutSession(factory, scheme),
+    memory,
+    session: workoutSession(factory, scheme, memory),
     dismiss: () => {
       visible = false;
+    },
+    // A system activity left from an earlier launch, or none at all.
+    show: () => {
+      visible = true;
     },
   };
 }
@@ -150,11 +167,11 @@ describe("workout Live Activity", () => {
     }
   });
   it("recovers the identical unlogged set after relaunch and accepts the old tap exactly once", async () => {
-    const { session, handle, factory } = harness();
+    const { session, handle, factory, memory } = harness();
     const next = frame();
     await session.publish(next);
     const old = handle.update.mock.calls[0]?.[0].token;
-    const resumed = workoutSession(factory, "leve-preview");
+    const resumed = workoutSession(factory, "leve-preview", memory);
     await resumed.publish(next);
     resumed.interact(handle.getId(), `${old}:log`);
     resumed.interact(handle.getId(), `${old}:log`);
@@ -163,13 +180,41 @@ describe("workout Live Activity", () => {
     expect(handle.end).not.toHaveBeenCalled();
   });
   it("keeps a dismissed workout hidden after process replacement", async () => {
-    const { factory, dismiss } = harness();
+    const { factory, session, memory, dismiss } = harness();
     dismiss();
-    const resumed = workoutSession(factory, "leve-preview");
-    await resumed.publish(frame());
-    expect(factory.start).not.toHaveBeenCalled();
-    await resumed.publish({ ...frame(), workoutId: "new workout" });
+    await session.publish(null);
+    await session.publish(frame());
     expect(factory.start).toHaveBeenCalledOnce();
+    dismiss();
+    const resumed = workoutSession(factory, "leve-preview", memory);
+    await resumed.publish(frame());
+    expect(factory.start).toHaveBeenCalledOnce();
+    await resumed.publish({ ...frame(), workoutId: "new workout" });
+    expect(factory.start).toHaveBeenCalledTimes(2);
+  });
+  it("starts an activity for a workout that was already running when the app launched", async () => {
+    const { factory, memory, dismiss } = harness();
+    // Begun before this launch (or before Live Activities shipped), so it never had one.
+    dismiss();
+    const launched = workoutSession(factory, "leve-preview", memory);
+    await launched.publish(frame());
+    expect(factory.start).toHaveBeenCalledOnce();
+    expect(factory.start.mock.calls[0]?.[1]).toBe("leve-preview:///workout/active");
+    // Once shown and then dismissed, the next launch leaves it hidden.
+    dismiss();
+    await workoutSession(factory, "leve-preview", memory).publish(frame());
+    expect(factory.start).toHaveBeenCalledOnce();
+  });
+  it("tries again on a later launch when iOS refused the start in the background", async () => {
+    const { factory, memory, dismiss } = harness();
+    dismiss();
+    factory.start.mockImplementationOnce(() => {
+      throw Error("background");
+    });
+    await workoutSession(factory, "leve-preview", memory).publish(frame());
+    expect(memory.shown()).toBeUndefined();
+    await workoutSession(factory, "leve-preview", memory).publish(frame());
+    expect(factory.start).toHaveBeenCalledTimes(2);
   });
   it("retries an unavailable foreground start and respects dismissal for that workout only", async () => {
     const { factory, session, dismiss } = harness();
@@ -220,7 +265,7 @@ it.each(["same", "changed", "expired"] as const)(
     const after = frame();
     if (scenario === "changed") after.binding = "set-A/version-2/50x10";
     const restored = activityDelivery(
-      workoutSession(factory, "leve-preview"),
+      workoutSession(factory, "leve-preview", phoneMemory()),
       inbox,
       () => active,
       review,
@@ -233,7 +278,7 @@ it.each(["same", "changed", "expired"] as const)(
     active = true;
     // Rejecting a recovered ticket while in the background survives another process exit.
     const reopened = activityDelivery(
-      workoutSession(factory, "leve-preview"),
+      workoutSession(factory, "leve-preview", phoneMemory()),
       inbox,
       () => active,
       review,

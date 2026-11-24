@@ -3,11 +3,15 @@ import Constants from "expo-constants";
 import { router } from "expo-router";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AppState, Platform } from "react-native";
+import { readDevicePreference, writeDevicePreference } from "../data/device-preference-store.ts";
 import { useWorkoutPlayer } from "../ui/live/use-workout-player.ts";
 import { showToast } from "../ui/notice.tsx";
 import { type ActivityTapInbox, activityDelivery } from "./delivery.ts";
 import { workoutFrame } from "./frame.ts";
 import { workoutSession } from "./session.ts";
+
+/** The workout this phone last showed a Live Activity for. */
+const ACTIVITY_WORKOUT = "liveActivityWorkout";
 
 function loadWidgets() {
   // Expo Go lacks the native extension. Import its module only in a capable binary.
@@ -16,7 +20,16 @@ function loadWidgets() {
   if (!inbox?.pendingLeveActivityTaps || typeof scheme !== "string") return null;
   const { workoutActivity } = require("./layout.ios.tsx") as typeof import("./layout.ios.tsx");
   const { addUserInteractionListener } = require("expo-widgets") as typeof import("expo-widgets");
-  const activity = workoutSession(workoutActivity, scheme);
+  const activity = workoutSession(workoutActivity, scheme, {
+    shown: () => {
+      const id = readDevicePreference(ACTIVITY_WORKOUT);
+      return typeof id === "string" ? id : undefined;
+    },
+    remember: (id) => {
+      if (readDevicePreference(ACTIVITY_WORKOUT) !== id)
+        writeDevicePreference(ACTIVITY_WORKOUT, id);
+    },
+  });
   return {
     activity,
     session: activityDelivery(
