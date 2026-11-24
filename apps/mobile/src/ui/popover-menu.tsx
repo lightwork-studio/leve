@@ -204,13 +204,15 @@ export function PopoverMenu({
 
 /**
  * The ⋯ tile that opens a menu, sized like the other header tiles. `items` is read when it is
- * tapped, so it can depend on the latest data.
+ * tapped, so it can depend on the latest data. `icon` draws something other than ⋯ on the tile,
+ * such as + for a menu of things to add.
  */
 export function MoreButton({
   label,
   title,
   meta,
   items,
+  icon,
   small = false,
 }: {
   /** What it is for, for screen readers: "Workout options". */
@@ -218,6 +220,8 @@ export function MoreButton({
   title?: string;
   meta?: string;
   items: readonly MenuItem[];
+  /** Draws the tile's icon in the given ink and size, in place of ⋯. */
+  icon?: (color: string, size: number) => ReactNode;
   /** A 36 pt tile, for a row or a folder heading (it still takes a 44 pt tap). */
   small?: boolean;
 }) {
@@ -237,7 +241,7 @@ export function MoreButton({
         scaleTo={0.92}
         style={[styles.tile, small && styles.small]}
       >
-        <MoreIcon color={c.fg2} size={small ? 18 : 20} />
+        {icon ? icon(c.fg2, small ? 18 : 20) : <MoreIcon color={c.fg2} size={small ? 18 : 20} />}
       </Tap>
       {open && (
         <PopoverMenu

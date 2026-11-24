@@ -38,21 +38,45 @@ export type Target = PlanTarget | undefined;
 export const metricsOf = (type: string): readonly SetMetric[] =>
   METRICS_BY_TYPE[type as ExerciseType] ?? ["weight", "reps"];
 
-/** Weight and reps carry forward from the preceding set of this exercise, one field at a time. */
+/** A correction being typed into a logged set's field. */
+export interface Correction {
+  setId: string;
+  draft: SetDraft;
+}
+
+/**
+ * Weight and reps carry forward from earlier sets of this exercise, one field at a time: from the
+ * nearest earlier set with the field typed or stored, through any unlogged sets left empty in
+ * between, so one value fills every empty set after it. A logged set ends the search.
+ */
 export function setDefaults(
   entry: Entry,
   index: number,
   drafts: SetDrafts,
   unit: WeightUnit,
   history: PreviousSet | undefined,
-  correction?: SetDraft,
+  correction?: Correction,
 ): PreviousSet | undefined {
   const prior = entry.sets[index - 1];
   if (!prior || prior.needsSyncReview) return history;
-  const draft = prior.content.completedAt === null ? drafts[prior.id] : correction;
   const carry = (metric: "weight" | "reps") => {
-    const typed = parseTyped(metric, draft?.[metric] ?? "", draft?.weightUnit ?? unit);
-    return typeof typed === "number" ? typed : storedValue(prior.content, metric);
+    for (let at = index - 1; at >= 0; at--) {
+      const set = entry.sets[at];
+      if (!set || set.needsSyncReview) return null;
+      const logged = set.content.completedAt !== null;
+      const draft = logged
+        ? correction?.setId === set.id
+          ? correction.draft
+          : undefined
+        : drafts[set.id];
+      const typed = parseTyped(metric, draft?.[metric] ?? "", draft?.weightUnit ?? unit);
+      if (typeof typed === "number") return typed;
+      // Text that can't be read yet (being typed, or left wrong) stops the search too.
+      if (typed === "invalid") return null;
+      const stored = storedValue(set.content, metric);
+      if (stored !== null || logged) return stored;
+    }
+    return null;
   };
   return {
     weightKg: carry("weight") ?? history?.weightKg ?? null,
@@ -183,7 +207,7 @@ export interface FieldView {
 
 /**
  * A field of a set as the list and the dock show it. Logged sets show what was logged. Unlogged
- * sets show what was typed, else a suggestion: the stored value, the preceding set's input, last time's, then the routine's
+ * sets show what was typed, else a suggestion: the stored value, an earlier set's input, last time's, then the routine's
  * target (the order Log uses when nothing is typed).
  */
 export function fieldView(options: {

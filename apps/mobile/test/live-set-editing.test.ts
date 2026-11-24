@@ -729,6 +729,19 @@ describe("correcting a logged set", () => {
     expect(sets()[1]?.completedAt).toEqual(expect.any(String));
   });
 
+  it("carries a pending correction through every empty set after it", async () => {
+    const { sets } = benchWorkout(3);
+    updateSet(store, sets()[1]?.id ?? "", { reps: null });
+    updateSet(store, sets()[2]?.id ?? "", { reps: null });
+    logSet(store, sets()[0]?.id ?? "", { weightKg: 60, reps: 8 });
+    const ui = await mount();
+    await ui.press("reps for set 1");
+    await ui.press("1");
+    await ui.press("0");
+    expect(cell(ui, "reps for set 2")).toBe("10");
+    expect(cell(ui, "reps for set 3")).toBe("10");
+  });
+
   it("clears a logged weight left empty on Done, and the set stays logged", async () => {
     const { sets } = benchWorkout(2);
     logSet(store, sets()[0]?.id ?? "", { weightKg: 60, reps: 8 });
@@ -970,6 +983,44 @@ describe("reps in reserve", () => {
     await ui.press("2 reps in reserve");
     expect(sets()[0]?.repsInReserve).toBe(2);
     expect(prompt(ui, 1)).toBe(false);
+  });
+
+  it("keeps the drain fill over the whole rest panel while it shrinks", async () => {
+    benchWorkout();
+    saveTrackRir(store, true);
+    const ui = await mount();
+    await ui.press("Log set 1 of Bench Press");
+    const style = (node: { props: { style?: unknown } }) =>
+      Object.assign({}, ...[node.props.style].flat(3).filter(Boolean));
+    /** How tall the rows stacked in the rest panel are, and the least its drain fill is. */
+    const panel = () => {
+      const [box] = ui.root.findByType(RestSlab).children;
+      if (typeof box === "string" || !box) throw new Error("no rest panel");
+      const parts = box.children.filter((n) => typeof n !== "string");
+      const fill = parts.find((n) => style(n).position === "absolute");
+      if (!fill) throw new Error("no drain fill");
+      const rows = parts.filter((n) => n !== fill).map((n) => style(n).height as number);
+      const { height, minHeight } = style(fill);
+      return {
+        rows: rows.reduce((sum, h) => sum + h, 0),
+        fill: Math.max(height ?? 0, minHeight ?? 0),
+      };
+    };
+    // A resize animates the panel down from its old height but lays the fill out at the new one at
+    // once, so the fill has to be as tall as the tallest panel already, whatever it sits in now.
+    const asking = panel();
+    expect(asking.fill).toBeGreaterThanOrEqual(asking.rows);
+
+    await ui.press("2 reps in reserve");
+    const picked = panel();
+    expect(picked.rows).toBeLessThan(asking.rows);
+    expect(picked.fill).toBeGreaterThanOrEqual(asking.rows);
+
+    // Opening a field shrinks it again, to the bar above the keypad.
+    await ui.press("kg for set 2");
+    const compact = panel();
+    expect(compact.rows).toBeLessThan(picked.rows);
+    expect(compact.fill).toBeGreaterThanOrEqual(asking.rows);
   });
 
   it("records nothing on Skip, when the rest ends, or when the next set is logged", async () => {

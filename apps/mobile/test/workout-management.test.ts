@@ -2291,6 +2291,21 @@ it("shows a routine exercise cue and saves an additional note only on that worko
   expect(panel.textContent).toContain("Pause on the chest");
   expect(panel.textContent).toContain("Plant both feet");
   await press("Manage Bench Press");
+  // Opened in the exercise's sheet, the notes stay in the disclosure's own card, apart from the
+  // note editor below it.
+  const sheetDisclosure = [
+    ...host.querySelectorAll<HTMLButtonElement>(
+      'button[aria-label="Exercise notes for Bench Press, 2"]',
+    ),
+  ].find((button) => button !== disclosure);
+  const card = sheetDisclosure?.parentElement;
+  if (!sheetDisclosure || !card || card === panel) throw Error("Missing sheet cue disclosure");
+  expect(card.textContent).not.toContain("Plant both feet");
+  await act(() => sheetDisclosure.click());
+  expect(sheetDisclosure.getAttribute("aria-expanded")).toBe("true");
+  expect(card.textContent).toContain("Plant both feet");
+  expect(card.textContent).not.toContain("Add exercise note");
+  expect(card.parentElement?.textContent).toContain("Add exercise note");
   await press("Add exercise note");
   const input = host.querySelector<HTMLInputElement>('input[aria-label="Note for Bench Press"]');
   if (!input) throw Error("Missing exercise note input");
@@ -3577,6 +3592,48 @@ describe("the logging dock and the number pad", () => {
       [85, 10],
     ]);
     expect(sets(squat)[0]?.completedAt).toBeNull();
+  });
+
+  it("fills every empty set after the one typed into, until another value is typed", async () => {
+    const workout = beginWorkout(store);
+    const bench = addExercise(store, workout, EXERCISES.bench, 0);
+    for (let i = 0; i < 3; i++) addSet(store, bench);
+    await act(() => root.render(h(ActiveWorkoutScreen)));
+    expect(fieldText("kg for set 4")).toBe("–");
+    await typeInto("kg for set 1", "60");
+    await typeInto("reps for set 1", "8");
+    await typeInto("reps for set 3", "6");
+    await press("Done typing");
+    expect(
+      [2, 3, 4].map((n) => [fieldText(`kg for set ${n}`), fieldText(`reps for set ${n}`)]),
+    ).toEqual([
+      ["60", "8"],
+      ["60", "6"],
+      ["60", "6"],
+    ]);
+    for (const n of [1, 2, 3, 4]) await press(`Log set ${n}`);
+    expect(sets(bench).map(({ weightKg, reps }) => [weightKg, reps])).toEqual([
+      [60, 8],
+      [60, 8],
+      [60, 6],
+      [60, 6],
+    ]);
+  });
+
+  it("fills empty sets with today's value over last time's", async () => {
+    benchBefore(3);
+    const workout = beginWorkout(store);
+    const bench = addExercise(store, workout, EXERCISES.bench, 0);
+    addSet(store, bench);
+    addSet(store, bench);
+    await act(() => root.render(h(ActiveWorkoutScreen)));
+    expect(fieldText("kg for set 3")).toBe("80");
+    await typeInto("kg for set 1", "85");
+    await press("Done typing");
+    expect(fieldText("kg for set 2")).toBe("85");
+    expect(fieldText("kg for set 3")).toBe("85");
+    // Last time's reps still fill the sets nothing was typed into.
+    expect(fieldText("reps for set 3")).toBe("8");
   });
 
   it("logs the dock's set with its steppers, then shows only the rest until it is skipped", async () => {

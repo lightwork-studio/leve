@@ -48,10 +48,15 @@ vi.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ top: 47, bottom: 34 }),
 }));
 let sourceWorkout: string | undefined;
+let folderParam: string | undefined;
 vi.mock("expo-router", () => {
   const navigation = { isFocused: () => true, addListener: () => () => {} };
   return {
-    useLocalSearchParams: () => ({ id: "routine", fromWorkout: sourceWorkout }),
+    useLocalSearchParams: () => ({
+      id: "routine",
+      fromWorkout: sourceWorkout,
+      folder: folderParam,
+    }),
     router: { canGoBack: () => true, back: vi.fn() },
     useNavigation: () => navigation,
   };
@@ -1503,6 +1508,54 @@ it("keeps the web page's scrollbar in place while a reorder grip is held", async
   }
 });
 
+it("lets both routine editors make room for the keyboard below their last set", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  store = await openDeviceStore({
+    engine: createSqlJsEngine(await initSqlJs()),
+    path: "/keyboard",
+    appVersion: "test",
+  });
+  let rendered: ReactTestRenderer | undefined;
+  /** The page the field scrolls on, which has to make room for the keyboard. */
+  const pageOf = (field: Root) => {
+    let node: Root | null = field;
+    while (node && node.type !== ScrollView) node = node.parent;
+    if (!node) throw Error("The field is not on a scrolling page");
+    return node;
+  };
+  try {
+    store.put("routine", "routine", routine);
+    await act(() => {
+      rendered = create(createElement(RoutineDetails));
+    });
+    if (!rendered) throw Error("Missing routine editor");
+    const lastSet = rendered.root.findByProps({ accessibilityLabel: "Old press set 2 Max reps" });
+    expect(pageOf(lastSet).props.automaticallyAdjustKeyboardInsets).toBe(true);
+    await act(() => rendered?.unmount());
+
+    await act(() => {
+      rendered = create(createElement(NewRoutine));
+    });
+    const root = rendered.root;
+    await tapText(root, "Add exercise");
+    const picker = root.find((n) => typeof n.props.onPickMany === "function");
+    await act(() => picker.props.onPickMany([EXERCISES.bench]));
+    await tapText(root, "Add set");
+    const added = root.findAll(
+      (n) =>
+        typeof n.props.accessibilityLabel === "string" &&
+        /^Bench Press set \d+ REPS$/.test(n.props.accessibilityLabel) &&
+        typeof n.props.onChangeText === "function",
+    );
+    expect(added.length).toBeGreaterThan(1);
+    expect(pageOf(added.at(-1) as Root).props.automaticallyAdjustKeyboardInsets).toBe(true);
+  } finally {
+    await act(() => rendered?.unmount());
+    store.close();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("compares two phones' routine targets and syncs the chosen local version", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const world = new World();
@@ -1585,3 +1638,56 @@ it("compares two phones' routine targets and syncs the chosen local version", as
     vi.unstubAllGlobals();
   }
 });
+
+it.each([
+  ["strength", "Strength", "strength"],
+  // A folder deleted (or never synced) since the link was made starts the form unfiled.
+  ["gone", "Not in a folder", null],
+])(
+  "starts a routine added from a folder in that folder (%s)",
+  async (param, shown, savedFolder) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    store = await openDeviceStore({
+      engine: createSqlJsEngine(await initSqlJs()),
+      path: `/from-folder-${param}`,
+      appVersion: "test",
+    });
+    folderParam = param;
+    let rendered: ReactTestRenderer | undefined;
+    try {
+      store.put("routine_folder", "strength", { title: "Strength", position: 1 });
+      store.put("routine_folder", "travel", { title: "Travel", position: 2 });
+      await act(() => {
+        rendered = create(createElement(NewRoutine));
+      });
+      if (!rendered) throw new Error("Missing routine form");
+      const root = rendered.root.findByType(ScrollView);
+      const folder = () =>
+        root.find((n) => n.type === ("MenuRow" as never) && n.props.label === "Folder");
+      expect(folder().props.value).toBe(shown);
+      expect(
+        folder()
+          .props.menu.items.filter((item: { checked: boolean }) => item.checked)
+          .map((item: { label: string }) => item.label),
+      ).toEqual([shown]);
+      await act(() =>
+        root.findByProps({ accessibilityLabel: "Routine name" }).props.onChangeText("Push"),
+      );
+      await tapText(root, "Add exercise");
+      await act(() =>
+        root
+          .find((n) => typeof n.props.onPickMany === "function")
+          .props.onPickMany([EXERCISES.bench]),
+      );
+      await tapText(root, "Save routine");
+      expect(store.list("routine").map((r) => r.content)).toMatchObject([
+        { title: "Push", folderId: savedFolder },
+      ]);
+    } finally {
+      folderParam = undefined;
+      await act(() => rendered?.unmount());
+      store.close();
+      vi.unstubAllGlobals();
+    }
+  },
+);
