@@ -47,8 +47,8 @@ export interface MuscleFigureProps {
 /**
  * The body from the front and back, each muscle shaded by how much it was trained. Selection dims
  * the other muscles and rings the chosen one, which keeps its own shade. The ring stands a point
- * off the muscle and stays out of the gaps between its parts, so a muscle drawn in parts (the abs,
- * say) still shows them when its shade is the ring's ink.
+ * off the muscle and stays out of the narrow gaps between its parts, so a muscle drawn in parts
+ * (the abs, say) still shows them when its shade is the ring's ink.
  */
 export const MuscleFigure = memo(function MuscleFigure({
   amounts,
@@ -147,8 +147,9 @@ function FigureSide({
           <>
             {/*
               Both strokes sit under the muscle, so only their outer halves show: a point of the
-              body's colour around it, then a point of ink. Between the parts the body's colour
-              covers the ring, so the gaps look as they do when nothing is chosen.
+              body's colour around it, then a point of ink. In a gap of up to two points between
+              parts, the body's colour covers the ring, so the gap looks as it does when nothing is
+              chosen; parts further apart get a ring each.
             */}
             <Path
               testID={`muscle-${side}-selected`}
