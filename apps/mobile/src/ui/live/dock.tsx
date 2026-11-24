@@ -404,7 +404,7 @@ function StripSegment({
     <View
       style={[
         styles.segment,
-        box !== undefined && { flex: 0, width: box },
+        box !== undefined && { flexGrow: 0, flexShrink: 0, flexBasis: box, width: box },
         field.editing && styles.segmentOn,
       ]}
     >
@@ -794,8 +794,12 @@ const sheet = themedStyles((c) => ({
     borderColor: c.line,
     overflow: "hidden",
   },
+  // Longhands rather than `flex`: on the web `flex: 0` is CSS's `0 1 0%`, whose zero basis wins
+  // over a width and collapses the column, so a fixed column sets its basis to its width.
   segment: {
-    flex: 1,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 0,
     minWidth: 0,
     flexDirection: "row",
     borderLeftWidth: 1,
@@ -803,7 +807,9 @@ const sheet = themedStyles((c) => ({
   },
   segmentOn: { backgroundColor: c.s2, borderWidth: 1.5, borderColor: c.fg },
   stripEffort: {
-    flex: 0,
+    flexGrow: 0,
+    flexShrink: 0,
+    flexBasis: EFFORT,
     width: EFFORT,
     flexDirection: "column",
     alignItems: "center",
