@@ -1835,7 +1835,7 @@ it("uses a corrected previous set while the current workout stays open", async (
   ).toHaveLength(0);
 });
 
-it("uses previous values and routine suggestions without a separate target caption", async () => {
+it("hints a routine weight only where no weight was logged last time", async () => {
   const past = beginWorkout(store);
   const priorEntry = addExercise(store, past, EXERCISES.bench, 0);
   const priorSet = store.list("workout_set", { parentId: priorEntry })[0];
@@ -1863,11 +1863,16 @@ it("uses previous values and routine suggestions without a separate target capti
   const render = () => act(() => root.render(h(ActiveWorkoutScreen)));
   await render();
   expect(host.textContent).toContain("92.5 × 6");
-  expect(fieldTarget("kg for set 1")).toBe("40");
+  // Last time's 92.5 kg leads set 1; set 2 has no history, so its routine weight still shows.
+  expect(fieldTarget("kg for set 1")).toBeNull();
   expect(fieldTarget("reps for set 1")).toBe("8–10");
   expect(fieldTarget("kg for set 2")).toBe("0");
   expect(fieldTarget("reps for set 2")).toBe("10–12");
   expect(fieldText("reps for set 2")).toBe("10");
+  // The dock follows the same rule for the set it logs next.
+  expect(field("Type weight")?.textContent).toMatch(/^92\.5kg/);
+  expect(field("Type weight")?.textContent).not.toContain("·");
+  expect(field("Type reps")?.textContent).toBe("6reps · 8–10");
   await act(() => saveShowTargets(false));
   expect(fieldTarget("kg for set 1")).toBeNull();
   expect(fieldTarget("reps for set 1")).toBeNull();
@@ -1878,7 +1883,8 @@ it("uses previous values and routine suggestions without a separate target capti
   await act(() => saveShowTargets(true));
   change((db) => saveSettings(db, { weightUnit: "lbs" }));
   await render();
-  expect(fieldTarget("lbs for set 1")).toBe("88.2");
+  expect(fieldTarget("lbs for set 1")).toBeNull();
+  expect(fieldTarget("lbs for set 2")).toBe("0");
   expect(fieldTarget("reps for set 1")).toBe("8–10");
   await press("Log set 1");
   await render();
@@ -1886,8 +1892,9 @@ it("uses previous values and routine suggestions without a separate target capti
     weightKg: 92.5,
     reps: 6,
   });
-  expect(fieldTarget("lbs for set 1")).toBe("88.2");
+  expect(fieldTarget("lbs for set 1")).toBeNull();
   expect(fieldTarget("lbs for set 2")).toBe("0");
+  expect(field("Type weight")?.textContent).toMatch(/lbs · 0$/);
 });
 
 it("keeps previous running values and the next set’s planned duration in the fields", async () => {
