@@ -729,6 +729,19 @@ describe("correcting a logged set", () => {
     expect(sets()[1]?.completedAt).toEqual(expect.any(String));
   });
 
+  it("carries a pending correction through every empty set after it", async () => {
+    const { sets } = benchWorkout(3);
+    updateSet(store, sets()[1]?.id ?? "", { reps: null });
+    updateSet(store, sets()[2]?.id ?? "", { reps: null });
+    logSet(store, sets()[0]?.id ?? "", { weightKg: 60, reps: 8 });
+    const ui = await mount();
+    await ui.press("reps for set 1");
+    await ui.press("1");
+    await ui.press("0");
+    expect(cell(ui, "reps for set 2")).toBe("10");
+    expect(cell(ui, "reps for set 3")).toBe("10");
+  });
+
   it("clears a logged weight left empty on Done, and the set stays logged", async () => {
     const { sets } = benchWorkout(2);
     logSet(store, sets()[0]?.id ?? "", { weightKg: 60, reps: 8 });

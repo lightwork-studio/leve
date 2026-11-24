@@ -102,6 +102,8 @@ function RoutineForm({
       style={styles.page}
       scrollEnabled={!reorderGripHeld}
       keyboardShouldPersistTaps="handled"
+      // The keyboard pushes the page up, so the last sets stay visible while they are typed in.
+      automaticallyAdjustKeyboardInsets
       contentContainerStyle={[
         styles.content,
         { paddingTop: insets.top + space.md, paddingBottom: insets.bottom + space.xxl },
