@@ -584,14 +584,14 @@ export default function ActiveWorkoutScreen() {
     return null;
   };
   const defaultsOf = (entry: Entry, index: number) => {
-    const prior = entry.sets[index - 1];
     const text = editing?.correction?.text;
+    const corrected = editing && entry.sets.slice(0, index).find((s) => s.id === editing.setId);
     const correction =
-      prior &&
-      editing?.setId === prior.id &&
+      editing &&
+      corrected &&
       text?.trim() &&
-      text !== inputValue(prior.content, editing.metric, unit, distanceUnitOf(entry))
-        ? { [editing.metric]: text }
+      text !== inputValue(corrected.content, editing.metric, unit, distanceUnitOf(entry))
+        ? { setId: corrected.id, draft: { [editing.metric]: text } }
         : undefined;
     return setDefaults(
       entry,

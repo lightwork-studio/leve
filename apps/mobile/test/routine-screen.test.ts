@@ -1503,6 +1503,54 @@ it("keeps the web page's scrollbar in place while a reorder grip is held", async
   }
 });
 
+it("lets both routine editors make room for the keyboard below their last set", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  store = await openDeviceStore({
+    engine: createSqlJsEngine(await initSqlJs()),
+    path: "/keyboard",
+    appVersion: "test",
+  });
+  let rendered: ReactTestRenderer | undefined;
+  /** The page the field scrolls on, which has to make room for the keyboard. */
+  const pageOf = (field: Root) => {
+    let node: Root | null = field;
+    while (node && node.type !== ScrollView) node = node.parent;
+    if (!node) throw Error("The field is not on a scrolling page");
+    return node;
+  };
+  try {
+    store.put("routine", "routine", routine);
+    await act(() => {
+      rendered = create(createElement(RoutineDetails));
+    });
+    if (!rendered) throw Error("Missing routine editor");
+    const lastSet = rendered.root.findByProps({ accessibilityLabel: "Old press set 2 Max reps" });
+    expect(pageOf(lastSet).props.automaticallyAdjustKeyboardInsets).toBe(true);
+    await act(() => rendered?.unmount());
+
+    await act(() => {
+      rendered = create(createElement(NewRoutine));
+    });
+    const root = rendered.root;
+    await tapText(root, "Add exercise");
+    const picker = root.find((n) => typeof n.props.onPickMany === "function");
+    await act(() => picker.props.onPickMany([EXERCISES.bench]));
+    await tapText(root, "Add set");
+    const added = root.findAll(
+      (n) =>
+        typeof n.props.accessibilityLabel === "string" &&
+        /^Bench Press set \d+ REPS$/.test(n.props.accessibilityLabel) &&
+        typeof n.props.onChangeText === "function",
+    );
+    expect(added.length).toBeGreaterThan(1);
+    expect(pageOf(added.at(-1) as Root).props.automaticallyAdjustKeyboardInsets).toBe(true);
+  } finally {
+    await act(() => rendered?.unmount());
+    store.close();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("compares two phones' routine targets and syncs the chosen local version", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const world = new World();
