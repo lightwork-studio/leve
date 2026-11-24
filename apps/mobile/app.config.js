@@ -29,6 +29,10 @@ module.exports = ({ config }) => {
   const bundleIdentifier = production ? "app.leve.production" : "app.leve.dev";
   return {
     ...config,
+    experiments: {
+      ...config.experiments,
+      ...(process.env.EXPO_PUBLIC_WEB_DEMO === "1" ? { baseUrl: "/demo" } : {}),
+    },
     ...app,
     version,
     scheme: app.slug,

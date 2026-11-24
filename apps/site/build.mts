@@ -1,12 +1,18 @@
-import { copyFile, mkdir, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { copyFile, cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
+import { dirname, join, sep } from "node:path";
 import { graphite, sheet } from "../../design/surface-colors.ts";
 import { families } from "../../design/web-fonts.ts";
 
 const source = import.meta.dirname;
 const brand = join(source, "../../assets/brand");
+const expoExport = join(source, "../mobile/dist/demo");
+const requireMobile = createRequire(new URL("../mobile/package.json", import.meta.url));
+const sqlJs = dirname(dirname(requireMobile.resolve("sql.js")));
 const assets = {
-  "index.html": join(source, "index.html"),
+  _redirects: join(source, "_redirects"),
+  "demo.js": join(source, "demo.js"),
+  "sql.js-LICENSE.txt": join(sqlJs, "LICENSE"),
   "style.css": join(source, "style.css"),
   "screen-rest.png": join(source, "shots/rest.png"),
   "screen-notes.png": join(source, "shots/notes.png"),
@@ -48,13 +54,39 @@ ${tokens(sheet, "    ")}
 `;
 }
 
-export async function buildSite(output = join(source, "dist")) {
+export async function buildSite(
+  output = join(source, "dist"),
+  demo = expoExport,
+  revision = process.env.LEVE_SITE_SOURCE_REVISION ?? "main",
+) {
+  if (revision !== "main" && !/^[0-9a-f]{40}$/.test(revision)) {
+    throw new Error("Expected a full source commit SHA for the landing page");
+  }
+  const html = (await readFile(join(source, "index.html"), "utf8")).replace(
+    /https:\/\/github\.com\/lightwork-studio\/leve\/(tree|blob)\/main/g,
+    (_url, kind) => `https://github.com/lightwork-studio/leve/${kind}/${revision}`,
+  );
+  const demoFiles = await Promise.all(
+    ["_expo", "assets"].map((name) => readdir(join(demo, name), { recursive: true })),
+  );
+  const skipped = demoFiles
+    .flat()
+    .find((path) =>
+      path.split(sep).some((entry) => entry.startsWith(".") || entry === "node_modules"),
+    );
+  if (skipped) throw new Error(`The site deployment would skip a demo asset path: ${skipped}`);
+
   // Start empty, so a renamed or removed asset can't linger in the output.
   await rm(output, { recursive: true, force: true });
-  await mkdir(output, { recursive: true });
+  const demoOutput = join(output, "demo");
+  await mkdir(demoOutput, { recursive: true });
   await Promise.all([
     ...Object.entries(assets).map(([name, path]) => copyFile(path, join(output, name))),
+    ...["index.html", "favicon.ico", "_expo", "assets"].map((name) =>
+      cp(join(demo, name), join(demoOutput, name), { recursive: true }),
+    ),
     writeFile(join(output, "theme.css"), themeCss()),
+    writeFile(join(output, "index.html"), html),
   ]);
 }
 

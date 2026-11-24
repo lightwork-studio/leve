@@ -1,0 +1,8 @@
+{
+  "name": "@leve/site",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "happy-dom": "^21.0.4"
+  }
+}

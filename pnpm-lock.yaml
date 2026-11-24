@@ -138,6 +138,12 @@ importers:
         specifier: 19.3.0
         version: 19.3.0(react@19.3.0)
 
+  apps/site:
+    devDependencies:
+      happy-dom:
+        specifier: ^21.0.4
+        version: 21.0.4
+
   apps/sync-cloudflare:
     dependencies:
       '@leve/contract':

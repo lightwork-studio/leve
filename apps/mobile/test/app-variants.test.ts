@@ -14,7 +14,9 @@ afterEach(() => vi.unstubAllEnvs());
 it("uses a local app identity with updates off on a fresh checkout", () => {
   vi.stubEnv("LEVE_APP_VARIANT", undefined);
   vi.stubEnv("LEVE_DEV_EAS_PROJECT_ID", undefined);
-  expect(resolveApp()).toMatchObject({
+  vi.stubEnv("EXPO_PUBLIC_WEB_DEMO", undefined);
+  const app = resolveApp();
+  expect(app).toMatchObject({
     name: "Leve Dev",
     icon: "./assets/icon-dev.png",
     scheme: "leve-dev",
@@ -22,8 +24,23 @@ it("uses a local app identity with updates off on a fresh checkout", () => {
     android: { package: "app.leve.dev" },
     updates: { enabled: false },
   });
-  expect(resolveApp().extra.eas).toBeUndefined();
-  expect(resolveApp().owner).toBeUndefined();
+  expect(app.owner).toBeUndefined();
+  expect(app.extra.eas).toBeUndefined();
+  expect(app.experiments).toEqual(preview.experiments);
+});
+
+it("exports the landing demo under /demo using the local Dev identity", () => {
+  vi.stubEnv("LEVE_APP_VARIANT", "development");
+  vi.stubEnv("LEVE_DEV_EAS_PROJECT_ID", undefined);
+  vi.stubEnv("EXPO_PUBLIC_WEB_DEMO", "1");
+  const demo = resolveApp();
+  expect(demo).toMatchObject({
+    name: "Leve Dev",
+    updates: { enabled: false },
+    experiments: { typedRoutes: false, baseUrl: "/demo" },
+  });
+  expect(demo.owner).toBeUndefined();
+  expect(demo.extra.eas).toBeUndefined();
 });
 
 it("keeps the existing identity and update endpoint when publishing to TestFlight", () => {
