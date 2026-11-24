@@ -107,7 +107,7 @@ it.each([false, true])(
         root.findAll((n) => n.type === View && typeof n.props.onLayout === "function");
       const layout = (y: number, height: number) => ({ nativeEvent: { layout: { y, height } } });
       layouts()[0]?.props.onLayout(layout(270, 2500));
-      await act(() => root.findByProps({ accessibilityLabel: "Rename Gym" }).props.onPress());
+      await act(() => choose(root, "Gym options", "Rename folder"));
       const closedFolderDialog = root.findByProps({ initialName: "Gym" });
       expect(root.find((n) => n.props.accessibilityState?.expanded === false)).toBeDefined();
       expect(nextFrame).toBeUndefined();
@@ -119,7 +119,7 @@ it.each([false, true])(
       expect(scrollTo).not.toHaveBeenCalled();
       nextFrame?.();
       expect(scrollTo).toHaveBeenCalledWith({ y: 1282, animated: !preference });
-      await act(() => root.findByProps({ accessibilityLabel: "Rename Gym" }).props.onPress());
+      await act(() => choose(root, "Gym options", "Rename folder"));
       expect(root.findByProps({ initialName: "Gym" })).toBeDefined();
       expect(root.findAll((n) => n.props.accessibilityState?.expanded === true)).toHaveLength(2);
       // While a workout runs, the slot shows it (with its own Resume), so Train offers no start.
@@ -389,6 +389,62 @@ it("offers the routine up next when idle and starts it just as its card does", a
   } finally {
     activeTitle = "Bench";
     upNext = null;
+    await act(() => screen?.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+/** Presses the item called `item` in the menu whose tile is labelled `menu`. */
+const choose = (root: ReactTestRenderer["root"], menu: string, item: string) => {
+  const items: { label: string; onPress: () => void }[] = root.findByProps({ label: menu }).props
+    .items;
+  const found = items.find((entry) => entry.label === item);
+  if (!found) throw Error(`${menu} has no ${item}`);
+  found.onPress();
+};
+
+it("adds a routine or a folder from the one + menu, and a routine straight into a folder", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  change.mockClear();
+  push.mockClear();
+  let screen: ReactTestRenderer | undefined;
+  try {
+    await act(() => {
+      screen = create(createElement(TrainScreen));
+    });
+    if (!screen) throw Error("Train did not mount");
+    const root = screen.root;
+    // The heading has a single + tile; its menu holds both things to add.
+    expect(root.findAllByProps({ accessibilityLabel: "New folder" })).toHaveLength(0);
+    expect(root.findAllByProps({ accessibilityLabel: "New routine" })).toHaveLength(0);
+    const add = root.findByProps({ label: "Add routine or folder" });
+    expect(add.props.items.map((item: { label: string }) => item.label)).toEqual([
+      "New routine",
+      "New folder",
+    ]);
+    await act(() => choose(root, "Add routine or folder", "New routine"));
+    expect(push.mock.calls).toEqual([["/routine/new"]]);
+    expect(root.findAllByType("Dialog" as never)).toHaveLength(0);
+    await act(() => choose(root, "Add routine or folder", "New folder"));
+    const dialog = root.findByType("Dialog" as never);
+    expect(dialog.props.initialName).toBeUndefined();
+
+    // Each folder's menu, open (Home) or closed (Gym), adds a routine filed in that folder.
+    for (const [title, id] of [
+      ["Home", "Home"],
+      ["Gym", "Gym"],
+    ]) {
+      push.mockClear();
+      const menu = root.findByProps({ label: `${title} options` });
+      expect(menu.props.items.map((item: { label: string }) => item.label)).toEqual([
+        "New routine",
+        "Rename folder",
+      ]);
+      await act(() => choose(root, `${title} options`, "New routine"));
+      expect(push.mock.calls).toEqual([[{ pathname: "/routine/new", params: { folder: id } }]]);
+    }
+    expect(change).not.toHaveBeenCalled();
+  } finally {
     await act(() => screen?.unmount());
     vi.unstubAllGlobals();
   }
