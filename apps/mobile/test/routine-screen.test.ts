@@ -705,25 +705,45 @@ it("starts an added set from the last working set's targets, skipping warm-ups",
         .find((n) => typeof n.props.onPickMany === "function")
         .props.onPickMany([EXERCISES.bench]),
     );
-    await act(() => field("set 1 KG").props.onChangeText("100"));
-    await act(() => field("set 1 REPS").props.onChangeText("8"));
-    await act(() => field("set 1 target RIR").props.onChangeText("2"));
+    const enter = async (label: string, text: string) => {
+      await act(() => field(label).props.onChangeText(text));
+      await act(() => field(label).props.onBlur());
+    };
+    const warmUp = async (n: number) => {
+      await act(() => field(`set ${n} type: Working`).props.onPress());
+      await tapText(root, "Warm-up");
+    };
+    // With only warm-ups there is nothing to copy.
+    await warmUp(1);
+    await enter("set 1 KG", "40");
     await addSet();
-    expect(set(2)).toEqual(["100", "8", "2"]);
-    // A warm-up is never the source: the next set copies the last working set.
-    await act(() => field("set 2 type: Working").props.onPress());
-    await tapText(root, "Warm-up");
-    await act(() => field("set 2 KG").props.onChangeText("40"));
+    expect(set(2)).toEqual(["", "", ""]);
+    expect(field("set 2 type: Working")).toBeDefined();
+    await enter("set 2 KG", "100");
+    await enter("set 2 REPS", "8");
+    await enter("set 2 target RIR", "2");
     await addSet();
     expect(set(3)).toEqual(["100", "8", "2"]);
-    expect(field("set 3 type: Working")).toBeDefined();
+    // A warm-up is never the source: the next set copies the last working set.
+    await warmUp(3);
+    await addSet();
+    expect(set(4)).toEqual(["100", "8", "2"]);
+    expect(field("set 4 type: Working")).toBeDefined();
+    // A set added while its source is being typed in takes the rest of the typing.
+    await act(() => field("set 4 KG").props.onChangeText("11"));
+    await addSet();
+    expect(set(5)).toEqual(["11", "8", "2"]);
+    await enter("set 4 KG", "110");
+    expect(set(5)).toEqual(["110", "8", "2"]);
     await tapText(root, "Save routine");
     expect(store.list("routine")[0]?.content?.exercises).toMatchObject([
       {
         sets: [
+          { type: "warmup", weightKg: 40, reps: null },
           { type: "normal", weightKg: 100, reps: 8, repsInReserve: 2 },
-          { type: "warmup", weightKg: 40, reps: 8, repsInReserve: 2 },
-          { type: "normal", weightKg: 100, reps: 8, repsInReserve: 2 },
+          { type: "warmup", weightKg: 100, reps: 8, repsInReserve: 2 },
+          { type: "normal", weightKg: 110, reps: 8, repsInReserve: 2 },
+          { type: "normal", weightKg: 110, reps: 8, repsInReserve: 2 },
         ],
       },
     ]);
