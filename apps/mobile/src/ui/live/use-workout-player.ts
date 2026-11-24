@@ -1,8 +1,6 @@
 import { router } from "expo-router";
-import { useMemo } from "react";
 import { useAppData } from "../../data/app-data.tsx";
-import { usePastWorkouts } from "../../data/queries.ts";
-import { liveData } from "../../data/read.ts";
+import { useLive, usePastWorkouts } from "../../data/queries.ts";
 import { useRest } from "../../data/rest-timer.ts";
 import { logSet } from "../../data/workout-actions.ts";
 import { routineTarget, setProgress } from "../../model/live.ts";
@@ -27,13 +25,11 @@ import {
   entryDistanceUnit,
   pendingAsk,
   previousForWorkout,
-  previousKey,
 } from "./targets.ts";
 
 export function useWorkoutPlayer() {
   const { store, version, change } = useAppData();
-  // biome-ignore lint/correctness/useExhaustiveDependencies: version marks every data change.
-  const live = useMemo(() => liveData(store), [store, version]);
+  const live = useLive();
   const tree = live?.tree;
   const workoutId = tree?.workout.id;
   const { drafts, setDrafts, distanceUnits } = useWorkoutInputs(store, workoutId);
@@ -42,15 +38,10 @@ export function useWorkoutPlayer() {
   const target = tree ? dockTarget(tree, focusIndex, pickedSetId) : null;
   // Last time's values, read with the rest of the history while the minimised workout shows.
   const history = usePastWorkouts(!!live);
-  const prevKey = live ? previousKey(live.tree, live.settings, live.initialPlan) : "";
-  // biome-ignore lint/correctness/useExhaustiveDependencies: prevKey stands for what is read from live.
-  const previous = useMemo(
-    () =>
-      live && history
-        ? previousForWorkout(history, live.tree, live.settings, live.initialPlan)
-        : null,
-    [prevKey, history],
-  );
+  const previous =
+    live && history
+      ? previousForWorkout(history, live.tree, live.settings, live.initialPlan)
+      : null;
   // The set's stopwatch decides whether it can be logged from here.
   useSetStopwatch(store, workoutId ?? "", target?.set.id);
   if (!live || !tree) return null;
