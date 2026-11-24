@@ -9,6 +9,7 @@ import { ChoiceRow, Stepper, ToggleRow } from "../src/ui/choice-row.tsx";
 import { EmptyState } from "../src/ui/empty-state.tsx";
 import { ExercisePicker } from "../src/ui/exercise-picker.tsx";
 import { ErrorRow, FieldError, TextField } from "../src/ui/field.tsx";
+import { SetStrip, type StripField, stripLayout } from "../src/ui/live/dock.tsx";
 import { gridRows, RestDialog } from "../src/ui/live/rest-dialog.tsx";
 import { NewFolderDialog } from "../src/ui/new-folder-dialog.tsx";
 import { Banner, showToast, TOAST_MS, ToastHost } from "../src/ui/notice.tsx";
@@ -574,5 +575,51 @@ describe("dialogs and refused saves", () => {
       ["Off", "·", "·"],
     ]);
     expect(keys(gridRows(cells(["1", "2", "Off"])))).toEqual([["1", "2", "Off"]]);
+  });
+});
+
+describe("the dock's logging strip on the web", () => {
+  const field = (metric: "weight" | "reps", text: string): StripField => ({
+    metric,
+    name: metric,
+    text,
+    firm: true,
+    unit: metric === "weight" ? "kg" : "reps",
+    steps: 0,
+    editing: false,
+    onStep: () => {},
+    onEdit: () => {},
+  });
+
+  // `flex: 0` is CSS's `0 1 0%` on the web, whose zero basis wins over a width: the fields drew
+  // as their 1 px hairline and left the check alone at the strip's start.
+  it.each([false, true])("gives each column its width as its basis (effort %s)", async (effort) => {
+    await act(() =>
+      root.render(
+        h(SetStrip, {
+          fields: [field("weight", "57.5"), field("reps", "7")],
+          ...(effort ? { effort: { label: "RIR", value: 2, target: null } } : {}),
+          logLabel: "Log set 1",
+          canLog: true,
+          onLog: () => {},
+        }),
+      ),
+    );
+    const strip = byLabel("Log set 1")?.parentElement as
+      | (HTMLElement & { __reactLayoutHandler?: (event: unknown) => void })
+      | null;
+    if (!strip?.__reactLayoutHandler) throw Error("No measured strip");
+    const width = 347;
+    await act(() => strip.__reactLayoutHandler?.({ nativeEvent: { layout: { width } } }));
+    const { boxes } = stripLayout(width, ["weight", "reps"], effort);
+    const columns = [...strip.children].slice(0, -1) as HTMLElement[];
+    const want = [...boxes, ...(effort ? [48] : [])];
+    expect(columns.map((column) => getComputedStyle(column).flexBasis)).toEqual(
+      want.map((box) => `${box}px`),
+    );
+    for (const column of columns) {
+      expect(getComputedStyle(column).flexGrow).toBe("0");
+      expect(getComputedStyle(column).flexShrink).toBe("0");
+    }
   });
 });
