@@ -21,6 +21,9 @@ it("uses a local identity and disables official Expo updates in a fresh checkout
   });
   expect(app.owner).toBeUndefined();
   expect(app.extra.eas).toBeUndefined();
+  // Only the preview signs in with Apple.
+  expect(preview.plugins).toContain("expo-apple-authentication");
+  expect(app.plugins).not.toContain("expo-apple-authentication");
 });
 
 it("uses the existing TestFlight identity and update endpoint in the preview profile", () => {

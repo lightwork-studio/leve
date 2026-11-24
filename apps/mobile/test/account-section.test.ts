@@ -3,6 +3,7 @@
 import { act, createElement as h, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { AccountProvider } from "../src/account/account-provider.tsx";
 import { AccountSection, signInProblem } from "../src/account/account-section.tsx";
 import { ClerkAPIResponseError, clerk } from "./support/clerk-expo.ts";
 import { files } from "./support/expo-file-system.ts";
@@ -95,7 +96,9 @@ it("isn't there without a Clerk instance or off iOS", async () => {
 it("signs in with Apple, then shows who is signed in and signs out again", async () => {
   await render();
   expect(text()).toContain("Account");
-  expect(text()).toContain("Everything keeps working without an account.");
+  expect(text()).toContain("Everything works without an account.");
+  // Not promising a backup that doesn't exist yet.
+  expect(text()).toContain("your workouts stay on this phone");
 
   clerk.email = "abc@privaterelay.appleid.com";
   await tap("Sign in with Apple");
@@ -115,7 +118,7 @@ it("stays quietly signed out when the Apple sheet is dismissed", async () => {
   await render();
   await tap("Sign in with Apple");
   expect(clerk.calls).toEqual(["apple"]);
-  expect(text()).toContain("Everything keeps working without an account.");
+  expect(text()).toContain("Everything works without an account.");
 });
 
 it("says what went wrong when signing in fails", async () => {
@@ -136,10 +139,51 @@ it("says what went wrong when signing in fails", async () => {
   expect(text()).toContain("Check the connection and try again.");
 });
 
-it("explains that sign-in needs a connection while Clerk can't load", async () => {
+it("explains that sign-in needs a connection, without a button, while Clerk can't load", async () => {
   clerk.loaded = false;
   await render();
   expect(text()).toContain("Sign-in needs a connection.");
+  expect(text()).not.toContain("Sign in with Apple");
+  clerk.loaded = true;
+  await render();
+  expect(text()).toContain("Sign in with Apple");
+});
+
+it("says so when Clerk couldn't finish making the account", async () => {
+  clerk.appleFlow = async () => ({
+    createdSessionId: null,
+    signUp: { status: "missing_requirements" },
+  });
+  await render();
+  await tap("Sign in with Apple");
+  expect(text()).toContain("couldn't finish setting up the account");
+});
+
+it("keeps the account and says why when signing out fails", async () => {
+  clerk.signedIn = true;
+  clerk.signOutFails = true;
+  await render();
+  await tap("Sign out");
+  expect(text()).toContain("Signing out didn't work.");
+  expect(text()).toContain("Signed in with Apple");
+});
+
+it("keeps the session in the keychain and starts offline from Clerk's saved state", async () => {
+  await act(() => root.render(h(AccountProvider, null, h("p", null, "app"))));
+  expect(text()).toBe("app");
+  expect(clerk.providerProps).toMatchObject({
+    publishableKey: "pk_test_x",
+    tokenCache: { name: "tokenCache" },
+    __experimental_resourceCache: expect.any(Function),
+    __experimental_disableNativeClientSync: true,
+    updateRequiredViewEnabled: false,
+  });
+
+  key.value = "";
+  clerk.providerProps = null;
+  await act(() => root.render(h(AccountProvider, null, h("p", null, "app"))));
+  expect(text()).toBe("app");
+  expect(clerk.providerProps).toBeNull();
 });
 
 it("words Clerk's errors for people", () => {

@@ -3,7 +3,7 @@ import { createElement, type ReactNode } from "react";
 // Node stand-in for @clerk/expo, its Apple sign-in and expo-apple-authentication in tests: the real
 // modules need the phone's native code and Clerk's servers. Tests drive `clerk` directly.
 
-type Flow = () => Promise<{ createdSessionId: string | null }>;
+type Flow = () => Promise<{ createdSessionId: string | null; signUp?: { status: string } }>;
 
 export const clerk = {
   loaded: true,
@@ -12,7 +12,11 @@ export const clerk = {
   /** What tapping Sign in with Apple does; by default it signs in as someone. */
   appleFlow: (async () => ({ createdSessionId: "sess_1" })) as Flow,
   calls: [] as string[],
+  signOutFails: false,
+  providerProps: null as Record<string, unknown> | null,
   reset() {
+    clerk.signOutFails = false;
+    clerk.providerProps = null;
     clerk.loaded = true;
     clerk.signedIn = false;
     clerk.email = undefined;
@@ -29,8 +33,12 @@ export class ClerkAPIResponseError extends Error {
 export const isClerkAPIResponseError = (error: unknown): error is ClerkAPIResponseError =>
   error instanceof ClerkAPIResponseError;
 
-export const ClerkProvider = ({ children }: { children: ReactNode }) => children;
-export const tokenCache = undefined;
+export const ClerkProvider = ({ children, ...props }: { children: ReactNode }) => {
+  clerk.providerProps = props;
+  return children;
+};
+export const tokenCache = { name: "tokenCache" };
+export const resourceCache = () => ({ name: "resourceCache" });
 
 export function useAuth() {
   return {
@@ -38,6 +46,7 @@ export function useAuth() {
     isSignedIn: clerk.loaded && clerk.signedIn,
     signOut: async () => {
       clerk.calls.push("signOut");
+      if (clerk.signOutFails) throw new TypeError("Network request failed");
       clerk.signedIn = false;
     },
   };
@@ -54,9 +63,10 @@ export function useSignInWithApple() {
   return {
     startAppleAuthenticationFlow: async () => {
       clerk.calls.push("apple");
-      const { createdSessionId } = await clerk.appleFlow();
+      const { createdSessionId, signUp } = await clerk.appleFlow();
       return {
         createdSessionId,
+        signUp,
         setActive: async ({ session }: { session: string }) => {
           clerk.calls.push(`setActive ${session}`);
           clerk.signedIn = true;

@@ -1,4 +1,5 @@
 import { ClerkProvider } from "@clerk/expo";
+import { resourceCache } from "@clerk/expo/resource-cache";
 import { tokenCache } from "@clerk/expo/token-cache";
 import type { ReactNode } from "react";
 import { clerkPublishableKey } from "./clerk-key.ts";
@@ -14,6 +15,9 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     <ClerkProvider
       publishableKey={clerkPublishableKey}
       tokenCache={tokenCache}
+      // Opening without a connection: Clerk starts from what it saved last time (a signed-in
+      // person stays signed in) and keeps retrying, instead of giving up until the next launch.
+      __experimental_resourceCache={resourceCache}
       // The app draws its own sign-in and never uses Clerk's native screens.
       __experimental_disableNativeClientSync
       updateRequiredViewEnabled={false}

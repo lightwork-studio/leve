@@ -16,12 +16,21 @@ import { themedStyles, useAppearance, useStyles } from "../ui/themed.ts";
 import { clerkPublishableKey } from "./clerk-key.ts";
 
 const SIGNED_OUT_NOTE =
-  "Signing in keeps a copy of your workouts with Leve, so a new phone can pick up where this one left off. Syncing arrives in a coming update. Everything keeps working without an account.";
+  "For now, signing in only sets up your account, and your workouts stay on this phone. Once syncing arrives, they back up to it and follow you to a new phone. Everything works without an account.";
 const SIGNED_IN_NOTE =
-  "Your workouts stay on this device too. Syncing arrives in a coming update. Signing out keeps everything here.";
+  "Your workouts are still only on this phone. Once syncing arrives, they back up to this account. Signing out keeps everything here.";
+const OFFLINE_NOTE = "Sign-in needs a connection. It appears here once Leve is back online.";
+const SIGN_OUT_FAILED = "Signing out didn't work. Check the connection and try again.";
+/** Clerk wanted more than Apple gave it, so no account was made. */
+const INCOMPLETE =
+  "Leve couldn't finish setting up the account. Nothing was changed; try again later.";
+
+/** A problem whose message is already meant for people. */
+class AccountProblem extends Error {}
 
 /** What to tell someone when signing in didn't work. */
 export function signInProblem(error: unknown): string {
+  if (error instanceof AccountProblem) return error.message;
   if (isClerkAPIResponseError(error)) {
     const first = error.errors[0];
     return first?.longMessage ?? first?.message ?? "Sign-in didn't work. Try again.";
@@ -46,13 +55,7 @@ function Account() {
   const [busy, setBusy] = useState(false);
   const working = useRef(false);
 
-  const show = (message: string) => {
-    haptic.warning();
-    setProblem(message);
-    announce(message);
-  };
-
-  const run = async (work: () => Promise<void>) => {
+  const run = async (work: () => Promise<void>, failed: (error: unknown) => string) => {
     if (working.current) return;
     working.current = true;
     setBusy(true);
@@ -60,7 +63,10 @@ function Account() {
     try {
       await work();
     } catch (error) {
-      show(signInProblem(error));
+      const message = failed(error);
+      haptic.warning();
+      setProblem(message);
+      announce(message);
     } finally {
       working.current = false;
       setBusy(false);
@@ -69,35 +75,54 @@ function Account() {
 
   const signIn = () =>
     run(async () => {
-      const { createdSessionId, setActive } = await startAppleAuthenticationFlow();
-      // No session means the sheet was dismissed: nothing to report.
-      if (!createdSessionId || !setActive) return;
+      const { createdSessionId, setActive, signUp } = await startAppleAuthenticationFlow();
+      if (!createdSessionId || !setActive) {
+        if (signUp?.status === "missing_requirements") throw new AccountProblem(INCOMPLETE);
+        // Otherwise the sheet was dismissed: nothing to report.
+        return;
+      }
       await setActive({ session: createdSessionId });
       haptic.success();
-    });
+    }, signInProblem);
 
-  const note = problem ?? (isSignedIn ? SIGNED_IN_NOTE : SIGNED_OUT_NOTE);
+  if (!isLoaded) {
+    // Clerk keeps trying in the background; the button appears once it can be used.
+    return (
+      <Group label="Account" footnote={OFFLINE_NOTE}>
+        {null}
+      </Group>
+    );
+  }
 
-  if (isLoaded && isSignedIn) {
+  if (isSignedIn) {
     const email = user?.primaryEmailAddress?.emailAddress;
     return (
-      <Group label="Account" footnote={note}>
+      <Group label="Account" footnote={problem ?? SIGNED_IN_NOTE}>
         <SettingRow label="Signed in with Apple" {...(email ? { hint: email } : {})}>
           {null}
         </SettingRow>
         <ActionRow
           label={busy ? "Signing out…" : "Sign out"}
           divider
-          accessibilityHint="Your workouts stay on this device"
-          onPress={() => run(() => signOut())}
+          accessibilityHint="Your workouts stay on this phone"
+          onPress={() =>
+            run(
+              () => signOut(),
+              () => SIGN_OUT_FAILED,
+            )
+          }
         />
       </Group>
     );
   }
 
   return (
-    <Group label="Account" footnote={isLoaded ? note : (problem ?? "Sign-in needs a connection.")}>
-      <View style={styles.signIn} pointerEvents={isLoaded && !busy ? "auto" : "none"}>
+    <Group label="Account" footnote={problem ?? SIGNED_OUT_NOTE}>
+      <View
+        style={[styles.signIn, busy && styles.waiting]}
+        pointerEvents={busy ? "none" : "auto"}
+        accessibilityElementsHidden={busy}
+      >
         <AppleAuthenticationButton
           buttonType={AppleAuthenticationButtonType.SIGN_IN}
           buttonStyle={
@@ -106,7 +131,7 @@ function Account() {
               : AppleAuthenticationButtonStyle.WHITE
           }
           cornerRadius={radius.button}
-          style={[styles.appleButton, !(isLoaded && !busy) && styles.waiting]}
+          style={styles.appleButton}
           onPress={signIn}
         />
       </View>

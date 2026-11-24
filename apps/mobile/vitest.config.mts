@@ -11,7 +11,7 @@ export default defineProject({
       { find: "expo-crypto", replacement: support("expo-crypto.ts") },
       { find: "expo-file-system", replacement: support("expo-file-system.ts") },
       {
-        find: /^(@clerk\/expo(\/apple|\/token-cache)?|expo-apple-authentication)$/,
+        find: /^(@clerk\/expo(\/apple|\/token-cache|\/resource-cache)?|expo-apple-authentication)$/,
         replacement: support("clerk-expo.ts"),
       },
     ],
