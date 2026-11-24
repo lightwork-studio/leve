@@ -96,7 +96,7 @@ describe("Leve's own catalog additions", () => {
   const equipment = new Set(catalog.filter((item) => "sourceId" in item).map((e) => e.equipment));
 
   it("adds common movements with their own ids, muscles and logging fields", () => {
-    expect(additions.length).toBeGreaterThan(150);
+    expect(additions).toHaveLength(160);
     for (const item of additions) {
       expect(item.id).toMatch(/^builtin:[a-z0-9-]+$/);
       expect(item.id.length).toBeLessThanOrEqual(64);
@@ -126,6 +126,33 @@ describe("Leve's own catalog additions", () => {
       type: "assisted_bodyweight",
       usesBodyweight: true,
     });
+    expect(
+      additions
+        .filter((item) => "usesBodyweight" in item && item.usesBodyweight)
+        .map((item) => item.id),
+    ).toEqual([
+      "builtin:assisted-chest-dip",
+      "builtin:assisted-chin-up",
+      "builtin:assisted-pull-up",
+      "builtin:assisted-triceps-dip",
+      "builtin:floor-triceps-dip",
+      "builtin:kipping-pull-up",
+      "builtin:negative-pull-up",
+      "builtin:ring-pull-up",
+      "builtin:weighted-chest-dip",
+      "builtin:weighted-chin-up",
+      "builtin:weighted-triceps-dip",
+    ]);
+  });
+
+  it("logs band resistance as weight for the band movements Leve adds or retypes", () => {
+    for (const id of [
+      "builtin:lateral-raise-with-bands",
+      "builtin:squats-with-bands",
+      "builtin:bench-press-with-bands",
+      "builtin:band-chest-fly",
+    ])
+      expect(builtInExercise(id)?.type).toBe("weight_reps");
   });
 
   it("finds additions by name and muscle alongside the source movements", () => {

@@ -796,14 +796,6 @@
     "type": "weight_reps"
   },
   {
-    "id": "builtin:band-chest-press",
-    "name": "Band Chest Press",
-    "equipment": "Bands",
-    "muscles": ["Chest"],
-    "secondaryMuscles": ["Shoulders", "Triceps"],
-    "type": "weight_reps"
-  },
-  {
     "id": "builtin:band-deadlift",
     "name": "Band Deadlift",
     "equipment": "Bands",
@@ -871,14 +863,6 @@
     "type": "weight_reps"
   },
   {
-    "id": "builtin:band-lateral-raise",
-    "name": "Band Lateral Raise",
-    "equipment": "Bands",
-    "muscles": ["Shoulders"],
-    "secondaryMuscles": [],
-    "type": "weight_reps"
-  },
-  {
     "id": "builtin:band-lateral-walk",
     "name": "Band Lateral Walk",
     "equipment": "Bands",
@@ -903,14 +887,6 @@
     "secondaryMuscles": [],
     "sourceId": "Band_Skull_Crusher",
     "type": "bodyweight_reps"
-  },
-  {
-    "id": "builtin:band-squat",
-    "name": "Band Squat",
-    "equipment": "Bands",
-    "muscles": ["Quadriceps"],
-    "secondaryMuscles": ["Glutes", "Hamstrings"],
-    "type": "weight_reps"
   },
   {
     "id": "builtin:bar-facing-burpee",
@@ -1242,7 +1218,7 @@
     "muscles": ["Chest"],
     "secondaryMuscles": ["Shoulders", "Triceps"],
     "sourceId": "Bench_Press_-_With_Bands",
-    "type": "bodyweight_reps"
+    "type": "weight_reps"
   },
   {
     "id": "builtin:bench-press-with-chains",
@@ -1381,8 +1357,8 @@
     "id": "builtin:bird-dog",
     "name": "Bird Dog",
     "equipment": "Bodyweight",
-    "muscles": ["Glutes"],
-    "secondaryMuscles": ["Abdominals", "Lower back", "Shoulders"],
+    "muscles": ["Lower back"],
+    "secondaryMuscles": ["Abdominals", "Glutes"],
     "type": "bodyweight_reps"
   },
   {
@@ -2492,8 +2468,8 @@
     "id": "builtin:dead-hang",
     "name": "Dead Hang",
     "equipment": "Bodyweight",
-    "muscles": ["Middle back"],
-    "secondaryMuscles": ["Forearms", "Lats"],
+    "muscles": ["Forearms"],
+    "secondaryMuscles": ["Lats", "Middle back"],
     "type": "duration"
   },
   {
@@ -4465,8 +4441,8 @@
     "id": "builtin:kettlebell-slingshot",
     "name": "Kettlebell Slingshot",
     "equipment": "Kettlebells",
-    "muscles": ["Shoulders"],
-    "secondaryMuscles": ["Abdominals", "Forearms"],
+    "muscles": ["Abdominals"],
+    "secondaryMuscles": ["Forearms", "Shoulders"],
     "type": "weight_reps"
   },
   {
@@ -4741,7 +4717,7 @@
     "muscles": ["Shoulders"],
     "secondaryMuscles": [],
     "sourceId": "Lateral_Raise_-_With_Bands",
-    "type": "bodyweight_reps"
+    "type": "weight_reps"
   },
   {
     "id": "builtin:latissimus-dorsi-smr",
@@ -6064,16 +6040,16 @@
     "id": "builtin:plank-shoulder-tap",
     "name": "Plank Shoulder Tap",
     "equipment": "Bodyweight",
-    "muscles": ["Shoulders"],
-    "secondaryMuscles": ["Abdominals", "Triceps"],
+    "muscles": ["Abdominals"],
+    "secondaryMuscles": ["Shoulders", "Triceps"],
     "type": "bodyweight_reps"
   },
   {
     "id": "builtin:plank-up-down",
     "name": "Plank Up-Down",
     "equipment": "Bodyweight",
-    "muscles": ["Chest"],
-    "secondaryMuscles": ["Abdominals", "Shoulders", "Triceps"],
+    "muscles": ["Abdominals"],
+    "secondaryMuscles": ["Chest", "Shoulders", "Triceps"],
     "type": "bodyweight_reps"
   },
   {
@@ -8061,15 +8037,7 @@
     "muscles": ["Quadriceps"],
     "secondaryMuscles": ["Calves", "Glutes", "Hamstrings", "Lower back"],
     "sourceId": "Squats_-_With_Bands",
-    "type": "bodyweight_reps"
-  },
-  {
-    "id": "builtin:stair-climber",
-    "name": "Stair Climber",
-    "equipment": "Machine",
-    "muscles": ["Cardio"],
-    "secondaryMuscles": [],
-    "type": "distance_duration"
+    "type": "weight_reps"
   },
   {
     "id": "builtin:stair-climber-steps",
@@ -8850,22 +8818,6 @@
     "secondaryMuscles": ["Glutes", "Hamstrings"],
     "sourceId": "Thigh_Adductor",
     "type": "weight_reps"
-  },
-  {
-    "id": "builtin:timed-farmers-carry",
-    "name": "Timed Farmer's Carry",
-    "equipment": "Other",
-    "muscles": ["Full body"],
-    "secondaryMuscles": ["Abdominals", "Forearms", "Quadriceps", "Traps"],
-    "type": "distance_duration"
-  },
-  {
-    "id": "builtin:timed-sled-push",
-    "name": "Timed Sled Push",
-    "equipment": "Other",
-    "muscles": ["Full body"],
-    "secondaryMuscles": ["Calves", "Glutes", "Quadriceps", "Shoulders"],
-    "type": "distance_duration"
   },
   {
     "id": "builtin:tire-flip",
