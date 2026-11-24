@@ -145,6 +145,7 @@ import {
   dockTarget,
   type Entry,
   entryDistanceUnit,
+  exerciseAfterLog,
   type LiveSet,
   labelOf,
   pendingAsk,
@@ -928,7 +929,7 @@ export default function ActiveWorkoutScreen() {
     setRirPicker(null);
     setRirTyping(null);
     setFieldProblem(null);
-    focusExercise(entry.entry.id);
+    focusExercise(exerciseAfterLog(tree, entry.entry.id));
     haptic.tap();
     afterLog(store, tree.workout.id, entry, set.id, setDrafts);
     // Asked about this set now; a question about an earlier one goes unanswered.

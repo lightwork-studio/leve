@@ -3,10 +3,15 @@ import { emptyWorkoutSet } from "../src/model/live.ts";
 import type { WorkoutTree } from "../src/model/past-workouts.ts";
 import type { WorkoutSet } from "../src/model/types.ts";
 import { fieldView, logValues } from "../src/ui/live/set-fields.ts";
-import { dockTarget } from "../src/ui/live/targets.ts";
+import { dockTarget, exerciseAfterLog } from "../src/ui/live/targets.ts";
 
 const done = "2026-11-20T10:00:00.000Z";
-const entry = (id: string, name: string, sets: Partial<WorkoutSet>[]) => ({
+const entry = (
+  id: string,
+  name: string,
+  sets: Partial<WorkoutSet>[],
+  supersetId: number | null = null,
+) => ({
   entry: {
     id,
     content: {
@@ -15,7 +20,7 @@ const entry = (id: string, name: string, sets: Partial<WorkoutSet>[]) => ({
       exerciseName: name,
       exerciseType: "weight_reps",
       position: 1,
-      supersetId: null,
+      supersetId,
       notes: [],
       restSeconds: 90,
       doubleDumbbellVolume: false,
@@ -113,5 +118,62 @@ describe("a field of a set", () => {
 
   it("asks for reps when nothing says how many were done", () => {
     expect(logValues({ ...base, previous: undefined })).toMatchObject({ missing: "reps" });
+  });
+});
+
+describe("the exercise selected after a set is logged", () => {
+  // Bench and Row alternate as a superset; Curl stands on its own before them.
+  const tree = () =>
+    workout([
+      entry("curl", "Curl", [{}, {}]),
+      entry("bench", "Bench Press", [{ type: "warmup" }, {}, {}], 4),
+      entry("row", "Row", [{}, {}], 4),
+    ]);
+  const log = (tree: WorkoutTree, setId: string) => {
+    const set = tree.entries.flatMap((e) => e.sets).find((s) => s.id === setId);
+    if (!set) throw new Error(`Missing ${setId}`);
+    set.content.completedAt = done;
+  };
+
+  it("alternates through a superset, warm-ups included, and the dock follows", () => {
+    const t = tree();
+    // What the dock offers once the exercise selected after a log is shown.
+    const after = (id: string) => {
+      const next = exerciseAfterLog(t, id);
+      return dockTarget(
+        t,
+        t.entries.findIndex((e) => e.entry.id === next),
+      );
+    };
+    log(t, "bench1");
+    expect(after("bench")).toMatchObject({ entryIndex: 2, setIndex: 0 });
+    log(t, "row1");
+    expect(after("row")).toMatchObject({ entryIndex: 1, setIndex: 1, label: "1" });
+  });
+
+  it("stays on an exercise once the rest of its superset is finished", () => {
+    const t = tree();
+    for (const id of ["bench1", "row1", "bench2", "row2"]) log(t, id);
+    expect(exerciseAfterLog(t, "bench")).toBe("bench");
+  });
+
+  it("passes over a finished member in a larger superset", () => {
+    const t = workout([
+      entry("a", "A", [{}, {}], 1),
+      entry("b", "B", [{ completedAt: done }], 1),
+      entry("c", "C", [{}], 1),
+    ]);
+    expect(exerciseAfterLog(t, "a")).toBe("c");
+    expect(exerciseAfterLog(t, "c")).toBe("a");
+  });
+
+  it("stays on an exercise that is not in a superset", () => {
+    expect(exerciseAfterLog(tree(), "curl")).toBe("curl");
+  });
+
+  it("skips a partner whose only open set waits for a sync review", () => {
+    const t = workout([entry("a", "A", [{}, {}], 1), entry("b", "B", [{}], 1)]);
+    Object.assign(t.entries[1]?.sets[0] ?? {}, { needsSyncReview: true });
+    expect(exerciseAfterLog(t, "a")).toBe("a");
   });
 });

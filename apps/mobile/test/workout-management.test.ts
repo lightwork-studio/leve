@@ -3927,7 +3927,48 @@ describe("the logging dock and the number pad", () => {
     expect(document.activeElement).toBe(squat);
     expect(host.querySelector('[aria-label="Log set 1 of Squat"]')).not.toBeNull();
   });
+
+  it("moves the dock to the next exercise of a superset after each logged set", async () => {
+    supersetWorkout();
+    const screen = () => act(() => root.render(h(ActiveWorkoutScreen)));
+    await screen();
+    await press("Log set 1 of Bench Press");
+    await screen();
+    expect(host.querySelector('[aria-label="Log set 1 of Squat"]')).not.toBeNull();
+    await press("Log set 1 of Squat");
+    await screen();
+    expect(host.querySelector('[aria-label="Log set 2 of Bench Press"]')).not.toBeNull();
+    await press("Log set 2 of Bench Press");
+    await screen();
+    await press("Log set 2 of Squat");
+    await screen();
+    expect(host.querySelector('[aria-label^="Log set"]')).toBeNull();
+  });
 });
+
+/** A bench and squat superset of two sets each, with last time's values to log them from. */
+function supersetWorkout() {
+  const past = beginWorkout(store);
+  for (const [exercise, weightKg] of [
+    [EXERCISES.bench, 80],
+    [EXERCISES.squat, 105],
+  ] as const) {
+    const id = addExercise(store, past, exercise, 0);
+    addSet(store, id);
+    for (const set of store.list("workout_set", { parentId: id }))
+      logSet(store, set.id, { weightKg, reps: 5 });
+  }
+  finishWorkout(store, past, { countForRoutine: false });
+  const workout = beginWorkout(store);
+  for (const exercise of [EXERCISES.bench, EXERCISES.squat]) {
+    const id = addExercise(store, workout, exercise, 0);
+    addSet(store, id);
+    const row = store.get("workout_exercise", id);
+    if (!row?.content) throw Error("Missing entry");
+    store.put("workout_exercise", id, { ...row.content, supersetId: 0 });
+  }
+  return workout;
+}
 
 function PlayerProbe({ capture }: { capture: (frame: ReturnType<typeof workoutFrame>) => void }) {
   capture(workoutFrame(useWorkoutPlayer(), Date.now(), true));
@@ -3935,6 +3976,18 @@ function PlayerProbe({ capture }: { capture: (frame: ReturnType<typeof workoutFr
 }
 
 describe("the minimised workout", () => {
+  it("logs a superset in turn, moving to the next exercise after each set", async () => {
+    supersetWorkout();
+    const mini = () => act(() => root.render(h(MiniPlayer)));
+    await mini();
+    await press("Log set 1 of Bench Press");
+    await mini();
+    expect(host.querySelector('[aria-label="Log set 1 of Squat"]')).not.toBeNull();
+    await press("Log set 1 of Squat");
+    await mini();
+    expect(host.querySelector('[aria-label="Log set 2 of Bench Press"]')).not.toBeNull();
+  });
+
   it("resumes with the logged values and previous-set suggestions before the transition ends", async () => {
     const past = beginWorkout(store);
     const pastBench = addExercise(store, past, EXERCISES.bench, 0);
