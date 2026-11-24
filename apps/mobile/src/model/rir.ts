@@ -108,12 +108,10 @@ export function stepRpe(text: string, direction: -1 | 1): string {
 }
 
 /**
- * RIR one step up or down, kept from 0 to RIR_MAX; down from 0 leaves it at 0. A value already past
- * RIR_MAX (saved before the data format capped it) can't go further up, and goes down to RIR_MAX.
+ * RIR one step up or down, kept from 0 to RIR_MAX; down from 0 leaves it at 0.
  */
 export function stepRir(text: string, direction: -1 | 1): string {
   const value = text.trim() === "" ? null : Number(text);
   if (value === null || Number.isNaN(value)) return direction > 0 ? "0" : "";
-  if (value > RIR_MAX && direction > 0) return text;
   return String(Math.min(RIR_MAX, Math.max(0, Math.round(value) + direction)));
 }
