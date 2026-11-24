@@ -113,6 +113,21 @@ export function routineTarget(plan: WorkoutPlan | null, set: WorkoutSet) {
     : { ...target, repRangeMin: null, repRangeMax: null };
 }
 
+/**
+ * The target shown as a hint under a set. A routine's weight is where an exercise starts, so it is
+ * hinted only until a weight was logged at that position; after that, last time's weight leads.
+ * Reps, ranges, time, distance and effort stay goals and are always hinted.
+ */
+export function hintTarget(
+  plan: WorkoutPlan | null,
+  set: WorkoutSet,
+  previous: PreviousSet | undefined,
+) {
+  const target = routineTarget(plan, set);
+  if (!target || previous?.weightKg == null) return target;
+  return { ...target, weightKg: null };
+}
+
 export type PreviousSet = Pick<
   WorkoutSet,
   "weightKg" | "reps" | "durationSeconds" | "distanceMeters" | "count"
