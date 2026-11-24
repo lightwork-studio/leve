@@ -562,9 +562,9 @@
         "firstWeekday": "First day of the week, 0 = Sunday",
         "measurementUnit": "Unit for body measurements",
         "previousValues": "Where 'previous' values come from while logging: any workout or the same routine",
-        "rpeEnabled": "Whether RPE can be entered on sets",
+        "rpeEnabled": "Legacy RPE preference retained for compatibility",
         "shortDistanceUnit": "Unit for short distances; stored values stay in metres",
-        "trackRepsInReserve": "Whether the app asks for reps in reserve after each logged set; null means not set, which reads as off",
+        "trackRepsInReserve": "Whether the app prompts for effort in the workout's scale after logging a set; null means off",
         "weightUnit": "Unit for showing and entering weight; stored values stay in kilograms"
       }
     },

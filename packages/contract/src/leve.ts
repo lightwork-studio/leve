@@ -343,14 +343,14 @@ export const LEVE_CONTRACT_DEFINITION = {
         measurementUnit: "Unit for body measurements",
         firstWeekday: "First day of the week, 0 = Sunday",
         defaultRestSeconds: "Rest timer for new exercise entries; 0 means off",
-        rpeEnabled: "Whether RPE can be entered on sets",
+        rpeEnabled: "Legacy RPE preference retained for compatibility",
         countWarmups: "Whether warm-up sets count toward volume, set counts and records",
         previousValues:
           "Where 'previous' values come from while logging: any workout or the same routine",
         autoUpdateRoutineValues:
           "After a routine-based workout, copy the logged values back into the routine",
         trackRepsInReserve:
-          "Whether the app asks for reps in reserve after each logged set; null means not set, which reads as off",
+          "Whether the app prompts for effort in the workout's scale after logging a set; null means off",
       },
       singletonId: "settings",
       fields: {
@@ -406,7 +406,7 @@ export const LEVE_CONTRACT_DEFINITION = {
     },
     track_reps_in_reserve: {
       since: v,
-      description: "Choose whether the app asks for reps in reserve after each logged set",
+      description: "Choose whether the app prompts for effort in the workout's scale",
       fields: [["settings", "trackRepsInReserve"]],
     },
     rpe: {

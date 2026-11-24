@@ -320,8 +320,7 @@ export default function ActiveWorkoutScreen() {
   const [rirAsk, setRirAsk] = useState<string | null>(null);
   /** Whether the rest has run while asking: once it ends, the question goes. */
   const askedDuringRest = useRef(false);
-  /** The set with reps in reserve to pick under its row. */
-  const [rirRow, setRirRow] = useState<string | null>(null);
+  const [rirPicker, setRirPicker] = useState<{ setId: string; from: "list" | "dock" } | null>(null);
   const [rirTyping, setRirTyping] = useState<RirTyping | null>(null);
   const previous =
     data && history
@@ -562,10 +561,14 @@ export default function ActiveWorkoutScreen() {
   const target = dockTarget(tree, focusIndex, pickedSetId);
   const effortScale = initialPlan?.effortScale ?? "rir";
   const scaleFor = (set: LiveSet) => setEffortScale(set.content, initialPlan?.effortScale);
-  const canStoreEffort = (set: LiveSet) => canRecordSetReserve(store, scaleFor(set));
+  const canStore = {
+    rir: canRecordSetReserve(store),
+    rpe: canRecordSetReserve(store, "rpe"),
+  };
+  const canStoreEffort = (set: LiveSet) => canStore[scaleFor(set)];
   // The question also needs Track RIR to be changeable here: a server that can store RIR but not
   // the setting hides the switch, and the question must not keep asking with no way to stop it.
-  const asksForRir = canRecordSetReserve(store, effortScale) && canChangeTrackRir(store);
+  const asksForRir = canStore[effortScale] && canChangeTrackRir(store);
 
   // ---- Reading a field ----
   const distanceUnitOf = (entry: Entry) =>
@@ -710,7 +713,7 @@ export default function ActiveWorkoutScreen() {
     if (logged) focusExercise(entry.entry.id);
     else focusSet(entry.entry.id, set.id);
     setSetEditor(null);
-    setRirRow(null);
+    setRirPicker(null);
     setRirTyping(null);
     setEditing({
       entryId: entry.entry.id,
@@ -904,7 +907,7 @@ export default function ActiveWorkoutScreen() {
     if (!attempt((db) => logSet(db, set.id, result.values))) return;
     setEditing(null);
     setSetEditor(null);
-    setRirRow(null);
+    setRirPicker(null);
     setRirTyping(null);
     setFieldProblem(null);
     focusExercise(entry.entry.id);
@@ -945,7 +948,7 @@ export default function ActiveWorkoutScreen() {
   const closeEditors = () => {
     setEditing(null);
     setSetEditor(null);
-    setRirRow(null);
+    setRirPicker(null);
     setRirTyping(null);
   };
   const openSetEditor = (entry: Entry, set: LiveSet) => {
@@ -986,7 +989,7 @@ export default function ActiveWorkoutScreen() {
     settleRemoval();
     if (editing?.setId === set.id) setEditing(null);
     if (setEditor === set.id) setSetEditor(null);
-    if (rirRow === set.id) setRirRow(null);
+    if (rirPicker?.setId === set.id) setRirPicker(null);
     if (rirTyping?.setId === set.id) setRirTyping(null);
     if (rirAsk === set.id) setRirAsk(null);
     const message = `${setName(entry, set)} removed`;
@@ -1017,7 +1020,7 @@ export default function ActiveWorkoutScreen() {
     if (!recordRir(set, value)) return;
     haptic.select();
     if (rirAsk === set.id) setRirAsk(null);
-    setRirRow(null);
+    setRirPicker(null);
   };
   /**
    * 5+: opens the pad on the set's RIR (5 when it has none), for anything up to 10. Nothing is
@@ -1031,18 +1034,17 @@ export default function ActiveWorkoutScreen() {
     const reserve = set.content.repsInReserve;
     setRirTyping({ setId: set.id, text: reserve == null ? "5" : String(reserve), fresh: true });
   };
-  /** A set's RIR cell opens (or closes) the strip under its row. */
-  const toggleRirRow = (entry: Entry, set: LiveSet) => {
+  const toggleRirPicker = (entry: Entry, set: LiveSet, from: "list" | "dock") => {
     if (gate()) return;
     if (editing && !commit(editing)) return;
-    const opening = rirRow !== set.id;
+    const opening = rirPicker?.setId !== set.id || rirPicker.from !== from;
     closeEditors();
     if (set.content.completedAt === null) focusSet(entry.entry.id, set.id);
     else focusExercise(entry.entry.id);
     if (!opening) return;
-    // The strip under the row answers the dock's question too, so it isn't asked twice.
+    // Manual editing also answers the dock's question for this set.
     if (rirAsk === set.id) setRirAsk(null);
-    setRirRow(set.id);
+    setRirPicker({ setId: set.id, from });
   };
   const pressRir = (key: PadKey) => {
     if (!rirTyping) return;
@@ -1106,6 +1108,22 @@ export default function ActiveWorkoutScreen() {
       />
     );
   };
+  const manualRirPicks = (entry: Entry, set: LiveSet) => (
+    <>
+      {rirPicks({ entry, set }, "plain")}
+      {effortValue(set.content, scaleFor(set)) !== null && (
+        <Tap
+          accessibilityRole="button"
+          accessibilityLabel="Clear effort"
+          onPress={() => {
+            if (!gate() && recordRir(set, null)) setRirPicker(null);
+          }}
+        >
+          <Text style={styles.target}>Clear effort</Text>
+        </Tap>
+      )}
+    </>
+  );
   const fieldsLine = (entry: Entry, set: LiveSet, setIndex: number) =>
     valuesLine(
       metricsOf(entry.entry.content.exerciseType).map((metric) => ({
@@ -1125,9 +1143,14 @@ export default function ActiveWorkoutScreen() {
 
   const typing = rirTyping ? find(rirTyping.setId) : null;
   const editorFound = setEditor ? find(setEditor) : null;
+  const dockRir = rirPicker?.from === "dock" ? find(rirPicker.setId) : null;
   const typingFromDock = editing?.from === "dock" && editing.setId === target?.set.id;
   const editorOpen =
-    (editing?.from === "list" && editingFound) || typingFromDock || typing || editorFound;
+    (editing?.from === "list" && editingFound) ||
+    typingFromDock ||
+    typing ||
+    editorFound ||
+    dockRir;
   // Keep the slab in the same dock slot as an editor opens so the countdown can resize in place.
   const fullRest = !editorOpen && rest && resting ? rest : null;
   const dockRest = editorOpen ? rest : fullRest;
@@ -1203,6 +1226,24 @@ export default function ActiveWorkoutScreen() {
         </>
       );
     }
+    if (dockRir) {
+      const { entry, set, setIndex } = dockRir;
+      const name = entry.entry.content.exerciseName;
+      const detail = `${setName(entry, set)} · ${effortLabel(scaleFor(set))}`;
+      return (
+        <>
+          <EditHeader
+            chip={labelOf(entry, setIndex)}
+            logged={set.content.completedAt !== null}
+            exercise={name}
+            detail={detail}
+            announcement={`${name}, ${detail}`}
+            onCancel={() => setRirPicker(null)}
+          />
+          {manualRirPicks(entry, set)}
+        </>
+      );
+    }
     // The set's own editor, from its number: its type, and Remove set.
     if (editorFound) {
       const { entry, set, setIndex } = editorFound;
@@ -1227,7 +1268,7 @@ export default function ActiveWorkoutScreen() {
             canStoreEffort(set) && countsReps(entry.entry.content.exerciseType)
               ? {
                   label: `Edit ${effortLabel(scale)}`,
-                  onPress: () => toggleRirRow(entry, set),
+                  onPress: () => toggleRirPicker(entry, set, "dock"),
                 }
               : undefined
           }
@@ -1341,7 +1382,9 @@ export default function ActiveWorkoutScreen() {
                   label: effortLabel(scale),
                   value: currentEffort,
                   target: plannedEffort,
-                  onEdit: canStoreEffort(set) ? () => toggleRirRow(entry, set) : undefined,
+                  onEdit: canStoreEffort(set)
+                    ? () => toggleRirPicker(entry, set, "dock")
+                    : undefined,
                 }
               : undefined
           }
@@ -1371,7 +1414,7 @@ export default function ActiveWorkoutScreen() {
   };
   /** Without a rest timer, the question sits above the logging strip. */
   const askAbove =
-    asked && !resting && !editing && !rirTyping && !setEditor ? (
+    asked && !resting && !editing && !rirTyping && !setEditor && !dockRir ? (
       <View style={styles.ask}>
         <RirQuestion scale={effortScale} about={askedAbout(asked)} onSkip={() => setRirAsk(null)} />
         {rirPicks(asked, "plain")}
@@ -1586,26 +1629,11 @@ export default function ActiveWorkoutScreen() {
                             ),
                         })}
                         canStoreRir={canStoreEffort}
-                        rirRowId={rirRow}
+                        rirRowId={rirPicker?.from === "list" ? rirPicker.setId : null}
                         rirTyping={rirTyping}
-                        rirPicks={(set) => (
-                          <>
-                            {rirPicks({ entry, set }, "plain")}
-                            {effortValue(set.content, scaleFor(set)) !== null && (
-                              <Tap
-                                accessibilityRole="button"
-                                accessibilityLabel="Clear effort"
-                                onPress={() => {
-                                  if (!gate() && recordRir(set, null)) setRirRow(null);
-                                }}
-                              >
-                                <Text style={styles.target}>Clear effort</Text>
-                              </Tap>
-                            )}
-                          </>
-                        )}
+                        rirPicks={(set) => manualRirPicks(entry, set)}
                         swipedId={swiped}
-                        canSwipe={!editing && !setEditor && !rirTyping && !rirRow}
+                        canSwipe={!editing && !setEditor && !rirTyping && !rirPicker}
                         editorSetId={setEditor ?? rirTyping?.setId ?? null}
                         onSwipe={(set, opened) => {
                           if (opened) settleRemoval();
@@ -1613,7 +1641,7 @@ export default function ActiveWorkoutScreen() {
                         }}
                         onRemoveSet={(set) => removeSet(entry, set)}
                         onEditSet={(set) => openSetEditor(entry, set)}
-                        onRirCell={(set) => toggleRirRow(entry, set)}
+                        onRirCell={(set) => toggleRirPicker(entry, set, "list")}
                         onGate={gate}
                         onInteract={() => focusExercise(entry.entry.id)}
                         onPick={(set) => {

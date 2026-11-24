@@ -2110,12 +2110,18 @@ it("shows planned effort in the dock and can record actual effort with captions 
   await act(() => root.render(h(ActiveWorkoutScreen)));
   expect(field("RPE in dock")?.textContent).toBe("RPE–8.5");
   expect(field("RPE 8.5")).toBeNull();
+  await press("Bench Press");
+  expect(field("reps for set 1")).toBeNull();
+  await press("RPE in dock");
+  await press("RPE 7.5");
+  expect(readWorkoutTree(store, workout)?.entries[0]?.sets[0]?.content.rpe).toBe(7.5);
+  expect(field("Log set 1 of Bench Press")).not.toBeNull();
+  await press("RPE in dock");
+  await press("Clear effort");
+  await press("Bench Press");
   await press("reps for set 2");
   await press("Done typing");
   expect(field("RPE in dock")?.textContent).toBe("RPE–7.5");
-  await press("RPE in dock");
-  expect(field("Log set 2 of Bench Press")).not.toBeNull();
-  await press("RPE in dock");
   await act(() => saveShowTargets(false));
   expect(field("RPE in dock")).toBeNull();
   await press("Log set 1");
@@ -3756,7 +3762,8 @@ describe("the minimised workout", () => {
 
     const workout = beginWorkout(store);
     addExercise(store, workout, EXERCISES.bench, 0);
-    addExercise(store, workout, EXERCISES.squat, 0);
+    const squat = addExercise(store, workout, EXERCISES.squat, 0);
+    for (let i = 0; i < 10; i++) addSet(store, squat);
     const mini = () => act(() => root.render(h(MiniPlayer)));
     await mini();
     expect(host.textContent).toContain("Bench Press · 80 × 8");
@@ -3764,6 +3771,7 @@ describe("the minimised workout", () => {
     await mini();
     expect(host.textContent).toContain("Squat · 105 × 5");
     const list = vi.spyOn(store, "list");
+    const syncState = vi.spyOn(store, "syncState");
     settled = false;
     try {
       await press("Resume Workout");
@@ -3780,6 +3788,7 @@ describe("the minimised workout", () => {
         false,
       );
       expect(list).not.toHaveBeenCalled();
+      expect(syncState.mock.calls.length).toBeLessThanOrEqual(6);
 
       settled = true;
       await act(() => root.render(h(ActiveWorkoutScreen)));
@@ -3787,6 +3796,7 @@ describe("the minimised workout", () => {
     } finally {
       settled = true;
       list.mockRestore();
+      syncState.mockRestore();
     }
   });
 
