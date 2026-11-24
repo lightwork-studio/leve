@@ -1,11 +1,10 @@
 /// <reference lib="dom" />
-import { Link, router, useLocalSearchParams } from "expo-router";
+import { Link, useLocalSearchParams } from "expo-router";
 import { act, createElement, type ReactElement } from "react";
 import { FlatList, SectionList, Text, TextInput, View } from "react-native";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { expect, it, vi } from "vitest";
 import HistoryScreen, { savedSettleMs } from "../app/(tabs)/history.tsx";
-import WorkoutCalendar, { CalendarMonth } from "../app/history/calendar.tsx";
 import type { useHistory } from "../src/data/queries.ts";
 import type { WorkoutSummary } from "../src/model/past-workouts.ts";
 import type { WorkoutRecord } from "../src/model/progress.ts";
@@ -465,156 +464,76 @@ it("finds a workout by its fourth movement, shows the match on its card, and cle
   }
 });
 
-it.each([
-  ["History", {}, {}],
-  ["Progress", { from: "progress" }, { from: "progress" }],
-] as const)(
-  "opens leap-day sessions from the %s calendar in the chosen weekday order",
-  async (_tab, entryParams, linkOrigin) => {
-    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-    const sessions = ["Morning", "Evening"].map((title, index) => ({
-      id: title.toLowerCase(),
-      title,
-      startedAt: new Date(2024, 1, 29, 8 + index * 10).toISOString(),
-      durationMinutes: index === 0 ? 0 : 25,
-      volumeKg: 0,
-      sets: 1,
-      reps: 0,
-      loggedWarmups: 0,
-      excludedWarmups: 0,
-      recordedSeconds: null,
-      missingTimedSets: 0,
-      exercises: [],
-    }));
-    let screen: ReactTestRenderer | undefined;
-    try {
-      vi.mocked(useLocalSearchParams).mockReturnValue(entryParams);
-      await act(() => {
-        screen = create(createElement(WorkoutCalendar));
-      });
-      if (!screen) throw Error("Missing calendar");
-      const renderMonth = screen.root.findByType(FlatList).props.renderItem;
-      const month = { key: "2024-02", year: 2024, month: 1, workouts: sessions };
-      await act(() => screen?.update(renderMonth({ item: month })));
-      const root = screen.root;
-      const text = () => root.findAllByType(Text).map((n) => n.children.join(""));
-      expect(
-        root.findByProps({ accessibilityLabel: "2 sessions on 1 training day" }),
-      ).toBeDefined();
-      const weekdays = root.findAll((n) => n.type === Text && n.props["aria-hidden"]);
-      expect(weekdays.map((n) => n.children.join(""))).toEqual(["M", "T", "W", "T", "F", "S", "S"]);
-      expect(text()).not.toContain("30");
-      const day = root.findByProps({ accessibilityRole: "button" });
-      expect(day.props.accessibilityLabel).toContain("2 workouts");
-      expect(day.findByType(Text).children.join("")).toBe("29");
-      // Thursday, the fourth column with Monday first.
-      const cell = day.parent;
-      expect(cell?.parent?.children.indexOf(cell)).toBe(3);
-      expect(text()).not.toContain("Morning");
-      await act(() => day.props.onPress());
-      expect(text()).toContain("Evening");
-      expect(text().some((label) => label.endsWith(" · <1 min"))).toBe(true);
-      expect(root.findAllByType(Link).map((link) => link.props.href)).toEqual(
-        expect.arrayContaining(
-          ["morning", "evening"].map((id) => ({
-            pathname: "/workout/[id]",
-            params: { id, back: "Calendar", ...linkOrigin },
-          })),
-        ),
-      );
-      await act(() => day.props.onPress());
-      expect(text()).not.toContain("Evening");
-    } finally {
-      vi.mocked(useLocalSearchParams).mockReturnValue({});
-      await act(() => screen?.unmount());
-      vi.unstubAllGlobals();
-    }
-  },
-);
-
-it("closes the calendar date after its final workout disappears and keeps today identifiable", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const today = new Date(2026, 10, 10, 12).getTime();
-  const workout = {
-    id: "walk",
-    title: "Lunch walk",
-    startedAt: new Date(today).toISOString(),
-    durationMinutes: 20,
-    volumeKg: 0,
-    sets: 1,
-    reps: 0,
-    loggedWarmups: 0,
-    excludedWarmups: 0,
-    recordedSeconds: null,
-    missingTimedSets: 0,
-    exercises: [],
-  };
-  const month = (workouts: (typeof workout)[]) =>
-    createElement(CalendarMonth, {
-      month: { key: "2026-11", year: 2026, month: 10, workouts },
-      today,
-      firstWeekday: 1,
-    });
-  let screen: ReactTestRenderer | undefined;
+it("keeps the month controls on screen, greyed out, while there is only one month", async () => {
+  historyMonths = [];
+  const { screen, root, layout } = await mountHistory();
   try {
-    await act(() => {
-      screen = create(month([workout]));
-    });
-    if (!screen) throw Error("Missing calendar month");
-    const root = screen.root;
-    const trained = () => root.findByProps({ accessibilityRole: "button" });
-    await act(() => trained().props.onPress());
-    expect(root.findByType(Link).props.href.params.id).toBe("walk");
-
-    await act(() => screen?.update(month([])));
+    await layout(362);
+    for (const label of ["Show newer month", "Show older month"]) {
+      const control = root.findByProps({ accessibilityLabel: label });
+      expect(control.props.disabled).toBe(true);
+      expect(control.props.accessibilityState).toEqual({ disabled: true });
+    }
+    // The month card is the calendar: History links to no separate one.
     expect(root.findAllByType(Link)).toHaveLength(0);
-    expect(root.findAllByProps({ accessibilityRole: "button" })).toHaveLength(0);
-
-    await act(() => screen?.update(month([{ ...workout, id: "swim", title: "Evening swim" }])));
-    expect(trained().props.accessibilityState.expanded).toBe(false);
-    expect(root.findAllByType(Link)).toHaveLength(0);
-    expect(trained().props.accessibilityLabel).toContain("today");
-    await act(() => trained().props.onPress());
-    expect(root.findByType(Link).props.href.params.id).toBe("swim");
-
-    await act(() => screen?.update(month([])));
-    expect(root.findByProps({ children: 10 }).props.accessibilityLabel).toContain("today");
-    const emptyDate = new Date(2026, 10, 11).toLocaleDateString(undefined, {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-    expect(root.findByProps({ children: 11 }).props.accessibilityLabel).toBe(emptyDate);
   } finally {
-    await act(() => screen?.unmount());
+    await act(() => screen.unmount());
     vi.unstubAllGlobals();
   }
 });
 
-it.each([
-  [{ from: "progress" }, "Progress", "/progress"],
-  [{}, "History", "/history"],
-] as const)(
-  "returns from the calendar to its entry tab when opened without a navigation stack (%j)",
-  async (params, tab, path) => {
-    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-    vi.mocked(useLocalSearchParams).mockReturnValue(params);
-    let screen: ReactTestRenderer | undefined;
-    try {
-      await act(() => {
-        screen = create(createElement(WorkoutCalendar));
-      });
-      if (!screen) throw new Error("Missing calendar");
-      const back = screen.root.findByProps({ accessibilityLabel: `Back to ${tab}` });
-      await act(() => back.props.onPress());
-      expect(router.replace).toHaveBeenLastCalledWith(path);
-    } finally {
-      await act(() => screen?.unmount());
-      vi.clearAllMocks();
-      vi.unstubAllGlobals();
-    }
-  },
-);
+it("opens leap-day sessions from an earlier month in the chosen weekday order", async () => {
+  historyMonths = [
+    monthOf(2024, 1, [
+      session("evening", [2024, 1, 29, 18], { durationMinutes: 25 }),
+      session("morning", [2024, 1, 29, 8], { durationMinutes: 0 }),
+    ]),
+  ];
+  const { screen, root, layout } = await mountHistory({
+    createNodeMock: (node) => (node.type === FlatList ? { scrollToOffset: () => {} } : null),
+  });
+  let card: ReactTestRenderer | undefined;
+  try {
+    await layout(362);
+    await act(() => root.findByProps({ accessibilityLabel: "Show older month" }).props.onPress());
+    const pager = () => root.findByType(FlatList);
+    const renderFebruary = () =>
+      pager().props.renderItem({ item: pager().props.data[1], index: 1 });
+    await act(() => {
+      card = create(renderFebruary());
+    });
+    if (!card) throw Error("Missing month card");
+    const days = card.root;
+    const text = () => root.findAllByType(Text).map((n) => n.children.join(""));
+    expect(days.findByProps({ accessibilityLabel: "2 sessions on 1 training day" })).toBeDefined();
+    const weekdays = days.findAll((n) => n.type === Text && n.props["aria-hidden"]);
+    expect(weekdays.map((n) => n.children.join(""))).toEqual(["M", "T", "W", "T", "F", "S", "S"]);
+    expect(days.findAllByProps({ children: 30 })).toHaveLength(0);
+    const day = days.findByProps({ accessibilityRole: "button" });
+    expect(day.props.accessibilityLabel).toContain("2 workouts");
+    expect(day.findByType(Text).children.join("")).toBe("29");
+    // Thursday, the fourth column with Monday first.
+    const cell = day.parent;
+    expect(cell?.parent?.children.indexOf(cell)).toBe(3);
+    expect(text()).not.toContain("morning");
+    await act(() => day.props.onPress());
+    expect(text()).toContain("evening");
+    expect(text().some((label) => label.endsWith(" · <1 min"))).toBe(true);
+    expect(root.findAllByType(Link).map((link) => link.props.href)).toEqual(
+      ["evening", "morning"].map((id) => ({ pathname: "/workout/[id]", params: { id } })),
+    );
+    await act(() => card?.update(renderFebruary()));
+    await act(() => days.findByProps({ accessibilityRole: "button" }).props.onPress());
+    expect(text()).not.toContain("evening");
+  } finally {
+    await act(() => {
+      card?.unmount();
+      screen.unmount();
+    });
+    historyMonths = [];
+    vi.unstubAllGlobals();
+  }
+});
 
 it("picks out the workout just saved once the finish sheet has gone, in view, and only once", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
