@@ -194,6 +194,8 @@ interface RirTyping {
 
 /** How long Undo stays after a set is removed, unless something else is done first. */
 const UNDO_MS = 8000;
+/** How long a released check stays painted while the web's click, which logs it, is on its way. */
+const CLICK_AFTER_RELEASE_MS = 150;
 /** How long it stays while a screen reader is running on a phone, to reach and hear it. */
 const UNDO_READING_MS = 10 * UNDO_MS;
 /** Said once the workout is left, when a set removed just before it changed and so was kept. */
@@ -2313,6 +2315,14 @@ function SetRow({
   // Paint the check on contact. Only a completed tap can log a set or start its rest.
   const [checking, setChecking] = useState(false);
   const showCheck = isDone || checking;
+  // On the web the tap arrives as a click after the finger lifts. Keep the check painted until
+  // then, so it doesn't vanish before the set is logged. A tap that never completes clears it.
+  const releasing = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stopReleasing = () => {
+    if (releasing.current !== null) clearTimeout(releasing.current);
+    releasing.current = null;
+  };
+  useEffect(() => stopReleasing, []);
   const timing = running !== undefined;
   const highlighted = isCurrent || editing !== null || editorOpen || rirOpen;
   const reserve = set.content.repsInReserve;
@@ -2431,9 +2441,21 @@ function SetRow({
                 accessibilityLabel={isDone ? `Undo logged set ${label}` : `Log set ${label}`}
                 accessibilityState={{ checked: isDone, disabled: !isDone && (!ready || timing) }}
                 disabled={!isDone && (!ready || timing)}
-                onPressIn={() => setChecking(!isDone && !swiped)}
-                onPressOut={() => setChecking(false)}
+                onPressIn={() => {
+                  stopReleasing();
+                  setChecking(!isDone && !swiped);
+                }}
+                onPressOut={() => {
+                  stopReleasing();
+                  if (Platform.OS !== "web") setChecking(false);
+                  else
+                    releasing.current = setTimeout(() => {
+                      releasing.current = null;
+                      setChecking(false);
+                    }, CLICK_AFTER_RELEASE_MS);
+                }}
                 onPress={() => {
+                  stopReleasing();
                   setChecking(false);
                   if (isDone) onUnlog();
                   else onLog();
@@ -2686,7 +2708,14 @@ const sheet = themedStyles((c) => ({
   valueHint: { color: c.fg2 },
   missing: { ...font.bodySemi, fontSize: 12, color: c.alert, textDecorationLine: "underline" },
   caret: { width: 2, height: 24, marginLeft: 2, backgroundColor: c.fg },
-  checkHit: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
+  checkHit: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    // Quick taps in a row each log a set instead of being read as a double-tap zoom.
+    ...(Platform.OS === "web" && { touchAction: "manipulation" }),
+  },
   checkBox: {
     width: 36,
     height: 36,
