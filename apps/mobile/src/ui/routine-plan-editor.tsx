@@ -493,6 +493,22 @@ function ExerciseBlock({
   const doneTyping = () => {
     filling.current = null;
   };
+  // An added set starts from the targets and type of the last working set, never a warm-up's.
+  const nextSet = (): PlannedExercise["sets"][number] => {
+    const source = [...entry.sets].reverse().find((s) => typeOf(s) !== "warmup");
+    const set: PlannedExercise["sets"][number] = { id: newId(), values: {} };
+    if (!source) return set;
+    const fields: PlanField[] = columns.map(({ metric }) => metric);
+    if (repBased) fields.push("repRangeMin", "repRangeMax", "effort");
+    for (const field of fields) {
+      const value = shown(source, field);
+      if (!value) continue;
+      if (field === "effort") set.effortText = value;
+      else set.values[field] = value;
+    }
+    const type = typeOf(source);
+    return type === "normal" ? set : { ...set, type };
+  };
 
   return (
     <View style={styles.block}>
@@ -716,7 +732,7 @@ function ExerciseBlock({
           accessibilityRole="button"
           accessibilityLabel={`Add set to ${name}`}
           onPress={() => {
-            const set = { id: newId(), values: {} };
+            const set = nextSet();
             edit((e) => ({ ...e, sets: [...e.sets, set] }));
           }}
           scaleTo={0.98}

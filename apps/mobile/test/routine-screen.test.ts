@@ -676,6 +676,64 @@ it("fills a typed target into the blank sets of its kind and leaves set values a
   }
 });
 
+it("starts an added set from the last working set's targets, skipping warm-ups", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  store = await openDeviceStore({
+    engine: createSqlJsEngine(await initSqlJs()),
+    path: "/add-set-copies",
+    appVersion: "test",
+  });
+  let rendered: ReactTestRenderer | undefined;
+  try {
+    await act(() => {
+      rendered = create(createElement(NewRoutine));
+    });
+    if (!rendered) throw new Error("Missing routine form");
+    const root = rendered.root;
+    const field = (label: string) =>
+      root.findByProps({ accessibilityLabel: `Bench Press ${label}` });
+    const set = (n: number) =>
+      ["KG", "REPS", "target RIR"].map((column) => field(`set ${n} ${column}`).props.value);
+    const addSet = () =>
+      act(() => root.findByProps({ accessibilityLabel: "Add set to Bench Press" }).props.onPress());
+    await act(() =>
+      root.findByProps({ accessibilityLabel: "Routine name" }).props.onChangeText("Push"),
+    );
+    await tapText(root, "Add exercise");
+    await act(() =>
+      root
+        .find((n) => typeof n.props.onPickMany === "function")
+        .props.onPickMany([EXERCISES.bench]),
+    );
+    await act(() => field("set 1 KG").props.onChangeText("100"));
+    await act(() => field("set 1 REPS").props.onChangeText("8"));
+    await act(() => field("set 1 target RIR").props.onChangeText("2"));
+    await addSet();
+    expect(set(2)).toEqual(["100", "8", "2"]);
+    // A warm-up is never the source: the next set copies the last working set.
+    await act(() => field("set 2 type: Working").props.onPress());
+    await tapText(root, "Warm-up");
+    await act(() => field("set 2 KG").props.onChangeText("40"));
+    await addSet();
+    expect(set(3)).toEqual(["100", "8", "2"]);
+    expect(field("set 3 type: Working")).toBeDefined();
+    await tapText(root, "Save routine");
+    expect(store.list("routine")[0]?.content?.exercises).toMatchObject([
+      {
+        sets: [
+          { type: "normal", weightKg: 100, reps: 8, repsInReserve: 2 },
+          { type: "warmup", weightKg: 40, reps: 8, repsInReserve: 2 },
+          { type: "normal", weightKg: 100, reps: 8, repsInReserve: 2 },
+        ],
+      },
+    ]);
+  } finally {
+    await act(() => rendered?.unmount());
+    store.close();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("keeps stored targets when a blank stored set gets a typed value", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   store = await openDeviceStore({
@@ -849,6 +907,10 @@ it.each(["empty", "conflict", "saved"])(
         return;
       }
       await pressText("Add set");
+      // The new set starts from set 2's range; clearing its minimum leaves only a maximum.
+      await act(() =>
+        root.findByProps({ accessibilityLabel: "Old press set 3 Min reps" }).props.onChangeText(""),
+      );
       await act(() =>
         root
           .findByProps({ accessibilityLabel: "Old press set 3 Max reps" })
@@ -925,7 +987,7 @@ it.each(["empty", "conflict", "saved"])(
         if (!movement) throw new Error("Missing exercise from the edited plan");
         expect(
           store.list("workout_set", { parentId: movement.id }).map((row) => row.content?.type),
-        ).toEqual(["failure", "drop", "normal"]);
+        ).toEqual(["failure", "drop", "drop"]);
       }
     } finally {
       await act(() => rendered?.unmount());
