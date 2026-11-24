@@ -139,10 +139,10 @@ it("says what went wrong when signing in fails", async () => {
   expect(text()).toContain("Check the connection and try again.");
 });
 
-it("explains that sign-in needs a connection, without a button, while Clerk can't load", async () => {
+it("shows no button while Clerk is still loading", async () => {
   clerk.loaded = false;
   await render();
-  expect(text()).toContain("Sign-in needs a connection.");
+  expect(text()).toContain("Checking your account…");
   expect(text()).not.toContain("Sign in with Apple");
   clerk.loaded = true;
   await render();

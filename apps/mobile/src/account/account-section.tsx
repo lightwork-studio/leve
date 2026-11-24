@@ -19,7 +19,6 @@ const SIGNED_OUT_NOTE =
   "For now, signing in only sets up your account, and your workouts stay on this phone. Once syncing arrives, they back up to it and follow you to a new phone. Everything works without an account.";
 const SIGNED_IN_NOTE =
   "Your workouts are still only on this phone. Once syncing arrives, they back up to this account. Signing out keeps everything here.";
-const OFFLINE_NOTE = "Sign-in needs a connection. It appears here once Leve is back online.";
 const SIGN_OUT_FAILED = "Signing out didn't work. Check the connection and try again.";
 /** Clerk wanted more than Apple gave it, so no account was made. */
 const INCOMPLETE =
@@ -86,10 +85,10 @@ function Account() {
     }, signInProblem);
 
   if (!isLoaded) {
-    // Clerk keeps trying in the background; the button appears once it can be used.
+    // Only for a moment: offline, Clerk starts from what it saved last time.
     return (
-      <Group label="Account" footnote={OFFLINE_NOTE}>
-        {null}
+      <Group label="Account">
+        <SettingRow label="Checking your account…">{null}</SettingRow>
       </Group>
     );
   }
