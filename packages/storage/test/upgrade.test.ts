@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { closeSync, openSync, readdirSync, readFileSync, writeSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import {
   DEVICE_STORAGE_VERSION,
@@ -621,6 +621,7 @@ it("registers the exact migration source for each released storage upgrade", () 
   expect(
     readdirSync(root, { recursive: true, encoding: "utf8" })
       .filter((f) => f.endsWith(".ts"))
+      .map((f) => f.split(sep).join("/"))
       .sort(),
   ).toEqual(Object.keys(files).sort());
   for (const [file, digest] of Object.entries(files)) {
