@@ -29,7 +29,7 @@ export interface MuscleFigureProps {
   /** The height of each side, in points; the width follows. */
   height: number;
   sides?: readonly Side[];
-  /** A muscle to pick out: the others dim and it gets an outline. */
+  /** A muscle to pick out: the others dim, and it gets an outline and lines between its parts. */
   selected?: string | null;
   /**
    * Makes the figure answer taps: a tap picks the muscle under it, or the nearest one within about
@@ -45,8 +45,10 @@ export interface MuscleFigureProps {
 }
 
 /**
- * The body from the front and back, each muscle shaded by how much it was trained. Selection is an
- * outline drawn over the chosen muscle (the others dim), so its fill keeps its own shade.
+ * The body from the front and back, each muscle shaded by how much it was trained. Selection dims
+ * the other muscles and rings the chosen one, which keeps its own shade. The ring is drawn under the
+ * muscle and fine lines in the body's colour over it, so a muscle drawn in parts (the abs, say)
+ * still shows them when its shade is as light as the ring.
  */
 export const MuscleFigure = memo(function MuscleFigure({
   amounts,
@@ -112,7 +114,7 @@ function FigureSide({
   const small = height < SMALL;
   const body = small ? c.muscle.small : c.muscle.body;
   const neutral = small ? c.muscle.small : c.muscle.neutral;
-  const outline = selected ? musclePath(side, selected) : undefined;
+  const chosen = selected ? musclePath(side, selected) : undefined;
   const pick = (event: GestureResponderEvent) => {
     if (!onSelect) return;
     const { locationX, locationY } = event.nativeEvent;
@@ -130,23 +132,42 @@ function FigureSide({
           strokeWidth={c.muscle.line ? point * (small ? 0.75 : 1) : undefined}
         />
         <Path d={musclePath(side, "neutral")} fill={neutral} />
-        {sideMuscles(side).map((group) => (
-          <Path
-            key={group}
-            testID={`muscle-${side}-${group}`}
-            d={musclePath(side, group)}
-            fill={c.muscle.ramp[steps.get(group) ?? 0]}
-            opacity={selected && selected !== group ? 0.3 : 1}
-          />
-        ))}
-        {outline ? (
-          <Path
-            testID={`muscle-${side}-selected`}
-            d={outline}
-            fill="none"
-            stroke={c.fg}
-            strokeWidth={point * 2}
-          />
+        {sideMuscles(side).map((group) =>
+          chosen && group === selected ? null : (
+            <Path
+              key={group}
+              testID={`muscle-${side}-${group}`}
+              d={musclePath(side, group)}
+              fill={c.muscle.ramp[steps.get(group) ?? 0]}
+              opacity={selected ? 0.3 : 1}
+            />
+          ),
+        )}
+        {chosen && selected ? (
+          <>
+            {/* Half the ring is hidden under the muscle, so 3 points show as 1.5 outside it. */}
+            <Path
+              testID={`muscle-${side}-selected`}
+              d={chosen}
+              fill="none"
+              stroke={c.fg}
+              strokeWidth={point * 3}
+              strokeLinejoin="round"
+            />
+            <Path
+              testID={`muscle-${side}-${selected}`}
+              d={chosen}
+              fill={c.muscle.ramp[steps.get(selected) ?? 0]}
+              opacity={1}
+            />
+            <Path
+              testID={`muscle-${side}-selected-parts`}
+              d={chosen}
+              fill="none"
+              stroke={body}
+              strokeWidth={point * 0.75}
+            />
+          </>
         ) : null}
       </Svg>
       {onSelect ? (

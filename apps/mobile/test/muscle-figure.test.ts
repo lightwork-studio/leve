@@ -97,6 +97,41 @@ describe("shading", () => {
       );
     }
   });
+
+  it("keeps the lines between a chosen muscle's parts when it is shaded as light as its outline", () => {
+    // The filter shades the chosen muscle at the top step, which is the outline's ink.
+    expect(ramp[4]).toBe(dark.fg);
+    const html = renderToStaticMarkup(
+      createElement(MuscleFigure, {
+        amounts: { abdominals: 1 },
+        height: 168,
+        sides: ["front"],
+        selected: "abdominals",
+        accessibilityLabel: "Abs chosen",
+      }),
+    );
+    const abs = paths.front.abdominals;
+    const at = (drawn: string) => {
+      const index = html.indexOf(drawn);
+      expect(index, drawn).toBeGreaterThanOrEqual(0);
+      return index;
+    };
+    const point = 1276 / 168;
+    // The outline goes under the muscle, so it can't fill the gaps between the parts in ink …
+    const outline = at(
+      `testID="muscle-front-selected" d="${abs}" fill="none" stroke="${dark.fg}" stroke-width="${point * 3}"`,
+    );
+    const muscle = at(`testID="muscle-front-abdominals" d="${abs}" fill="${ramp[4]}" opacity="1"`);
+    // … and lines in the body's colour, drawn over it, keep the parts apart.
+    const parts = at(
+      `testID="muscle-front-selected-parts" d="${abs}" fill="none" stroke="${dark.muscle.body}"`,
+    );
+    expect(outline).toBeLessThan(muscle);
+    expect(muscle).toBeLessThan(parts);
+    // The muscle is drawn once, after the dimmed rest.
+    expect(html.split(`d="${abs}" fill="${ramp[4]}"`)).toHaveLength(2);
+    expect(at(`testID="muscle-front-chest"`)).toBeLessThan(outline);
+  });
 });
 
 describe("tapping the figure", () => {
