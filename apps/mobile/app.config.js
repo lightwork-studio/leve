@@ -5,6 +5,10 @@ module.exports = ({ config }) => {
 
   return {
     ...config,
+    experiments: {
+      ...config.experiments,
+      ...(process.env.EXPO_PUBLIC_WEB_DEMO === "1" ? { baseUrl: "/demo" } : {}),
+    },
     name: "Leve Dev",
     slug: "leve-dev",
     scheme: "leve-dev",

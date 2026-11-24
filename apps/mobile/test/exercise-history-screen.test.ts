@@ -1,5 +1,5 @@
 import { act, createElement } from "react";
-import { SectionList, Text } from "react-native";
+import { FlatList, Text } from "react-native";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { expect, it, vi } from "vitest";
 import ExercisesScreen from "../app/exercises.tsx";
@@ -12,8 +12,9 @@ vi.mock("react-native-safe-area-context", () => ({
 }));
 vi.mock("react-native-svg", () => ({ default: "Svg", Path: "Path" }));
 vi.mock("react-native", () => ({
+  Platform: { OS: "web" },
   useColorScheme: () => "dark",
-  SectionList: ({ ListHeaderComponent }: { ListHeaderComponent: React.ReactNode }) =>
+  FlatList: ({ ListHeaderComponent }: { ListHeaderComponent: React.ReactNode }) =>
     ListHeaderComponent,
   View: "View",
   Text: "Text",
@@ -55,13 +56,21 @@ it("filters logged movements with the anatomy figure, chips and search, keeping 
     });
     if (!screen) throw Error("Missing logged exercises");
     const root = screen.root;
-    const shown = () =>
-      root
-        .findByType(SectionList)
-        .props.sections.map((section: { title: string; data: { name: string }[] }) => [
-          section.title,
-          section.data.map((e) => e.name),
-        ]);
+    const shown = () => {
+      const rows: (
+        | { kind: "heading"; title: string }
+        | { kind: "exercise"; exercise: { name: string } }
+        | { kind: "gap" }
+      )[] = root.findByType(FlatList).props.data;
+      const sections: [string, string[]][] = [];
+      let section: [string, string[]] = ["", []];
+      for (const row of rows) {
+        if (row.kind === "heading") section = [row.title, []];
+        if (row.kind === "exercise") section[1].push(row.exercise.name);
+        if (row.kind === "gap") sections.push(section);
+      }
+      return sections;
+    };
     const chip = (label: string) =>
       act(() => {
         const chips = root.findAll((n) => n.props.accessibilityRole === "radio");
@@ -84,6 +93,15 @@ it("filters logged movements with the anatomy figure, chips and search, keeping 
     expect(
       root.findAllByProps({ accessibilityLabel: "Filter by muscle group, Triceps" }).length,
     ).toBeGreaterThan(0);
+    await act(() => search().props.onFocus());
+    expect(search().props.value).toBe("");
+    expect(
+      root.findAllByProps({ accessibilityLabel: "Filter by muscle group, Triceps" }),
+    ).toHaveLength(0);
+    expect(shown()).toEqual([
+      ["Triceps · primary", ["Band press"]],
+      ["Also works triceps", ["Bench Press"]],
+    ]);
     await act(() => search().props.onChangeText("band"));
     expect(shown()).toEqual([["Triceps · primary", ["Band press"]]]);
     expect(
@@ -117,6 +135,13 @@ it("filters logged movements with the anatomy figure, chips and search, keeping 
     await act(() => search().props.onChangeText("retired"));
     expect(shown()).toEqual([]);
     await act(() => search().props.onChangeText(""));
+    expect(
+      root.findAllByProps({ accessibilityLabel: "Filter by muscle group, Triceps" }),
+    ).toHaveLength(0);
+    await act(() => search().props.onBlur());
+    expect(
+      root.findAllByProps({ accessibilityLabel: "Filter by muscle group, Triceps" }).length,
+    ).toBeGreaterThan(0);
     // The chips reach every muscle, including ones the figure doesn't draw.
     await chip("Other");
     expect(shown()).toEqual([["Other · primary", ["Retired movement"]]]);

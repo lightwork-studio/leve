@@ -5,6 +5,7 @@ import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-cont
 // Without an extension, so browsers get the version without sign-in.
 import { AccountProvider } from "../src/account/account-provider";
 import { UnavailableWorkoutActivity, WorkoutActivityHost } from "../src/activity/workout-activity";
+import { buildInfo } from "../src/build-info.ts";
 import { AppDataProvider, useAppData } from "../src/data/app-data.tsx";
 import { gutter, space, type } from "../src/theme.ts";
 import { Button } from "../src/ui/buttons.tsx";
@@ -38,6 +39,11 @@ export default function RootLayout() {
     <SafeAreaProvider>
       {/* Dark status bar text on paper, light text on graphite. */}
       <StatusBar style={appearance === "paper" ? "dark" : "light"} />
+      {buildInfo.webDemo && typeof window !== "undefined" && window.parent === window ? (
+        <Text style={styles.demoNotice}>
+          Sample workouts. Changes reset when you leave the demo.
+        </Text>
+      ) : null}
       <AccountProvider>
         <AppDataProvider
           loading={blank}
@@ -145,6 +151,13 @@ function SaveProblemBanner() {
 }
 
 const sheet = themedStyles((c) => ({
+  demoNotice: {
+    ...type.label,
+    padding: space.sm,
+    backgroundColor: c.s1,
+    color: c.fg2,
+    textAlign: "center",
+  },
   bannerDock: {
     paddingHorizontal: gutter.group - 2,
     paddingBottom: space.sm,

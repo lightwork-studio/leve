@@ -83,17 +83,18 @@ const navigation = {
     return () => blurListeners.delete(listener);
   },
 };
+function change<T>(write: (value: DeviceStore) => T, scope?: "active-workout"): T {
+  const updated = applyAppChange(store, write, scope);
+  version++;
+  historyVersion = updated.historyVersion;
+  return updated.result;
+}
 vi.mock("../src/data/app-data.tsx", () => ({
   useAppData: () => ({
     store,
     version,
     historyVersion,
-    change: (write: (value: DeviceStore) => unknown, scope?: "active-workout") => {
-      const updated = applyAppChange(store, write, scope);
-      version++;
-      historyVersion = updated.historyVersion;
-      return updated.result;
-    },
+    change,
   }),
 }));
 vi.mock("expo-router", () => ({
@@ -121,7 +122,6 @@ vi.mock("../src/data/queries.ts", async (load) => ({
   ...(await load<typeof import("../src/data/queries.ts")>()),
   useWorkoutDetail: (id: string) => workoutDetail(store, id),
   useHistory: () => historyData(store),
-  useLive: () => liveData(store),
   useProgress: () => progressData(store),
 }));
 vi.mock("../src/ui/line-chart.tsx", () => ({ LineChart: () => null }));
@@ -149,7 +149,10 @@ vi.mock("../src/ui/enter.tsx", () => ({
 }));
 vi.mock("react-native-reanimated", () => ({
   useReducedMotion: () => true,
-  default: { View: ({ children }: { children: ReactNode }) => children },
+  default: {
+    View: ({ children }: { children: ReactNode }) => children,
+    Text: ({ children }: { children: ReactNode }) => children,
+  },
   useSharedValue: (value: number) => ({ value }),
   useAnimatedStyle: () => ({}),
   Easing: { linear: (value: number) => value },
@@ -160,6 +163,7 @@ vi.mock("react-native-reanimated", () => ({
 vi.mock("../src/ui/motion.ts", () => ({
   easeOut: undefined,
   layout: undefined,
+  layoutDuration: 220,
   sinkOut: undefined,
   spring: undefined,
 }));
@@ -564,9 +568,12 @@ it.each([
     const show = () => act(() => root.render(h(Screen)));
     await show();
     await press("Discard workout");
-    finishWorkout(store, first, { title: "Finished elsewhere", countForRoutine: false });
-    const second = beginWorkout(store);
-    addExercise(store, second, EXERCISES.squat, 60);
+    const second = change((db) => {
+      finishWorkout(db, first, { title: "Finished elsewhere", countForRoutine: false });
+      const next = beginWorkout(db);
+      addExercise(db, next, EXERCISES.squat, 60);
+      return next;
+    });
     await show();
     // The sheet opened for the first session closed with it.
     expect(host.querySelector('[role="dialog"][aria-label="Discard workout"]')).toBeNull();
@@ -1567,7 +1574,7 @@ it("drops an unfinished entry when undoing a set logged while the workout was mi
   await render();
   await typeInto("kg for set 1", "70");
   await press("Minimise workout");
-  logSet(store, set.id, { weightKg: 80, reps: 8 });
+  change((db) => logSet(db, set.id, { weightKg: 80, reps: 8 }), "active-workout");
   await render();
   await press("Undo logged set 1");
   await render();
@@ -1651,6 +1658,7 @@ it.each(["completed", "conflict"] as const)(
       }
       await other.sync();
       await editor.sync();
+      version++;
       await render();
       if (state === "completed")
         expect(store.get("workout_set", first.id)?.content?.completedAt).toEqual(
@@ -1686,9 +1694,10 @@ it("restores the chosen distance unit and unfinished text only for the minimised
     distanceMeters: null,
     completedAt: null,
   });
-  discardWorkout(store, workout);
-  const next = beginWorkout(store);
-  addExercise(store, next, run, 0);
+  change((db) => {
+    discardWorkout(db, workout);
+    addExercise(db, beginWorkout(db), run, 0);
+  }, "active-workout");
   await render();
   expect(fieldText("km for set 1")).toBe("–");
   expect(host.querySelector('[aria-label="m for set 1"]')).toBeNull();
@@ -1708,7 +1717,7 @@ it("keeps the weight typed in an unfinished set when synced preferences switch u
   expect(
     store.list("workout_set", { parentId: entry }).map((row) => row.content?.weightKg),
   ).toEqual([null, null]);
-  saveSettings(store, { weightUnit: "lbs" });
+  change((db) => saveSettings(db, { weightUnit: "lbs" }));
   await render();
   expect(fieldText("lbs for set 1")).toBe("88.46");
   await enter("reps for set 1", "8");
@@ -1719,7 +1728,7 @@ it("keeps the weight typed in an unfinished set when synced preferences switch u
   });
   // The second set is edited in pounds, then logged after switching back to kilograms.
   await enter("lbs for set 2", "100");
-  saveSettings(store, { weightUnit: "kg" });
+  change((db) => saveSettings(db, { weightUnit: "kg" }));
   await render();
   expect(fieldText("kg for set 2")).toBe("45.36");
   await enter("reps for set 2", "6");
@@ -1743,9 +1752,7 @@ it("uses a corrected previous set while the current workout stays open", async (
   await render();
   expect(host.textContent).toContain("80 × 8");
 
-  historyVersion = applyAppChange(store, (db) =>
-    updateSet(db, oldSet.id, { weightKg: 75, reps: 9 }),
-  ).historyVersion;
+  change((db) => updateSet(db, oldSet.id, { weightKg: 75, reps: 9 }));
   await render();
   expect(host.textContent).toContain("75 × 9");
   const list = vi.spyOn(store, "list");
@@ -1795,7 +1802,7 @@ it("uses previous values and routine suggestions without a separate target capti
   expect(fieldText("kg for set 2")).toBe("0");
   expect(fieldText("reps for set 2")).toBe("10–12");
   expect(host.textContent).not.toMatch(/\bTarget\b/);
-  saveSettings(store, { weightUnit: "lbs" });
+  change((db) => saveSettings(db, { weightUnit: "lbs" }));
   await render();
   expect(fieldText("lbs for set 2")).toBe("0");
   await press("Log set 1");
@@ -2546,17 +2553,19 @@ it("clears the resolved set’s unsaved timer and preserves the duration typed f
   await typeInto("time for set 1", "1:00");
   await typeInto("time for set 2", "0:40");
   await press("Done typing");
-  store.applyPull(
-    [
-      {
-        kind: "workout_set",
-        id: first.id,
-        state: "live",
-        revision: 50,
-        content: { ...original, durationSeconds: 90 },
-      },
-    ],
-    50,
+  change((db) =>
+    db.applyPull(
+      [
+        {
+          kind: "workout_set",
+          id: first.id,
+          state: "live",
+          revision: 50,
+          content: { ...original, durationSeconds: 90 },
+        },
+      ],
+      50,
+    ),
   );
   await show();
   await press("Review changes to set 1");
@@ -2833,11 +2842,13 @@ it("drops pending exercise choices when a different active workout replaces the 
     (button) => button.textContent === "Add 1 exercise",
   );
   expect(pending).toBeDefined();
-  store.put("workout", first, {
-    ...store.get("workout", first)?.content,
-    endedAt: new Date().toISOString(),
+  const next = change((db) => {
+    db.put("workout", first, {
+      ...db.get("workout", first)?.content,
+      endedAt: new Date().toISOString(),
+    });
+    return beginWorkout(db);
   });
-  const next = beginWorkout(store);
   await show();
   const stale = Array.from(host.querySelectorAll("button")).find(
     (button) => button.textContent === "Add 1 exercise",
@@ -3463,6 +3474,53 @@ function PlayerProbe({ capture }: { capture: (frame: ReturnType<typeof workoutFr
 }
 
 describe("the minimised workout", () => {
+  it("resumes with the logged values and previous-set suggestions before the transition ends", async () => {
+    const past = beginWorkout(store);
+    const pastBench = addExercise(store, past, EXERCISES.bench, 0);
+    const pastSquat = addExercise(store, past, EXERCISES.squat, 0);
+    const [benchSet] = store.list("workout_set", { parentId: pastBench });
+    const [squatSet] = store.list("workout_set", { parentId: pastSquat });
+    if (!benchSet || !squatSet) throw Error("Missing sets from last time");
+    logSet(store, benchSet.id, { weightKg: 80, reps: 8 });
+    logSet(store, squatSet.id, { weightKg: 105, reps: 5 });
+    finishWorkout(store, past, { countForRoutine: false });
+
+    const workout = beginWorkout(store);
+    addExercise(store, workout, EXERCISES.bench, 0);
+    addExercise(store, workout, EXERCISES.squat, 0);
+    const mini = () => act(() => root.render(h(MiniPlayer)));
+    await mini();
+    expect(host.textContent).toContain("Bench Press · 80 × 8");
+    await press("Log set 1 of Bench Press");
+    await mini();
+    expect(host.textContent).toContain("Squat · 105 × 5");
+    const list = vi.spyOn(store, "list");
+    settled = false;
+    try {
+      await press("Resume Workout");
+      expect(pushRoute).toHaveBeenCalledWith("/workout/active");
+      await act(() => root.render(h(ActiveWorkoutScreen)));
+      expect(
+        Array.from(host.querySelectorAll('button[aria-label="kg for set 1"]')).map(
+          (field) => field.textContent,
+        ),
+      ).toEqual(["80", "105"]);
+      expect(host.textContent).toContain("105 × 5");
+      expect(host.querySelector('[aria-label="Log set 1 of Squat"]')).toHaveProperty(
+        "disabled",
+        false,
+      );
+      expect(list).not.toHaveBeenCalled();
+
+      settled = true;
+      await act(() => root.render(h(ActiveWorkoutScreen)));
+      expect(list.mock.calls.filter(([kind]) => kind === "workout_set")).toHaveLength(0);
+    } finally {
+      settled = true;
+      list.mockRestore();
+    }
+  });
+
   it.each([
     "unchanged",
     "edited",

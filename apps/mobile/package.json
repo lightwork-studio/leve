@@ -7,6 +7,7 @@
     "start": "expo start",
     "web": "expo start --web",
     "export:web": "expo export --platform web --output-dir dist",
+    "export:demo": "EXPO_NO_DOTENV=1 LEVE_APP_VARIANT=development EXPO_PUBLIC_WEB_DEMO=1 expo export --platform web --output-dir dist/demo",
     "serve:web": "node scripts/serve-web.mts",
     "typecheck": "tsc -p . && tsc -p tsconfig.node.json",
     "check:ios-bundle": "expo export --platform ios --output-dir dist-ios"

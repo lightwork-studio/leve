@@ -7,6 +7,7 @@ import { finishFolderCreation } from "../src/data/folder-actions.ts";
 import { DestructiveButton } from "../src/ui/action-sheet.tsx";
 import { ChoiceRow, Stepper, ToggleRow } from "../src/ui/choice-row.tsx";
 import { EmptyState } from "../src/ui/empty-state.tsx";
+import { ExercisePicker } from "../src/ui/exercise-picker.tsx";
 import { ErrorRow, FieldError, TextField } from "../src/ui/field.tsx";
 import { gridRows, RestDialog } from "../src/ui/live/rest-dialog.tsx";
 import { NewFolderDialog } from "../src/ui/new-folder-dialog.tsx";
@@ -15,6 +16,13 @@ import { MoreButton, menuPlacement } from "../src/ui/popover-menu.tsx";
 import { SearchField } from "../src/ui/search-field.tsx";
 
 vi.mock("react-native", () => vi.importActual("react-native-web"));
+vi.mock("../src/data/app-data.tsx", () => ({
+  useAppData: () => ({ store: { list: () => [] }, version: 0 }),
+}));
+vi.mock("../src/ui/muscle-figure.tsx", () => ({
+  MuscleFigure: ({ accessibilityLabel }: { accessibilityLabel: string }) =>
+    h("span", { "aria-label": accessibilityLabel }),
+}));
 // Whether motion is reduced, and how many shakes have started.
 const motion = vi.hoisted(() => ({ reduced: false, shakes: 0 }));
 vi.mock("react-native-reanimated", () => {
@@ -285,6 +293,63 @@ describe("fields, search and notices", () => {
     await render("bench");
     await press("Clear search");
     expect(change).toHaveBeenCalledWith("");
+  });
+
+  it("keeps keyboard focus on the muscle control when reached from an empty picker search", {
+    timeout: 20000,
+  }, async () => {
+    await act(() =>
+      root.render(h(ExercisePicker, { included: [], onPick: vi.fn(), onClose: vi.fn() })),
+    );
+    const field = byLabel("Search exercises");
+    if (!field) throw Error("Missing search field");
+    await act(() => field.focus());
+    const chip = byLabel("Muscle filter, All muscles");
+    if (!chip) throw Error("Missing muscle filter");
+    await act(() => chip.focus());
+    expect(document.activeElement).toBe(chip);
+    await act(() => chip.click());
+    expect(byLabel("Filter by muscle group, All muscles")).not.toBeNull();
+    await act(() => byLabel("Cancel")?.focus());
+    expect(document.activeElement).toBe(byLabel("Cancel"));
+    expect(byLabel("Muscle filter, All muscles")).toBeNull();
+  });
+
+  it("keeps the visible Bench Press thumbnail mounted while switching and clearing muscle groups", {
+    timeout: 20000,
+  }, async () => {
+    await act(() =>
+      root.render(h(ExercisePicker, { included: [], onPick: vi.fn(), onClose: vi.fn() })),
+    );
+    const field = byLabel("Search exercises");
+    if (!(field instanceof HTMLInputElement)) throw Error("Missing search field");
+    await act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
+        field,
+        "barbell bench press",
+      );
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(byLabel("Clear exercise search")).not.toBeNull();
+    await press("Muscle filter, All muscles");
+    const bench = (muscle = "") => byLabel(`Add Bench Press, Weight and reps${muscle}`);
+    const thumbnail = bench()?.querySelector('[aria-label=""]');
+    expect(thumbnail).toBeInstanceOf(HTMLElement);
+    const select = async (muscle: string) => {
+      const chip = Array.from(document.querySelectorAll<HTMLElement>('[role="radio"]')).find(
+        (node) => node.textContent === muscle,
+      );
+      if (!chip) throw Error(`Missing muscle chip ${muscle}`);
+      await act(() => chip.click());
+      return chip;
+    };
+
+    expect((await select("Chest")).getAttribute("aria-checked")).toBe("true");
+    expect(bench(", Chest (primary)")?.querySelector('[aria-label=""]')).toBe(thumbnail);
+    expect((await select("Triceps")).getAttribute("aria-checked")).toBe("true");
+    expect(bench(", Triceps (secondary)")?.querySelector('[aria-label=""]')).toBe(thumbnail);
+    expect((await select("Triceps")).getAttribute("aria-checked")).toBe("false");
+    expect(bench()?.querySelector('[aria-label=""]')).toBe(thumbnail);
   });
 
   it("shows a toast for a while, the newest replacing the last", async () => {
