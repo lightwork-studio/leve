@@ -521,7 +521,7 @@ it("offers the routine up next when idle and starts it just as its card does", a
 /** The card a row sits in: the nearest `Enter` (closed folders) or `View` above it. */
 const cardOf = (root: ReactTestRenderer["root"], label: string) => {
   let node = root.findByProps({ accessibilityLabel: label }).parent;
-  while (node && node.type !== "Enter" && node.type !== View) node = node.parent;
+  while (node && node.type !== ("Enter" as never) && node.type !== View) node = node.parent;
   return node;
 };
 
@@ -547,7 +547,9 @@ it("adds a routine at the end of each open folder, and a folder after the closed
     const closed = cardOf(root, "New folder");
     expect(closed?.type).toBe("Enter");
     expect(
-      closed?.findAll((n) => n.type === "Tap" && n.props.accessibilityState?.expanded === false),
+      closed?.findAll(
+        (n) => n.type === ("Tap" as never) && n.props.accessibilityState?.expanded === false,
+      ),
     ).toHaveLength(1);
     await act(() => press(root, "New folder"));
     const dialog = root.findByType("Dialog" as never);
