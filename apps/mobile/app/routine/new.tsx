@@ -72,9 +72,9 @@ function RoutineForm({
   const [effortScale, setEffortScale] = useState(draft?.effortScale ?? "rir");
   const [reordering, setReordering] = useState(false);
   const [reorderGripHeld, setReorderGripHeld] = useState(false);
-  // A blank routine opens on its name with the keyboard up. One drafted from a workout already has
-  // a name. Only on opening: the field comes back after reordering without raising the keyboard.
-  const [focusName, setFocusName] = useState(!draft);
+  // A routine opens on its name with the keyboard up while the name is blank; one drafted from a
+  // workout usually has one. Only on opening: the field comes back after reordering without it.
+  const [focusName, setFocusName] = useState(!name.trim());
   if (reordering && focusName) setFocusName(false);
   const [problem, setProblem] = useState("");
   const saving = useRef(false);
