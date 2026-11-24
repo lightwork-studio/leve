@@ -45,8 +45,10 @@ export interface MuscleFigureProps {
 }
 
 /**
- * The body from the front and back, each muscle shaded by how much it was trained. Selection is an
- * outline drawn over the chosen muscle (the others dim), so its fill keeps its own shade.
+ * The body from the front and back, each muscle shaded by how much it was trained. Selection dims
+ * the other muscles and rings the chosen one, which keeps its own shade. The ring stands a point
+ * off the muscle and stays out of the narrow gaps between its parts, so a muscle drawn in parts
+ * (the abs, say) still shows them when its shade is the ring's ink.
  */
 export const MuscleFigure = memo(function MuscleFigure({
   amounts,
@@ -112,7 +114,7 @@ function FigureSide({
   const small = height < SMALL;
   const body = small ? c.muscle.small : c.muscle.body;
   const neutral = small ? c.muscle.small : c.muscle.neutral;
-  const outline = selected ? musclePath(side, selected) : undefined;
+  const chosen = selected ? musclePath(side, selected) : undefined;
   const pick = (event: GestureResponderEvent) => {
     if (!onSelect) return;
     const { locationX, locationY } = event.nativeEvent;
@@ -130,23 +132,48 @@ function FigureSide({
           strokeWidth={c.muscle.line ? point * (small ? 0.75 : 1) : undefined}
         />
         <Path d={musclePath(side, "neutral")} fill={neutral} />
-        {sideMuscles(side).map((group) => (
-          <Path
-            key={group}
-            testID={`muscle-${side}-${group}`}
-            d={musclePath(side, group)}
-            fill={c.muscle.ramp[steps.get(group) ?? 0]}
-            opacity={selected && selected !== group ? 0.3 : 1}
-          />
-        ))}
-        {outline ? (
-          <Path
-            testID={`muscle-${side}-selected`}
-            d={outline}
-            fill="none"
-            stroke={c.fg}
-            strokeWidth={point * 2}
-          />
+        {sideMuscles(side).map((group) =>
+          chosen && group === selected ? null : (
+            <Path
+              key={group}
+              testID={`muscle-${side}-${group}`}
+              d={musclePath(side, group)}
+              fill={c.muscle.ramp[steps.get(group) ?? 0]}
+              opacity={selected ? 0.3 : 1}
+            />
+          ),
+        )}
+        {chosen && selected ? (
+          <>
+            {/*
+              Both strokes sit under the muscle, so only their outer halves show: a point of the
+              body's colour around it, then a point of ink. In a gap of up to two points between
+              parts, the body's colour covers the ring, so the gap looks as it does when nothing is
+              chosen; parts further apart get a ring each.
+            */}
+            <Path
+              testID={`muscle-${side}-selected`}
+              d={chosen}
+              fill="none"
+              stroke={c.fg}
+              strokeWidth={point * 4}
+              strokeLinejoin="round"
+            />
+            <Path
+              testID={`muscle-${side}-selected-gaps`}
+              d={chosen}
+              fill="none"
+              stroke={body}
+              strokeWidth={point * 2}
+              strokeLinejoin="round"
+            />
+            <Path
+              testID={`muscle-${side}-${selected}`}
+              d={chosen}
+              fill={c.muscle.ramp[steps.get(selected) ?? 0]}
+              opacity={1}
+            />
+          </>
         ) : null}
       </Svg>
       {onSelect ? (
