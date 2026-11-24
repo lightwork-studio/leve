@@ -1,7 +1,8 @@
 import type { WeightUnit } from "@leve/core";
-import { Link, useLocalSearchParams } from "expo-router";
-import { memo, useCallback, useMemo, useRef, useState } from "react";
-import { FlatList, SectionList, StyleSheet, Text, View } from "react-native";
+import { Link, useLocalSearchParams, useNavigation } from "expo-router";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FlatList, Platform, SectionList, StyleSheet, Text, View } from "react-native";
+import { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHistory, useProgress } from "../../src/data/queries.ts";
 import {
@@ -15,7 +16,7 @@ import {
 import { recordsByWorkout, type WorkoutRecord } from "../../src/model/progress.ts";
 import { numeral, radius, space, touch, type } from "../../src/theme.ts";
 import { SetBarcode } from "../../src/ui/barcode.tsx";
-import { Flash } from "../../src/ui/flash.tsx";
+import { Flash, flashDuration } from "../../src/ui/flash.tsx";
 import { outOfReach } from "../../src/ui/focus.ts";
 import {
   durationLabel,
@@ -37,15 +38,24 @@ import { WorkoutSyncReview } from "../../src/ui/workout-sync-review.tsx";
 
 type Month = ReturnType<typeof useHistory>["months"][number];
 type Records = ReadonlyMap<string, WorkoutRecord[]>;
+type Section = { month: Month; key: string; data: HistorySearchWorkout[] };
 const NO_RECORDS: WorkoutRecord[] = [];
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+/**
+ * How long the workout just saved waits to be picked out when the finish sheet's closing doesn't
+ * say it has finished: long enough for the sheet to be gone (280 ms in browsers, about 500 ms on
+ * phones, where the tabs under a running workout aren't told when it closes).
+ */
+export const savedSettleMs = Platform.OS === "web" ? 450 : 750;
 
 export default function HistoryScreen() {
   const [query, setQuery] = useState("");
-  // The workout just saved, picked out for a moment.
   const { saved } = useLocalSearchParams<{ saved?: string }>();
   const today = useToday();
   const { months, settings, rejectedDeletions } = useHistory();
+  const list = useRef<SectionList<HistorySearchWorkout, Section>>(null);
+  const reduced = useReducedMotion();
+  const lit = useJustSaved(saved, months, setQuery);
   const { index } = useProgress();
   const styles = useStyles(sheet);
   const insets = useSafeAreaInsets();
@@ -54,7 +64,7 @@ export default function HistoryScreen() {
   // A virtualised list: only the rows near the screen are rendered, so years of workouts open as
   // quickly as a few weeks.
   const sections = useMemo(
-    () =>
+    (): Section[] =>
       filterHistoryMonths(months, query).map((month) => ({
         month,
         key: month.key,
@@ -77,14 +87,34 @@ export default function HistoryScreen() {
         workout={item}
         unit={unit}
         records={records.get(item.id) ?? NO_RECORDS}
-        flash={item.id === saved}
+        flash={item.id === lit}
         first={(at ?? 0) === 0}
         // A section's month holds just the workouts it lists (see filterHistoryMonths).
         last={!section || (at ?? 0) === section.month.workouts.length - 1}
       />
     ),
-    [unit, records, saved],
+    [unit, records, lit],
   );
+  // The row just lit is brought to the middle of the screen, once: on a phone it usually sits
+  // below the month card, out of sight. (A section's items count from 1: its header is 0.)
+  const scrolledTo = useRef<string | null>(null);
+  // Kept until the scroll has been retried, for a row that hadn't been drawn yet.
+  const retry = useRef<Parameters<SectionList["scrollToLocation"]>[0] | null>(null);
+  useEffect(() => {
+    if (!lit || scrolledTo.current === lit) return;
+    const sectionIndex = sections.findIndex((s) => s.data.some((w) => w.id === lit));
+    const section = sections[sectionIndex];
+    if (!section) return;
+    scrolledTo.current = lit;
+    const location = {
+      sectionIndex,
+      itemIndex: section.data.findIndex((w) => w.id === lit) + 1,
+      viewPosition: 0.5,
+      animated: !reduced,
+    };
+    retry.current = location;
+    list.current?.scrollToLocation(location);
+  }, [lit, sections, reduced]);
   const renderSectionHeader = useCallback(
     ({ section }: { section: { month: Month } }) => (
       <MonthHeader month={section.month} unit={unit} />
@@ -95,6 +125,7 @@ export default function HistoryScreen() {
   const oldest = months.at(-1);
   return (
     <SectionList
+      ref={list}
       style={styles.scroll}
       contentContainerStyle={[tabContentStyle, { paddingTop: insets.top + 20, paddingBottom }]}
       sections={sections}
@@ -104,6 +135,16 @@ export default function HistoryScreen() {
       initialNumToRender={8}
       maxToRenderPerBatch={8}
       windowSize={7}
+      // A row not drawn yet can't be scrolled to exactly: head for about where it is, so it gets
+      // drawn, and try once more.
+      onScrollToIndexFailed={({ averageItemLength, index: at }) => {
+        list.current
+          ?.getScrollResponder()
+          ?.scrollTo({ y: averageItemLength * at, animated: false });
+        const location = retry.current;
+        retry.current = null;
+        if (location) setTimeout(() => list.current?.scrollToLocation(location), 100);
+      }}
       ListHeaderComponent={
         <View style={styles.head}>
           <TabTitle
@@ -157,6 +198,56 @@ export default function HistoryScreen() {
       renderItem={renderItem}
     />
   );
+}
+
+/**
+ * The workout just saved (passed in as `saved` on the way to History), picked out once: a search
+ * that would hide it is cleared, and when the finish sheet has gone its id is returned for as long
+ * as its row stays lit. It is then taken off the route, so coming back to History or reloading
+ * doesn't light it again.
+ */
+function useJustSaved(
+  saved: string | undefined,
+  months: Month[],
+  setQuery: (update: (query: string) => string) => void,
+): string | null {
+  const navigation = useNavigation();
+  const [arriving, setArriving] = useState<string | null>(null);
+  const [lit, setLit] = useState<string | null>(null);
+  useEffect(() => {
+    if (!saved) return;
+    setArriving(saved);
+    setQuery((query) =>
+      filterHistoryMonths(months, query).some((month) => month.workouts.some((w) => w.id === saved))
+        ? query
+        : "",
+    );
+    navigation.setParams({ saved: undefined } as never);
+  }, [saved, months, setQuery, navigation]);
+  // Lit once the finish sheet over History has closed, or after a moment when its closing isn't
+  // reported (browsers report only the closing screen's own transition).
+  useEffect(() => {
+    if (!arriving) return;
+    let off: ReturnType<typeof setTimeout> | undefined;
+    const light = () => {
+      if (off) return;
+      setLit(arriving);
+      off = setTimeout(() => {
+        setLit(null);
+        setArriving(null);
+      }, flashDuration);
+    };
+    const settle = setTimeout(light, savedSettleMs);
+    const stop = navigation.getParent()?.addListener("transitionEnd" as never, (event: never) => {
+      if (!(event as { data?: { closing?: boolean } }).data?.closing) light();
+    });
+    return () => {
+      clearTimeout(settle);
+      clearTimeout(off);
+      stop?.();
+    };
+  }, [arriving, navigation]);
+  return lit;
 }
 
 /**
@@ -557,6 +648,8 @@ const sheet = themedStyles((c) => ({
     borderLeftWidth: 1,
     borderRightWidth: 1,
     borderColor: c.line,
+    // Keeps a flash inside the card's rounded corners.
+    overflow: "hidden",
   },
   rowFirst: {
     borderTopWidth: 1,
