@@ -5,7 +5,7 @@ import { type ReactNode, useRef, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppData } from "../../src/data/app-data.tsx";
-import { organizeRoutine } from "../../src/data/organize-routine.ts";
+import { deleteRoutine, organizeRoutine } from "../../src/data/organize-routine.ts";
 import { readSettings } from "../../src/data/read.ts";
 import {
   createRoutine,
@@ -277,6 +277,25 @@ function RoutineEditor({
               setError("");
             }}
           />
+          {/* A draft that sync found another version of is settled by review first. */}
+          {!onReview && (
+            <DestructiveButton
+              label="Delete routine"
+              message={`“${opened.title}” will be deleted. Workouts you logged from it stay in History.`}
+              keep="Keep routine"
+              onConfirm={() => {
+                try {
+                  change((db) => deleteRoutine(db, id));
+                } catch (cause) {
+                  haptic.warning();
+                  setError((cause as Error).message);
+                  return;
+                }
+                haptic.tap();
+                back();
+              }}
+            />
+          )}
         </View>
       )}
       {copyName !== null && (

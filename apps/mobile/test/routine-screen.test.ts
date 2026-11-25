@@ -1972,3 +1972,44 @@ it.each([
     }
   },
 );
+
+it("deletes a routine only once confirmed, leaving the workout running from it", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const engine = createSqlJsEngine(await initSqlJs());
+  const open = () => openDeviceStore({ engine, path: "/routine-delete", appVersion: "test" });
+  store = await open();
+  let rendered: ReactTestRenderer | undefined;
+  const back = vi.mocked(router.back);
+  back.mockClear();
+  try {
+    store.put("routine", "routine", routine);
+    const running = beginWorkout(store, "routine");
+    await act(() => {
+      rendered = create(createElement(RoutineDetails));
+    });
+    if (!rendered) throw new Error("Missing editor");
+    const root = rendered.root;
+    const sheet = () => root.findByType("ActionSheet" as never);
+    // Closing the sheet keeps the routine.
+    await tapText(root, "Delete routine");
+    await act(() => sheet().props.onClose());
+    expect(root.findAllByType("ActionSheet" as never)).toHaveLength(0);
+    expect(store.get("routine", "routine")?.content).toEqual(routine);
+    await tapText(root, "Delete routine");
+    await act(() => sheet().props.onConfirm());
+    expect(back).toHaveBeenCalledTimes(1);
+    await act(() => rendered?.unmount());
+    rendered = undefined;
+    store.close();
+    store = await open();
+    expect(store.list("routine").filter((row) => !row.deleted)).toEqual([]);
+    expect(liveData(store)?.tree.workout).toMatchObject({
+      id: running,
+      content: { routineId: "routine" },
+    });
+  } finally {
+    await act(() => rendered?.unmount());
+    store.close();
+    vi.unstubAllGlobals();
+  }
+});

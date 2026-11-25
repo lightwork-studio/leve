@@ -161,8 +161,8 @@ it.each([false, true])(
       const layout = (y: number, height: number) => ({ nativeEvent: { layout: { y, height } } });
       layouts()[0]?.props.onLayout(layout(270, 2500));
       // Only an open folder offers rename, beside its header; a closed one is opened first.
-      expect(labelled(root, /^Rename /)).toEqual(["Rename Home folder"]);
-      await act(() => press(root, "Rename Home folder"));
+      expect(labelled(root, /^Edit .* folder$/)).toEqual(["Edit Home folder"]);
+      await act(() => press(root, "Edit Home folder"));
       const openFolderDialog = root.findByProps({ initialName: "Home" });
       expect(nextFrame).toBeUndefined();
       await act(() => openFolderDialog.props.onFinish(null));
@@ -173,7 +173,7 @@ it.each([false, true])(
       expect(scrollTo).not.toHaveBeenCalled();
       nextFrame?.();
       expect(scrollTo).toHaveBeenCalledWith({ y: 1282, animated: !preference });
-      await act(() => press(root, "Rename Gym folder"));
+      await act(() => press(root, "Edit Gym folder"));
       expect(root.findByProps({ initialName: "Gym" })).toBeDefined();
       expect(root.findAll((n) => n.props.accessibilityState?.expanded === true)).toHaveLength(2);
       // While a workout runs, the slot shows it (with its own Resume), so Train offers no start.
@@ -572,7 +572,7 @@ it("adds a routine at the end of each open folder, and a folder after the closed
 });
 
 it.each([
-  ["no routines or folders yet", []],
+  ["no routines or folders yet", [], "Or start with a folder"],
   [
     "only routines outside a folder",
     [
@@ -583,11 +583,46 @@ it.each([
         ],
       },
     ],
+    "New folder",
   ],
-])("still offers both adds with %s, filing the routine in no folder", async (_, groups) => {
+])(
+  "still offers both adds with %s, filing the routine in no folder",
+  async (_, groups, folderLabel) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    groupsOverride = groups;
+    push.mockClear();
+    let screen: ReactTestRenderer | undefined;
+    try {
+      await act(() => {
+        screen = create(createElement(TrainScreen));
+      });
+      if (!screen) throw Error("Train did not mount");
+      const root = screen.root;
+      // There is no folder to edit.
+      expect(labelled(root, /^Edit .* folder$/)).toEqual([]);
+      expect(labelled(root, /^Add routine|^New folder$|folder$/)).toEqual([
+        "Add routine",
+        folderLabel,
+      ]);
+      // With nothing yet, the two adds are an empty state's actions, not rows of one card.
+      const empty = root.findAll((n) => n.type === Text && n.props.children === "No routines yet");
+      expect(empty).toHaveLength(groups.length === 0 ? 1 : 0);
+      await act(() => press(root, "Add routine"));
+      expect(push.mock.calls).toEqual([["/routine/new"]]);
+      await act(() => press(root, folderLabel));
+      expect(root.findByType("Dialog" as never).props.initialName).toBeUndefined();
+    } finally {
+      groupsOverride = null;
+      await act(() => screen?.unmount());
+      vi.unstubAllGlobals();
+    }
+  },
+);
+
+it("deletes a folder from its edit dialog, and hands a refusal back to the dialog", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  groupsOverride = groups;
-  push.mockClear();
+  change.mockReset();
+  showToast.mockClear();
   let screen: ReactTestRenderer | undefined;
   try {
     await act(() => {
@@ -595,15 +630,33 @@ it.each([
     });
     if (!screen) throw Error("Train did not mount");
     const root = screen.root;
-    // There is no folder to rename.
-    expect(labelled(root, /^Rename /)).toEqual([]);
-    expect(labelled(root, /^Add routine|^New folder$/)).toEqual(["Add routine", "New folder"]);
-    await act(() => press(root, "Add routine"));
-    expect(push.mock.calls).toEqual([["/routine/new"]]);
-    await act(() => press(root, "New folder"));
-    expect(root.findByType("Dialog" as never).props.initialName).toBeUndefined();
+    const dialog = () => root.findAllByType("Dialog" as never);
+    await act(() => press(root, "Edit Home folder"));
+    expect(dialog()[0]?.props.routineCount).toBe(20);
+    // A refusal from the store reaches the dialog to show, and the dialog stays open.
+    change.mockImplementationOnce(() => {
+      throw new Error("Resolve the sync issue on this folder before deleting it.");
+    });
+    await act(async () =>
+      expect(() => dialog()[0]?.props.onDelete()).toThrow(/sync issue on this folder/),
+    );
+    expect(dialog()).toHaveLength(1);
+    // The deletion runs against the folder the dialog was opened for, then the dialog closes.
+    const deleted: string[] = [];
+    change.mockImplementationOnce((write: (store: unknown) => void) =>
+      write({
+        get: (kind: string, id: string) =>
+          kind === "routine_folder" ? { id, content: { title: id }, deleted: false } : null,
+        list: () => [],
+        putAndDelete: (_: unknown, removals: { id: string }[]) =>
+          deleted.push(...removals.map((r) => r.id)),
+      }),
+    );
+    await act(() => dialog()[0]?.props.onDelete());
+    expect(deleted).toEqual(["Home"]);
+    expect(dialog()).toHaveLength(0);
   } finally {
-    groupsOverride = null;
+    change.mockReset();
     await act(() => screen?.unmount());
     vi.unstubAllGlobals();
   }

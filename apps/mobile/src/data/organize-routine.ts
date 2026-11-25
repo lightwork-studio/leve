@@ -72,3 +72,15 @@ export function organizeRoutine(
   }
   if (!jsonEqual(current, next)) store.put("routine", id, next);
 }
+
+/**
+ * Deletes a routine. Workouts started from it keep their own copy of what was done, so History is
+ * unchanged; a workout running from it carries on.
+ */
+export function deleteRoutine(store: DeviceStore, id: string): void {
+  const record = store.get("routine", id);
+  if (record?.deleted || !record?.content) throw new Error("This routine is no longer available.");
+  if (record.problem || record.fromRestore)
+    throw new Error("Resolve the sync issue on this routine before deleting it.");
+  store.delete("routine", id);
+}

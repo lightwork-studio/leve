@@ -1,5 +1,6 @@
-import { MAX_POSITION } from "@leve/contract";
+import { type JsonObject, MAX_POSITION } from "@leve/contract";
 import { LIMITS } from "@leve/core";
+import type { DeviceStore } from "@leve/storage";
 import type { Folder, WithId } from "../model/types.ts";
 import type { AppData } from "./app-data.tsx";
 import { newId } from "./ids.ts";
@@ -44,4 +45,28 @@ export function finishFolderRename(
     if (title !== current.content.title)
       store.put("routine_folder", folder.id, { ...current.content, title });
   });
+}
+
+/**
+ * Deletes a folder. Its routines move to Not in a folder in the same change, keeping their order
+ * value, so nothing in them is lost and every screen agrees on where they are.
+ */
+export function deleteFolder(store: DeviceStore, folderId: string): void {
+  const current = store.get("routine_folder", folderId);
+  if (!current?.content || current.deleted) return;
+  if (current.problem || current.fromRestore)
+    throw new Error("Resolve the sync issue on this folder before deleting it.");
+  const routines = store
+    .list("routine")
+    .filter((routine) => !routine.deleted && routine.content?.folderId === folderId);
+  if (routines.some((routine) => routine.problem || routine.fromRestore))
+    throw new Error("Resolve the sync issues on this folder's routines before deleting it.");
+  store.putAndDelete(
+    routines.map((routine) => ({
+      kind: "routine",
+      id: routine.id,
+      content: { ...(routine.content as JsonObject), folderId: null },
+    })),
+    [{ kind: "routine_folder", id: folderId }],
+  );
 }

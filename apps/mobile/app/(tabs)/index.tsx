@@ -4,7 +4,11 @@ import { Platform, type ScrollView, Text, View } from "react-native";
 import { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppData } from "../../src/data/app-data.tsx";
-import { finishFolderCreation, finishFolderRename } from "../../src/data/folder-actions.ts";
+import {
+  deleteFolder,
+  finishFolderCreation,
+  finishFolderRename,
+} from "../../src/data/folder-actions.ts";
 import { useLive, useTrain } from "../../src/data/queries.ts";
 import { restTimer } from "../../src/data/rest-timer.ts";
 import { beginWorkout } from "../../src/data/workout-actions.ts";
@@ -23,6 +27,8 @@ import type { Settings } from "../../src/model/types.ts";
 import { numeral, radius, space, touch, type } from "../../src/theme.ts";
 import { ActionSheet } from "../../src/ui/action-sheet.tsx";
 import { afterFeedback } from "../../src/ui/after-feedback.ts";
+import { Button } from "../../src/ui/buttons.tsx";
+import { EmptyState } from "../../src/ui/empty-state.tsx";
 import { Enter } from "../../src/ui/enter.tsx";
 import { dayLabel, minutesLabel, readoutWeight } from "../../src/ui/format.ts";
 import { haptic } from "../../src/ui/haptics.ts";
@@ -211,6 +217,11 @@ export default function TrainScreen() {
               finishFolderRename(change, renaming, name);
               setRenaming(null);
             }}
+            onDelete={() => {
+              change((store) => deleteFolder(store, renaming.id));
+              haptic.tap();
+              setRenaming(null);
+            }}
           />
         )}
         {creatingFolder && (
@@ -269,11 +280,19 @@ export default function TrainScreen() {
           ),
         )}
         {groups.length === 0 ? (
-          // Nothing to file into yet: a routine can still be added on its own, or a folder first.
-          <View style={styles.card}>
-            <AddRoutineRow folder={null} first />
-            <NewFolderRow onPress={newFolder} />
-          </View>
+          // Nothing yet: adding a routine is the way in. A folder only helps once there are
+          // routines to file, so it is offered quietly underneath.
+          <EmptyState
+            inset={false}
+            title="No routines yet"
+            text="Plan the exercises you repeat, then start them in one tap."
+            action={
+              <View style={styles.emptyActions}>
+                <Button label="Add routine" onPress={() => newRoutine()} />
+                <Button rank="text" label="Or start with a folder" onPress={newFolder} />
+              </View>
+            }
+          />
         ) : (
           groupRuns.at(-1)?.open && (
             <Enter leaves style={styles.card}>
@@ -466,7 +485,7 @@ const OpenGroup = memo(function OpenGroup({
         </Tap>
         {folder && (
           <IconAction
-            label={`Rename ${folder.content.title} folder`}
+            label={`Edit ${folder.content.title} folder`}
             onPress={() => onRename(folder)}
           >
             <EditIcon color={c.fg3} size={15} />
@@ -764,4 +783,5 @@ const sheet = themedStyles((c) => ({
   addRoutineIcon: { width: 20, alignItems: "center" },
   addLabel: { ...type.rowTitle, color: c.fg2 },
   addLabelColor: { color: c.fg2 },
+  emptyActions: { alignItems: "center", gap: space.xs },
 }));
