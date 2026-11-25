@@ -3443,22 +3443,15 @@ it("keeps the workout menu beside Review while the details have a sync issue", a
   });
 });
 
-it("returns a directly opened workout to the calendar or its source exercise", async () => {
+it("returns a directly opened workout to History or its source exercise", async () => {
   detailId = "missing-workout";
   canGoBack.mockReturnValue(false);
   const open = () => act(() => root.render(h(WorkoutDetailScreen)));
-  detailReturn = { back: "Calendar" };
-  await open();
-  await press("Calendar");
-  expect(replaceRoute).toHaveBeenLastCalledWith("/history/calendar");
-
+  // A link saved while the calendar screen existed opens on History now.
   detailReturn = { back: "Calendar", from: "progress" };
   await open();
-  await press("Calendar");
-  expect(replaceRoute).toHaveBeenLastCalledWith({
-    pathname: "/history/calendar",
-    params: { from: "progress" },
-  });
+  await press("History");
+  expect(replaceRoute).toHaveBeenLastCalledWith("/history");
 
   detailReturn = { back: "Calendar", fromExercise: "my-calendar-exercise" };
   await open();
@@ -4080,7 +4073,8 @@ describe("the minimised workout", () => {
       },
     };
     const factory = { getInstances: () => [handle], start: () => handle };
-    let session = workoutSession(factory, "leve-preview");
+    const memory = { shown: () => undefined, remember: () => {}, forget: () => {} };
+    let session = workoutSession(factory, "leve-preview", memory);
     let pending = Promise.resolve();
     const capture = (frame: ReturnType<typeof workoutFrame>) => {
       pending = session.publish(frame);
@@ -4108,7 +4102,7 @@ describe("the minimised workout", () => {
       store.setNegotiated("1.0", [], scenario === "restored lineage" ? "lineage-B" : "lineage-A");
     }
     const versionBefore = store.editVersion("workout_set", set.id);
-    session = workoutSession(factory, "leve-preview");
+    session = workoutSession(factory, "leve-preview", memory);
     await act(() => root.render(h(PlayerProbe, { capture })));
     await pending;
     const accepted = session.interact(handle.getId(), ticket);
@@ -4149,6 +4143,7 @@ describe("the minimised workout", () => {
       const session = workoutSession(
         { getInstances: () => [handle], start: () => handle },
         "leve-preview",
+        { shown: () => undefined, remember: () => {}, forget: () => {} },
       );
       let ready = Promise.resolve();
       const capture = (frame: ReturnType<typeof workoutFrame>) => {
@@ -4192,6 +4187,7 @@ describe("the minimised workout", () => {
         },
       },
       "leve-preview",
+      { shown: () => undefined, remember: () => {}, forget: () => {} },
     );
     await session.publish(null);
     let pending = Promise.resolve();

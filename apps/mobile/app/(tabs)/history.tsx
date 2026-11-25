@@ -154,13 +154,6 @@ export default function HistoryScreen() {
                   eyebrow: `${total} ${total === 1 ? "session" : "sessions"} since ${monthLabel(oldest.year, oldest.month)}`,
                 }
               : {})}
-            action={
-              <Link href="/history/calendar" asChild>
-                <Tap accessibilityRole="link" style={styles.calendar}>
-                  <Text style={styles.action}>Calendar</Text>
-                </Tap>
-              </Link>
-            }
           />
           {rejectedDeletions.map((record) => (
             <WorkoutSyncReview
@@ -292,7 +285,8 @@ function NoResults({ query, onClear }: { query: string; onClear: () => void }) {
 
 /**
  * The month at a glance, a page per month (the current one first), browsed by swiping or with the
- * buttons beside its name. A trained date lists its sessions under the card.
+ * buttons beside its name (disabled at either end, so both while there is one month). A trained
+ * date lists its sessions under the card.
  */
 function MonthPager({
   months,
@@ -322,6 +316,14 @@ function MonthPager({
   const last = Math.max(0, pages.length - 1);
   const current = Math.min(page, last);
   const selectedDay = odometers[current]?.cells.find((day) => day?.start === selected);
+  // The picked date closes once its last session is gone, so one added later doesn't open it.
+  if (
+    selected !== null &&
+    !odometers.some((odometer) =>
+      odometer.cells.some((day) => day?.start === selected && day.sessions.length > 0),
+    )
+  )
+    setSelected(null);
   const goTo = (to: number) => {
     if (to < 0 || to > last || !list.current) return;
     list.current.scrollToOffset({ offset: to * width, animated: false });
@@ -391,8 +393,9 @@ function MonthPager({
           }}
         />
       )}
-      {/* Over the card's top right, beside the month's name. */}
-      {width > 0 && pages.length > 1 && controls}
+      {/* Over the card's top right, beside the month's name. Shown with a single month too, greyed
+          out, so the card reads as one that pages. */}
+      {width > 0 && controls}
       {selectedDay?.sessions.map((workout) => (
         <Link
           key={workout.id}
@@ -538,16 +541,6 @@ const sheet = themedStyles((c) => ({
   scroll: { flex: 1, backgroundColor: c.bg },
   head: { gap: space.xl, paddingBottom: space.sm },
   label: { ...type.label, color: c.fg3 },
-  action: { ...type.action, color: c.fg },
-  calendar: {
-    minHeight: touch,
-    justifyContent: "center",
-    paddingHorizontal: 14,
-    backgroundColor: c.s1,
-    borderWidth: 1,
-    borderColor: c.line,
-    borderRadius: radius.input,
-  },
   pagerControls: { position: "absolute", top: 6, right: 10, flexDirection: "row", gap: 6 },
   pagerButton: {
     width: touch,
