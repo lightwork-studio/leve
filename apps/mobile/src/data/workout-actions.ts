@@ -227,13 +227,12 @@ function workoutEntry(
   };
 }
 
-/** Save a missed set, optionally with its exercise, in a single local transaction. */
+/** Save a missed set of an exercise already in a finished workout. */
 export function addHistoricalSet(
   store: DeviceStore,
   workoutId: string,
   expectedType: string,
   set: { id: string; content: WorkoutSet },
-  newExercise?: BuiltInExercise,
   openedEntry?: JsonObject | null,
 ) {
   checkReserveWrite(store, set.content.repsInReserve);
@@ -244,44 +243,92 @@ export function addHistoricalSet(
   if (store.get("workout_set", set.id))
     throw new WorkoutActionError("This set has already been saved.");
   const writes: WorkoutWrite[] = [];
-  if (newExercise) {
-    const exercise = pickerLibrary(store).find((row) => row.id === newExercise.id);
-    if (!exercise || exercise.name !== newExercise.name || exercise.type !== expectedType)
-      throw new WorkoutActionError("This exercise changed. Choose it again from the library.");
-    if (store.get("workout_exercise", entryId))
-      throw new WorkoutActionError("This exercise has already been saved.");
-    const position = appendPosition(
-      store.list("workout_exercise", { parentId: workoutId }),
-      writes,
-    );
+  const entry = content<WorkoutEntry>(store, "workout_exercise", entryId);
+  if (
+    entry.workoutId !== workoutId ||
+    entry.exerciseType !== expectedType ||
+    (openedEntry !== undefined && entry.exerciseId !== openedEntry?.exerciseId)
+  )
+    throw new WorkoutActionError("The workout or exercise changed. Reopen it to add a set.");
+  const position = appendPosition(store.list("workout_set", { parentId: entryId }), writes);
+  const logged = { ...set.content, position, completedAt: workout.endedAt, planSlot: null };
+  const error = historicalSetError(expectedType, logged);
+  if (error) throw new WorkoutActionError(error);
+  writes.push({ kind: "workout_set", id: set.id, content: asJson(logged) });
+  store.putMany(writes);
+}
+
+/** Why a set logged after the fact can't be saved, if it can't. */
+function historicalSetError(type: string, logged: WorkoutSet): string | undefined {
+  const missing = missingMeasurements(type, logged);
+  if (missing.includes("reps")) return "Enter reps to log this set.";
+  if (missing.includes("duration")) return "Enter a time to log this set.";
+  if (type === "weight_distance" && logged.distanceMeters === null && logged.weightKg === null)
+    return "Enter a weight or distance to log this set.";
+  return setRangeError(logged);
+}
+
+export type HistoricalExercise = {
+  /** The new entry's id, chosen when the sets were drafted so a repeated save can't add it twice. */
+  entryId: string;
+  exercise: BuiltInExercise;
+  sets: { id: string; content: WorkoutSet }[];
+};
+
+/**
+ * Add exercises missing from a finished workout, each with the sets done, in a single local
+ * transaction. The sets are stamped with the workout's finish time, as single missed sets are.
+ * Nothing is saved unless every exercise still matches the library and every set is valid.
+ */
+export function addHistoricalExercises(
+  store: DeviceStore,
+  workoutId: string,
+  additions: readonly HistoricalExercise[],
+) {
+  if (!additions.length) throw new WorkoutActionError("Select an exercise to add.");
+  const workout = content<Workout>(store, "workout", workoutId);
+  if (!workout.endedAt)
+    throw new WorkoutActionError("The workout changed. Reopen it to add exercises.");
+  const library = new Map(pickerLibrary(store).map((row) => [row.id, row]));
+  const writes: WorkoutWrite[] = [];
+  const first = appendPosition(
+    store.list("workout_exercise", { parentId: workoutId }),
+    writes,
+    additions.length,
+  );
+  const ids = new Set<string>();
+  for (const [index, { entryId, exercise: choice, sets }] of additions.entries()) {
+    const exercise = library.get(choice.id);
+    if (!exercise || exercise.name !== choice.name || exercise.type !== choice.type)
+      throw new WorkoutActionError(`${choice.name} changed. Choose it again from the library.`);
+    if (!sets.length) throw new WorkoutActionError(`Enter a set for ${exercise.name}.`);
+    for (const id of [entryId, ...sets.map((set) => set.id)]) {
+      if (ids.has(id) || store.get("workout_exercise", id) || store.get("workout_set", id))
+        throw new WorkoutActionError("These exercises have already been saved.");
+      ids.add(id);
+    }
     writes.push({
       kind: "workout_exercise",
       id: entryId,
-      content: entryContent(workoutEntry(workoutId, exercise, position, 0)),
+      content: entryContent(workoutEntry(workoutId, exercise, first + index, 0)),
     });
-  } else {
-    const entry = content<WorkoutEntry>(store, "workout_exercise", entryId);
-    if (
-      entry.workoutId !== workoutId ||
-      entry.exerciseType !== expectedType ||
-      (openedEntry !== undefined && entry.exerciseId !== openedEntry?.exerciseId)
-    )
-      throw new WorkoutActionError("The workout or exercise changed. Reopen it to add a set.");
+    for (const [position, set] of sets.entries()) {
+      checkReserveWrite(store, set.content.repsInReserve);
+      // A new set's RPE is null unless one was typed.
+      if (set.content.rpe != null && !canRecordSetReserve(store, "rpe"))
+        throw new WorkoutActionError("Finish syncing with a compatible server to edit RPE.");
+      const logged: WorkoutSet = {
+        ...set.content,
+        workoutExerciseId: entryId,
+        position: position + 1,
+        completedAt: workout.endedAt,
+        planSlot: null,
+      };
+      const error = historicalSetError(exercise.type, logged);
+      if (error) throw new WorkoutActionError(`${exercise.name}, set ${position + 1}: ${error}`);
+      writes.push({ kind: "workout_set", id: set.id, content: asJson(logged) });
+    }
   }
-  const position = appendPosition(store.list("workout_set", { parentId: entryId }), writes);
-  const logged = { ...set.content, position, completedAt: workout.endedAt, planSlot: null };
-  const missing = missingMeasurements(expectedType, logged);
-  if (missing.includes("reps")) throw new WorkoutActionError("Enter reps to log this set.");
-  if (missing.includes("duration")) throw new WorkoutActionError("Enter a time to log this set.");
-  if (
-    expectedType === "weight_distance" &&
-    logged.distanceMeters === null &&
-    logged.weightKg === null
-  )
-    throw new WorkoutActionError("Enter a weight or distance to log this set.");
-  const error = setRangeError(logged);
-  if (error) throw new WorkoutActionError(error);
-  writes.push({ kind: "workout_set", id: set.id, content: asJson(logged) });
   store.putMany(writes);
 }
 

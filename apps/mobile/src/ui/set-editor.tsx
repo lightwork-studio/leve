@@ -3,7 +3,6 @@ import { useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppData } from "../data/app-data.tsx";
-import type { BuiltInExercise } from "../data/exercises.ts";
 import {
   addHistoricalSet,
   canRecordSetReserve,
@@ -35,7 +34,6 @@ export function SetEditor({
   exerciseType,
   focusMetric,
   addToWorkout,
-  newExercise,
   scope,
   unit: currentUnit,
   distanceUnit: currentDistanceUnit,
@@ -48,7 +46,6 @@ export function SetEditor({
   scope?: "active-workout";
   focusMetric?: SetMetric | undefined;
   addToWorkout?: string;
-  newExercise?: BuiltInExercise;
   unit: WeightUnit;
   distanceUnit: SetDistanceUnit;
   onClose: () => void;
@@ -129,7 +126,6 @@ export function SetEditor({
                 id: set.id,
                 content: { ...set.content, ...values },
               },
-              newExercise,
               opened.parent,
             );
             return;
@@ -154,7 +150,7 @@ export function SetEditor({
           {!addToWorkout && ` · Set ${opened.rowLabel}`}
         </Text>
         <Text accessibilityRole="header" style={styles.title}>
-          {newExercise ? "First set" : addToWorkout ? "Add set" : "Edit set"}
+          {addToWorkout ? "Add set" : "Edit set"}
         </Text>
         {addToWorkout && <Text style={styles.meta}>This set uses the workout’s finish time.</Text>}
         <Text style={styles.label}>Set type</Text>
@@ -212,13 +208,7 @@ export function SetEditor({
         )}
         <Tap accessibilityRole="button" onPress={save} style={[styles.action, styles.selected]}>
           <Text style={[styles.label, styles.selectedLabel]}>
-            {newExercise
-              ? "Save exercise and set"
-              : addToWorkout
-                ? "Save set"
-                : cleared
-                  ? `Save without ${missingLabel}`
-                  : "Save changes"}
+            {addToWorkout ? "Save set" : cleared ? `Save without ${missingLabel}` : "Save changes"}
           </Text>
         </Tap>
         <Tap accessibilityRole="button" onPress={onClose} style={styles.action}>
@@ -243,9 +233,7 @@ export function SetEditor({
       </ScrollView>
     </View>
   );
-  return newExercise ? (
-    editor
-  ) : (
+  return (
     <Modal transparent animationType="fade" onRequestClose={onClose}>
       {editor}
     </Modal>
