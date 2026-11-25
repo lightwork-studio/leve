@@ -328,6 +328,7 @@ export class SyncSession {
       } catch (error) {
         // Not an answer from the server: the store refused something. Say so and back off.
         this.#options.log?.(`sync failed: ${(error as Error)?.message ?? String(error)}`);
+        this.#checkingSignIn = false;
         delay = this.#retryAfter(this.#timing.error);
       }
       if (this.#stopped) return;

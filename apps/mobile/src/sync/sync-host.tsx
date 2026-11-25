@@ -58,7 +58,7 @@ function Sync() {
   const { isLoaded, isSignedIn, userId, getToken, signOut } = useAuth();
   const { store, version, change, reset, exportData } = useAppData();
   const [status, setStatus] = useState<SyncStatus>(IDLE);
-  /** "Not now" on a question: hidden until the app starts again; sync stays paused meanwhile. */
+  /** "Not now" on a question: hidden until the session restarts; sync stays paused meanwhile. */
   const [later, setLater] = useState(false);
   /** "Not now" on the update question: hidden until the app next comes to the front. */
   const [updateLater, setUpdateLater] = useState(false);

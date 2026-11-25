@@ -228,6 +228,18 @@ it("lets the combine question wait, sending and deleting nothing", async () => {
   expect(session().calls).not.toContain("replace");
 });
 
+it("asks the next account's question even after Not now on the last one", async () => {
+  await render();
+  await report({ prompt: { kind: "combine" } });
+  await tap("Not now");
+  expect(screen()).toBe("");
+  clerk.userId = "user_2";
+  await render();
+  expect(session().options.account).toBe("user_2");
+  await report({ prompt: { kind: "combine" } });
+  expect(screen()).toContain("aren't in your account yet");
+});
+
 it("warns before another account's unsynced changes are deleted", async () => {
   await render();
   data.unsyncedCount = 4;

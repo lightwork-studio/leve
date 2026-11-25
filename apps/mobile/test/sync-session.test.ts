@@ -30,6 +30,8 @@ let offline: boolean;
 /** When set, the server answers update_required. */
 let tooOld: boolean;
 let requests: string[];
+/** Called as a hello goes out, so a test can act in the middle of connecting. */
+let onHello: (() => void) | null;
 let sessions: SyncSession[];
 let ids = 0;
 
@@ -48,6 +50,7 @@ beforeEach(() => {
   offline = false;
   tooOld = false;
   requests = [];
+  onHello = null;
   sessions = [];
 });
 afterEach(async () => {
@@ -62,7 +65,10 @@ const connect =
     const sent = await headers();
     if (offline) throw new TransportError("no connection");
     const account = tokens.get(sent.authorization?.replace(/^Bearer /, "") ?? "");
-    requests.push(`${account ?? "?"} ${path}`);
+    if (path === "/sync/hello") onHello?.();
+    // Waits for changes are marked, so tests can tell them from plain downloads.
+    const waits = (body as { waitMs?: number } | null)?.waitMs ? " wait" : "";
+    requests.push(`${account ?? "?"} ${path}${waits}`);
     if (!account) {
       return { status: 401, body: { error: { code: "unauthorized", message: "sign in again" } } };
     }
@@ -395,6 +401,21 @@ it("tries a fresh token again after a combine answer, if the cached one lapsed m
   expect(await serverFolders("alice")).toEqual(["f-other", "f-phone"]);
 });
 
+it("doesn't start waiting for changes once the app went to the back while connecting", async () => {
+  const store = await phone();
+  folder(store, "f-phone", "On the phone");
+  const { session } = start(store, "alice", { timing: { wait: 1_500 } });
+  await until(() => session.status.lastSynced !== null);
+  requests = [];
+  onHello = () => {
+    onHello = null;
+    session.setForeground(false);
+  };
+  await until(() => requests.some((line) => line.endsWith("/sync/hello")));
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  expect(requests.filter((line) => line.endsWith(" wait"))).toEqual([]);
+});
+
 it("doesn't count a fresh-token retry that never reached the server", async () => {
   const store = await phone();
   let fresh = 0;
@@ -429,7 +450,7 @@ it("sends an edit soon after it is made, and hears about changes made elsewhere"
   // edit, and the server's answer to the other phone's change, can pass it.
   const { session, events } = start(store, "alice", { timing: { wait: 10_000 } });
   await until(() => session.status.lastSynced !== null);
-  await until(() => requests.at(-1) === "alice /sync/pull");
+  await until(() => requests.at(-1) === "alice /sync/pull wait");
 
   // An edit while the session waits on the server for changes.
   folder(store, "f-phone", "On the phone");
