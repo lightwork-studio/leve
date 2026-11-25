@@ -231,12 +231,9 @@ The server answers each submission:
 
 A rejected local version is kept, shown with a warning and offered for review. Workout conflicts are
 shown on the affected set or details, and work recorded entirely offline is flagged on the start
-screen. A routine changed on both sides is reviewed in its editor. Train shows the other routine
-and folder conflicts: a deletion rejected because the record changed elsewhere is restored to be
-seen before it is deleted again, as a workout's is in History. A conflicted record is not
-resubmitted automatically. An `invalid` answer is handled the same way, unless the user already
-edited the record again, in which case the newer version is sent. The kept version is the newest
-local one. The user can:
+screen. A conflicted record is not resubmitted automatically. An `invalid` answer is handled the
+same way, unless the user already edited the record again, in which case the newer version is
+sent. The kept version is the newest local one. The user can:
 
 - **Keep mine:** resubmit the local version based on the server's current revision. It can be
   rejected again if the record changed once more.

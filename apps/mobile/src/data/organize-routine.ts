@@ -79,8 +79,8 @@ export function organizeRoutine(
 export function deleteRoutine(store: DeviceStore, id: string, opened: JsonObject): void {
   const record = store.get("routine", id);
   if (record?.deleted || !record?.content) throw new Error("This routine is no longer available.");
-  if (record.problem || record.fromRestore)
-    throw new Error("Resolve the sync issue on this routine before deleting it.");
+  if (record.problem) throw new Error("Resolve the sync issue on this routine before deleting it.");
+  if (record.fromRestore) throw new Error("Sync this routine before deleting it.");
   if (!jsonEqual(record.content, opened))
     throw new Error("This routine changed. Reopen it to see the latest before deleting it.");
   store.delete("routine", id);

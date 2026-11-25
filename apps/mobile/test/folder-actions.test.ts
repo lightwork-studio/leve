@@ -344,7 +344,7 @@ it("deletes a folder that never synced without sending anything", async () => {
   store.close();
 });
 
-it("refuses to delete a folder renamed since its dialog opened", async () => {
+it("refuses to delete a folder renamed or moved since its dialog opened", async () => {
   const store = await openDeviceStore({
     engine: createSqlJsEngine(SQL),
     path: "/renamed-delete.db",
@@ -358,5 +358,9 @@ it("refuses to delete a folder renamed since its dialog opened", async () => {
     deleted: false,
     content: { title: "Push heavy" },
   });
+  // Moved since it opened, as another phone's reorder would, it is refused too.
+  store.put("routine_folder", "f", { title: "Push", position: 4 });
+  expect(() => deleteFolder(store, opened)).toThrow(/This folder changed/);
+  expect(store.get("routine_folder", "f")?.deleted).toBe(false);
   store.close();
 });

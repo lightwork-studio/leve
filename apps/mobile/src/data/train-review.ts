@@ -5,13 +5,19 @@ import { unavailableReviewFields } from "./workout-review.ts";
 
 /**
  * A routine or folder version the server rejected, as Train offers it for review:
- * - `restore`: deleted here after it changed elsewhere. It comes back to be seen before deleting
- *   it again, as a workout does in History.
- * - `deleted_elsewhere`: changed here after it was deleted elsewhere.
+ * - `restore`: deleted here, while the server still has it (changed elsewhere, or brought back by
+ *   a server restore). It comes back to be seen before deleting it again, as a workout does in
+ *   History.
+ * - `deleted_elsewhere`: changed here after it was deleted on the server.
+ * - `missing_on_server`: changed here, while a restored server has no copy of it.
  * - `both_changed`: a folder changed here and elsewhere. A routine changed on both sides is
  *   reviewed in its editor, field by field, so Train leaves it there.
  */
-export type TrainReviewCase = "restore" | "deleted_elsewhere" | "both_changed";
+export type TrainReviewCase =
+  | "restore"
+  | "deleted_elsewhere"
+  | "missing_on_server"
+  | "both_changed";
 
 export type TrainReviewChoice = "keep_mine" | "keep_theirs" | "save_as_new";
 
@@ -21,14 +27,17 @@ export function trainReviewCase(row: DeviceRecord | null): TrainReviewCase | nul
   if (row.deleted)
     return row.server?.state === "live" || (!row.server && !!row.keptContent) ? "restore" : null;
   if (!row.content) return null;
-  if (row.server?.state === "deleted") return "deleted_elsewhere";
-  if (row.kind === "routine_folder" && row.server?.state === "live" && row.server.content)
+  if (!row.server) return "missing_on_server";
+  if (row.server.state === "deleted") return "deleted_elsewhere";
+  if (row.kind === "routine_folder" && row.server.state === "live" && row.server.content)
     return "both_changed";
   return null;
 }
 
-/** What each case offers. Keeping a deleted record means saving it as new, and only a routine has
- * anything worth saving: a folder is a name, and its routines already show under no folder. */
+/**
+ * What each case offers, as the data standard lists them. Keep mine is not offered for a deleted
+ * record: this device's version is kept by saving it as new.
+ */
 export function trainReviewChoices(row: DeviceRecord): TrainReviewChoice[] {
   switch (trainReviewCase(row)) {
     case "restore":
@@ -36,7 +45,8 @@ export function trainReviewChoices(row: DeviceRecord): TrainReviewChoice[] {
     case "both_changed":
       return ["keep_mine", "keep_theirs"];
     case "deleted_elsewhere":
-      return row.kind === "routine" ? ["save_as_new", "keep_theirs"] : ["keep_theirs"];
+    case "missing_on_server":
+      return ["save_as_new", "keep_theirs"];
     default:
       return [];
   }

@@ -664,7 +664,9 @@ it("deletes a folder from its edit dialog, shows where its routines went, and ha
     change.mockImplementationOnce((write: (store: unknown) => void) =>
       write({
         get: (kind: string, id: string) =>
-          kind === "routine_folder" ? { id, content: { title: id }, deleted: false } : null,
+          kind === "routine_folder"
+            ? { id, content: { title: id, position: 1 }, deleted: false }
+            : null,
         delete: (kind: string, id: string) => deleted.push(`${kind}:${id}`),
       }),
     );
