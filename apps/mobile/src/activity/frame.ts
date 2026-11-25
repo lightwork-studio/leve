@@ -1,3 +1,4 @@
+import type { AppearanceSetting } from "../data/appearance-setting.ts";
 import { restTimer } from "../data/rest-timer.ts";
 import type { useWorkoutPlayer } from "../ui/live/use-workout-player.ts";
 import type { ActivityFrame } from "./session.ts";
@@ -8,6 +9,7 @@ export function workoutFrame(
   player: ReturnType<typeof useWorkoutPlayer>,
   now: number,
   interactive: boolean,
+  appearance: AppearanceSetting,
 ): ActivityFrame | null {
   const rest = player?.rest;
   if (player) {
@@ -47,7 +49,7 @@ export function workoutFrame(
         title: short(player.title),
         exercise: short(player.name ?? (finish ? "All sets logged" : "Open workout")),
         set: short(player.setName),
-        compact: short(player.values.replaceAll(" ", "") || (finish ? "Done" : "Leve"), 12),
+        compact: short(player.unitValues || (finish ? "Done" : "Leve"), 20),
         started: Date.parse(tree.workout.content.startedAt),
         done: progress.done,
         total: progress.total,
@@ -59,6 +61,7 @@ export function workoutFrame(
         restEnd: activeRest?.endsAt ?? 0,
         canLog: player.canLog,
         finish,
+        appearance,
       },
       act(action) {
         const owner = store.syncState();

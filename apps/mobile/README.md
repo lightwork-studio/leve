@@ -39,9 +39,14 @@ the [branding terms](../../TRADEMARKS.md).
 Use `pnpm preview:web` to try a branch locally with sample workouts. When enabled by maintainers,
 the **Branch web preview** workflow builds the requested PR commit with sample workouts and
 links to its exact deployment in the run summary. Before enabling the workflow, set up a
-dedicated Pages project with `main` as its production branch in a separate Cloudflare account.
+dedicated Pages project with `main` as its production branch. It may share the Cloudflare
+account of the production site; a separate account is safer, because a Pages token reaches
+every Pages project in its account, so a leaked preview token could also replace the site.
 Keep the deployment token in the `branch-web-preview` GitHub environment, restrict the
 environment to `main`, and require approval from a reviewer who has checked the selected PR.
+The environment holds `CLOUDFLARE_ACCOUNT_ID` and `LEVE_WEB_PREVIEW_PROJECT` as variables and
+the token as `LEVE_WEB_PREVIEW_CLOUDFLARE_API_TOKEN`. The repository variables
+`LEVE_RELEASE_REPOSITORY` (this repository) and `LEVE_WEB_PREVIEW_ENABLED` (`true`) turn it on.
 
 ## TestFlight
 
