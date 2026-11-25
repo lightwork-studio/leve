@@ -416,6 +416,8 @@ it("waits for the workout to end, and says why a choice was refused", async () =
   await tap("Keep this version");
   expect(screen()).toContain("This changed in the meantime.");
   expect(pending.settled).toEqual([]);
+  // Nothing stays picked: the person looks again before choosing.
+  expect(screen()).toContain("Choose a version");
 });
 
 it("can't keep a change the server refused", async () => {

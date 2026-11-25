@@ -476,3 +476,19 @@ it("names the choice after what clashes, not the workout around it", async () =>
   });
   expect(conflict!.account.lines.every((line) => line.value === "Deleted")).toBe(true);
 });
+
+it("still asks about other clashes in a workout that also holds a refused change it can't settle", async () => {
+  const { a, b } = await twoPhones((store) => {
+    store.put("workout", "w1", workout("Push"));
+    store.put("workout_exercise", "e1", entry("w1"));
+  });
+  a.store.put("workout", "w1", workout("Push A"));
+  await a.sync();
+  b.store.put("workout", "w1", workout("Push B"));
+  b.store.put("workout_set", "new", set(70, 10));
+  refuse = new Set(["workout_set:new"]);
+  await b.sync();
+  expect(b.store.get("workout_set", "new")?.status).toBe("invalid");
+  // The refused set has no account copy, so it isn't asked about; the name clash still is.
+  expect(conflicts(b.store).map((item) => item.key)).toEqual(["workout:w1"]);
+});

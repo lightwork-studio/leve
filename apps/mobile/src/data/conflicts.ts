@@ -162,7 +162,9 @@ function workoutOf(store: DeviceStore, row: DeviceRecord): string | null {
 function groupKey(store: DeviceStore, row: DeviceRecord): string | null {
   const base = baseKey(store, row);
   // A refused change is decided on its own: undoing it shouldn't take valid changes beside it.
-  return base && recordCase(row) === "rejected" ? `${base}|${row.kind}:${row.id}` : base;
+  // Split on the status, not on whether it can be settled: one that can't stays out on its own
+  // instead of holding back the rest of its workout.
+  return base && row.status === "invalid" ? `${base}|${row.kind}:${row.id}` : base;
 }
 
 function baseKey(store: DeviceStore, row: DeviceRecord): string | null {
@@ -288,6 +290,7 @@ const LABELS: Record<string, string> = {
   repsInReserve: "Reps in reserve",
   completedAt: "Done",
   useRepRange: "Rep range",
+  exerciseType: "Measured by",
 };
 /** Fields whose values are words joined by underscores ("upper_back", "same_routine"). */
 const WORDS = new Set(["primaryMuscle", "secondaryMuscles", "equipment", "previousValues", "type"]);
@@ -399,9 +402,17 @@ function routineExerciseLines(store: DeviceStore, mine: unknown, theirs: unknown
     unmatched.delete(exercise.id);
     const moved = !!match && others.indexOf(match) !== index;
     if (match && !moved && jsonEqual(match, exercise)) return;
+    const plan = plannedExercise(store, exercise);
+    // When the sets read the same, say what else differs: rest, superset, rep range.
+    const extra =
+      match && plan === plannedExercise(store, match)
+        ? (["restSeconds", "supersetId", "useRepRange", "exerciseType"] as const)
+            .filter((name) => !jsonEqual(exercise[name] ?? null, match[name] ?? null))
+            .map((name) => `${LABELS[name] ?? name} ${valueLabel(store, name, exercise[name])}`)
+        : [];
     lines.push({
       label: String(exercise.exerciseName ?? "Exercise"),
-      value: `${plannedExercise(store, exercise)}${moved ? ` · number ${index + 1}` : ""}`,
+      value: [plan, ...extra, ...(moved ? [`number ${index + 1}`] : [])].join(" · "),
     });
   });
   for (const exercise of unmatched.values())
@@ -466,7 +477,13 @@ function sideLines(
       return [{ label: "Bodyweight", value: valueLabel(store, "bodyweightKg", mine.bodyweightKg) }];
     const name = mine.title ?? mine.name ?? mine.text ?? mine.exerciseName;
     if (typeof name === "string")
-      return [{ label: label && label !== name ? label : "Name", value: short(name) }];
+      return [
+        {
+          label:
+            label && label !== name ? label : row.kind === "workout_exercise" ? "Exercise" : "Name",
+          value: short(name),
+        },
+      ];
     return [{ label: label || "This", value: "Kept" }];
   }
   const fields = [...new Set([...Object.keys(mine), ...Object.keys(theirs)])].filter(
@@ -535,7 +552,8 @@ function describe(
         [
           [count("workout_exercise"), "exercise"],
           [count("workout_set"), "set"],
-          [count("workout_note", "workout_note_comment", "exercise_note_comment"), "note"],
+          [count("workout_note"), "note"],
+          [count("workout_note_comment", "exercise_note_comment"), "comment"],
         ] as const
       )
         .filter(([n]) => n > 0)
