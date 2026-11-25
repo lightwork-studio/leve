@@ -9,7 +9,7 @@ import { ChoiceRow, Stepper, ToggleRow } from "../src/ui/choice-row.tsx";
 import { EmptyState } from "../src/ui/empty-state.tsx";
 import { ExercisePicker } from "../src/ui/exercise-picker.tsx";
 import { ErrorRow, FieldError, TextField } from "../src/ui/field.tsx";
-import { SetStrip, type StripField, stripLayout } from "../src/ui/live/dock.tsx";
+import { SetStrip, type StripField } from "../src/ui/live/dock.tsx";
 import { gridRows, RestDialog } from "../src/ui/live/rest-dialog.tsx";
 import { NewFolderDialog } from "../src/ui/new-folder-dialog.tsx";
 import { Banner, showToast, TOAST_MS, ToastHost } from "../src/ui/notice.tsx";
@@ -592,8 +592,10 @@ describe("the dock's logging strip on the web", () => {
   });
 
   // `flex: 0` is CSS's `0 1 0%` on the web, whose zero basis wins over a width: the fields drew
-  // as their 1 px hairline and left the check alone at the strip's start.
-  it.each([false, true])("gives each column its width as its basis (effort %s)", async (effort) => {
+  // as their 1 px hairline and left the check alone at the strip's start. The fields now share
+  // the strip by growing from nothing, reps up to three 44 pt targets, and the effort column keeps
+  // its width as its basis.
+  it.each([false, true])("lays its columns out by flex (effort %s)", async (effort) => {
     await act(() =>
       root.render(
         h(SetStrip, {
@@ -609,17 +611,15 @@ describe("the dock's logging strip on the web", () => {
       | (HTMLElement & { __reactLayoutHandler?: (event: unknown) => void })
       | null;
     if (!strip?.__reactLayoutHandler) throw Error("No measured strip");
-    const width = 347;
-    await act(() => strip.__reactLayoutHandler?.({ nativeEvent: { layout: { width } } }));
-    const { boxes } = stripLayout(width, ["weight", "reps"], effort);
-    const columns = [...strip.children].slice(0, -1) as HTMLElement[];
-    const want = [...boxes, ...(effort ? [48] : [])];
-    expect(columns.map((column) => getComputedStyle(column).flexBasis)).toEqual(
-      want.map((box) => `${box}px`),
-    );
-    for (const column of columns) {
-      expect(getComputedStyle(column).flexGrow).toBe("0");
-      expect(getComputedStyle(column).flexShrink).toBe("0");
-    }
+    await act(() => strip.__reactLayoutHandler?.({ nativeEvent: { layout: { width: 347 } } }));
+    const columns = ([...strip.children].slice(0, -1) as HTMLElement[]).map((column) => {
+      const style = getComputedStyle(column);
+      return [style.flexGrow, style.flexShrink, style.flexBasis, style.maxWidth, style.width];
+    });
+    expect(columns).toEqual([
+      ["1", "1", "0px", "", ""],
+      ["1", "1", "0px", "133px", ""],
+      ...(effort ? [["0", "0", "48px", "", "48px"]] : []),
+    ]);
   });
 });

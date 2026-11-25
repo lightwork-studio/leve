@@ -265,7 +265,9 @@ const EFFORT = touch + 4;
  * weight, the other field gets room for three 44 pt targets and the weight takes the rest; where
  * there isn't room for that, every field gets the same share. A narrow phone (under 340 pt of
  * strip) draws slimmer steppers. `boxes` is each field's width with its hairline, empty until the
- * strip has been measured.
+ * strip has been measured. A width with less than a touch target per field is a measurement taken
+ * before the strip had its place (a phone can report one and nothing after), so it counts as none:
+ * sized from it, every field would be drawn 0 pt wide.
  */
 export function stripLayout(
   width: number,
@@ -274,8 +276,9 @@ export function stripLayout(
 ) {
   const compact = width > 0 && width < 340;
   const stepper = compact ? (hasEffort ? 25 : 30) : 34;
-  if (width <= 0) return { compact, stepper, check: CHECK, boxes: [] as number[] };
-  const room = Math.max(0, width - 2 - CHECK - (hasEffort ? EFFORT : 0));
+  const room = width - 2 - CHECK - (hasEffort ? EFFORT : 0);
+  if (width <= 0 || room < touch * Math.max(1, metrics.length))
+    return { compact: false, stepper: 34, check: CHECK, boxes: [] as number[] };
   const even = room / Math.max(1, metrics.length);
   const weight = metrics.indexOf("weight");
   const other = Math.min(FULL_FIELD, even);
@@ -345,7 +348,13 @@ export function SetStrip({
   return (
     <View style={styles.strip} onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
       {fields.map((field, i) => (
-        <StripSegment key={field.metric} field={field} layout={layout} box={layout.boxes[i]} />
+        <StripSegment
+          key={field.metric}
+          field={field}
+          layout={layout}
+          box={layout.boxes[i]}
+          capped={field.metric !== "weight" && fields.some((other) => other.metric === "weight")}
+        />
       ))}
       {effort && (
         <Tap
@@ -386,11 +395,14 @@ function StripSegment({
   field,
   layout,
   box,
+  capped,
 }: {
   field: StripField;
   layout: ReturnType<typeof stripLayout>;
   /** The field's width with its hairline; unknown until the strip has been measured. */
   box: number | undefined;
+  /** Whether it stops at three 44 pt targets and leaves the rest to the weight beside it. */
+  capped: boolean;
 }) {
   const styles = useStyles(sheet);
   const c = useColors();
@@ -404,7 +416,9 @@ function StripSegment({
     <View
       style={[
         styles.segment,
-        box !== undefined && { flexGrow: 0, flexShrink: 0, flexBasis: box, width: box },
+        // Laid out by flex alone, as `stripLayout` describes it, so the fields fill the strip
+        // even when its measured width is wrong; the measurement only sizes what is drawn inside.
+        capped && { maxWidth: FULL_FIELD },
         field.editing && styles.segmentOn,
       ]}
     >
@@ -795,7 +809,8 @@ const sheet = themedStyles((c) => ({
     overflow: "hidden",
   },
   // Longhands rather than `flex`: on the web `flex: 0` is CSS's `0 1 0%`, whose zero basis wins
-  // over a width and collapses the column, so a fixed column sets its basis to its width.
+  // over a width and collapses the column, so a fixed column sets its basis to its width. The
+  // fields share the strip equally, up to a capped field's maximum.
   segment: {
     flexGrow: 1,
     flexShrink: 1,
