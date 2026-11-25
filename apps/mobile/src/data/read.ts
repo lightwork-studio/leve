@@ -22,6 +22,7 @@ import { bestSet, loggedExercises } from "../model/workout-done.ts";
 import { carriedWorkoutNotes, journalSessionNumbers } from "../model/workout-notes.ts";
 import { builtInExercise, builtInTargets } from "./exercises.ts";
 import { withoutHeldSet } from "./set-removal.ts";
+import { trainReviews } from "./train-review.ts";
 
 function records<T>(store: DeviceStore, kind: string, parentId?: string): WithId<T>[] {
   return store
@@ -238,6 +239,7 @@ export function trainData(store: DeviceStore, now: number) {
     groups: routineGroups(routines, folders, workouts, now),
     upNext: upNextRoutine(routines, folders, workouts),
     active: store.activeWorkout(),
+    reviews: trainReviews(store),
   };
 }
 

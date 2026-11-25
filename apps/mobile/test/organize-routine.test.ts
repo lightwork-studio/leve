@@ -3,8 +3,10 @@ import { createSqlJsEngine } from "@leve/storage/sqljs";
 import initSqlJs from "sql.js";
 import { expect, it } from "vitest";
 import { World } from "../../../packages/sync/test/support/harness.ts";
-import { organizeRoutine } from "../src/data/organize-routine.ts";
+import { deleteRoutine, organizeRoutine } from "../src/data/organize-routine.ts";
+import { trainData } from "../src/data/read.ts";
 import { seedSyntheticData } from "../src/data/seed.ts";
+import { beginWorkout } from "../src/data/workout-actions.ts";
 
 const SQL = await initSqlJs();
 it("moves and renames the same routine while retaining its plan, history and concurrent note edit", {
@@ -111,4 +113,113 @@ it("keeps an already synced note clear out of the outbox when a stale editor sav
   } finally {
     await world.dispose();
   }
+});
+
+it("deletes a synced routine on every phone and keeps the workouts started from it", {
+  timeout: 60000,
+}, async () => {
+  const world = new World();
+  try {
+    const server = world.server({ releases: ["1.0"] });
+    const account = { server: "s", account: "athlete", transport: server.transport("athlete") };
+    const a = await world.phone("a", account);
+    const b = await world.phone("b", account);
+    const routine = {
+      title: "Friday",
+      folderId: null,
+      notes: "",
+      exercises: [],
+      position: 0,
+      effortScale: null,
+    };
+    a.store.put("routine", "r", routine);
+    a.store.put("routine", "other", { ...routine, title: "Monday", position: 1 });
+    const workout = beginWorkout(a.store, "r");
+    await a.sync();
+    await b.sync();
+
+    deleteRoutine(b.store, "r", routine);
+    await b.sync();
+    await a.sync();
+    for (const phone of [a, b]) {
+      expect(
+        trainData(phone.store, 0).groups.flatMap((group) => group.routines.map((r) => r.title)),
+      ).toEqual(["Monday"]);
+      expect(phone.store.get("workout", workout)?.content?.routineId).toBe("r");
+    }
+    expect(await server.row("athlete", "routine", "r")).toMatchObject({ state: "deleted" });
+    expect(() => deleteRoutine(a.store, "r", routine)).toThrow(/no longer available/);
+  } finally {
+    await world.dispose();
+  }
+});
+
+it("refuses to delete a routine that changed since it was opened, or has a sync conflict", {
+  timeout: 60000,
+}, async () => {
+  const world = new World();
+  try {
+    const server = world.server({ releases: ["1.0"] });
+    const account = { server: "s", account: "athlete", transport: server.transport("athlete") };
+    const a = await world.phone("a", account);
+    const b = await world.phone("b", account);
+    const opened = { title: "Friday", folderId: null, notes: "", exercises: [], position: 0 };
+    a.store.put("routine", "r", opened);
+    await a.sync();
+    await b.sync();
+    // B renames it while A has it open; A downloads the rename before confirming the delete.
+    b.store.put("routine", "r", { ...opened, title: "Friday heavy" });
+    await b.sync();
+    await a.sync();
+    expect(() => deleteRoutine(a.store, "r", opened)).toThrow(/changed/);
+    await a.sync();
+    expect(await server.row("athlete", "routine", "r")).toMatchObject({ state: "live" });
+    expect(a.store.get("routine", "r")?.content?.title).toBe("Friday heavy");
+
+    // A conflicting edit is settled by review first, even against the version A opened.
+    const theirs = { ...opened, title: "Friday heavy" };
+    b.store.put("routine", "r", { ...theirs, notes: "Belt" });
+    await b.sync();
+    a.store.put("routine", "r", { ...theirs, notes: "Straps" });
+    await a.sync();
+    const conflicted = a.store.get("routine", "r");
+    expect(conflicted?.problem).not.toBeNull();
+    expect(() => deleteRoutine(a.store, "r", conflicted?.content ?? {})).toThrow(/sync issue/);
+    expect(a.store.get("routine", "r")?.deleted).toBe(false);
+  } finally {
+    await world.dispose();
+  }
+});
+
+it("puts a routine moved to no folder after the routines whose folder is gone", async () => {
+  const store = await openDeviceStore({
+    engine: createSqlJsEngine(SQL),
+    path: "/unfiled-order.db",
+    appVersion: "test",
+  });
+  const routine = (title: string, folderId: string | null, position: number) => ({
+    title,
+    folderId,
+    notes: "",
+    position,
+    exercises: [],
+    effortScale: null,
+  });
+  store.put("routine_folder", "kept", { title: "Kept", position: 1 });
+  store.put("routine", "loose", routine("Loose", null, 2));
+  // Its folder was deleted: Train shows it with the routines in no folder, after "Loose".
+  store.put("routine", "orphan", routine("Orphan", "gone", 7));
+  store.put("routine", "filed", routine("Filed", "kept", 30));
+  organizeRoutine(
+    store,
+    "filed",
+    { title: "Filed", folderId: "kept" },
+    { title: "Filed", folderId: null },
+  );
+  expect(store.get("routine", "filed")?.content?.position).toBe(8);
+  expect(trainData(store, 0).groups.map((group) => group.routines.map((r) => r.title))).toEqual([
+    [],
+    ["Loose", "Orphan", "Filed"],
+  ]);
+  store.close();
 });

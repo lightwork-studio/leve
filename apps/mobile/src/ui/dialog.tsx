@@ -34,6 +34,7 @@ export function Dialog({
   closeLabel = "Cancel",
   aside,
   confirm,
+  footer,
   children,
 }: {
   /** Small caps at the top: "New folder", "Rest timer · Bench Press". */
@@ -47,6 +48,8 @@ export function Dialog({
   aside?: ReactNode;
   /** The bone button at the foot, with a check. Without one, choosing in the body is the answer. */
   confirm?: { label: string; onPress: () => void; accessibilityLabel?: string };
+  /** A quiet action under the confirm, such as a destructive one that asks first. */
+  footer?: ReactNode;
   children: ReactNode;
 }) {
   const styles = useStyles(sheet);
@@ -101,6 +104,7 @@ export function Dialog({
               style={styles.confirm}
             />
           ) : null}
+          {footer ? <View style={styles.footer}>{footer}</View> : null}
         </Enter>
       </KeyboardAvoidingView>
     </Modal>
@@ -181,6 +185,7 @@ const sheet = themedStyles((c) => ({
     justifyContent: "center",
   },
   confirm: { marginTop: 16, marginRight: -4 },
+  footer: { marginTop: 6, marginRight: 4, alignItems: "center" },
   hero: {
     ...font.bodyBold,
     fontSize: 27,

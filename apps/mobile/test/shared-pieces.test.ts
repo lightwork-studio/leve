@@ -539,8 +539,10 @@ describe("dialogs and refused saves", () => {
       ),
     );
     expect(document.querySelector('[role="dialog"]')?.getAttribute("aria-label")).toBe(
-      "Rename folder",
+      "Edit folder",
     );
+    // Without a way to delete, none is offered.
+    expect(byLabel("Delete folder")).toBeNull();
     expect(field()?.value).toBe("Push day");
     expect(document.body.textContent).toContain("3 routines");
     expect(document.body.textContent).toContain("8 / 30");
@@ -549,6 +551,56 @@ describe("dialogs and refused saves", () => {
     await press("Close");
     expect(finish).toHaveBeenCalledTimes(2);
     expect(finish).toHaveBeenLastCalledWith(null);
+  });
+
+  it.each([
+    [3, "“Push day” will be deleted. Its 3 routines stay and move to Not in a folder."],
+    [1, "“Push day” will be deleted. Its routine stays and moves to Not in a folder."],
+    [0, "“Push day” will be deleted."],
+  ])("deletes an edited folder holding %i routines only once confirmed", async (count, message) => {
+    const finish = vi.fn();
+    const remove = vi.fn();
+    await act(() =>
+      root.render(
+        h(NewFolderDialog, {
+          initialName: "Push day",
+          routineCount: count,
+          onFinish: finish,
+          onDelete: remove,
+        }),
+      ),
+    );
+    await press("Delete folder");
+    expect(document.querySelector('[role="alertdialog"]')?.textContent).toContain(message);
+    await confirmChoice("Keep folder");
+    expect(remove).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+    await press("Delete folder");
+    await confirmChoice("Delete folder");
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(finish).not.toHaveBeenCalled();
+  });
+
+  it("shows a refused folder deletion in the name's helper line", async () => {
+    const remove = vi.fn(() => {
+      throw new Error("Resolve the sync issue on this folder before deleting it.");
+    });
+    await act(() =>
+      root.render(
+        h(NewFolderDialog, {
+          initialName: "Push day",
+          routineCount: 2,
+          onFinish: vi.fn(),
+          onDelete: remove,
+        }),
+      ),
+    );
+    await press("Delete folder");
+    await confirmChoice("Delete folder");
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(helperAlert()).toEqual(["Resolve the sync issue on this folder before deleting it."]);
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(field()?.value).toBe("Push day");
   });
 
   it("marks a text field's refusal in its helper line, still with reduced motion", async () => {

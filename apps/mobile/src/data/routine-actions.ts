@@ -1,4 +1,4 @@
-import type { RecordContent } from "@leve/contract";
+import { MAX_POSITION, type RecordContent } from "@leve/contract";
 import { type EffortScale, LIMITS } from "@leve/core";
 import type { DeviceStore } from "@leve/storage";
 import { effortValue, equivalentEffort, parseEffort, routineEffortScale } from "../model/effort.ts";
@@ -55,12 +55,33 @@ export function createRoutine(
     if (!folder?.content || folder.deleted) throw new Error("Choose an available folder.");
   }
   const exercises = writePlan(plan, settings, effortScale);
-  const existing = store.list("routine").filter((r) => r.content?.folderId === folderId);
-  const last = existing.at(-1)?.content?.position;
-  const position = typeof last === "number" ? Math.min(last + 1, 1e15) : 1;
+  const position = nextRoutinePosition(store, folderId);
   const id = newId();
   store.put("routine", id, { title, folderId, position, notes, exercises, effortScale });
   return id;
+}
+
+/**
+ * The position after the last routine of the group Train shows in that folder. Without one, that
+ * group includes the routines whose folder is gone.
+ */
+export function nextRoutinePosition(store: DeviceStore, folderId: string | null): number {
+  const folders = new Set(
+    store
+      .list("routine_folder")
+      .filter((row) => row.content && !row.deleted)
+      .map((row) => row.id),
+  );
+  let last: number | null = null;
+  for (const row of store.list("routine")) {
+    if (!row.content || row.deleted) continue;
+    const filed = typeof row.content.folderId === "string" ? row.content.folderId : null;
+    const group = filed && folders.has(filed) ? filed : null;
+    const position = row.content.position;
+    if (group === folderId && typeof position === "number" && (last === null || position > last))
+      last = position;
+  }
+  return last === null ? 1 : Math.min(last + 1, MAX_POSITION);
 }
 
 export function openPlan(exercises: StoredPlan): PlannedExercise[] {

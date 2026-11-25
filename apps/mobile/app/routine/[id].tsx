@@ -5,7 +5,7 @@ import { type ReactNode, useRef, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppData } from "../../src/data/app-data.tsx";
-import { organizeRoutine } from "../../src/data/organize-routine.ts";
+import { deleteRoutine, organizeRoutine } from "../../src/data/organize-routine.ts";
 import { readSettings } from "../../src/data/read.ts";
 import {
   createRoutine,
@@ -161,6 +161,9 @@ function RoutineEditor({
   const [copyError, setCopyError] = useState("");
   const [copyAttempt, setCopyAttempt] = useState(0);
   const savingCopy = useRef(false);
+  // Set once this editor deletes the routine, so it doesn't turn into "no longer available" on
+  // the way out.
+  const deleted = useRef(false);
   const folders = store
     .list("routine_folder")
     .map((folder) => ({ id: folder.id, title: String(folder.content?.title ?? "") }));
@@ -171,15 +174,20 @@ function RoutineEditor({
         effortScale !== openedScale || routineEffortScale({ exercises }) !== effortScale
           ? effortScale
           : opened.effortScale;
-      change((db) =>
+      change((db) => {
+        // A folder chosen here and deleted before saving leaves the routine in none, as the
+        // editor then shows. A folder already gone when it opened stays as it was, unless moved.
+        const target = folderId === null ? null : db.get("routine_folder", folderId);
+        const filed =
+          folderId === opened.folderId || (target?.content && !target.deleted) ? folderId : null;
         organizeRoutine(
           db,
           id,
           opened,
-          { title, folderId, notes, effortScale: scale },
+          { title, folderId: filed, notes, effortScale: scale },
           { opened: opened.exercises, next: exercises },
-        ),
-      );
+        );
+      });
     } catch (e) {
       haptic.warning();
       setError((e as Error).message);
@@ -191,7 +199,12 @@ function RoutineEditor({
     if (savingCopy.current || copyName === null) return;
     savingCopy.current = true;
     try {
-      change((db) => createRoutine(db, copyName, folderId, plan, settings, notes, effortScale));
+      change((db) => {
+        // A folder deleted since the routine was filed in it leaves the copy in none, as it shows.
+        const target = folderId === null ? null : db.get("routine_folder", folderId);
+        const filed = target?.content && !target.deleted ? folderId : null;
+        createRoutine(db, copyName, filed, plan, settings, notes, effortScale);
+      });
     } catch (cause) {
       savingCopy.current = false;
       haptic.warning();
@@ -201,7 +214,7 @@ function RoutineEditor({
     }
     back();
   };
-  if (!available) return <Unavailable back={back} />;
+  if (!available && !deleted.current) return <Unavailable back={back} />;
   return (
     <Page scrollEnabled={!reorderGripHeld}>
       <ScreenHeader
@@ -277,6 +290,29 @@ function RoutineEditor({
               setError("");
             }}
           />
+          {/* A draft that sync found another version of is settled by review first. */}
+          {!onReview && (
+            <DestructiveButton
+              label="Delete routine"
+              message={`“${opened.title}” will be deleted. Workouts you logged from it stay in History.`}
+              keep="Keep routine"
+              onConfirm={() => {
+                // A second confirm before the screen closes has nothing left to delete.
+                if (deleted.current) return;
+                try {
+                  deleted.current = true;
+                  change((db) => deleteRoutine(db, id, initial));
+                } catch (cause) {
+                  deleted.current = false;
+                  haptic.warning();
+                  setError((cause as Error).message);
+                  return;
+                }
+                haptic.tap();
+                back();
+              }}
+            />
+          )}
         </View>
       )}
       {copyName !== null && (

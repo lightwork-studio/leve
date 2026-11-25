@@ -1972,3 +1972,211 @@ it.each([
     }
   },
 );
+
+it("deletes a routine only once confirmed, leaving the workout running from it", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const engine = createSqlJsEngine(await initSqlJs());
+  const open = () => openDeviceStore({ engine, path: "/routine-delete", appVersion: "test" });
+  store = await open();
+  let rendered: ReactTestRenderer | undefined;
+  const back = vi.mocked(router.back);
+  back.mockClear();
+  try {
+    store.put("routine", "routine", routine);
+    const running = beginWorkout(store, "routine");
+    await act(() => {
+      rendered = create(createElement(RoutineDetails));
+    });
+    if (!rendered) throw new Error("Missing editor");
+    const root = rendered.root;
+    const sheet = () => root.findByType("ActionSheet" as never);
+    // Closing the sheet keeps the routine.
+    await tapText(root, "Delete routine");
+    await act(() => sheet().props.onClose());
+    expect(root.findAllByType("ActionSheet" as never)).toHaveLength(0);
+    expect(store.get("routine", "routine")?.content).toEqual(routine);
+    await tapText(root, "Delete routine");
+    // A second confirm before the screen closes deletes nothing more and shows no problem.
+    const confirm = sheet().props.onConfirm;
+    await act(() => Promise.all([confirm(), confirm()]));
+    expect(back).toHaveBeenCalledTimes(1);
+    // On its way out, re-rendered with the routine gone, the editor doesn't turn into "no longer
+    // available".
+    await act(() => rendered?.update(createElement(RoutineDetails)));
+    expect(
+      root.findAll(
+        (n) => n.type === Text && n.props.children === "This routine is no longer available.",
+      ),
+    ).toHaveLength(0);
+    expect(alertText(root)).toBe("");
+    await act(() => rendered?.unmount());
+    rendered = undefined;
+    store.close();
+    store = await open();
+    expect(store.list("routine").filter((row) => !row.deleted)).toEqual([]);
+    expect(liveData(store)?.tree.workout).toMatchObject({
+      id: running,
+      content: { routineId: "routine" },
+    });
+  } finally {
+    await act(() => rendered?.unmount());
+    store.close();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("shows a routine whose folder was deleted as in no folder, and copies it into none", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  store = await openDeviceStore({
+    engine: createSqlJsEngine(await initSqlJs()),
+    path: "/routine-folder-gone",
+    appVersion: "test",
+  });
+  let rendered: ReactTestRenderer | undefined;
+  try {
+    store.put("routine_folder", "kept", { title: "Kept", position: 1 });
+    store.put("routine", "routine", { ...routine, folderId: "gone" });
+    await act(() => {
+      rendered = create(createElement(RoutineDetails));
+    });
+    if (!rendered) throw new Error("Missing editor");
+    const root = rendered.root;
+    const folder = root.find((n) => n.type === ("MenuRow" as never) && n.props.label === "Folder");
+    expect(folder.props.value).toBe("Not in a folder");
+    expect(folder.props.hint).toBeUndefined();
+    expect(
+      folder.props.menu.items.map((item: { label: string; checked: boolean }) => [
+        item.label,
+        item.checked,
+      ]),
+    ).toEqual([
+      ["Not in a folder", true],
+      ["Kept", false],
+    ]);
+    await tapText(root, "Save as new routine");
+    await act(() => root.findByType("Dialog" as never).props.confirm.onPress());
+    const copy = store.list("routine").find((row) => row.id !== "routine");
+    expect(copy?.content).toMatchObject({ title: "Monday (copy)", folderId: null });
+    // The original keeps its reference untouched.
+    expect(store.get("routine", "routine")?.content?.folderId).toBe("gone");
+  } finally {
+    await act(() => rendered?.unmount());
+    store.close();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("files a routine in no folder when the folder chosen for it goes before saving", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  store = await openDeviceStore({
+    engine: createSqlJsEngine(await initSqlJs()),
+    path: "/routine-chosen-folder-gone",
+    appVersion: "test",
+  });
+  let rendered: ReactTestRenderer | undefined;
+  try {
+    store.put("routine_folder", "a", { title: "A", position: 1 });
+    store.put("routine_folder", "b", { title: "B", position: 2 });
+    store.put("routine", "routine", { ...routine, folderId: "a" });
+    await act(() => {
+      rendered = create(createElement(RoutineDetails));
+    });
+    if (!rendered) throw new Error("Missing editor");
+    const root = rendered.root;
+    const folder = () =>
+      root.find((n) => n.type === ("MenuRow" as never) && n.props.label === "Folder");
+    await act(() =>
+      folder()
+        .props.menu.items.find((item: { label: string }) => item.label === "B")
+        .onPress(),
+    );
+    expect(folder().props.value).toBe("B");
+    store.delete("routine_folder", "b");
+    await tapText(root, "Save routine");
+    expect(alertText(root)).toBe("");
+    expect(store.get("routine", "routine")?.content?.folderId).toBeNull();
+  } finally {
+    await act(() => rendered?.unmount());
+    store.close();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("keeps a routine's gone folder as it was when saved without moving it", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  store = await openDeviceStore({
+    engine: createSqlJsEngine(await initSqlJs()),
+    path: "/routine-unmoved-folder-gone",
+    appVersion: "test",
+  });
+  let rendered: ReactTestRenderer | undefined;
+  try {
+    store.put("routine", "routine", { ...routine, folderId: "gone" });
+    await act(() => {
+      rendered = create(createElement(RoutineDetails));
+    });
+    if (!rendered) throw new Error("Missing editor");
+    const root = rendered.root;
+    const folder = () =>
+      root.find((n) => n.type === ("MenuRow" as never) && n.props.label === "Folder");
+    // Choosing Not in a folder, where it already shows, changes nothing.
+    await act(() => folder().props.menu.items[0].onPress());
+    await act(() =>
+      root.findByProps({ accessibilityLabel: "Routine name" }).props.onChangeText("Tuesday"),
+    );
+    await tapText(root, "Save routine");
+    expect(store.get("routine", "routine")?.content).toMatchObject({
+      title: "Tuesday",
+      folderId: "gone",
+      position: routine.position,
+    });
+  } finally {
+    await act(() => rendered?.unmount());
+    store.close();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("files a new routine in no folder when its folder goes while the form is open", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  store = await openDeviceStore({
+    engine: createSqlJsEngine(await initSqlJs()),
+    path: "/new-routine-folder-gone",
+    appVersion: "test",
+  });
+  folderParam = "strength";
+  let rendered: ReactTestRenderer | undefined;
+  try {
+    store.put("routine_folder", "strength", { title: "Strength", position: 1 });
+    await act(() => {
+      rendered = create(createElement(NewRoutine));
+    });
+    if (!rendered) throw new Error("Missing routine form");
+    const root = rendered.root.findByType(ScrollView);
+    expect(
+      root.find((n) => n.type === ("MenuRow" as never) && n.props.label === "Folder").props.value,
+    ).toBe("Strength");
+    await act(() =>
+      root.findByProps({ accessibilityLabel: "Routine name" }).props.onChangeText("Push"),
+    );
+    await tapText(root, "Add exercise");
+    await act(() =>
+      root
+        .find((n) => typeof n.props.onPickMany === "function")
+        .props.onPickMany([EXERCISES.bench]),
+    );
+    store.delete("routine_folder", "strength");
+    await tapText(root, "Save routine");
+    expect(
+      store
+        .list("routine")
+        .filter((row) => !row.deleted)
+        .map((row) => row.content),
+    ).toMatchObject([{ title: "Push", folderId: null }]);
+  } finally {
+    folderParam = undefined;
+    await act(() => rendered?.unmount());
+    store.close();
+    vi.unstubAllGlobals();
+  }
+});
