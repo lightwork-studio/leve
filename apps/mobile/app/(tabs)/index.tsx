@@ -236,12 +236,13 @@ export default function TrainScreen() {
             </Text>
           </View>
           {groups.length > 0 && (
+            // A small pill, so it doesn't outweigh the heading it sits beside.
             <ModeTile
+              compact
               on={editing}
               label="Edit"
               accessibilityLabel="Edit routines"
               doneAccessibilityLabel="Done editing routines"
-              icon={(color) => <EditIcon color={color} size={15} />}
               onToggle={toggleEditing}
             />
           )}

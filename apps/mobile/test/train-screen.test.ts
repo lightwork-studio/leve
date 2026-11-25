@@ -345,6 +345,8 @@ it("edits routines in edit mode: a tap opens one, its grip reorders the folder, 
     const scrolls = () => root.find((n) => n.props.title === "Train").props.scrollEnabled;
     expect(slot()).not.toBeNull();
     expect(banner()).toHaveLength(0);
+    // Edit is a small pill beside the heading, the word alone.
+    expect(root.findByProps({ label: "Edit" }).props).toMatchObject({ compact: true, on: false });
 
     // Holding a routine is a way in too; it starts nothing.
     await act(() => rowAction(root, "Routine 2")?.props.onLongPress());
