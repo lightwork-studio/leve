@@ -244,26 +244,25 @@ The server answers each submission:
 
 ### Conflicts
 
-A rejected local version is kept, and the app asks about it straight away. A popup goes through
-the conflicts one at a time, each as the person thinks of it: a whole workout with its exercises,
-sets, notes and rest; a routine; a folder; a bodyweight entry; a note with its comments; a custom
-exercise; the settings. It shows only what differs on each side (or, where one side is gone, all
-of the other), chooses nothing in advance, and can't be put off, except that it waits while a
-workout is in progress. One choice settles every record of that conflict, and is checked for
-every record before any is applied. A workout or exercise deleted on one side while the other
-changed it or what's in it is reviewed where the app already does so, in History or on the
-workout: the popup says what happened, leads there, and asks again until it is settled. It leads
-there only when that screen can settle it; otherwise the popup settles it itself. A conflict that
-can't be settled yet (a sync still running, a server restore, fields this server or app doesn't
-know, a workout deleted here that is still to upload, or work below something deleted in the
-account that is still on its way there and back) waits until it can; a deletion a restored server
-never had is left out without holding back anything else. Letting go of something the account
-deleted first shows what this phone holds below it and what changed there. Keeping a deletion
-made here is offered only when the account holds nothing below it, after showing the account's
-version. Work recorded entirely offline is flagged on the start screen. A conflicted record is not
-resubmitted automatically. An `invalid` answer is handled the same way, unless the user already edited the
-record again, in which case the newer version is sent. The kept version is the newest local one.
-The user can:
+A rejected local version is kept, and the app asks about it straight away. A popup goes through the
+conflicts one at a time, each as the person thinks of it: a whole workout with its exercises, sets,
+notes and rest; a routine; a folder; a bodyweight entry; a note with its comments; a custom
+exercise; the settings. It shows only what differs on each side (or, where one side is gone, all of
+the other), chooses nothing in advance, and can't be put off, except that it waits while a workout
+is in progress. One choice settles every record of that conflict, and is checked for every record
+before any is applied. A workout or exercise deleted on one side while the other changed it or
+what's in it is reviewed where the app already does so, in History or on the workout: the popup says
+what happened, leads there, and asks again until it is settled. It leads there only when that screen
+can settle it; otherwise the popup settles it itself. A conflict that can't be settled yet (a sync
+still running, a server restore, fields this server or app doesn't know, a workout deleted here that
+is still to upload, or work below something deleted in the account that is still on its way there
+and back) waits until it can; a deletion a restored server never had is left out without holding
+back anything else. Letting go of something the account deleted first shows what this phone holds
+below it and what changed there. Keeping a deletion made here is offered only when the account holds
+nothing below it, after showing the account's version. Work recorded entirely offline is flagged on
+the start screen. A conflicted record is not resubmitted automatically. An `invalid` answer is
+handled the same way, unless the user already edited the record again, in which case the newer
+version is sent. The kept version is the newest local one. The user can:
 
 - **Keep mine:** resubmit the local version based on the server's current revision. It can be
   rejected again if the record changed once more.
