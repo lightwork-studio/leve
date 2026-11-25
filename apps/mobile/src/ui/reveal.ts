@@ -7,6 +7,8 @@
  * takes to show the element, and not at all when it already shows.
  */
 export function revealInList(element: HTMLElement, block: "start" | "nearest") {
+  // Something not laid out has no place to scroll to.
+  if (element.getClientRects().length === 0) return;
   const list = scrollingAncestor(element);
   if (!list) return;
   const box = element.getBoundingClientRect();

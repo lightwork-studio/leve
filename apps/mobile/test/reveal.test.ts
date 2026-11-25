@@ -4,7 +4,9 @@ import { revealInList } from "../src/ui/reveal.ts";
 
 /** Lays an element out at `top` (relative to the window) with `height`, as a browser would. */
 function place(element: Element, top: number, height: number) {
-  element.getBoundingClientRect = () => new DOMRect(0, top, 300, height);
+  const box = new DOMRect(0, top, 300, height);
+  element.getBoundingClientRect = () => box;
+  element.getClientRects = () => [box] as unknown as DOMRectList;
 }
 
 function size(element: HTMLElement, clientHeight: number, scrollHeight: number) {
@@ -77,4 +79,23 @@ it("skips an ancestor that hides its overflow or has nothing to scroll", () => {
   revealInList(target, "start");
   expect(list.scrollTop).toBe(0);
   expect(page.scrollTop).toBe(1000);
+});
+
+it("skips an ancestor whose content all fits", () => {
+  const { page, list, target } = setUp();
+  size(list, 600, 600);
+  place(target, 1000, 40);
+  revealInList(target, "start");
+  expect(list.scrollTop).toBe(0);
+  expect(page.scrollTop).toBe(1000);
+});
+
+it("leaves everything alone for an element that isn't shown", () => {
+  const { page, list, target } = setUp();
+  list.scrollTop = 50;
+  place(target, 0, 0);
+  target.getClientRects = () => [] as unknown as DOMRectList;
+  revealInList(target, "nearest");
+  expect(list.scrollTop).toBe(50);
+  expect(page.scrollTop).toBe(0);
 });
