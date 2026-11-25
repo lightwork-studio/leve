@@ -76,7 +76,9 @@ asks only when the person has to decide, and never during a workout:
   app next comes to the front; logging carries on meanwhile, unsynced.
 - **Changed in two places:** the same workout, routine, entry or setting changed on this phone and
   in the account before they synced. The app shows what differs on each side, one conflict at a
-  time, and asks which to keep. Nothing is chosen in advance and it can't be put off.
+  time, and asks which to keep. Nothing is chosen in advance and it can't be put off. A workout or
+  exercise deleted on one side while the other changed what's in it leads to the workout's own
+  review (History or the workout), and the popup asks again until that is done.
 
 ## TestFlight
 

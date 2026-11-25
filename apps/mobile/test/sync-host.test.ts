@@ -64,6 +64,15 @@ vi.mock("../src/data/conflicts.ts", () => ({
     pending.conflicts = pending.conflicts.filter((item) => item.key !== shown.key);
   },
 }));
+const route = vi.hoisted(() => ({ path: "/", pushed: [] as unknown[] }));
+vi.mock("expo-router", () => ({
+  router: {
+    push: (target: unknown) => {
+      route.pushed.push(target);
+    },
+  },
+  usePathname: () => route.path,
+}));
 vi.mock("../src/sync/sync-config.ts", () => ({
   syncEnabled: () => true,
   syncServerUrl: "https://sync.test",
@@ -169,6 +178,7 @@ beforeEach(() => {
     unsyncedCount: 0,
   });
   Object.assign(pending, { conflicts: [], settled: [], refuse: null });
+  Object.assign(route, { path: "/", pushed: [] });
   sessions.created.length = 0;
   host = document.createElement("div");
   document.body.append(host);
@@ -445,4 +455,32 @@ it("can't keep a change the server refused", async () => {
   await tap("In your account: Name Push");
   await tap("Undo my change");
   expect(pending.settled).toEqual([["routine_folder:f1", "account"]]);
+});
+
+it("leads a conflict reviewed on its screen there, stays away meanwhile, and asks again on leaving", async () => {
+  pending.conflicts = [
+    {
+      ...folderConflict("workout:w1", "Pull Day"),
+      subtitle: null,
+      review: {
+        target: { pathname: "/workout/[id]", params: { id: "w1" } },
+        message: "Deleted in your account, but this phone has changes in it.",
+      },
+    },
+  ];
+  await render();
+  expect(screen()).toContain("Deleted in your account, but this phone has changes in it.");
+  // No choosing here, and no way around it but reviewing.
+  expect(screen()).not.toContain("Choose a version");
+  await tap("Review it");
+  expect(route.pushed).toEqual([{ pathname: "/workout/[id]", params: { id: "w1" } }]);
+  expect(screen()).toBe("");
+  route.path = "/workout/w1";
+  await render();
+  expect(screen()).toBe("");
+  // Left the review with the conflict still there: the popup asks again.
+  route.path = "/history";
+  await render();
+  await render();
+  expect(screen()).toContain("Review it");
 });

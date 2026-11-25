@@ -202,54 +202,6 @@ it("settles a workout as one: every set that clashes takes the chosen side", asy
   expect(b.store.get("workout_set", "s2")?.content).toMatchObject({ weightKg: 85, reps: 5 });
 });
 
-it("keeps a workout deleted elsewhere but changed here by saving it as a new one", async () => {
-  const { a, b } = await twoPhones((store) => {
-    store.put("workout", "w1", workout("Pull Day"));
-    store.put("workout_exercise", "e1", entry("w1"));
-    store.put("workout_set", "s1", set(60, 10));
-  });
-  a.store.delete("workout", "w1");
-  await a.sync();
-  b.store.put("workout_set", "s1", set(65, 10));
-  await b.sync();
-
-  const [conflict] = conflicts(b.store);
-  expect(conflict).toMatchObject({ key: "workout:w1", title: "Pull Day" });
-  expect(conflict!.phone).toMatchObject({ choosable: true, confirm: "Keep the workout" });
-  expect(conflict!.account).toMatchObject({ confirm: "Delete it" });
-  expect(conflict!.account.lines.every((line) => line.value === "Deleted")).toBe(true);
-
-  settleConflict(b.store, conflict!, "phone");
-  await b.sync();
-  expect(conflicts(b.store)).toEqual([]);
-  // The workout lives on under a new id, with the set as changed here.
-  const copies = b.store.list("workout").filter((row) => row.content?.title === "Pull Day");
-  expect(copies).toHaveLength(1);
-  expect(copies[0]!.id).not.toBe("w1");
-  const sets = b.store
-    .list("workout_set")
-    .filter((row) => row.content?.weightKg === 65 && row.status === "synced");
-  expect(sets).toHaveLength(1);
-});
-
-it("lets a workout deleted elsewhere go, with what changed here", async () => {
-  const { a, b } = await twoPhones((store) => {
-    store.put("workout", "w1", workout("Pull Day"));
-    store.put("workout_exercise", "e1", entry("w1"));
-    store.put("workout_set", "s1", set(60, 10));
-  });
-  a.store.delete("workout", "w1");
-  await a.sync();
-  b.store.put("workout_set", "s1", set(65, 10));
-  await b.sync();
-
-  settleConflict(b.store, conflicts(b.store)[0]!, "account");
-  await b.sync();
-  expect(conflicts(b.store)).toEqual([]);
-  expect(b.store.list("workout").filter((row) => !row.deleted)).toEqual([]);
-  expect(b.store.hasUnsyncedWork()).toBe(false);
-});
-
 it("sends a deletion again when it's kept over a change made elsewhere", async () => {
   const entryOf = (kg: number) => ({ takenAt: STARTED, bodyweightKg: kg, fatPercent: null });
   const { a, b } = await twoPhones((store) => store.put("body_measurement", "m1", entryOf(80)));
@@ -286,31 +238,6 @@ it("refuses a choice made on an outdated view, and leaves out what's still synci
   expect(JSON.parse(String((await serverRow("routine_folder", "f1"))?.content)).title).toBe(
     "Push A",
   );
-});
-
-it("shows what a workout still holds in the account before a deletion is kept over it", async () => {
-  const { a, b } = await twoPhones((store) => {
-    store.put("workout", "w1", workout("Leg Day"));
-    store.put("workout_exercise", "e1", entry("w1"));
-    store.put("workout_set", "s1", set(100, 5));
-  });
-  // Another phone adds a set while this one deletes the workout.
-  a.store.put("workout_set", "s2", { ...set(100, 5), position: 2 });
-  await a.sync();
-  b.store.delete("workout", "w1");
-  await b.sync();
-
-  const [conflict] = conflicts(b.store);
-  expect(conflict).toMatchObject({ key: "workout:w1", title: "Leg Day" });
-  expect(conflict!.phone).toMatchObject({ confirm: "Delete it", choosable: true });
-  expect(conflict!.account.lines).toContainEqual({ label: "Holds", value: "1 exercise · 2 sets" });
-
-  settleConflict(b.store, conflict!, "phone");
-  await b.sync();
-  await b.sync();
-  expect(conflicts(b.store)).toEqual([]);
-  expect((await serverRow("workout", "w1"))?.state).toBe("deleted");
-  expect((await serverRow("workout_set", "s2"))?.state).toBe("deleted");
 });
 
 it("leaves out a refused change that never reached the account, so nothing below it goes unseen", async () => {
@@ -354,27 +281,6 @@ it("asks about a refused change on its own, apart from valid changes beside it",
   expect(b.store.get("workout_set", "s1")?.content).toMatchObject({ weightKg: 80 });
   settleConflict(b.store, conflicts(b.store)[0]!, "phone");
   expect(b.store.get("workout", "w1")?.content).toMatchObject({ title: "Push B" });
-});
-
-it("refuses a choice when what the account holds changed since it was shown", async () => {
-  const { a, b } = await twoPhones((store) => {
-    store.put("workout", "w1", workout("Leg Day"));
-    store.put("workout_exercise", "e1", entry("w1"));
-    store.put("workout_set", "s1", set(100, 5));
-  });
-  a.store.put("workout_set", "s2", { ...set(100, 5), position: 2 });
-  await a.sync();
-  b.store.delete("workout", "w1");
-  await b.sync();
-  const shown = conflicts(b.store)[0]!;
-  expect(shown.account.lines).toContainEqual({ label: "Holds", value: "1 exercise · 2 sets" });
-
-  // Another set arrives in the account before the choice is made.
-  a.store.put("workout_set", "s3", { ...set(100, 5), position: 3 });
-  await a.sync();
-  await b.sync();
-  expect(() => settleConflict(b.store, shown, "phone")).toThrow("changed in the meantime");
-  expect((await serverRow("workout_set", "s3"))?.state).toBe("live");
 });
 
 it("shows differences a set's weight and reps don't, and a routine's planned targets", async () => {
@@ -458,25 +364,6 @@ it("settles a record deleted in both places", async () => {
   expect(b.store.problems()).toEqual([]);
 });
 
-it("names the choice after what clashes, not the workout around it", async () => {
-  const { a, b } = await twoPhones((store) => {
-    store.put("workout", "w1", workout("Push Day"));
-    store.put("workout_exercise", "e1", entry("w1"));
-    store.put("workout_set", "s1", set(80, 8));
-  });
-  a.store.delete("workout_exercise", "e1");
-  await a.sync();
-  b.store.put("workout_set", "s1", set(85, 8));
-  await b.sync();
-  const [conflict] = conflicts(b.store);
-  expect(conflict).toMatchObject({
-    key: "workout:w1",
-    phone: { confirm: "Keep it" },
-    account: { confirm: "Delete it" },
-  });
-  expect(conflict!.account.lines.every((line) => line.value === "Deleted")).toBe(true);
-});
-
 it("still asks about other clashes in a workout that also holds a refused change it can't settle", async () => {
   const { a, b } = await twoPhones((store) => {
     store.put("workout", "w1", workout("Push"));
@@ -491,144 +378,6 @@ it("still asks about other clashes in a workout that also holds a refused change
   expect(b.store.get("workout_set", "new")?.status).toBe("invalid");
   // The refused set has no account copy, so it isn't asked about; the name clash still is.
   expect(conflicts(b.store).map((item) => item.key)).toEqual(["workout:w1"]);
-});
-
-it("waits while work logged under something deleted in the account is still to upload", async () => {
-  const { a, b } = await twoPhones((store) => {
-    store.put("workout", "w1", workout("Push Day"));
-    store.put("workout_exercise", "e1", entry("w1"));
-    store.put("workout_set", "s1", set(80, 8));
-  });
-  a.store.delete("workout_exercise", "e1");
-  await a.sync();
-  b.store.put("workout_set", "s1", set(85, 8));
-  await b.sync();
-  // Logged under the exercise after its deletion arrived, and not uploaded yet.
-  b.store.put("workout_set", "s10", { ...set(100, 3), position: 2 });
-  expect(conflicts(b.store)).toEqual([]);
-
-  // Once it has come back as part of the conflict, it is shown, and letting the exercise go says so.
-  await b.sync();
-  const [conflict] = conflicts(b.store);
-  const shown = [...conflict!.phone.lines].map((line) => line.value).join(" | ");
-  expect(shown).toContain("100 kg × 3");
-  expect(conflict!.phone.lines).toContainEqual({ label: "Holds", value: "2 sets" });
-});
-
-it("counts a note written under a workout deleted in the account", async () => {
-  const { a, b } = await twoPhones((store) => {
-    store.put("workout", "w1", workout("Pull Day"));
-    store.put("workout_exercise", "e1", entry("w1"));
-    store.put("workout_set", "s1", set(60, 10));
-  });
-  a.store.delete("workout", "w1");
-  await a.sync();
-  b.store.put("workout_set", "s1", set(65, 10));
-  await b.sync();
-  b.store.put("workout_note", "n9", {
-    workoutId: "w1",
-    pinned: false,
-    text: "Left shoulder hurt on set 3",
-    createdAt: STARTED,
-    agent: null,
-  });
-  // Not shown until it has been through the account and come back.
-  expect(conflicts(b.store)).toEqual([]);
-  await b.sync();
-  const [conflict] = conflicts(b.store);
-  expect(conflict!.phone.lines).toContainEqual({
-    label: "Holds",
-    value: "1 exercise · 1 set · 1 note",
-  });
-});
-
-it("shows the account's sets when a deletion is kept over an edit made there", async () => {
-  const { a, b } = await twoPhones((store) => {
-    store.put("workout", "w1", workout("Leg Day"));
-    store.put("workout_exercise", "e1", entry("w1"));
-    store.put("workout_set", "s1", set(100, 5));
-  });
-  a.store.put("workout_set", "s1", set(140, 5));
-  await a.sync();
-  b.store.delete("workout", "w1");
-  await b.sync();
-  const [conflict] = conflicts(b.store);
-  expect(conflict!.account.lines).toContainEqual({
-    label: "Bench Press · Set 1",
-    value: "140 kg × 5",
-  });
-});
-
-it("never offers only deleting sets whose deleted parent can't be copied here", async () => {
-  const { a, b } = await twoPhones((store) => {
-    store.put("workout", "w1", workout("Push"));
-    store.put("workout_exercise", "e1", entry("w1"));
-    store.put("workout_set", "s1", set(80, 8));
-  });
-  b.store.put("workout", "w1", workout("Push B"));
-  refuse = new Set(["workout:w1"]);
-  await b.sync();
-  refuse = new Set();
-  a.store.delete("workout", "w1");
-  await a.sync();
-  b.store.put("workout_set", "s1", set(85, 8));
-  await b.sync();
-  // Whatever is asked, keeping this phone's set must stay possible.
-  for (const item of conflicts(b.store)) {
-    const lines = [...item.phone.lines, ...item.account.lines].map((line) => line.value);
-    if (lines.some((value) => value.includes("85 kg"))) expect(item.phone.choosable).toBe(true);
-  }
-  expect(b.store.get("workout_set", "s1")?.content).toMatchObject({ weightKg: 85 });
-});
-
-it("applies a choice to all of its records or none of them", async () => {
-  const exercise = (position: number) => ({ ...entry("w1"), position });
-  const { a, b } = await twoPhones((store) => {
-    store.put("workout", "w1", workout("Push"));
-    store.put("workout_exercise", "e1", exercise(1));
-    store.put("workout_set", "s1", set(80, 8));
-    store.put("workout_exercise", "e2", exercise(2));
-    store.put("workout_set", "s2", { ...set(60, 8), workoutExerciseId: "e2" });
-  });
-  b.store.put("workout_exercise", "e2", { ...exercise(2), restSeconds: 120 });
-  refuse = new Set(["workout_exercise:e2"]);
-  await b.sync();
-  refuse = new Set();
-  a.store.delete("workout_exercise", "e1");
-  a.store.delete("workout_exercise", "e2");
-  await a.sync();
-  b.store.put("workout_set", "s1", set(85, 8));
-  b.store.put("workout_set", "s2", { ...set(65, 8), workoutExerciseId: "e2" });
-  await b.sync();
-  const copiesBefore = b.store.list("workout_exercise").length;
-  for (const item of conflicts(b.store)) {
-    if (!item.phone.choosable) continue;
-    settleConflict(b.store, item, "phone");
-  }
-  // Nothing was copied halfway: s2 still waits with its exercise, as edited here.
-  expect(b.store.get("workout_set", "s2")?.content).toMatchObject({ weightKg: 65 });
-  expect(b.store.list("workout_exercise").length).toBeGreaterThanOrEqual(copiesBefore);
-});
-
-it("doesn't wait for a set that can't upload until its deleted workout is settled", async () => {
-  const { a, b } = await twoPhones((store) => {
-    store.put("workout", "w1", workout("Pull Day"));
-    store.put("workout_exercise", "e1", entry("w1"));
-    store.put("workout_set", "s1", set(60, 10));
-  });
-  a.store.delete("workout", "w1");
-  await a.sync();
-  b.store.put("workout_set", "s1", set(65, 10));
-  await b.sync();
-  // A new exercise and a set under it, logged after the deletion arrived.
-  b.store.put("workout_exercise", "e2", { ...entry("w1"), position: 2 });
-  await b.sync();
-  b.store.put("workout_set", "s20", { ...set(70, 8), workoutExerciseId: "e2" });
-  await b.sync();
-  await b.sync();
-  const [conflict] = conflicts(b.store);
-  expect(conflict?.key).toBe("workout:w1");
-  expect(conflict!.phone.lines).toContainEqual({ label: "Holds", value: "2 exercises · 2 sets" });
 });
 
 it("settles a set deleted in both places on its own", async () => {
@@ -647,4 +396,69 @@ it("settles a set deleted in both places on its own", async () => {
   expect(all).toHaveLength(1);
   settleConflict(b.store, all[0]!, "account");
   expect(b.store.problems()).toEqual([]);
+});
+
+it("leads a workout deleted in the account, but changed here, to the workout's own review", async () => {
+  const { a, b } = await twoPhones((store) => {
+    store.put("workout", "w1", workout("Pull Day"));
+    store.put("workout_exercise", "e1", entry("w1"));
+    store.put("workout_set", "s1", set(60, 10));
+  });
+  a.store.delete("workout", "w1");
+  await a.sync();
+  b.store.put("workout_set", "s1", set(65, 10));
+  await b.sync();
+  const [conflict] = conflicts(b.store);
+  expect(conflict).toMatchObject({
+    key: "workout:w1",
+    title: "Pull Day",
+    review: { target: { pathname: "/workout/[id]", params: { id: "w1" } } },
+  });
+  // Never settled from the popup: nothing below it can go unseen.
+  expect(() => settleConflict(b.store, conflict!, "account")).toThrow("on its screen");
+  expect(b.store.get("workout_set", "s1")?.content).toMatchObject({ weightKg: 65 });
+});
+
+it("leads a workout deleted here, but changed in the account, to History", async () => {
+  const { a, b } = await twoPhones((store) => {
+    store.put("workout", "w1", workout("Leg Day"));
+    store.put("workout_exercise", "e1", entry("w1"));
+    store.put("workout_set", "s1", set(100, 5));
+  });
+  a.store.put("workout_set", "s1", set(140, 5));
+  await a.sync();
+  b.store.delete("workout", "w1");
+  await b.sync();
+  const [conflict] = conflicts(b.store);
+  expect(conflict?.review?.target).toEqual({ pathname: "/(tabs)/history" });
+  expect(() => settleConflict(b.store, conflict!, "phone")).toThrow("on its screen");
+});
+
+it("leads an exercise deleted in the account, with sets changed here, to the workout", async () => {
+  const { a, b } = await twoPhones((store) => {
+    store.put("workout", "w1", workout("Push Day"));
+    store.put("workout_exercise", "e1", entry("w1"));
+    store.put("workout_set", "s1", set(80, 8));
+  });
+  a.store.delete("workout_exercise", "e1");
+  await a.sync();
+  b.store.put("workout_set", "s1", set(85, 8));
+  await b.sync();
+  const [conflict] = conflicts(b.store);
+  expect(conflict?.review?.target).toEqual({ pathname: "/workout/[id]", params: { id: "w1" } });
+});
+
+it("asks straight away about work logged under something deleted in the account", async () => {
+  const { a, b } = await twoPhones((store) => {
+    store.put("workout", "w1", workout("Push Day"));
+    store.put("workout_exercise", "e1", entry("w1"));
+    store.put("workout_set", "s1", set(80, 8));
+  });
+  a.store.delete("workout_exercise", "e1");
+  await a.sync();
+  b.store.put("workout_set", "s1", set(85, 8));
+  await b.sync();
+  // Logged after the deletion arrived, not uploaded yet: the review shows it, so no waiting.
+  b.store.put("workout_set", "s10", { ...set(100, 3), position: 2 });
+  expect(conflicts(b.store).map((item) => item.review?.target.pathname)).toEqual(["/workout/[id]"]);
 });

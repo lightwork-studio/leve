@@ -71,6 +71,8 @@ vi.mock("expo-router", async () => {
   return {
     DefaultTheme,
     DarkTheme: { colors: { background: "#010101" } },
+    router: { push: () => {} },
+    usePathname: () => "/",
     ThemeProvider: Theme.Provider,
     Stack: Object.assign(
       ({ children }: { children: ReactNode }) =>

@@ -37,6 +37,11 @@ export interface ConflictSide {
   why?: string;
 }
 
+/** The screen where a conflict is reviewed, as expo-router takes it. */
+export type ReviewTarget =
+  | { pathname: "/workout/[id]"; params: { id: string } }
+  | { pathname: "/(tabs)/history" };
+
 export interface Conflict {
   key: string;
   title: string;
@@ -45,6 +50,12 @@ export interface Conflict {
   account: ConflictSide;
   /** The records as shown, so a choice made on an outdated view is refused. */
   records: DeviceRecord[];
+  /**
+   * A deletion that reaches into a workout (a workout or exercise deleted on one side while the
+   * other changed what's in it) isn't settled in the popup: it leads to the workout's own review,
+   * which restores what's needed and shows every set before anything is deleted.
+   */
+  review?: { target: ReviewTarget; message: string };
 }
 
 /** How one clashing record stands. */
@@ -250,6 +261,36 @@ function phonePlanOk(store: DeviceStore, row: DeviceRecord, shown: Set<string>):
   return !!ancestor && shown.has(`${ancestor.kind}:${ancestor.id}`);
 }
 
+/** Whether a workout conflict is a deletion that reaches into the workout (see Conflict.review). */
+function reviewOnScreen(key: string, records: DeviceRecord[]): Conflict["review"] | undefined {
+  if (!key.startsWith("workout:") || key.includes("|")) return undefined;
+  const deletion = (kinds: string[], which: RecordCase) =>
+    records.some((row) => kinds.includes(row.kind) && recordCase(row) === which);
+  const workoutId = key.slice("workout:".length);
+  if (deletion(["workout"], "gone_here"))
+    return {
+      target: { pathname: "/(tabs)/history" },
+      message:
+        "Deleted on this phone, but changed in your account since. Review it in History to see what changed before it goes.",
+    };
+  if (deletion(["workout_exercise"], "gone_here"))
+    return {
+      target: { pathname: "/workout/[id]", params: { id: workoutId } },
+      message:
+        "An exercise deleted on this phone was changed in your account since. Review the workout to see its sets before it goes.",
+    };
+  if (
+    deletion(["workout", "workout_exercise"], "gone_there") ||
+    records.some((row) => row.problem?.reason === "parent_deleted")
+  )
+    return {
+      target: { pathname: "/workout/[id]", params: { id: workoutId } },
+      message:
+        "Deleted in your account, but this phone has changes in it. Review the workout to keep them as new or let them go.",
+    };
+  return undefined;
+}
+
 /** Every conflict that can be settled now, oldest first. */
 export function conflicts(store: DeviceStore): Conflict[] {
   const groups = new Map<string, DeviceRecord[]>();
@@ -264,6 +305,12 @@ export function conflicts(store: DeviceStore): Conflict[] {
     // A part that can't be settled yet holds back its whole group, so a choice never covers only
     // half of what clashes.
     if (records.some((row) => !recordCase(row) || blocked(store, row))) continue;
+    // A deletion reaching into a workout is reviewed on the workout's own screen.
+    const review = reviewOnScreen(key, records);
+    if (review) {
+      result.push({ ...describe(store, key, records, false), review });
+      continue;
+    }
     // Work below something deleted in the account that hasn't come back as part of this conflict
     // yet (still to upload, or on its way) would go with it unseen: wait until it has.
     const shown = new Set(records.map((row) => `${row.kind}:${row.id}`));
@@ -296,6 +343,7 @@ export function conflicts(store: DeviceStore): Conflict[] {
  * in it changed since, so the person sees the latest before choosing.
  */
 export function settleConflict(store: DeviceStore, shown: Conflict, side: Side): void {
+  if (shown.review) throw Error("Review this one on its screen.");
   // Everything shown counts, not only the records: what the account's version still holds, too.
   const current = conflicts(store).find((item) => item.key === shown.key);
   if (!current || !jsonEqual(current, shown))

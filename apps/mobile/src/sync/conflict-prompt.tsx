@@ -15,7 +15,14 @@ import { themedStyles, useStyles } from "../ui/themed.ts";
  * can't be put off: each is settled before the app goes on (but never during a workout; see
  * SyncHost).
  */
-export function ConflictPrompt({ items }: { items: Conflict[] }) {
+export function ConflictPrompt({
+  items,
+  onReview,
+}: {
+  items: Conflict[];
+  /** Opens the screen a conflict is reviewed on (see Conflict.review). */
+  onReview: (item: Conflict) => void;
+}) {
   const styles = useStyles(sheet);
   const { change } = useAppData();
   const [picked, setPicked] = useState<Side | null>(null);
@@ -52,6 +59,33 @@ export function ConflictPrompt({ items }: { items: Conflict[] }) {
     }
   };
   const confirm = picked ? current[picked].confirm : "Choose a version";
+  if (current.review) {
+    // Settled on the workout's own review: the popup says what happened and leads there.
+    return (
+      <Dialog
+        eyebrow="Changed in two places"
+        label={`${current.title}: changed in two places`}
+        aside={
+          <Text style={styles.count}>
+            {settled + 1} of {settled + items.length}
+          </Text>
+        }
+      >
+        <Text accessibilityRole="header" style={styles.title}>
+          {current.title}
+        </Text>
+        <Text style={styles.subtitle}>
+          {[current.subtitle, current.review.message].filter(Boolean).join(" · ")}
+        </Text>
+        <Button
+          rank="primary"
+          label="Review it"
+          onPress={() => onReview(current)}
+          style={styles.confirm}
+        />
+      </Dialog>
+    );
+  }
   return (
     <Dialog
       eyebrow="Changed in two places"
