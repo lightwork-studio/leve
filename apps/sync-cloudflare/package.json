@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "deploy": "npx --yes wrangler@4.158.0 deploy",
+    "deploy:dev": "npx --yes wrangler@4.158.0 deploy --env=\"\"",
+    "deploy:prod": "npx --yes wrangler@4.158.0 deploy --env=production",
     "load": "node load/run.ts",
     "typecheck": "tsc -p . && tsc -p load"
   },

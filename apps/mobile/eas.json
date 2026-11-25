@@ -22,7 +22,8 @@
       "env": {
         "LEVE_APP_VARIANT": "preview",
         "EXPO_PUBLIC_BUILD_LABEL": "TestFlight Preview",
-        "EXPO_PUBLIC_SAMPLE_DATA": "off"
+        "EXPO_PUBLIC_SAMPLE_DATA": "off",
+        "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_test_c3VidGxlLWxhZHliaXJkLTc0ODIuY2xlcmsuYWNjb3VudHMuZGV2JA=="
       }
     },
     "production": {
