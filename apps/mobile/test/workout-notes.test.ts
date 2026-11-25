@@ -13,6 +13,7 @@ import {
   editExerciseNote,
   MAX_PINNED_PER_EXERCISE,
   notesWrittenIn,
+  resolveNoteProblem,
   setExerciseNotePinned,
   workoutExerciseNotes,
 } from "../src/data/exercise-notes.ts";
@@ -548,6 +549,65 @@ it("syncs exercise notes and comments between devices, and keeps edits read-only
     expect(other.store.get("exercise_note", belt)?.content).toMatchObject({
       text: "Belt on the top set",
     });
+  } finally {
+    await world.dispose();
+  }
+});
+
+it("settles an exercise note changed on two phones with the version the lifter picks", async () => {
+  const world = new World(previewContract);
+  try {
+    const server = world.server();
+    const opts = { server: "s", account: "alice", transport: server.transport("alice") };
+    const a = await world.phone("a", opts);
+    const seat = addExerciseNote(a.store, {
+      exerciseId: "bench",
+      workoutId: null,
+      text: "Seat 3",
+      pinned: true,
+    });
+    await a.sync();
+    const b = await world.phone("b", opts);
+    await b.sync();
+    const both = async (here: string, there: string) => {
+      editExerciseNote(a.store, seat, there);
+      await a.sync();
+      editExerciseNote(b.store, seat, here);
+      await b.sync();
+      const row = b.store.get("exercise_note", seat);
+      expect(row).toMatchObject({ status: "conflict", content: { text: here } });
+      if (!row) throw Error("Missing note");
+      return row;
+    };
+    const first = await both("Seat 2", "Seat 4");
+    // A choice made on a copy that has changed since is refused.
+    expect(() =>
+      resolveNoteProblem(
+        b.store,
+        { ...first, content: { ...first.content, text: "Old" } },
+        "keep_mine",
+      ),
+    ).toThrow(/changed/);
+    resolveNoteProblem(b.store, first, "keep_mine");
+    await b.sync();
+    await a.sync();
+    expect(a.store.get("exercise_note", seat)?.content?.text).toBe("Seat 2");
+    const second = await both("Seat 1", "Seat 5");
+    resolveNoteProblem(b.store, second, "keep_theirs");
+    await b.sync();
+    expect(b.store.get("exercise_note", seat)?.content?.text).toBe("Seat 5");
+    expect(b.store.hasUnsyncedWork()).toBe(false);
+    // Deleted on the other phone: this phone's edit can't be kept as it was.
+    deleteExerciseNote(a.store, seat);
+    await a.sync();
+    editExerciseNote(b.store, seat, "Seat 6");
+    await b.sync();
+    const gone = b.store.get("exercise_note", seat);
+    if (!gone?.problem) throw Error("Expected a sync problem");
+    expect(() => resolveNoteProblem(b.store, gone, "keep_mine")).toThrow();
+    resolveNoteProblem(b.store, gone, "keep_theirs");
+    await b.sync();
+    expect(b.store.get("exercise_note", seat)?.deleted ?? true).toBe(true);
   } finally {
     await world.dispose();
   }

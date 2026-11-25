@@ -123,6 +123,29 @@ export function workoutJournalData(
   return { workout, notes, carried, comments, problems, rejectedIds, sessionNumbers };
 }
 
+/**
+ * The parts of a journal that change while its workout runs: the workout's own notes, every
+ * comment and the notes with a sync problem. The notes that came back from earlier workouts stay
+ * as they were read, so a running workout needn't read all of history again for every set.
+ */
+export function refreshedJournal(
+  store: DeviceStore,
+  journal: NonNullable<ReturnType<typeof workoutJournalData>>,
+) {
+  const workoutId = journal.workout.id;
+  const notes = records<Omit<WorkoutNote, "id">>(store, "workout_note", workoutId)
+    .map(({ id, content }) => ({ ...content, id, agent: content.agent ?? null }))
+    .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt) || a.id.localeCompare(b.id));
+  const rejected = store.problems().filter((item) => item.kind === "workout_note");
+  return {
+    ...journal,
+    notes,
+    comments: commentsByNote(store, "workout_note"),
+    problems: rejected.filter((item) => reviewWorkoutId(item) === workoutId),
+    rejectedIds: new Set(rejected.map((item) => item.id)),
+  };
+}
+
 /** Older sets can omit the timestamp. Screens use null for an unfinished set. */
 function displayedSet(record: DeviceRecord): WorkoutTree["entries"][number]["sets"][number] {
   const content = record.content as unknown as WorkoutSet;

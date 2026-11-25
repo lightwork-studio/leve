@@ -41,11 +41,13 @@ export function hasUnread(comments: readonly NoteComment[] | undefined, seen: Se
 
 /** Remember that a note's comments up to now have been seen. */
 export function markSeen(noteId: string, comments: readonly NoteComment[]) {
-  const newest = comments.reduce<string | null>(
-    (latest, { createdAt }) =>
-      latest === null || Date.parse(createdAt) > Date.parse(latest) ? createdAt : latest,
-    null,
-  );
+  const newest = comments
+    .filter((comment) => comment.agent !== null)
+    .reduce<string | null>(
+      (latest, { createdAt }) =>
+        latest === null || Date.parse(createdAt) > Date.parse(latest) ? createdAt : latest,
+      null,
+    );
   if (newest === null) return;
   const seen = readSeen();
   if (seen[noteId] && Date.parse(seen[noteId]) >= Date.parse(newest)) return;

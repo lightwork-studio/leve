@@ -50,6 +50,10 @@ export function WorkoutNotesPanel({
       .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt) || a.id.localeCompare(b.id))
       .map((note) => line(note)),
   ];
+  // An earlier workout's note pins to that workout's routine; one from a workout without a
+  // routine can't be pinned.
+  const source = carried.find(({ note }) => note.id === open);
+  const openPinTo = source ? (source.workoutRoutineId === null ? null : title) : pinTo;
   return (
     <View style={style}>
       <NoteLines
@@ -74,10 +78,7 @@ export function WorkoutNotesPanel({
           kind="workout_note"
           noteId={open}
           eyebrow={title}
-          pinTo={
-            // An earlier workout's note is pinned to that workout's routine.
-            notes.some((note) => note.id === open) ? pinTo : title
-          }
+          pinTo={openPinTo}
           pinnedHint={`Shows in every ${title} until you delete it`}
           unpinnedHint={
             pinTo

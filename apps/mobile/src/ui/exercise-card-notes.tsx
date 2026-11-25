@@ -99,7 +99,11 @@ export function ExerciseCardNotes({
           eyebrow={exerciseName}
           pinTo={exerciseName}
           pinnedHint={`Shows on every ${exerciseName} until you delete it`}
-          unpinnedHint={`Shows next time you do ${exerciseName}, then stays with this workout`}
+          unpinnedHint={
+            workoutId === null
+              ? `Shows next time you do ${exerciseName}`
+              : `Shows next time you do ${exerciseName}, then stays with this workout`
+          }
           onClose={() => setOpen(null)}
         />
       )}

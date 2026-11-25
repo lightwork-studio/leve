@@ -31,7 +31,7 @@ import { useAppData } from "../../src/data/app-data.tsx";
 import { workoutExerciseNotes, workoutsByExercise } from "../../src/data/exercise-notes.ts";
 import { hasUnread, useSeenComments } from "../../src/data/note-seen.ts";
 import { useLive, usePastWorkouts } from "../../src/data/queries.ts";
-import { workoutJournalData } from "../../src/data/read.ts";
+import { refreshedJournal, workoutJournalData } from "../../src/data/read.ts";
 import { restProgress, restTimer, useRest } from "../../src/data/rest-timer.ts";
 import {
   deleteHeldSet,
@@ -351,10 +351,16 @@ export default function ActiveWorkoutScreen() {
       ? previousForWorkout(history, data.tree, data.settings, data.initialPlan)
       : null;
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: notes written here change the version.
-  const journal = useMemo(
+  // biome-ignore lint/correctness/useExhaustiveDependencies: set edits leave prior journals unchanged.
+  const journalHistory = useMemo(
     () => (settled && workoutId ? workoutJournalData(store, workoutId) : null),
-    [store, workoutId, version, settled],
+    [store, workoutId, historyVersion, settled],
+  );
+  // This workout's own notes and comments are written with the running workout's version.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: read again for every change.
+  const journal = useMemo(
+    () => (journalHistory ? refreshedJournal(store, journalHistory) : null),
+    [store, journalHistory, version],
   );
   const carried = journal?.carried ?? [];
   const needsReview =

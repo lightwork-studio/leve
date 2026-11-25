@@ -1,5 +1,5 @@
 import { LIMITS } from "@leve/core";
-import type { DeviceStore } from "@leve/storage";
+import type { DeviceRecord, DeviceStore } from "@leve/storage";
 import { useEffect, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useAppData } from "../data/app-data.tsx";
@@ -14,7 +14,7 @@ import {
   setExerciseNotePinned,
 } from "../data/exercise-notes.ts";
 import { isUnread, markSeen, useSeenComments } from "../data/note-seen.ts";
-import { writeWorkoutNote } from "../data/workout-notes.ts";
+import { checkedNoteText, writeWorkoutNote } from "../data/workout-notes.ts";
 import type { WorkoutNote } from "../model/types.ts";
 import { radius, space, type } from "../theme.ts";
 import { DestructiveButton } from "./action-sheet.tsx";
@@ -34,6 +34,13 @@ interface StoredNote {
   text: string;
   createdAt: string;
   agent?: string | null;
+}
+
+/** This device's version can be kept only while it and its parent are still live on the server. */
+function canKeepMine(row: DeviceRecord) {
+  return (
+    !!row.content && row.server?.state !== "deleted" && row.problem?.reason !== "parent_deleted"
+  );
 }
 
 function readNote(store: DeviceStore, kind: NoteKind, id: string) {
@@ -100,24 +107,33 @@ export function NoteSheet({
       setError(problem instanceof Error ? problem.message : "Couldn't save the note.");
     }
   };
+  // Saved against the note as it was when the sheet opened, so an edit that arrived meanwhile is
+  // never overwritten unseen.
   const save = () =>
     run((db) => {
       const latest = readNote(db, kind, noteId);
       if (!latest) throw Error("This note was deleted.");
+      const was = opened.note;
+      const textChanged = own && text !== was.text;
+      if (!textChanged && pinned === was.pinned) return;
+      if (textChanged) checkedNoteText(text);
       if (kind === "workout_note") {
-        const workoutId = String(latest.note.workoutId);
         const original: WorkoutNote = {
           id: noteId,
-          pinned: latest.note.pinned,
-          text: latest.note.text,
-          createdAt: latest.note.createdAt,
-          agent: latest.note.agent ?? null,
+          pinned: was.pinned,
+          text: was.text,
+          createdAt: was.createdAt,
+          agent: was.agent ?? null,
         };
-        if (text !== original.text || pinned !== original.pinned)
-          writeWorkoutNote(db, workoutId, original, { text: own ? text : original.text, pinned });
+        writeWorkoutNote(db, String(was.workoutId), original, {
+          text: textChanged ? text : was.text,
+          pinned,
+        });
       } else {
-        if (own && text !== latest.note.text) editExerciseNote(db, noteId, text);
-        if (pinned !== latest.note.pinned) setExerciseNotePinned(db, noteId, pinned);
+        if (latest.note.text !== was.text || latest.note.pinned !== was.pinned)
+          throw Error("This note changed. Reopen it to see the latest version.");
+        if (pinned !== was.pinned) setExerciseNotePinned(db, noteId, pinned);
+        if (textChanged) editExerciseNote(db, noteId, text);
       }
     }, true);
   const remove = () =>
@@ -193,10 +209,12 @@ export function NoteSheet({
               This note didn't sync. Keep this version, or take the one from your other devices.
             </Text>
             <View style={styles.problemActions}>
-              <Button
-                label="Keep this version"
-                onPress={() => run((db) => resolveNoteProblem(db, current.row, "keep_mine"))}
-              />
+              {canKeepMine(current.row) && (
+                <Button
+                  label="Keep this version"
+                  onPress={() => run((db) => resolveNoteProblem(db, current.row, "keep_mine"))}
+                />
+              )}
               <Button
                 label="Take the other"
                 onPress={() =>

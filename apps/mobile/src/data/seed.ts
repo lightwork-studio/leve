@@ -202,8 +202,9 @@ function seedNotes(store: DeviceStore, pushDays: { id: string; start: number }[]
   const last = pushDays.at(-1);
   if (!first || !last) return;
   const during = (day: { start: number }, minutes: number) => iso(day.start + minutes * 60_000);
-  // The reply came the next morning, or an hour ago if that is later than now.
-  const replied = iso(Math.min(last.start + 15 * 60 * 60_000, now - 60 * 60_000));
+  // The reply came the next morning, or a minute ago if that is later than now. A logged push day
+  // ended before now, and every note is written within its first 40 minutes.
+  const replied = iso(Math.min(last.start + 15 * 60 * 60_000, now - 60_000));
   const exerciseNote = (
     id: string,
     exerciseId: string,
@@ -251,7 +252,7 @@ function seedNotes(store: DeviceStore, pushDays: { id: string; start: number }[]
     workoutId: last.id,
     pinned: false,
     text: "Slept 5 hours, felt flat. Waited ten minutes for the rack.",
-    createdAt: during(last, 70),
+    createdAt: during(last, 40),
     agent: null,
   });
   store.put("workout_note_comment", "seed-comment-sleep", {
