@@ -300,11 +300,13 @@ vi.mock("react-native", () => {
       children,
       onMouseDown,
       dataSet,
+      accessible,
       accessibilityLabel,
     }: {
       children: ReactNode;
       onMouseDown?: React.MouseEventHandler<HTMLDivElement>;
       dataSet?: { keyboardAccessory?: boolean };
+      accessible?: boolean;
       accessibilityLabel?: string;
     }) =>
       h(
@@ -312,6 +314,7 @@ vi.mock("react-native", () => {
         {
           onMouseDown,
           "data-keyboard-accessory": dataSet?.keyboardAccessory,
+          "data-accessible": accessible,
           "aria-label": accessibilityLabel,
         },
         children,
@@ -5442,6 +5445,12 @@ describe("notes where they apply", () => {
   const REPLACE_OR_KEEP =
     "This note was changed on another device. Done replaces it with your text; Cancel keeps the new version.";
   const NEW_VERSION = "This note was changed on another device. This is the new version.";
+  const UNSAVED = "Your change wasn't saved: this note changed elsewhere. Tap it to choose.";
+  /** A dot a screen reader reads as New. */
+  const isNewDot = (node: Node | null | undefined) =>
+    node instanceof Element &&
+    node.getAttribute("aria-label") === "New" &&
+    node.getAttribute("data-accessible") === "true";
 
   /**
    * A finished bench workout from yesterday with two notes, then today's workout with the bench
@@ -5785,6 +5794,106 @@ describe("notes where they apply", () => {
     await press("Delete note");
     await confirmAction("Delete note");
     expect(live()).toBe(false);
+  });
+
+  it("keeps a draft refused when another note is tapped, and Done on the note saves it", async () => {
+    const { today } = benchWithNotes();
+    const render = () => act(() => root.render(h(ActiveWorkoutScreen)));
+    await render();
+    await press("Warm-up felt heavy");
+    await typeIn("Edit note", "Warm-up felt fine");
+    changeNote(today, { text: "Warm-up was slow" });
+    await render();
+    await press("Last time. Elbow felt sore");
+    expect(host.textContent).toContain(UNSAVED);
+    expect(noteContent(today)).toMatchObject({ text: "Warm-up was slow", pinned: false });
+    expect(host.querySelectorAll('[aria-label="Edit note"]')).toHaveLength(1);
+    expect(editField()?.value).toBe("Elbow felt sore");
+    expect(labels(/Warm-up/)).toEqual(["Warm-up was slow"]);
+    // Tapped again, the note offers the typed text against the newer copy.
+    await press("Warm-up was slow");
+    expect(host.querySelectorAll('[aria-label="Edit note"]')).toHaveLength(1);
+    expect(editField()?.value).toBe("Warm-up felt fine");
+    expect(host.textContent).toContain(REPLACE_OR_KEEP);
+    expect(host.textContent).not.toContain(UNSAVED);
+    await press("Done");
+    expect(editField()).toBeNull();
+    expect(noteContent(today)).toMatchObject({ text: "Warm-up felt fine", pinned: false });
+    expect(host.textContent).not.toContain("changed on another device");
+  });
+
+  it("keeps the other device's text when a draft refused on leaving is cancelled", async () => {
+    const { today } = benchWithNotes();
+    const render = () => act(() => root.render(h(ActiveWorkoutScreen)));
+    await render();
+    await press("Warm-up felt heavy");
+    await typeIn("Edit note", "Warm-up felt fine");
+    changeNote(today, { text: "Warm-up was slow" });
+    await render();
+    await press("Last time. Elbow felt sore");
+    await press("Warm-up was slow");
+    expect(editField()?.value).toBe("Warm-up felt fine");
+    await press("Cancel");
+    expect(editField()).toBeNull();
+    expect(noteContent(today)).toMatchObject({ text: "Warm-up was slow", pinned: false });
+    expect(labels(/Warm-up/)).toEqual(["Warm-up was slow"]);
+    expect(host.textContent).not.toContain("changed elsewhere");
+    // The draft is gone: edited again, the note starts from the newer copy.
+    await press("Warm-up was slow");
+    expect(editField()?.value).toBe("Warm-up was slow");
+    expect(host.textContent).not.toContain("changed on another device");
+  });
+
+  it("never writes the old text back after a refused pin when nothing was typed", async () => {
+    const { today } = benchWithNotes();
+    const render = () => act(() => root.render(h(ActiveWorkoutScreen)));
+    await render();
+    await press("Warm-up felt heavy");
+    changeNote(today, { text: "Warm-up was slow" });
+    await render();
+    await press("Pin to Bench Press");
+    expect(host.textContent).toContain(NEW_VERSION);
+    expect(editField()?.value).toBe("Warm-up was slow");
+    const before = store.get("exercise_note", today);
+    expect(before?.content).toMatchObject({ text: "Warm-up was slow", pinned: false });
+    await press("Done");
+    expect(editField()).toBeNull();
+    expect(store.get("exercise_note", today)).toEqual(before);
+  });
+
+  it("writes nothing for an edit that only adds spaces when another note is tapped", async () => {
+    const { today } = benchWithNotes();
+    await act(() => root.render(h(ActiveWorkoutScreen)));
+    const before = store.get("exercise_note", today);
+    const put = vi.spyOn(store, "put");
+    onTestFinished(() => put.mockRestore());
+    await press("Warm-up felt heavy");
+    await typeIn("Edit note", "Warm-up felt heavy ");
+    await press("Last time. Elbow felt sore");
+    expect(editField()?.value).toBe("Elbow felt sore");
+    expect(put).not.toHaveBeenCalled();
+    expect(store.get("exercise_note", today)).toEqual(before);
+    expect(host.textContent).not.toContain("changed elsewhere");
+  });
+
+  it("says an empty draft left by tapping another note needs text, and saves nothing", async () => {
+    const { today } = benchWithNotes();
+    await act(() => root.render(h(ActiveWorkoutScreen)));
+    const before = store.get("exercise_note", today);
+    const put = vi.spyOn(store, "put");
+    onTestFinished(() => put.mockRestore());
+    await press("Warm-up felt heavy");
+    await typeIn("Edit note", "   ");
+    await press("Last time. Elbow felt sore");
+    expect(host.textContent).toContain("Enter a note.");
+    expect(host.textContent).not.toContain("changed elsewhere");
+    expect(put).not.toHaveBeenCalled();
+    expect(store.get("exercise_note", today)).toEqual(before);
+    // Tapped again, it starts from the stored text with nothing to settle.
+    await press("Warm-up felt heavy");
+    expect(editField()?.value).toBe("Warm-up felt heavy");
+    expect(host.textContent).not.toContain("Enter a note.");
+    expect(host.textContent).not.toContain("changed on another device");
   });
 
   it("pins and deletes an agent's note without offering its text for editing", async () => {
@@ -6144,7 +6253,7 @@ describe("notes where they apply", () => {
         .filter((el) => el.children.length === 0 && /^(COACH|YOU)$/.test(el.textContent ?? ""))
         .map((author) => ({
           text: author.parentElement?.nextElementSibling?.textContent,
-          dot: author.previousElementSibling?.getAttribute("aria-label") === "New",
+          dot: isNewDot(author.previousElementSibling),
         }));
     const render = () => act(() => root.render(h(ActiveWorkoutScreen)));
     const records: MutationRecord[] = [];
@@ -6156,7 +6265,7 @@ describe("notes where they apply", () => {
       .filter((record) => record.target instanceof HTMLButtonElement)
       .flatMap((record) =>
         [...record.removedNodes]
-          .filter((node) => node instanceof Element && node.getAttribute("aria-label") === "New")
+          .filter((node) => isNewDot(node))
           .map(() => (record.target as Element).getAttribute("aria-label")),
       );
     changes.disconnect();

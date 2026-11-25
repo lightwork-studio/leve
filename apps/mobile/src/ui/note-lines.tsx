@@ -167,15 +167,28 @@ function NoteItem({
       setError(problemText(cause, "Couldn't save the note."));
     }
   };
+  // Text typed into an edit that ended without being saved, kept to offer again.
+  const [unsaved, setUnsaved] = useState(false);
+  /** Whether the field holds text that differs from the note, beyond spaces at its ends. */
+  const typed = () => own && text.trim() !== opened.text;
   const startEditing = () => {
-    setText(note.text);
-    setOpened(note);
-    setError("");
+    if (unsaved) {
+      // The draft that couldn't be saved comes back, against the note's newest copy.
+      setOpened(note);
+      setError(
+        "This note was changed on another device. Done replaces it with your text; Cancel keeps the new version.",
+      );
+      setUnsaved(false);
+    } else {
+      setText(note.text);
+      setOpened(note);
+      setError("");
+    }
     onEdit(true);
   };
   /** Saves typed text, and returns the copy of the note it was saved over. */
   const saveDraft = () => {
-    if (!own || text === opened.text) return opened;
+    if (!typed()) return opened;
     writes.edit(opened, text);
     // Stored trimmed, so the copy to check later writes against is trimmed too.
     const saved = { ...opened, text: text.trim() };
@@ -188,11 +201,11 @@ function NoteItem({
     const changed = note.text !== opened.text || note.pinned !== opened.pinned;
     if (changed) {
       // Nothing typed: take the new text, so a later Done can't write the old one back.
-      const typed = text !== opened.text;
+      const draft = typed();
       setOpened(note);
-      if (!typed) setText(note.text);
+      if (!draft) setText(note.text);
       setError(
-        own && typed && text !== note.text
+        draft && text.trim() !== note.text
           ? "This note was changed on another device. Done replaces it with your text; Cancel keeps the new version."
           : "This note was changed on another device. This is the new version.",
       );
@@ -210,16 +223,23 @@ function NoteItem({
   const cancel = () => {
     setText(opened.text);
     setError("");
+    setUnsaved(false);
     onEdit(false);
   };
   // Leaving edit mode another way, such as by tapping another note, keeps what was typed.
   const wasEditing = useRef(editing);
   useEffect(() => {
-    if (wasEditing.current && !editing && own && text !== opened.text) {
+    if (wasEditing.current && !editing && typed()) {
       try {
         saveDraft();
       } catch (cause) {
         refused(cause);
+        // Changed elsewhere and closed with nothing to press: keep the draft for the next tap.
+        // Any other refusal, such as an empty note, keeps the message it gave.
+        if (note.text !== opened.text || note.pinned !== opened.pinned) {
+          setUnsaved(true);
+          setError("Your change wasn't saved: this note changed elsewhere. Tap it to choose.");
+        }
       }
     }
     wasEditing.current = editing;
@@ -302,7 +322,7 @@ function NoteItem({
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             style={styles.replies}
           >
-            {unread && <View style={styles.dot} accessibilityLabel="New" />}
+            {unread && <View style={styles.dot} accessible accessibilityLabel="New" />}
             <CommentIcon color={unread || showReplies ? c.fg : c.fg3} size={ICON} />
             <Text style={[styles.replyCount, (unread || showReplies) && styles.replyCountNew]}>
               {note.comments.length}
@@ -454,6 +474,9 @@ function Replies({
     setText(next);
     onReplying(next.trim() !== "");
   };
+  // Closed with a reply half typed, the thread no longer holds it open.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once, when the replies close.
+  useEffect(() => () => onReplying(false), []);
   const send = () => {
     try {
       writes.reply(note.id, text);
@@ -468,7 +491,7 @@ function Replies({
       {note.comments.map((comment) => (
         <View key={comment.id} style={styles.reply}>
           <View style={styles.byline}>
-            {unread(comment) && <View style={styles.dot} accessibilityLabel="New" />}
+            {unread(comment) && <View style={styles.dot} accessible accessibilityLabel="New" />}
             <Text style={styles.prefix}>{(comment.agent ?? "You").toUpperCase()}</Text>
             <Text style={styles.when}>{dayLabel(comment.createdAt)}</Text>
             {comment.agent === null && (

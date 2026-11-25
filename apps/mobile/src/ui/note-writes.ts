@@ -85,6 +85,8 @@ export function useNoteWrites(kind: NoteKind) {
     remove(seen: SeenNote) {
       run((db) => {
         if (kind === "exercise_note") {
+          const row = db.get(kind, seen.id);
+          if (!row?.content || row.deleted) return;
           unchanged(db, seen);
           deleteExerciseNote(db, seen.id);
         } else writeWorkoutNote(db, String(seen.workoutId), asWorkoutNote(seen), null);
