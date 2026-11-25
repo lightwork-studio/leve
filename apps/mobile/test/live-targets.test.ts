@@ -192,7 +192,7 @@ describe("valuesLine", () => {
       { metric: "reps" as const, view: view("8", 8) },
     ];
     expect(valuesLine(views, "kg")).toBe("60 × 8");
-    expect(valuesLine(views, "lb", true)).toBe("60 lb × 8");
+    expect(valuesLine(views, "lbs", true)).toBe("60 lbs × 8");
   });
 
   it("leaves a weight placeholder without a unit", () => {
