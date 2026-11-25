@@ -11,12 +11,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { signInProblem, useAppleSignIn } from "../account/apple-sign-in.ts";
 import { buildInfo } from "../build-info.ts";
 import { useAppData } from "../data/app-data.tsx";
+import { conflicts } from "../data/conflicts.ts";
 import { subscribeDevicePreferences } from "../data/device-preference-store.ts";
 import { gutter, radius, space, type } from "../theme.ts";
 import { Button } from "../ui/buttons.tsx";
 import { Dialog } from "../ui/dialog.tsx";
 import { Banner } from "../ui/notice.tsx";
 import { themedStyles, useAppearance, useStyles } from "../ui/themed.ts";
+import { ConflictPrompt } from "./conflict-prompt.tsx";
 import { syncEnabled, syncServerUrl } from "./sync-config.ts";
 import {
   REMIND_LATER_MS,
@@ -186,6 +188,10 @@ function Sync() {
       />
     );
   }
+
+  // Conflicts are settled here and now: one at a time, before the app goes on.
+  const pending = conflicts(store);
+  if (pending.length > 0) return <ConflictPrompt items={pending} />;
 
   const since = status.lastSynced ?? status.failingSince;
   if (isSignedIn && since !== null && now - since > STALE_AFTER_MS && store.hasUnsyncedWork()) {

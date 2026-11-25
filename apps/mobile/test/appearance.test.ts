@@ -84,6 +84,9 @@ vi.mock("../src/ui/notice.tsx", () => ({ Banner: "Banner", ToastHost: "Toasts" }
 vi.mock("../src/ui/enter.tsx", () => ({ StillOnOpen: Fragment }));
 vi.mock("../src/ui/motion.ts", () => ({ spring: {} }));
 vi.mock("../src/ui/tap.tsx", () => ({ Tap: "Tap" }));
+vi.mock("../src/ui/haptics.ts", () => ({
+  haptic: { tap: () => {}, select: () => {}, warning: () => {}, success: () => {} },
+}));
 vi.mock("../src/ui/icons.tsx", () => ({
   CheckIcon: "Check",
   ChevronIcon: "Chevron",

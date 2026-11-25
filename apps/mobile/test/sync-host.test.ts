@@ -3,6 +3,7 @@
 import { act, createElement as h, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { Conflict } from "../src/data/conflicts.ts";
 import { forgetDevicePreferences } from "../src/data/device-preference-store.ts";
 import { SyncHost } from "../src/sync/sync-host.tsx";
 import { signInReminderDue } from "../src/sync/sync-preferences.ts";
@@ -48,6 +49,19 @@ vi.mock("../src/sync/sync-session.ts", () => ({
     retry() {
       this.calls.push("retry");
     }
+  },
+}));
+const pending = vi.hoisted(() => ({
+  conflicts: [] as Conflict[],
+  settled: [] as [string, string][],
+  refuse: null as string | null,
+}));
+vi.mock("../src/data/conflicts.ts", () => ({
+  conflicts: () => pending.conflicts,
+  settleConflict: (_store: unknown, shown: Conflict, side: string) => {
+    if (pending.refuse) throw Error(pending.refuse);
+    pending.settled.push([shown.key, side]);
+    pending.conflicts = pending.conflicts.filter((item) => item.key !== shown.key);
   },
 }));
 vi.mock("../src/sync/sync-config.ts", () => ({
@@ -154,6 +168,7 @@ beforeEach(() => {
     resets: [],
     unsyncedCount: 0,
   });
+  Object.assign(pending, { conflicts: [], settled: [], refuse: null });
   sessions.created.length = 0;
   host = document.createElement("div");
   document.body.append(host);
@@ -176,7 +191,9 @@ async function report(status: Partial<SyncStatus>) {
   await act(async () => session().report(status));
 }
 async function tap(label: string) {
-  const target = [...document.querySelectorAll<HTMLElement>("button, [role=button]")].find(
+  const target = [
+    ...document.querySelectorAll<HTMLElement>("button, [role=button], [role=radio]"),
+  ].find(
     (element) =>
       element.textContent?.includes(label) || element.getAttribute("aria-label") === label,
   );
@@ -333,4 +350,96 @@ it("notes a day without syncing only when changes are waiting", async () => {
   expect(screen()).toContain("Changes haven't synced since");
   await report({ lastSynced: Date.now() });
   expect(screen()).toBe("");
+});
+
+const folderConflict = (key: string, title: string): Conflict => ({
+  key,
+  title,
+  subtitle: "Folder",
+  records: [],
+  phone: {
+    lines: [{ label: "Name", value: `${title} B` }],
+    choosable: true,
+    confirm: "Keep this version",
+  },
+  account: {
+    lines: [{ label: "Name", value: `${title} A` }],
+    choosable: true,
+    confirm: "Keep this version",
+  },
+});
+
+it("goes through conflicts one at a time, with nothing chosen in advance", async () => {
+  pending.conflicts = [
+    folderConflict("routine_folder:f1", "Push"),
+    folderConflict("routine_folder:f2", "Pull"),
+  ];
+  await render();
+  expect(screen()).toContain("Changed in two places");
+  expect(screen()).toContain("1 of 2");
+  expect(screen()).toContain("Push B");
+  expect(screen()).toContain("Push A");
+  // Nothing chosen yet: the confirm can't be pressed, and there is no way to put it off.
+  await tap("Choose a version");
+  expect(pending.settled).toEqual([]);
+  expect(document.querySelector("[aria-label=Cancel]")).toBeNull();
+  expect(screen()).not.toContain("Not now");
+
+  await tap("In your account: Name Push A");
+  await tap("Keep this version");
+  expect(pending.settled).toEqual([["routine_folder:f1", "account"]]);
+  await render();
+  expect(screen()).toContain("2 of 2");
+  expect(screen()).toContain("Pull B");
+  // The next one starts with nothing chosen again.
+  await tap("Choose a version");
+  expect(pending.settled).toHaveLength(1);
+  await tap("On this phone: Name Pull B");
+  await tap("Keep this version");
+  expect(pending.settled).toEqual([
+    ["routine_folder:f1", "account"],
+    ["routine_folder:f2", "phone"],
+  ]);
+  await render();
+  expect(screen()).toBe("");
+});
+
+it("waits for the workout to end, and says why a choice was refused", async () => {
+  pending.conflicts = [folderConflict("routine_folder:f1", "Push")];
+  data.workout = true;
+  await render();
+  expect(screen()).toBe("");
+  data.workout = false;
+  await render();
+  pending.refuse = "This changed in the meantime. Have a look at the latest versions.";
+  await tap("On this phone: Name Push B");
+  await tap("Keep this version");
+  expect(screen()).toContain("This changed in the meantime.");
+  expect(pending.settled).toEqual([]);
+});
+
+it("can't keep a change the server refused", async () => {
+  pending.conflicts = [
+    {
+      ...folderConflict("routine_folder:f1", "Push"),
+      phone: {
+        lines: [{ label: "Name", value: "Couldn't be saved" }],
+        choosable: false,
+        confirm: "",
+      },
+      account: {
+        lines: [{ label: "Name", value: "Push" }],
+        choosable: true,
+        confirm: "Undo my change",
+      },
+    },
+  ];
+  await render();
+  expect(screen()).toContain("couldn't be saved in your account");
+  await tap("On this phone: Name Couldn't be saved");
+  await tap("Choose a version");
+  expect(pending.settled).toEqual([]);
+  await tap("In your account: Name Push");
+  await tap("Undo my change");
+  expect(pending.settled).toEqual([["routine_folder:f1", "account"]]);
 });

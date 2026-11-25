@@ -41,7 +41,10 @@ export interface SyncSessionOptions {
   app: string;
   /** A session token for the account, or null without one. `fresh` skips a cached token. */
   token(fresh: boolean): Promise<string | null>;
-  /** Downloaded changes were applied: screens should read the store again. */
+  /**
+   * The data changed under the screens (downloads applied, uploads accepted, conflicts found or
+   * settled): they should read the store again.
+   */
   onPulled(): void;
   onStatus(status: SyncStatus): void;
   /**
@@ -129,6 +132,7 @@ export class SyncSession {
     this.#options = options;
     this.#now = options.now ?? Date.now;
     this.#timing = { ...SYNC_TIMING, ...options.timing };
+    this.#problems = this.#countProblems();
     this.#status = { prompt: null, lastSynced: options.lastSynced ?? null, failingSince: null };
     const headers = async (): Promise<Record<string, string>> => {
       // A request of a stopped session (still running when another account signed in) must not
@@ -390,7 +394,10 @@ export class SyncSession {
           failingSince: null,
           ...(this.#status.prompt?.kind === "sign_in" ? { prompt: null } : {}),
         });
-        if (outcome.pulled > 0) this.#options.onPulled();
+        // Screens read again after downloads, accepted uploads, and new or settled conflicts (an
+        // upload can be turned down without anything being downloaded).
+        if (outcome.pulled > 0 || outcome.pushed > 0 || this.#problemsChanged())
+          this.#options.onPulled();
         return null;
       case "offline": {
         const steps = this.#timing.offline;
@@ -416,6 +423,20 @@ export class SyncSession {
         this.#options.log?.(`sync failed: ${outcome.error}`);
         return this.#retryAfter(this.#timing.error);
     }
+  }
+
+  /** Records waiting for the person (conflicts and refused changes), at the last check. */
+  #problems = 0;
+  #countProblems(): number {
+    const { conflict, invalid } = this.#options.store.summary();
+    return conflict + invalid;
+  }
+  /** Whether the number of records waiting for the person changed since the last check. */
+  #problemsChanged(): boolean {
+    const now = this.#countProblems();
+    const changed = now !== this.#problems;
+    this.#problems = now;
+    return changed;
   }
 
   #retryAfter(ms: number): number {
