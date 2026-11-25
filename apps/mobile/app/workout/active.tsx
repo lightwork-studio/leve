@@ -156,6 +156,7 @@ import { layout } from "../../src/ui/motion.ts";
 import { WorkoutMuscleSummary } from "../../src/ui/muscle-map.tsx";
 import { goHome } from "../../src/ui/navigation.ts";
 import { showToast } from "../../src/ui/notice.tsx";
+import { revealInList } from "../../src/ui/reveal.ts";
 import { SetChip, setNumbers } from "../../src/ui/set-chip.tsx";
 import { SetSyncReview } from "../../src/ui/set-sync-review.tsx";
 import { inputValue } from "../../src/ui/set-values.ts";
@@ -308,7 +309,7 @@ export default function ActiveWorkoutScreen() {
     if (Platform.OS !== "web") Keyboard.dismiss();
     if (Platform.OS === "web" && heading) {
       // An earlier card may have grown without resizing this heading.
-      (heading as unknown as HTMLElement).scrollIntoView?.({ block: "start" });
+      revealInList(heading as unknown as HTMLElement, "start");
     } else {
       revealCard.current = id;
       revealPendingCard();
@@ -525,7 +526,7 @@ export default function ActiveWorkoutScreen() {
       const row = rows.current.get(editingSet);
       if (!row) return;
       if (Platform.OS === "web") {
-        (row as unknown as HTMLElement).scrollIntoView?.({ block: "nearest" });
+        revealInList(row as unknown as HTMLElement, "nearest");
         return;
       }
       row.measureInWindow?.((_x, y, _w, height) => {

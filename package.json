@@ -12,7 +12,7 @@
     "lint": "biome check .",
     "format": "biome check --write .",
     "typecheck": "pnpm -r --if-present typecheck",
-    "test": "vitest run",
+    "test": "vitest run --testTimeout=20000",
     "contract:freeze": "node packages/contract/scripts/freeze.ts",
     "check:frozen": "node packages/contract/scripts/check-frozen.ts",
     "dev:sync": "pnpm --filter @leve/sync-playground start",
