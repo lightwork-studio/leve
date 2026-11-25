@@ -60,3 +60,12 @@ it("remembers what was seen after the app restarts", () => {
   forgetDevicePreferences();
   expect(isUnread(coach)).toBe(true);
 });
+
+it("keeps an agent's reply new when only the lifter's later comment was there to see", () => {
+  // The lifter's own comment is newer than anything the agent wrote, so it mustn't count as seen.
+  markSeen("own-later", [
+    comment("a", "2026-03-01T10:00:00.000Z", "Coach", "own-later"),
+    comment("b", "2026-03-01T11:00:00.000Z", null, "own-later"),
+  ]);
+  expect(isUnread(comment("c", "2026-03-01T10:30:00.000Z", "Coach", "own-later"))).toBe(true);
+});

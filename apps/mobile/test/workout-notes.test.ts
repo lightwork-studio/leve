@@ -604,7 +604,8 @@ it("settles an exercise note changed on two phones with the version the lifter p
     await b.sync();
     const gone = b.store.get("exercise_note", seat);
     if (!gone?.problem) throw Error("Expected a sync problem");
-    expect(() => resolveNoteProblem(b.store, gone, "keep_mine")).toThrow();
+    expect(gone.server?.state).toBe("deleted");
+    expect(() => resolveNoteProblem(b.store, gone, "keep_mine")).toThrow(/deleted/);
     resolveNoteProblem(b.store, gone, "keep_theirs");
     await b.sync();
     expect(b.store.get("exercise_note", seat)?.deleted ?? true).toBe(true);

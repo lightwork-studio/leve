@@ -39,7 +39,10 @@ interface StoredNote {
 /** This device's version can be kept only while it and its parent are still live on the server. */
 function canKeepMine(row: DeviceRecord) {
   return (
-    !!row.content && row.server?.state !== "deleted" && row.problem?.reason !== "parent_deleted"
+    !!row.content &&
+    row.server?.state !== "deleted" &&
+    row.server?.state !== "unavailable" &&
+    row.problem?.reason !== "parent_deleted"
   );
 }
 
@@ -206,7 +209,9 @@ export function NoteSheet({
         {problem && (
           <View style={styles.problem}>
             <Text accessibilityRole="alert" style={styles.problemText}>
-              This note didn't sync. Keep this version, or take the one from your other devices.
+              {canKeepMine(current.row)
+                ? "This note didn't sync. Keep this version, or take the one from your other devices."
+                : "This note changed or was deleted on another device. Take that version to settle it."}
             </Text>
             <View style={styles.problemActions}>
               {canKeepMine(current.row) && (

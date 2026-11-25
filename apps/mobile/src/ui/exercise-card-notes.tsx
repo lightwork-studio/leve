@@ -55,6 +55,13 @@ export function ExerciseCardNotes({
     comments: comments.get(note.id) ?? [],
     ...(label ? { label } : {}),
   });
+  const all = !notes
+    ? []
+    : "pinned" in notes
+      ? [...notes.pinned, ...notes.lastTime, ...notes.today]
+      : notes;
+  /** The workout the opened note was written in, or null for one written outside a workout. */
+  const noteWorkout = (id: string) => all.find((note) => note.id === id)?.workoutId ?? null;
   const lines: NoteLine[] = !notes
     ? []
     : "pinned" in notes
@@ -100,9 +107,9 @@ export function ExerciseCardNotes({
           pinTo={exerciseName}
           pinnedHint={`Shows on every ${exerciseName} until you delete it`}
           unpinnedHint={
-            workoutId === null
+            noteWorkout(open) === null
               ? `Shows next time you do ${exerciseName}`
-              : `Shows next time you do ${exerciseName}, then stays with this workout`
+              : `Shows next time you do ${exerciseName}, then stays with the workout it was written in`
           }
           onClose={() => setOpen(null)}
         />

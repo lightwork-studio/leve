@@ -137,8 +137,13 @@ export function refreshedJournal(
     .map(({ id, content }) => ({ ...content, id, agent: content.agent ?? null }))
     .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt) || a.id.localeCompare(b.id));
   const rejected = store.problems().filter((item) => item.kind === "workout_note");
+  const row = store.get("workout", workoutId);
   return {
     ...journal,
+    // Renamed while it runs, the workout's title shows in its notes at once.
+    workout: row?.content
+      ? { id: workoutId, content: row.content as unknown as Workout }
+      : journal.workout,
     notes,
     comments: commentsByNote(store, "workout_note"),
     problems: rejected.filter((item) => reviewWorkoutId(item) === workoutId),
