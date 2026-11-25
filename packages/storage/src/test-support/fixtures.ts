@@ -554,18 +554,39 @@ export async function createLargeDeviceFixture(path: string): Promise<void> {
             restSeconds: 60,
           }),
         });
+        // About 4,000 bytes of targets each, so the database outgrows SQLite's page cache.
         changes.push({
           state: "live",
-          kind: "exercise_note",
-          id: `n-bulk-${String(i).padStart(4, "0")}`,
+          kind: "routine",
+          id: `r-bulk-${String(i).padStart(4, "0")}`,
           revision: 900 + i,
           content: {
-            exerciseId: "barbell-curl",
-            workoutId: "w-done",
-            pinned: false,
-            text: "x".repeat(4000),
-            createdAt: PHASE_TIMES.edited,
-            agent: null,
+            title: `Bulk ${i}`,
+            folderId: null,
+            position: 100 + i,
+            exercises: [
+              {
+                id: `r-bulk-${i}-e`,
+                exerciseId: "barbell-curl",
+                exerciseName: "Barbell Curl",
+                exerciseType: "weight_reps",
+                supersetId: null,
+                restSeconds: 60,
+                useRepRange: false,
+                sets: Array.from({ length: 24 }, (_, s) => ({
+                  id: `r-bulk-${i}-s${s}`,
+                  type: "normal",
+                  weightKg: 30,
+                  reps: 10,
+                  repRangeMin: null,
+                  repRangeMax: null,
+                  distanceMeters: null,
+                  durationSeconds: null,
+                  count: null,
+                  rpe: null,
+                })),
+              },
+            ],
           },
         });
       }
