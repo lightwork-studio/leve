@@ -259,7 +259,7 @@ describe("a failed request while the device looks for a restore", () => {
       }
     };
 
-    expect((await a.sync()).state).toBe("error");
+    expect((await a.sync()).state).toBe("offline");
     expect(a.store.syncState()).toMatchObject({ lineage, cursor: 4, restoring: false });
     expect(a.store.get("workout", "w2")).toMatchObject({
       status: "pending",

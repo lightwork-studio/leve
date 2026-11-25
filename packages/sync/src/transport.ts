@@ -7,6 +7,13 @@ export interface TransportResponse {
   writtenRevisions?: string;
 }
 export type Transport = (path: string, body: unknown) => Promise<TransportResponse>;
+/**
+ * Headers sent with every request: fixed, or worked out for each request, for a sign-in token that
+ * only lives a minute.
+ */
+export type RequestHeaders =
+  | Record<string, string>
+  | (() => Record<string, string> | Promise<Record<string, string>>);
 export const WRITTEN_REVISIONS_HEADER = "leve-written-revisions";
 
 export class TransportError extends Error {
@@ -24,11 +31,18 @@ const MS_PER_BYTE = 1 / 8;
  */
 export function httpTransport(
   baseUrl: string,
-  headers: Record<string, string> = {},
+  headers: RequestHeaders = {},
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Transport {
   const base = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
   return async (path, body) => {
+    let sent: Record<string, string>;
+    try {
+      sent = typeof headers === "function" ? await headers() : headers;
+    } catch (error) {
+      // Getting a token usually fails for want of a connection; nothing was sent.
+      throw new TransportError(`couldn't prepare the request: ${(error as Error).message}`);
+    }
     const text = JSON.stringify(body);
     // A plain controller and timer: AbortSignal.timeout isn't available on every platform.
     const controller = new AbortController();
@@ -42,7 +56,7 @@ export function httpTransport(
       try {
         response = await fetch(new URL(path.replace(/^\/+/, ""), base), {
           method: "POST",
-          headers: { "content-type": "application/json", ...headers },
+          headers: { "content-type": "application/json", ...sent },
           body: text,
           signal: controller.signal,
         });

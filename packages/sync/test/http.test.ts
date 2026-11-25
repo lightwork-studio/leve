@@ -275,6 +275,69 @@ describe("HTTP boundary", () => {
     expect(phone.store.get("workout", "w-phone")).toMatchObject({ status: "pending" });
     await new Promise<void>((resolve) => http.listen(0, "127.0.0.1", resolve));
   });
+
+  it("asks for a fresh token per request, and stops with signed_out when it is refused", async () => {
+    let token: string | null = "alice";
+    let asked = 0;
+    const phone = await world.phone("phone", {
+      account: "alice",
+      server: base,
+      transport: httpTransport(base, async () => {
+        asked += 1;
+        return token ? { authorization: `Bearer ${token}` } : {};
+      }),
+    });
+    phone.store.put("workout", "w1", workout("Kept"));
+    expect(await phone.sync()).toMatchObject({ state: "synced", pushed: 1 });
+    expect(asked).toBeGreaterThanOrEqual(3); // hello, push and pull each asked.
+
+    token = null;
+    phone.store.put("workout", "w1", workout("Edited while signed out"));
+    const before = phone.store.syncState();
+    expect(await phone.sync()).toEqual({ state: "signed_out" });
+    expect(phone.store.syncState()).toEqual(before);
+    expect(phone.store.get("workout", "w1")).toMatchObject({ status: "pending" });
+
+    token = "alice";
+    expect(await phone.sync()).toMatchObject({ state: "synced", pushed: 1 });
+  });
+
+  it("treats a token that can't be had as offline, and nothing is sent", async () => {
+    const phone = await world.phone("phone", {
+      account: "alice",
+      server: base,
+      transport: httpTransport(base, () => Promise.reject(new Error("no connection"))),
+    });
+    phone.store.put("workout", "w1", workout("Kept"));
+    expect(await phone.sync()).toMatchObject({ state: "offline" });
+    expect(phone.store.syncState().account).toBe("alice");
+    expect(await server.row("alice", "workout", "w1")).toBeFalsy();
+  });
+
+  it("probes an account without connecting the device to it", async () => {
+    const peer = new Peer1(httpTransport(base, { authorization: "Bearer alice" }));
+    const phone = await world.phone("phone", {
+      account: "alice",
+      server: base,
+      transport: httpTransport(base, { authorization: "Bearer alice" }),
+    });
+    phone.store.put("workout", "w-phone", workout("On the phone"));
+    expect(await phone.client.probe()).toEqual({ state: "ready", revision: 0 });
+
+    await peer.hello();
+    await peer.push([peer.put("workout", "w-peer", workout("Elsewhere"))]);
+    const before = phone.store.syncState();
+    expect(await phone.client.probe()).toEqual({ state: "ready", revision: 1 });
+    expect(phone.store.syncState()).toEqual(before);
+    expect(before).toMatchObject({ account: null, server: null, lineage: null });
+
+    const stranger = await world.phone("stranger", {
+      account: "alice",
+      server: base,
+      transport: httpTransport(base, { authorization: "Bearer" }),
+    });
+    expect(await stranger.client.probe()).toEqual({ state: "signed_out" });
+  });
 });
 
 describe("HTTP transport", () => {
