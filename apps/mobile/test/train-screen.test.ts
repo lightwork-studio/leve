@@ -33,6 +33,29 @@ vi.mock("../src/ui/commit-button.tsx", () => ({ CommitButton: "CommitButton" }))
 vi.mock("../src/ui/enter.tsx", () => ({ Enter: "Enter" }));
 vi.mock("../src/ui/tap.tsx", () => ({ Tap: "Tap" }));
 vi.mock("../src/ui/new-folder-dialog.tsx", () => ({ NewFolderDialog: "Dialog" }));
+// A drag block keeps its gesture callbacks in the tree, and draws its grip as a labelled element.
+vi.mock("../src/ui/drag-block.tsx", async () => {
+  const { createElement } = await import("react");
+  return {
+    DragBlock: ({
+      children,
+      ...props
+    }: {
+      children: (grip: (label: string) => unknown) => never;
+    }) =>
+      createElement(
+        "DragBlock",
+        props,
+        children((label: string) => createElement("Grip", { accessibilityLabel: label })),
+      ),
+  };
+});
+const announce = vi.fn();
+vi.mock("../src/ui/focus.ts", () => ({ announce: (text: string) => announce(text) }));
+const moveRoutine = vi.fn();
+vi.mock("../src/data/organize-routine.ts", () => ({
+  moveRoutine: (...args: unknown[]) => moveRoutine(...args),
+}));
 vi.mock("../src/ui/train-sync-review.tsx", () => ({ TrainSyncReview: "TrainSyncReview" }));
 vi.mock("../src/ui/use-now.ts", () => ({ useNow: () => 0 }));
 vi.mock("../src/ui/haptics.ts", () => ({
@@ -64,11 +87,13 @@ vi.mock("../src/data/workout-review.ts", () => ({
   replaceReviewedActiveWorkout: (...args: unknown[]) => replace(...args),
 }));
 vi.mock("../src/ui/icons.tsx", () => ({
+  CheckIcon: "Check",
   ChevronIcon: "Chevron",
   EditIcon: "Edit",
   FolderIcon: "Folder",
   ForwardIcon: "Forward",
   GearIcon: "Gear",
+  GripIcon: "Grip",
   MoreIcon: "More",
   PlayIcon: "Play",
   PlusIcon: "Plus",
@@ -130,8 +155,11 @@ vi.mock("../src/data/queries.ts", () => ({
 }));
 
 /** Presses the control with this accessibility label. */
+/** Presses the control with this accessibility label (the pressable itself, not a wrapper). */
 const press = (root: ReactTestRenderer["root"], label: string) =>
-  root.findByProps({ accessibilityLabel: label }).props.onPress();
+  root
+    .find((n) => n.props.accessibilityLabel === label && typeof n.props.onPress === "function")
+    .props.onPress();
 const labelled = (root: ReactTestRenderer["root"], pattern: RegExp) =>
   root
     .findAll((n) => typeof n.type === "string" && pattern.test(n.props.accessibilityLabel ?? ""))
@@ -163,12 +191,16 @@ it.each([false, true])(
         root.findAll((n) => n.type === View && typeof n.props.onLayout === "function");
       const layout = (y: number, height: number) => ({ nativeEvent: { layout: { y, height } } });
       layouts()[0]?.props.onLayout(layout(270, 2500));
-      // Only an open folder offers rename, beside its header; a closed one is opened first.
+      // Folders are renamed while editing, and only an open one, beside its header; a closed one
+      // is opened first.
+      expect(labelled(root, /^Edit .* folder$/)).toEqual([]);
+      await act(() => press(root, "Edit routines"));
       expect(labelled(root, /^Edit .* folder$/)).toEqual(["Edit Home folder"]);
       await act(() => press(root, "Edit Home folder"));
       const openFolderDialog = root.findByProps({ initialName: "Home" });
       expect(nextFrame).toBeUndefined();
       await act(() => openFolderDialog.props.onFinish(null));
+      await act(() => press(root, "Done editing routines"));
       await act(() =>
         root.find((n) => n.props.accessibilityState?.expanded === false).props.onPress(),
       );
@@ -176,6 +208,7 @@ it.each([false, true])(
       expect(scrollTo).not.toHaveBeenCalled();
       nextFrame?.();
       expect(scrollTo).toHaveBeenCalledWith({ y: 1282, animated: !preference });
+      await act(() => press(root, "Edit routines"));
       await act(() => press(root, "Edit Gym folder"));
       expect(root.findByProps({ initialName: "Gym" })).toBeDefined();
       expect(root.findAll((n) => n.props.accessibilityState?.expanded === true)).toHaveLength(2);
@@ -253,7 +286,7 @@ const rowAction = (root: ReactTestRenderer["root"], title: string) => {
   while (target && typeof target.props.onPress !== "function") target = target.parent;
   return target;
 };
-it("starts a routine from a tap on its row, and edits it from the row's pencil", async () => {
+it("starts a routine from a tap on its row, its only action outside editing", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   activeTitle = null;
   change.mockClear();
@@ -271,6 +304,8 @@ it("starts a routine from a tap on its row, and edits it from the row's pencil",
     expect(row.props.accessibilityLabel).toBe(
       "Start Routine 1, Bench Press, 1 exercise · not done yet",
     );
+    // No pencil, grip or folder rename competes with starting.
+    expect(labelled(root, /^Edit |^Drag /)).toEqual(["Edit routines"]);
     await act(() => row.props.onPress());
     // The tap begins a workout from this routine and opens it, as the start button did.
     expect(change).toHaveBeenCalledTimes(1);
@@ -280,14 +315,133 @@ it("starts a routine from a tap on its row, and edits it from the row's pencil",
     expect(beginWorkout).toHaveBeenCalledWith({}, "0");
     expect(push.mock.calls).toEqual([["/workout/active"]]);
 
-    // The pencil beside the row edits the routine and starts nothing.
-    const edit = root.findByProps({ accessibilityLabel: "Edit Routine 1" });
-    expect(edit).not.toBe(row);
-    await act(() => edit.props.onPress());
+    // Screen readers reach the editor from the row's Edit routine action, which starts nothing.
+    expect(row.props.accessibilityActions).toEqual([{ name: "edit", label: "Edit routine" }]);
+    await act(() => row.props.onAccessibilityAction({ nativeEvent: { actionName: "edit" } }));
     expect(push.mock.calls[1]).toEqual([{ pathname: "/routine/[id]", params: { id: "0" } }]);
     expect(change).toHaveBeenCalledTimes(1);
   } finally {
     activeTitle = "Bench";
+    await act(() => screen?.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("edits routines in edit mode: a tap opens one, its grip reorders the folder, Done goes back", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  activeTitle = null;
+  upNext = { id: "2", title: "Routine 3" };
+  for (const mock of [change, push, moveRoutine, showToast, announce]) mock.mockReset();
+  let screen: ReactTestRenderer | undefined;
+  try {
+    await act(() => {
+      screen = create(createElement(TrainScreen));
+    });
+    if (!screen) throw Error("Train did not mount");
+    const root = screen.root;
+    const slot = () => root.findByType("MainAction" as never).props.children;
+    const banner = () =>
+      root.findAll((n) => n.type === Text && n.props.children === "Drag ⠿ to reorder.");
+    const scrolls = () => root.find((n) => n.props.title === "Train").props.scrollEnabled;
+    expect(slot()).not.toBeNull();
+    expect(banner()).toHaveLength(0);
+
+    // Holding a routine is a way in too; it starts nothing.
+    await act(() => rowAction(root, "Routine 2")?.props.onLongPress());
+    expect(announce).toHaveBeenCalledWith("Editing routines");
+    expect(change).not.toHaveBeenCalled();
+    expect(root.findByProps({ accessibilityLabel: "Done editing routines" })).toBeDefined();
+    // Starting steps aside, the banner says what to do, and each row has a grip.
+    expect(slot()).toBeNull();
+    expect(banner()).toHaveLength(1);
+    expect(labelled(root, /^Drag to reorder Routine [12]$/)).toEqual([
+      "Drag to reorder Routine 1",
+      "Drag to reorder Routine 2",
+    ]);
+    expect(labelled(root, /^Edit .* folder$/)).toEqual(["Edit Home folder"]);
+
+    // A tap opens the routine's editor, even the routine up next, and starts nothing.
+    const row = rowAction(root, "Routine 3");
+    expect(row?.props.accessibilityLabel).toBe("Edit Routine 3, 0 exercises · not done yet");
+    await act(() => row?.props.onPress());
+    expect(push.mock.calls).toEqual([[{ pathname: "/routine/[id]", params: { id: "2" } }]]);
+    expect(change).not.toHaveBeenCalled();
+
+    // Dragging Routine 1 down past two rows of 80 moves it to third place, as the folder showed.
+    const seen = Array.from({ length: 20 }, (_, i) => String(i));
+    const blocks = () => root.findAllByType("DragBlock" as never);
+    expect(blocks()).toHaveLength(20);
+    for (const block of blocks())
+      block
+        .find((n) => n.type === View && typeof n.props.onLayout === "function")
+        .props.onLayout({ nativeEvent: { layout: { height: 80 } } });
+    await act(() => blocks()[0]?.props.onGrab());
+    expect(scrolls()).toBe(false);
+    await act(() => blocks()[0]?.props.onMove(170));
+    expect(
+      blocks()
+        .slice(0, 4)
+        .map((b) => [b.props.lifted, b.props.offset]),
+    ).toEqual([
+      [true, 170],
+      [false, -80],
+      [false, -80],
+      [false, 0],
+    ]);
+    const store = { name: "store" };
+    await act(() => blocks()[0]?.props.onEnd(170));
+    expect(scrolls()).toBe(true);
+    expect(blocks()[0]?.props).toMatchObject({ lifted: false, offset: 0 });
+    expect(change).toHaveBeenCalledTimes(1);
+    change.mock.calls[0]?.[0](store);
+    expect(moveRoutine.mock.calls).toEqual([[store, "0", seen, 2]]);
+    expect(announce).toHaveBeenLastCalledWith("Routine 1 moved to position 3 of 20");
+
+    // A short drag, or one cancelled, moves nothing.
+    await act(() => blocks()[1]?.props.onGrab());
+    await act(() => blocks()[1]?.props.onEnd(20));
+    await act(() => blocks()[1]?.props.onGrab());
+    await act(() => blocks()[1]?.props.onEnd(undefined));
+    expect(change).toHaveBeenCalledTimes(1);
+    expect(scrolls()).toBe(true);
+
+    // Screen readers move a routine a place at a time; the last one can't move down.
+    const actions = (title: string) => rowAction(root, title)?.props;
+    expect(actions("Routine 1")?.accessibilityActions).toEqual([
+      { name: "moveDown", label: "Move down" },
+    ]);
+    expect(actions("Routine 20")?.accessibilityActions).toEqual([
+      { name: "moveUp", label: "Move up" },
+    ]);
+    await act(() =>
+      actions("Routine 2")?.onAccessibilityAction({ nativeEvent: { actionName: "moveUp" } }),
+    );
+    change.mock.calls[1]?.[0](store);
+    expect(moveRoutine.mock.calls[1]).toEqual([store, "1", seen, 0]);
+
+    // A refused move says why.
+    change.mockImplementationOnce(() => {
+      throw Error("Your routines changed. Try moving it again.");
+    });
+    await act(() =>
+      actions("Routine 2")?.onAccessibilityAction({ nativeEvent: { actionName: "moveDown" } }),
+    );
+    expect(showToast).toHaveBeenCalledWith("Your routines changed. Try moving it again.");
+
+    // Ending editing while a grip is held lets go of the page.
+    await act(() => blocks()[3]?.props.onGrab());
+    expect(scrolls()).toBe(false);
+    // Done ends editing: rows start again and the start buttons come back.
+    await act(() => press(root, "Done editing routines"));
+    expect(scrolls()).toBe(true);
+    expect(slot()).not.toBeNull();
+    expect(banner()).toHaveLength(0);
+    expect(labelled(root, /^Drag /)).toEqual([]);
+    expect(rowAction(root, "Routine 1")?.props.accessibilityLabel).toMatch(/^Start Routine 1, /);
+  } finally {
+    activeTitle = "Bench";
+    upNext = null;
+    change.mockReset();
     await act(() => screen?.unmount());
     vi.unstubAllGlobals();
   }
@@ -395,11 +549,11 @@ it("asks what to do with the running workout before starting another routine", a
     activeId = "w2";
     await act(() => screen?.update(createElement(TrainScreen)));
     expect(sheet()).toBeUndefined();
-    activeId = "w1";
     push.mockClear();
 
-    // Editing from the row's pencil still works while a workout runs, without asking first.
-    await act(() => press(root, "Edit Routine 1"));
+    // Editing still works while a workout runs, without asking first.
+    await act(() => press(root, "Edit routines"));
+    await act(() => rowAction(root, "Routine 1")?.props.onPress());
     expect(sheet()).toBeUndefined();
     expect(push.mock.calls).toEqual([[{ pathname: "/routine/[id]", params: { id: "0" } }]]);
   } finally {
@@ -649,6 +803,7 @@ it("deletes a folder from its edit dialog, shows where its routines went, and ha
     const dialog = () => root.findAllByType("Dialog" as never);
     // Not in a folder starts closed.
     expect(labelled(root, /^Add routine$/)).toEqual([]);
+    await act(() => press(root, "Edit routines"));
     await act(() => press(root, "Edit Home folder"));
     expect(dialog()[0]?.props.routineCount).toBe(1);
     // A refusal from the store reaches the dialog to show, and the dialog stays open.

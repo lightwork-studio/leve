@@ -140,6 +140,7 @@ export function TabScreen({
   action,
   children,
   hasTextInput = false,
+  scrollEnabled = true,
   scrollRef,
 }: {
   title: string;
@@ -147,6 +148,8 @@ export function TabScreen({
   action?: ReactNode;
   children: ReactNode;
   hasTextInput?: boolean;
+  /** Off while a drag grip is held, so the page stays still under the finger. */
+  scrollEnabled?: boolean;
   scrollRef?: Ref<ComponentRef<typeof ScrollView>>;
 }) {
   const styles = useStyles(sheet);
@@ -156,6 +159,7 @@ export function TabScreen({
     <ScrollView
       ref={scrollRef}
       style={styles.scroll}
+      scrollEnabled={scrollEnabled}
       automaticallyAdjustKeyboardInsets={hasTextInput}
       keyboardShouldPersistTaps={hasTextInput ? "handled" : "never"}
       contentContainerStyle={[styles.content, { paddingTop: insets.top + 20, paddingBottom }]}

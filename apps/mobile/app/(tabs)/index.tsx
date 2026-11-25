@@ -1,5 +1,13 @@
 import { router } from "expo-router";
-import { type ComponentRef, memo, type ReactNode, useCallback, useRef, useState } from "react";
+import {
+  type ComponentRef,
+  memo,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { Platform, type ScrollView, Text, View } from "react-native";
 import { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -9,6 +17,7 @@ import {
   finishFolderCreation,
   finishFolderRename,
 } from "../../src/data/folder-actions.ts";
+import { moveRoutine } from "../../src/data/organize-routine.ts";
 import { useLive, useTrain } from "../../src/data/queries.ts";
 import { restTimer } from "../../src/data/rest-timer.ts";
 import { beginWorkout } from "../../src/data/workout-actions.ts";
@@ -17,6 +26,7 @@ import {
   workoutDeletionSnapshot,
 } from "../../src/data/workout-review.ts";
 import { setProgress } from "../../src/model/live.ts";
+import { dropPlace } from "../../src/model/plan-order.ts";
 import {
   lastDoneLabel,
   type RoutineCard,
@@ -24,12 +34,14 @@ import {
   type WeekSummary,
 } from "../../src/model/train.ts";
 import type { Settings } from "../../src/model/types.ts";
-import { numeral, radius, space, touch, type } from "../../src/theme.ts";
+import { font, numeral, radius, space, touch, type } from "../../src/theme.ts";
 import { ActionSheet } from "../../src/ui/action-sheet.tsx";
 import { afterFeedback } from "../../src/ui/after-feedback.ts";
 import { Button } from "../../src/ui/buttons.tsx";
+import { DragBlock } from "../../src/ui/drag-block.tsx";
 import { EmptyState } from "../../src/ui/empty-state.tsx";
 import { Enter } from "../../src/ui/enter.tsx";
+import { announce } from "../../src/ui/focus.ts";
 import { dayLabel, minutesLabel, readoutWeight } from "../../src/ui/format.ts";
 import { haptic } from "../../src/ui/haptics.ts";
 import {
@@ -41,6 +53,7 @@ import {
   TrayIcon,
 } from "../../src/ui/icons.tsx";
 import { MainAction } from "../../src/ui/main-action.tsx";
+import { ModeTile } from "../../src/ui/mode-tile.tsx";
 import { NewFolderDialog } from "../../src/ui/new-folder-dialog.tsx";
 import { showToast } from "../../src/ui/notice.tsx";
 import { HeaderButton, TabScreen } from "../../src/ui/screen.tsx";
@@ -149,6 +162,36 @@ export default function TrainScreen() {
     },
     [open],
   );
+  // Editing is for arranging: a tap on a routine opens its editor instead of starting it, its
+  // grip drags it within its folder, and folders can be renamed. Starting steps aside meanwhile.
+  const [editingMode, setEditing] = useState(false);
+  const editing = editingMode && groups.length > 0;
+  // While a grip is held the page stays still under the finger.
+  const [gripHeld, setGripHeld] = useState(false);
+  const toggleEditing = useCallback(() => {
+    haptic.select();
+    setEditing((current) => !current);
+  }, []);
+  // Holding a routine is the shortcut in, for someone who reaches for a routine to move it.
+  const startEditing = useCallback(() => {
+    haptic.select();
+    setEditing(true);
+    announce("Editing routines");
+  }, []);
+  const move = useCallback(
+    (routine: RoutineCard, seen: readonly string[], to: number) => {
+      try {
+        change((store) => moveRoutine(store, routine.id, seen, to));
+      } catch (error) {
+        haptic.warning();
+        showToast((error as Error).message);
+        return;
+      }
+      haptic.select();
+      announce(`${routine.title} moved to position ${to + 1} of ${seen.length}`);
+    },
+    [change],
+  );
   const groupRuns = runs(groups, (g) => open.has(groupKey(g)));
   const newFolder = useCallback(() => setCreatingFolder(true), []);
   const routineCount = groups.reduce((sum, group) => sum + group.routines.length, 0);
@@ -157,6 +200,7 @@ export default function TrainScreen() {
   return (
     <TabScreen
       scrollRef={scroll}
+      scrollEnabled={!gripHeld}
       title="Train"
       eyebrow={dayLabel(new Date(now).toISOString(), undefined, now)}
       action={
@@ -168,8 +212,10 @@ export default function TrainScreen() {
       <WeekCard week={week} unit={settings?.weightUnit ?? "kg"} />
       {/* Starting sits in the main-action slot above the tabs, offering the routine next in
           rotation beside an empty workout. While a workout runs, the slot shows that workout
-          instead, so Train offers nothing. */}
-      <MainAction>{active ? null : <StartActions suggested={upNext} onStart={start} />}</MainAction>
+          instead, so Train offers nothing; nor does it while the routines are being edited. */}
+      <MainAction>
+        {active || editing ? null : <StartActions suggested={upNext} onStart={start} />}
+      </MainAction>
 
       <View
         style={styles.routines}
@@ -189,7 +235,25 @@ export default function TrainScreen() {
                 : ""}
             </Text>
           </View>
+          {groups.length > 0 && (
+            <ModeTile
+              on={editing}
+              label="Edit"
+              accessibilityLabel="Edit routines"
+              doneAccessibilityLabel="Done editing routines"
+              icon={(color) => <EditIcon color={color} size={15} />}
+              onToggle={toggleEditing}
+            />
+          )}
         </View>
+        {editing && (
+          <View style={styles.banner}>
+            <Text style={styles.bannerText}>
+              <Text style={styles.bannerStrong}>Drag ⠿ to reorder.</Text> Tap a routine to edit it
+              or move it to another folder.
+            </Text>
+          </View>
+        )}
         {/* Routines and folders the server didn't take as this device had them, to settle here. */}
         {reviews.map((record) => (
           <TrainSyncReview key={`${record.kind}/${record.id}`} record={record} />
@@ -263,10 +327,14 @@ export default function TrainScreen() {
               >
                 <Enter leaves>
                   <OpenGroup
+                    editing={editing}
                     onRename={setRenaming}
                     group={group}
                     onToggle={toggle}
                     onStart={start}
+                    onStartEditing={startEditing}
+                    onMove={move}
+                    onGripHeld={setGripHeld}
                     running={runningRoutine}
                   />
                 </Enter>
@@ -460,24 +528,61 @@ function runs(groups: RoutineGroup[], isOpen: (group: RoutineGroup) => boolean) 
 
 const OpenGroup = memo(function OpenGroup({
   group,
+  editing,
   onToggle,
   onStart,
+  onStartEditing,
+  onMove,
+  onGripHeld,
   running,
   onRename,
 }: {
   onRename: (folder: NonNullable<RoutineGroup["folder"]>) => void;
   group: RoutineGroup;
+  editing: boolean;
   onToggle: (key: string) => void;
   onStart: (routineId: string) => void;
+  onStartEditing: () => void;
+  /** Moves a routine to place `to` of the group, as `seen` showed it. */
+  onMove: (routine: RoutineCard, seen: readonly string[], to: number) => void;
+  onGripHeld: (held: boolean) => void;
   /** The running workout's routine: null for an empty workout, undefined when none runs. */
   running: string | null | undefined;
 }) {
   const styles = useStyles(sheet);
   const c = useColors();
   const { folder } = group;
+  // Each row's measured height, for where a dragged one lands.
+  const heights = useRef<number[]>([]);
+  // Rows that went (deleted, or moved to another folder) take no room any more.
+  heights.current.length = Math.min(heights.current.length, group.routines.length);
+  const [drag, setDrag] = useState<{ from: number; dy: number } | null>(null);
+  // A grip held as editing ends, or as the folder goes, lets go of the page.
+  useEffect(() => {
+    if (!editing) setDrag(null);
+    return () => onGripHeld(false);
+  }, [editing, onGripHeld]);
+  const seen = group.routines.map((routine) => routine.id);
+  const place = drag ? dropPlace(heights.current, drag.from, drag.dy) : null;
+  // The dragged row follows the finger; the rows it passes step aside by its height.
+  const offset = (index: number) => {
+    if (!drag || place === null) return 0;
+    if (index === drag.from) return drag.dy;
+    const moved = heights.current[drag.from] ?? 0;
+    if (drag.from < place && index > drag.from && index <= place) return -moved;
+    if (place < drag.from && index >= place && index < drag.from) return moved;
+    return 0;
+  };
+  const endDrag = (routine: RoutineCard, from: number, dy?: number) => {
+    onGripHeld(false);
+    setDrag(null);
+    if (dy === undefined) return;
+    const to = dropPlace(heights.current, from, dy);
+    if (to !== from) onMove(routine, seen, to);
+  };
   return (
     <View>
-      <View style={[styles.headerRow, folder && styles.headerWithAction]}>
+      <View style={[styles.headerRow, folder && editing && styles.headerWithAction]}>
         <Tap
           accessibilityRole="button"
           accessibilityState={{ expanded: true }}
@@ -491,26 +596,59 @@ const OpenGroup = memo(function OpenGroup({
           <View style={styles.flex} />
           <Text style={styles.label}>{group.routines.length}</Text>
         </Tap>
-        {folder && (
+        {folder && editing && (
           <IconAction
             label={`Edit ${folder.content.title} folder`}
             onPress={() => onRename(folder)}
           >
-            <EditIcon color={c.fg3} size={15} />
+            <EditIcon color={c.fg2} size={15} />
           </IconAction>
         )}
       </View>
-      <View style={styles.card}>
-        {group.routines.map((routine, i) => (
-          <RoutineRow
-            key={routine.id}
-            routine={routine}
-            index={i}
-            first={i === 0}
-            onStart={onStart}
-            running={running === undefined ? "idle" : running === routine.id ? "this" : "other"}
-          />
-        ))}
+      {/* While editing, a lifted row's shadow may reach past the card. */}
+      <View style={[styles.card, editing && styles.cardEditing]}>
+        {group.routines.map((routine, i) =>
+          editing ? (
+            <DragBlock
+              key={routine.id}
+              lifted={drag?.from === i}
+              offset={offset(i)}
+              onGrab={() => onGripHeld(true)}
+              onMove={(dy) => setDrag({ from: i, dy })}
+              onEnd={(dy) => endDrag(routine, i, dy)}
+            >
+              {(grip) => (
+                <EditRoutineRow
+                  routine={routine}
+                  first={i === 0}
+                  grip={grip(`Drag to reorder ${routine.title}`)}
+                  onLayout={(height) => {
+                    heights.current[i] = height;
+                  }}
+                  onShift={
+                    // Screen readers move a routine one place at a time instead of dragging it.
+                    (direction) => {
+                      const to = i + direction;
+                      if (to >= 0 && to < seen.length) onMove(routine, seen, to);
+                    }
+                  }
+                  canMoveUp={i > 0}
+                  canMoveDown={i < seen.length - 1}
+                />
+              )}
+            </DragBlock>
+          ) : (
+            <RoutineRow
+              key={routine.id}
+              routine={routine}
+              index={i}
+              first={i === 0}
+              onStart={onStart}
+              onStartEditing={onStartEditing}
+              running={running === undefined ? "idle" : running === routine.id ? "this" : "other"}
+            />
+          ),
+        )}
         <AddRoutineRow folder={folder} first={group.routines.length === 0} />
       </View>
     </View>
@@ -616,65 +754,137 @@ const ClosedGroup = memo(function ClosedGroup({
   );
 });
 
+const openRoutine = (id: string) => router.push({ pathname: "/routine/[id]", params: { id } });
+
+/** What a routine row says: its title, then how big it is and when it was last done. */
+function routineText(routine: RoutineCard) {
+  const shown = routine.exerciseNames.slice(0, 3);
+  const more = routine.exerciseNames.length - shown.length;
+  const summary = `${routine.exerciseCount} ${routine.exerciseCount === 1 ? "exercise" : "exercises"} · ${lastDoneLabel(routine.daysSinceLast).toLowerCase()}`;
+  return {
+    summary,
+    names: shown.length > 0 ? `${shown.join(" · ")}${more > 0 ? ` +${more}` : ""}` : null,
+    spoken: [routine.title, ...shown, summary].join(", "),
+  };
+}
+
+function RoutineDetails({ routine }: { routine: RoutineCard }) {
+  const styles = useStyles(sheet);
+  const { summary, names } = routineText(routine);
+  return (
+    <View style={styles.flex}>
+      <Text style={styles.routineTitle} numberOfLines={2}>
+        {routine.title}
+      </Text>
+      <Text style={styles.routineMeta} numberOfLines={1}>
+        {summary}
+      </Text>
+      {names !== null && (
+        <Text style={styles.routineNames} numberOfLines={1}>
+          {names}
+        </Text>
+      )}
+    </View>
+  );
+}
+
 const RoutineRow = memo(function RoutineRow({
   routine,
   index,
   first,
   onStart,
+  onStartEditing,
   running,
 }: {
   routine: RoutineCard;
   index: number;
   first: boolean;
   onStart: (routineId: string) => void;
+  onStartEditing: () => void;
   /** Whether a workout runs, and if so whether it came from this routine. */
   running: "idle" | "this" | "other";
 }) {
   const styles = useStyles(sheet);
-  const c = useColors();
-  const shown = routine.exerciseNames.slice(0, 3);
-  const more = routine.exerciseNames.length - shown.length;
-  const summary = `${routine.exerciseCount} ${routine.exerciseCount === 1 ? "exercise" : "exercises"} · ${lastDoneLabel(routine.daysSinceLast).toLowerCase()}`;
-  const spoken = [routine.title, ...shown, summary].join(", ");
+  const { spoken } = routineText(routine);
   return (
     <View style={[styles.routine, !first && styles.divider]}>
-      {/* The row starts the routine, as the start button did. While a workout runs, Train asks
-          first (or opens that workout, for its own routine). */}
+      {/* The whole row starts the routine, its only action outside editing. While a workout runs,
+          Train asks first (or opens that workout, for its own routine). Holding it starts editing
+          instead; screen readers get Edit routine as an action. */}
       <Tap
         accessibilityRole="button"
         accessibilityLabel={`${running === "this" ? "Resume" : "Start"} ${spoken}`}
         {...(running === "other" && {
           accessibilityHint: "Asks what to do with the running workout first",
         })}
+        accessibilityActions={[{ name: "edit", label: "Edit routine" }]}
+        onAccessibilityAction={({ nativeEvent }) => {
+          if (nativeEvent.actionName === "edit") openRoutine(routine.id);
+        }}
         style={styles.routineDetails}
         scaleTo={0.98}
         onPress={() => onStart(routine.id)}
+        onLongPress={onStartEditing}
       >
         <Text style={styles.routineIndex}>{String(index + 1).padStart(2, "0")}</Text>
-        <View style={styles.flex}>
-          <Text style={styles.routineTitle} numberOfLines={2}>
-            {routine.title}
-          </Text>
-          <Text style={styles.routineMeta} numberOfLines={1}>
-            {summary}
-          </Text>
-          {shown.length > 0 && (
-            <Text style={styles.routineNames} numberOfLines={1}>
-              {shown.join(" · ")}
-              {more > 0 ? ` +${more}` : ""}
-            </Text>
-          )}
-        </View>
+        <RoutineDetails routine={routine} />
       </Tap>
-      <IconAction
-        label={`Edit ${routine.title}`}
-        onPress={() => router.push({ pathname: "/routine/[id]", params: { id: routine.id } })}
-      >
-        <EditIcon color={c.fg3} size={17} />
-      </IconAction>
     </View>
   );
 });
+
+/**
+ * A routine while editing: its grip drags it within the folder, and a tap opens its editor, where
+ * it can also be moved to another folder or deleted.
+ */
+function EditRoutineRow({
+  routine,
+  first,
+  grip,
+  onLayout,
+  onShift,
+  canMoveUp,
+  canMoveDown,
+}: {
+  routine: RoutineCard;
+  first: boolean;
+  grip: ReactNode;
+  onLayout: (height: number) => void;
+  onShift: (direction: -1 | 1) => void;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+}) {
+  const styles = useStyles(sheet);
+  const c = useColors();
+  const { spoken } = routineText(routine);
+  return (
+    <View
+      style={[styles.routine, styles.routineEditing, !first && styles.divider]}
+      onLayout={({ nativeEvent }) => onLayout(nativeEvent.layout.height)}
+    >
+      {grip}
+      <Tap
+        accessibilityRole="button"
+        accessibilityLabel={`Edit ${spoken}`}
+        accessibilityActions={[
+          ...(canMoveUp ? [{ name: "moveUp", label: "Move up" }] : []),
+          ...(canMoveDown ? [{ name: "moveDown", label: "Move down" }] : []),
+        ]}
+        onAccessibilityAction={({ nativeEvent }) =>
+          onShift(nativeEvent.actionName === "moveUp" ? -1 : 1)
+        }
+        style={styles.routineDetails}
+        scaleTo={0.98}
+        onPress={() => openRoutine(routine.id)}
+      >
+        <RoutineDetails routine={routine} />
+        <View style={styles.routineOpen}>
+          <ChevronIcon color={c.fg3} size={16} strokeWidth={2} />
+        </View>
+      </Tap>
+    </View>
+  );
+}
 
 const sheet = themedStyles((c) => ({
   flex: { flex: 1 },
@@ -688,7 +898,19 @@ const sheet = themedStyles((c) => ({
     borderColor: c.line,
     overflow: "hidden",
   },
+  cardEditing: { overflow: "visible" },
   divider: { borderTopWidth: 1, borderTopColor: c.line },
+  // As in the routine editor's reorder mode: what dragging does, in a dashed box.
+  banner: {
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: c.line2,
+  },
+  bannerText: { ...font.mono, fontSize: 11, lineHeight: 16.5, color: c.fg3 },
+  bannerStrong: { color: c.fg2 },
   week: {
     flexDirection: "row",
     alignItems: "flex-end",
@@ -776,6 +998,9 @@ const sheet = themedStyles((c) => ({
     gap: space.md,
     minHeight: touch,
   },
+  // The grip's glyph sits in the numbers' column, its touch target reaching to the card's edge.
+  routineEditing: { gap: 0, paddingLeft: 2 },
+  routineOpen: { width: touch, alignSelf: "center", alignItems: "center" },
   routineIndex: { ...type.value, color: c.fg3, width: 20, paddingTop: 3 },
   routineTitle: { ...type.cardTitle, fontSize: 19, lineHeight: 22, color: c.fg },
   routineMeta: { ...type.meta, color: c.fg3, marginTop: 4 },
