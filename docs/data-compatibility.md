@@ -256,11 +256,12 @@ workout: the popup says what happened, leads there, and asks again until it is s
 there only when that screen can settle it; otherwise the popup settles it itself. A conflict that
 can't be settled yet (a sync still running, a server restore, fields this server or app doesn't
 know, a workout deleted here that is still to upload, or work below something deleted in the
-account that is still on its way there and back) waits until it can. Letting go of something the
-account deleted first shows everything this phone holds below it. Keeping a deletion made here is
-offered only when the account holds nothing below it, after showing the account's version. Work
-recorded entirely offline is flagged on the start screen. A conflicted record is not resubmitted
-automatically. An `invalid` answer is handled the same way, unless the user already edited the
+account that is still on its way there and back) waits until it can; a deletion a restored server
+never had is left out without holding back anything else. Letting go of something the account
+deleted first shows what this phone holds below it and what changed there. Keeping a deletion
+made here is offered only when the account holds nothing below it, after showing the account's
+version. Work recorded entirely offline is flagged on the start screen. A conflicted record is not
+resubmitted automatically. An `invalid` answer is handled the same way, unless the user already edited the
 record again, in which case the newer version is sent. The kept version is the newest local one.
 The user can:
 

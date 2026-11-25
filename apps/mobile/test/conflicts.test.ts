@@ -85,7 +85,8 @@ async function phone(name: string) {
   });
   const client = new SyncClient({
     store,
-    transport: refusing(serviceTransport(service, "alice")),
+    // Through whichever service is running, so a test can swap in a restored server.
+    transport: refusing((path, body) => serviceTransport(service, "alice")(path, body)),
     server: "s",
     account: "alice",
     app: name,
@@ -561,4 +562,38 @@ it("keeps a deleted note that holds comments in the account apart from other cla
   settleConflict(b.store, sets, "phone");
   expect(b.store.get("workout_set", "s1")?.content).toMatchObject({ weightKg: 90 });
   expect(all.find((item) => item.key.endsWith("|workout_note:n1"))?.phone.choosable).toBe(false);
+});
+
+it("still asks about clashes beside a deletion a restored server never had", async () => {
+  const { a, b } = await twoPhones((store) => {
+    store.put("workout", "w1", workout("Push Day"));
+    store.put("workout_exercise", "e1", entry("w1"));
+    store.put("workout_set", "s1", set(80, 8));
+    store.put("workout_set", "s2", { ...set(80, 8), position: 2 });
+  });
+  a.store.put("workout_set", "s1", set(85, 8));
+  a.store.put("workout_set", "s2", { ...set(85, 8), position: 2 });
+  await a.sync();
+  b.store.delete("workout_set", "s1");
+  b.store.put("workout_set", "s2", { ...set(100, 8), position: 2 });
+  await b.sync();
+  expect(conflicts(b.store).map((item) => item.key)).toEqual(["workout:w1"]);
+
+  // The server is restored from a backup that has the workout and s2, but never had s1.
+  await storage.close();
+  directory = mkdtempSync(join(tmpdir(), "leve-conflicts-restored-"));
+  storage = new ServerStorage({ engine: createNodeSqliteEngine(), directory, appVersion: "test" });
+  service = new SyncService({ storage });
+  const c = await phone("c");
+  c.store.put("workout", "w1", workout("Push Day"));
+  c.store.put("workout_exercise", "e1", entry("w1"));
+  c.store.put("workout_set", "s2", { ...set(85, 8), position: 2 });
+  await c.sync();
+  await b.sync();
+
+  // s1's deletion can't be placed, but it no longer hides the s2 clash.
+  const keys = conflicts(b.store).map((item) => item.key);
+  expect(keys).toContain("workout:w1");
+  const s2 = conflicts(b.store).find((item) => item.key === "workout:w1")!;
+  expect(s2.records.map((row) => row.id)).toEqual(["s2"]);
 });

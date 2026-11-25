@@ -85,8 +85,8 @@ function recordCase(row: DeviceRecord): RecordCase | null {
   // Changed here under something deleted in the account: kept only by copying that ancestor.
   if (row.problem?.reason === "parent_deleted") return row.content ? "gone_there" : null;
   if (row.server?.state === "unavailable") return null;
-  // A deletion made here is only weighed against a live version in the account. (A copy a restored
-  // server lacks is sent as deleted anyway.)
+  // A deletion made here is only weighed against a live version in the account. One the restored
+  // server never had isn't asked about (see groupKey: it doesn't hold back anything else).
   if (row.deleted) {
     if (row.server?.state === "deleted") return "gone_both";
     return row.server?.state === "live" && row.server.content ? "gone_here" : null;
@@ -184,7 +184,12 @@ function groupKey(store: DeviceStore, row: DeviceRecord): string | null {
   // (A workout or exercise is reviewed on its screen instead, whole.)
   const splitDeletion =
     deletesAccountChildren(store, row) && row.kind !== "workout" && row.kind !== "workout_exercise";
-  return row.status === "invalid" || splitDeletion ? `${base}|${row.kind}:${row.id}` : base;
+  // One the popup can't place at all (a deletion the restored server never had, a version only a
+  // newer app can show) stays out on its own, never holding back the clashes beside it.
+  const unplaced = recordCase(row) === null;
+  return row.status === "invalid" || splitDeletion || unplaced
+    ? `${base}|${row.kind}:${row.id}`
+    : base;
 }
 
 function baseKey(store: DeviceStore, row: DeviceRecord): string | null {
