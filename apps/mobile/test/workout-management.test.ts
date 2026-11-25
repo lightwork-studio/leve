@@ -18,6 +18,10 @@ import FinishScreen from "../app/workout/finish.tsx";
 import { workoutFrame } from "../src/activity/frame.ts";
 import { type WorkoutContent, workoutSession } from "../src/activity/session.ts";
 import { pickerLibrary } from "../src/data/custom-exercises.ts";
+import {
+  readDevicePreference,
+  writeDevicePreference,
+} from "../src/data/device-preference-store.ts";
 import { addExerciseNote, workoutExerciseNotes } from "../src/data/exercise-notes.ts";
 import { type BuiltInExercise, EXERCISES } from "../src/data/exercises.ts";
 import { newId } from "../src/data/ids.ts";
@@ -49,6 +53,7 @@ import {
   removeWorkoutSet,
   updateSet,
 } from "../src/data/workout-actions.ts";
+import { writeWorkoutNote } from "../src/data/workout-notes.ts";
 import { emptyWorkoutSet } from "../src/model/live.ts";
 import type { WorkoutSet } from "../src/model/types.ts";
 import { MiniPlayer } from "../src/ui/live/mini-player.tsx";
@@ -207,6 +212,8 @@ vi.mock("../src/ui/icons.tsx", () => ({
   CloseIcon: () => null,
   SkipIcon: () => null,
   NoteIcon: () => null,
+  PinIcon: () => null,
+  CommentIcon: () => null,
 }));
 vi.mock("../src/ui/progress.tsx", () => ({ Fill: () => null }));
 vi.mock("react-native-svg", () => ({
@@ -293,12 +300,25 @@ vi.mock("react-native", () => {
       children,
       onMouseDown,
       dataSet,
+      accessible,
+      accessibilityLabel,
     }: {
       children: ReactNode;
       onMouseDown?: React.MouseEventHandler<HTMLDivElement>;
       dataSet?: { keyboardAccessory?: boolean };
+      accessible?: boolean;
+      accessibilityLabel?: string;
     }) =>
-      h("div", { onMouseDown, "data-keyboard-accessory": dataSet?.keyboardAccessory }, children),
+      h(
+        "div",
+        {
+          onMouseDown,
+          "data-keyboard-accessory": dataSet?.keyboardAccessory,
+          "data-accessible": accessible,
+          "aria-label": accessibilityLabel,
+        },
+        children,
+      ),
     Text: container,
     TextInput: ({
       value,
@@ -435,7 +455,8 @@ async function confirmAction(action: string) {
     (el) => el.textContent === action,
   );
   if (!button) throw new Error(`Missing confirmation: ${action}`);
-  await act(() => button.click());
+  // The confirmation settles once its action has run.
+  await act(async () => button.click());
 }
 
 async function pressKey(key: string) {
@@ -456,47 +477,44 @@ const field = (name: string) => host.querySelector(`button[aria-label="${name}"]
 const fieldText = (name: string) => field(name)?.firstElementChild?.textContent ?? null;
 const fieldTarget = (name: string) => field(name)?.children[1]?.textContent || null;
 
-it("keeps a note draft focused while its sheet adjusts and skips the same workout rest", async () => {
+it("keeps a note draft while the dock adjusts and skips the workout rest, then saves it", async () => {
   const id = beginWorkout(store);
   const entry = addExercise(store, id, EXERCISES.bench, 90);
   const set = store.list("workout_set", { parentId: entry })[0];
   if (!set) throw Error("Missing set");
   logSet(store, set.id, { weightKg: 60, reps: 8 });
+  const noteId = addExerciseNote(store, {
+    exerciseId: EXERCISES.bench.id,
+    workoutId: id,
+    text: "Hold",
+    pinned: false,
+  });
   restTimer.start(store, id, set.id, 90);
   await act(() => root.render(h(ActiveWorkoutScreen)));
-  await press("Manage Bench Press");
-  await press("Add exercise note");
-  const sheet = host.querySelector('[role="dialog"][aria-label="Bench Press"]');
-  const input = sheet?.querySelector<HTMLInputElement>('input[aria-label="Note for Bench Press"]');
-  if (!sheet || !input) throw Error("Missing note editor");
+  // Today's note is edited where it is, on the workout itself, with no sheet over it.
+  await press("Hold");
+  expect(host.querySelector('[role="dialog"]')).toBeNull();
+  const input = host.querySelector<HTMLInputElement>('input[aria-label="Edit note"]');
+  if (!input) throw Error("Missing note editor");
   await act(() => {
     input.focus();
     input.value = "Hold at the top";
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  const action = (name: string) =>
-    sheet.querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`);
-  expect(action("15 seconds more")).toBeTruthy();
-  expect(sheet.querySelector('button[aria-label*="Change the rest time"]')).toBeNull();
-  const clickTimer = (name: string) =>
-    act(() => {
-      const button = action(name);
-      if (!button) throw Error(`Missing ${name}`);
-      // A browser focuses the pressed button unless mousedown was cancelled.
-      if (button.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true })))
-        button.focus();
-      button.click();
-    });
-  await clickTimer("15 seconds more");
-  expect(sheet.textContent).toContain("Rest · 1:45");
-  expect(document.activeElement).toBe(input);
-  await clickTimer("Skip rest");
-  expect(action("15 seconds more")).toBeNull();
-  expect(document.activeElement).toBe(input);
-  expect(input.value).toBe("Hold at the top");
-  await press("Save exercise note");
-  expect(store.list("exercise_note").map((note) => note.content)).toEqual([
+  // The workout's one rest timer is the dock's.
+  expect(host.querySelectorAll('button[aria-label="15 seconds more"]')).toHaveLength(1);
+  await press("15 seconds more");
+  expect(host.textContent).toContain("Rest · 1:45");
+  await press("Skip rest");
+  expect(host.querySelector('button[aria-label="15 seconds more"]')).toBeNull();
+  expect(host.querySelector<HTMLInputElement>('input[aria-label="Edit note"]')?.value).toBe(
+    "Hold at the top",
+  );
+  await press("Done");
+  expect(host.querySelector('input[aria-label="Edit note"]')).toBeNull();
+  expect(store.list("exercise_note").map(({ id, content }) => ({ id, ...content }))).toEqual([
     expect.objectContaining({
+      id: noteId,
       exerciseId: EXERCISES.bench.id,
       workoutId: id,
       pinned: false,
@@ -2470,43 +2488,29 @@ it("shows an exercise's pinned notes and saves an additional note on that exerci
   addExercise(store, workout, EXERCISES.squat, 0);
   const render = () => act(() => root.render(h(ActiveWorkoutScreen)));
   await render();
-  expect(host.querySelector('button[aria-label^="Exercise notes for Squat"]')).toBeNull();
-  const disclosure = host.querySelector('button[aria-label="Exercise notes for Bench Press, 2"]');
-  const panel = disclosure?.parentElement;
-  if (!panel) throw Error("Missing note disclosure");
-  expect(panel.textContent).toContain("Pause on the chest");
-  expect(panel.textContent).not.toContain("Plant both feet");
-  await press("Exercise notes for Bench Press, 2");
-  expect(panel.textContent).toContain("Pause on the chest");
-  expect(panel.textContent).toContain("Plant both feet");
-  await press("Manage Bench Press");
-  // Opened in the exercise's sheet, the notes stay in the disclosure's own card, apart from the
-  // note editor below it.
-  const sheetDisclosure = [
-    ...host.querySelectorAll<HTMLButtonElement>(
-      'button[aria-label="Exercise notes for Bench Press, 2"]',
-    ),
-  ].find((button) => button !== disclosure);
-  const card = sheetDisclosure?.parentElement;
-  if (!sheetDisclosure || !card || card === panel) throw Error("Missing sheet note disclosure");
-  expect(card.textContent).not.toContain("Plant both feet");
-  await act(() => sheetDisclosure.click());
-  expect(sheetDisclosure.getAttribute("aria-expanded")).toBe("true");
-  expect(card.textContent).toContain("Plant both feet");
-  expect(card.textContent).not.toContain("Add exercise note");
-  expect(card.parentElement?.textContent).toContain("Add exercise note");
-  await press("Add exercise note");
+  const lines = () =>
+    [...host.querySelectorAll("button")]
+      .map((button) => button.getAttribute("aria-label") ?? "")
+      .filter((label) => /chest|feet|grip|hooks/.test(label));
+  // Both pinned notes are always on the card, each on a line of its own; the squat has none,
+  // only the field to write one.
+  expect(lines()).toEqual(["Pinned. Pause on the chest", "Pinned. Plant both feet"]);
+  expect(host.querySelector('input[aria-label="Note for Squat"]')).not.toBeNull();
   const input = host.querySelector<HTMLInputElement>('input[aria-label="Note for Bench Press"]');
   if (!input) throw Error("Missing exercise note input");
   await act(() => {
     input.value = "  Narrower grip  ";
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
+  expect(
+    host.querySelector('[aria-label="Pin to Bench Press"]')?.getAttribute("aria-checked"),
+  ).toBe("false");
+  // A sheet opened and closed over the card leaves the draft as it was.
+  await press("Manage Bench Press");
   const rest = host.querySelector('button[aria-label^="Rest timer for Bench Press"]');
   if (!(rest instanceof HTMLButtonElement)) throw Error("Missing exercise rest action");
   await act(() => rest.click());
   await press("Cancel");
-  await press("Manage Bench Press");
   expect(
     host.querySelector<HTMLInputElement>('input[aria-label="Note for Bench Press"]')?.value,
   ).toBe("  Narrower grip  ");
@@ -2521,11 +2525,17 @@ it("shows an exercise's pinned notes and saves an additional note on that exerci
     agent: null,
   };
   store.put("exercise_note", "parallel", addedElsewhere);
-  await press("Save exercise note");
+  await press("Save note for bench press");
   await render();
   expect(
-    host.querySelector('button[aria-label="Exercise notes for Bench Press, 4"]'),
-  ).not.toBeNull();
+    host.querySelector<HTMLInputElement>('input[aria-label="Note for Bench Press"]')?.value,
+  ).toBe("");
+  expect(lines()).toEqual([
+    "Pinned. Pause on the chest",
+    "Pinned. Plant both feet",
+    "Move the hooks",
+    "Narrower grip",
+  ]);
   const added = {
     id: expect.any(String),
     exerciseId: EXERCISES.bench.id,
@@ -2614,7 +2624,11 @@ it("adds a missed set from a finished workout without changing its timeline or a
     field.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await press("Save set");
-  expect(host.querySelector("input")).toBeNull();
+  // The set editor has closed: only the fields to write notes are left.
+  expect(host.querySelector('[role="dialog"]')).toBeNull();
+  expect(
+    [...host.querySelectorAll("input")].map((input) => input.getAttribute("aria-label")),
+  ).toEqual(["Workout note", "Note for Bench Press", "Note for Plank"]);
   expect(store.get("workout", detailId)).toEqual(saved);
   expect(store.get("workout_set", first.id)).toEqual(benchSet);
   const sets = store.list("workout_set", { parentId: plank });
@@ -3560,23 +3574,43 @@ it("keeps each exercise's saved notes readable on the finished workout", async (
   const bench = card("Bench Press");
   const squat = card("Squat");
   if (!bench || !squat) throw Error("Missing exercise cards");
-  expect(bench.textContent).toContain("Use the narrow grip");
-  expect(bench.textContent).not.toContain("Wide stance");
-  expect(squat.textContent).toContain("Wide stance");
-  expect(squat.textContent).not.toContain("Use the narrow grip");
-  expect(host.textContent).not.toContain("Paused on the last rep");
+  const lines = (card: Element) =>
+    [...card.querySelectorAll("button")]
+      .map((button) => button.getAttribute("aria-label"))
+      .filter((label) => label && /grip|rep|stance|elbows/.test(label));
+  // Every note written in the workout is shown on its own exercise, oldest first.
+  expect(lines(bench)).toEqual(["Use the narrow grip", "Paused on the last rep"]);
+  expect(lines(squat)).toEqual(["Wide stance"]);
+  // The pinned note wasn't written in this workout.
   expect(host.textContent).not.toContain("Keep the elbows tucked");
-  await press("Exercise notes for Bench Press, 2");
-  expect(bench.textContent).toContain("Paused on the last rep");
-  expect(squat.textContent).not.toContain("Paused on the last rep");
-  expect(host.textContent).not.toContain("Keep the elbows tucked");
+  // The plank has no notes, only the field to write one.
+  const plank = card("Plank");
+  if (!plank) throw Error("Missing plank card");
+  expect(lines(plank)).toEqual([]);
+  const field = plank.querySelector<HTMLInputElement>('input[aria-label="Note for Plank"]');
+  if (!field) throw Error("Missing plank note field");
+  // A note added afterwards is written in this workout.
+  vi.setSystemTime(new Date("2026-03-04T12:00:00.000Z"));
+  await act(() => {
+    field.value = "Hips sagged at the end";
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await press("Save note for plank");
   expect(
-    host.querySelector('[aria-label="Exercise notes for Squat, 1"]')?.getAttribute("aria-expanded"),
-  ).toBe("false");
-  expect(host.querySelector('[aria-label*="Exercise notes for Plank"]')).toBeNull();
-  expect(host.textContent).not.toContain("Add exercise note");
-  await press("Exercise notes for Bench Press, 2");
-  expect(host.textContent).not.toContain("Paused on the last rep");
+    store
+      .list("exercise_note")
+      .map((note) => note.content)
+      .filter((note) => note?.exerciseId === EXERCISES.plank.id),
+  ).toEqual([
+    {
+      exerciseId: EXERCISES.plank.id,
+      workoutId: detailId,
+      pinned: false,
+      text: "Hips sagged at the end",
+      createdAt: "2026-03-04T12:00:00.000Z",
+      agent: null,
+    },
+  ]);
 });
 
 it("opens a routine draft from the completed workout with its source ID", async () => {
@@ -4065,15 +4099,30 @@ describe("the logging dock and the number pad", () => {
     expect(backRoute).toHaveBeenCalled();
     expect(restDialog()).toBeNull();
 
-    // Opened again from the mini-player.
+    // Opened again from the mini-player. The notes tile leaves for the notes screen when a note
+    // needs a sync review.
+    const problems = store.problems.bind(store);
+    const review = vi.spyOn(store, "problems").mockImplementation(() => [
+      ...problems(),
+      {
+        kind: "workout_note",
+        id: "rejected",
+        content: { workoutId: workout, pinned: false, text: "Seat 3", createdAt: "", agent: null },
+      } as never,
+    ]);
+    try {
+      await act(() => root.render(h(ActiveWorkoutScreen)));
+      await openRest();
+      await press("Workout notes, 0, review sync issue");
+      expect(pushRoute).toHaveBeenLastCalledWith({
+        pathname: "/workout/notes/[id]",
+        params: { id: workout },
+      });
+      expect(restDialog()).toBeNull();
+    } finally {
+      review.mockRestore();
+    }
     await act(() => root.render(h(ActiveWorkoutScreen)));
-    await openRest();
-    await press("Workout notes, 0");
-    expect(pushRoute).toHaveBeenLastCalledWith({
-      pathname: "/workout/notes/[id]",
-      params: { id: workout },
-    });
-    expect(restDialog()).toBeNull();
 
     // However else the screen is left, it closes as the screen goes out of sight.
     await openRest();
@@ -5355,4 +5404,1104 @@ it("allows keeping a finished session when the server version would reopen it be
   await press("Keep my version");
   expect(store.activeWorkout()?.id).toBe(next);
   expect(store.get("workout", detailId)?.content?.endedAt).toBeTruthy();
+});
+
+describe("notes where they apply", () => {
+  beforeEach(() => {
+    // Which agent comments were seen is kept on the device, so each test starts with none seen.
+    writeDevicePreference("seenNoteComments", "{}");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-03-02T09:00:00.000Z"));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Types `value` into the field with this spoken label. */
+  async function typeIn(label: string, value: string) {
+    const input = host.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`);
+    if (!input) throw Error(`Missing ${label}`);
+    await act(() => {
+      input.value = value;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    return input;
+  }
+  /** The spoken labels of the buttons that match, in the order shown. */
+  const labels = (pattern: RegExp, within: ParentNode = host) =>
+    [...within.querySelectorAll("button")]
+      .map((button) => button.getAttribute("aria-label") ?? "")
+      .filter((label) => pattern.test(label));
+  /** The field a note's text is edited in, while one is. */
+  const editField = () => host.querySelector<HTMLInputElement>('input[aria-label="Edit note"]');
+  /** A note's button that shows or hides its replies. */
+  const repliesButton = (label: string) => host.querySelector(`button[aria-label="${label}"]`);
+  const noteContent = (id: string) => store.get("exercise_note", id)?.content;
+  /** Changes an exercise note as another device would, behind the screen's back. */
+  const changeNote = (id: string, change: { text?: string; pinned?: boolean }) => {
+    store.put("exercise_note", id, { ...store.get("exercise_note", id)?.content, ...change });
+    version++;
+  };
+  const REPLACE_OR_KEEP =
+    "This note was changed on another device. Done replaces it with your text; Cancel keeps the new version.";
+  const NEW_VERSION = "This note was changed on another device. This is the new version.";
+  const UNSAVED = "Your change wasn't saved: this note changed elsewhere. Tap it to choose.";
+  /** A dot a screen reader reads as New. */
+  const isNewDot = (node: Node | null | undefined) =>
+    node instanceof Element &&
+    node.getAttribute("aria-label") === "New" &&
+    node.getAttribute("data-accessible") === "true";
+
+  /**
+   * A finished bench workout from yesterday with two notes, then today's workout with the bench
+   * and a note written in it.
+   */
+  function benchWithNotes() {
+    vi.setSystemTime(new Date("2026-03-01T09:00:00.000Z"));
+    const past = beginWorkout(store);
+    const pastBench = addExercise(store, past, EXERCISES.bench, 0);
+    const pastSet = store.list("workout_set", { parentId: pastBench })[0];
+    if (!pastSet) throw Error("Missing set");
+    logSet(store, pastSet.id, { weightKg: 60, reps: 8 });
+    vi.setSystemTime(new Date("2026-03-01T09:10:00.000Z"));
+    const pinned = addExerciseNote(store, {
+      exerciseId: EXERCISES.bench.id,
+      workoutId: past,
+      text: "Feet tucked",
+      pinned: true,
+    });
+    const lastTime = addExerciseNote(store, {
+      exerciseId: EXERCISES.bench.id,
+      workoutId: past,
+      text: "Elbow felt sore",
+      pinned: false,
+    });
+    vi.setSystemTime(new Date("2026-03-01T10:00:00.000Z"));
+    finishWorkout(store, past, { countForRoutine: false });
+    vi.setSystemTime(new Date("2026-03-02T09:00:00.000Z"));
+    const workout = beginWorkout(store);
+    addExercise(store, workout, EXERCISES.bench, 0);
+    vi.setSystemTime(new Date("2026-03-02T09:05:00.000Z"));
+    const today = addExerciseNote(store, {
+      exerciseId: EXERCISES.bench.id,
+      workoutId: workout,
+      text: "Warm-up felt heavy",
+      pinned: false,
+    });
+    return { past, workout, pinned, lastTime, today };
+  }
+
+  it("shows every note on the live card and saves one pinned from there", async () => {
+    const { workout } = benchWithNotes();
+    const render = () => act(() => root.render(h(ActiveWorkoutScreen)));
+    await render();
+    const notes = () => labels(/tucked|sore|heavy|Seat/);
+    // Pinned, last time's and today's notes, without opening anything.
+    expect(notes()).toEqual([
+      "Pinned. Feet tucked",
+      "Last time. Elbow felt sore",
+      "Warm-up felt heavy",
+    ]);
+    // Only spaces: nothing to pin or save.
+    await typeIn("Note for Bench Press", "   ");
+    expect(host.querySelector('[aria-label="Save note for bench press"]')).toBeNull();
+    expect(host.querySelector('[aria-label="Pin to Bench Press"]')).toBeNull();
+
+    vi.setSystemTime(new Date("2026-03-02T09:20:00.000Z"));
+    const field = await typeIn("Note for Bench Press", " Seat on 4 ");
+    expect(host.textContent).toContain("Shows next time you do Bench Press");
+    await press("Pin to Bench Press");
+    expect(
+      host.querySelector('[aria-label="Pin to Bench Press"]')?.getAttribute("aria-checked"),
+    ).toBe("true");
+    expect(host.textContent).toContain("Shows on every Bench Press");
+    await press("Save note for bench press");
+    expect(field.value).toBe("");
+    expect(host.querySelector('[aria-label="Save note for bench press"]')).toBeNull();
+    expect(
+      store
+        .list("exercise_note")
+        .filter((note) => note.content?.text === "Seat on 4")
+        .map((note) => note.content),
+    ).toEqual([
+      {
+        exerciseId: EXERCISES.bench.id,
+        workoutId: workout,
+        pinned: true,
+        text: "Seat on 4",
+        createdAt: "2026-03-02T09:20:00.000Z",
+        agent: null,
+      },
+    ]);
+    await render();
+    expect(notes()).toEqual([
+      "Pinned. Feet tucked",
+      "Pinned. Seat on 4",
+      "Last time. Elbow felt sore",
+      "Warm-up felt heavy",
+    ]);
+    expect(store.list("exercise_note")).toHaveLength(4);
+  });
+
+  it("edits the lifter's own note where it is, and refuses text that is only spaces", async () => {
+    const { workout, today } = benchWithNotes();
+    const render = () => act(() => root.render(h(ActiveWorkoutScreen)));
+    await render();
+    expect(editField()).toBeNull();
+    await press("Warm-up felt heavy");
+    expect(editField()?.value).toBe("Warm-up felt heavy");
+    expect(labels(/heavy/)).toEqual([]);
+    expect(labels(/^(Delete note|Done|Pin to Bench Press)$/)).toEqual([
+      "Pin to Bench Press",
+      "Delete note",
+      "Done",
+    ]);
+    // One note is edited at a time.
+    await press("Last time. Elbow felt sore");
+    expect(host.querySelectorAll('[aria-label="Edit note"]')).toHaveLength(1);
+    expect(editField()?.value).toBe("Elbow felt sore");
+    expect(labels(/heavy/)).toEqual(["Warm-up felt heavy"]);
+    await press("Done");
+    expect(editField()).toBeNull();
+    await press("Warm-up felt heavy");
+
+    await typeIn("Edit note", "   ");
+    await press("Done");
+    expect(host.textContent).toContain("Enter a note.");
+    expect(editField()?.value).toBe("   ");
+    expect(noteContent(today)).toMatchObject({ text: "Warm-up felt heavy" });
+
+    await typeIn("Edit note", " Warm-up felt light ");
+    expect(host.textContent).not.toContain("Enter a note.");
+    await press("Done");
+    expect(editField()).toBeNull();
+    expect(noteContent(today)).toEqual({
+      exerciseId: EXERCISES.bench.id,
+      workoutId: workout,
+      pinned: false,
+      text: "Warm-up felt light",
+      createdAt: "2026-03-02T09:05:00.000Z",
+      agent: null,
+    });
+    await render();
+    expect(labels(/heavy|light/)).toEqual(["Warm-up felt light"]);
+  });
+
+  it("offers to replace a note changed on another device while it was edited, and Done does", async () => {
+    const { today } = benchWithNotes();
+    const render = () => act(() => root.render(h(ActiveWorkoutScreen)));
+    await render();
+    await press("Warm-up felt heavy");
+    await typeIn("Edit note", "Warm-up felt fine");
+    // Another device changes the note meanwhile.
+    changeNote(today, { text: "Warm-up was slow" });
+    await render();
+    await press("Done");
+    expect(host.textContent).toContain(REPLACE_OR_KEEP);
+    expect(editField()?.value).toBe("Warm-up felt fine");
+    expect(noteContent(today)).toMatchObject({ text: "Warm-up was slow", pinned: false });
+    // Done again replaces it with the typed text.
+    await press("Done");
+    expect(editField()).toBeNull();
+    expect(host.textContent).not.toContain("changed on another device");
+    expect(noteContent(today)).toMatchObject({ text: "Warm-up felt fine", pinned: false });
+    await render();
+    expect(labels(/Warm-up/)).toEqual(["Warm-up felt fine"]);
+  });
+
+  it("keeps the other device's version when a refused edit is cancelled", async () => {
+    const { today } = benchWithNotes();
+    const render = () => act(() => root.render(h(ActiveWorkoutScreen)));
+    await render();
+    await press("Warm-up felt heavy");
+    await typeIn("Edit note", "Warm-up felt fine");
+    changeNote(today, { text: "Warm-up was slow" });
+    await render();
+    await press("Done");
+    expect(host.textContent).toContain(REPLACE_OR_KEEP);
+    await press("Cancel");
+    expect(editField()).toBeNull();
+    expect(host.textContent).not.toContain("changed on another device");
+    expect(noteContent(today)).toMatchObject({ text: "Warm-up was slow", pinned: false });
+    expect(labels(/Warm-up/)).toEqual(["Warm-up was slow"]);
+    // Edited again, it starts from the new version.
+    await press("Warm-up was slow");
+    expect(editField()?.value).toBe("Warm-up was slow");
+  });
+
+  it("discards typed text when an edit is cancelled", async () => {
+    const { today } = benchWithNotes();
+    const before = noteContent(today);
+    await act(() => root.render(h(ActiveWorkoutScreen)));
+    await press("Warm-up felt heavy");
+    await typeIn("Edit note", "Warm-up felt light");
+    await press("Cancel");
+    expect(editField()).toBeNull();
+    expect(noteContent(today)).toEqual(before);
+    expect(labels(/Warm-up/)).toEqual(["Warm-up felt heavy"]);
+    await press("Warm-up felt heavy");
+    expect(editField()?.value).toBe("Warm-up felt heavy");
+  });
+
+  it("saves typed text when another note is tapped, and edits that one", async () => {
+    const { today, lastTime } = benchWithNotes();
+    const render = () => act(() => root.render(h(ActiveWorkoutScreen)));
+    await render();
+    await press("Warm-up felt heavy");
+    await typeIn("Edit note", " Warm-up felt light ");
+    await press("Last time. Elbow felt sore");
+    expect(noteContent(today)).toMatchObject({ text: "Warm-up felt light", pinned: false });
+    expect(noteContent(lastTime)).toMatchObject({ text: "Elbow felt sore", pinned: false });
+    expect(host.querySelectorAll('[aria-label="Edit note"]')).toHaveLength(1);
+    expect(editField()?.value).toBe("Elbow felt sore");
+    await render();
+    expect(labels(/Warm-up/)).toEqual(["Warm-up felt light"]);
+  });
+
+  it("saves typed text and a pin toggled in the same edit together", async () => {
+    const { workout, today } = benchWithNotes();
+    const render = () => act(() => root.render(h(ActiveWorkoutScreen)));
+    await render();
+    await press("Warm-up felt heavy");
+    await typeIn("Edit note", "Warm-up felt light");
+    await press("Pin to Bench Press");
+    expect(noteContent(today)).toEqual({
+      exerciseId: EXERCISES.bench.id,
+      workoutId: workout,
+      pinned: true,
+      text: "Warm-up felt light",
+      createdAt: "2026-03-02T09:05:00.000Z",
+      agent: null,
+    });
+    expect(store.list("exercise_note")).toHaveLength(3);
+    expect(editField()?.value).toBe("Warm-up felt light");
+    await render();
+    await press("Done");
+    expect(labels(/Warm-up/)).toEqual(["Pinned. Warm-up felt light"]);
+  });
+
+  it("saves typed text when a note is unpinned on the exercise screen and leaves its list", async () => {
+    const workout = beginWorkout(store);
+    addExercise(store, workout, EXERCISES.bench, 0);
+    const noteId = addExerciseNote(store, {
+      exerciseId: EXERCISES.bench.id,
+      workoutId: null,
+      text: "Keep the elbows tucked",
+      pinned: true,
+    });
+    detailId = EXERCISES.bench.id;
+    const render = () => act(() => root.render(h(ExerciseScreen)));
+    await render();
+    await press("Pinned. Keep the elbows tucked");
+    await typeIn("Edit note", "Keep the elbows in");
+    await press("Pin to Bench Press");
+    expect(noteContent(noteId)).toEqual({
+      exerciseId: EXERCISES.bench.id,
+      workoutId: null,
+      pinned: false,
+      text: "Keep the elbows in",
+      createdAt: "2026-03-02T09:00:00.000Z",
+      agent: null,
+    });
+    await render();
+    expect(labels(/elbows/)).toEqual([]);
+    expect(editField()).toBeNull();
+  });
+
+  it("keeps a first reply being typed open when the edit ends, and sends it", async () => {
+    const { today } = benchWithNotes();
+    const render = () => act(() => root.render(h(ActiveWorkoutScreen)));
+    await render();
+    const replyField = () =>
+      host.querySelector<HTMLInputElement>('input[aria-label="Reply to Warm-up felt heavy"]');
+    await press("Warm-up felt heavy");
+    await press("Reply to this note");
+    await typeIn("Reply to Warm-up felt heavy", "Felt better later");
+    await press("Done");
+    expect(editField()).toBeNull();
+    expect(replyField()?.value).toBe("Felt better later");
+    expect(labels(/^Send reply$/)).toEqual(["Send reply"]);
+    vi.setSystemTime(new Date("2026-03-02T09:30:00.000Z"));
+    await press("Send reply");
+    expect(store.list("exercise_note_comment").map((row) => row.content)).toEqual([
+      {
+        noteId: today,
+        text: "Felt better later",
+        createdAt: "2026-03-02T09:30:00.000Z",
+        agent: null,
+      },
+    ]);
+    await render();
+    expect(labels(/heavy/)).toEqual(["Warm-up felt heavy. 1 reply"]);
+  });
+
+  it("refuses to pin an exercise note whose text or pin changed since its edit began", async () => {
+    const { today } = benchWithNotes();
+    const render = () => act(() => root.render(h(ActiveWorkoutScreen)));
+    await render();
+    // Pinned on another device meanwhile: the pin isn't flipped back unseen.
+    await press("Warm-up felt heavy");
+    changeNote(today, { pinned: true });
+    await render();
+    await press("Pin to Bench Press");
+    expect(host.textContent).toContain(NEW_VERSION);
+    expect(noteContent(today)).toMatchObject({ pinned: true, text: "Warm-up felt heavy" });
+    // Shown the new version, the next press unpins it as asked.
+    await press("Pin to Bench Press");
+    expect(host.textContent).not.toContain("changed on another device");
+    expect(noteContent(today)).toMatchObject({ pinned: false, text: "Warm-up felt heavy" });
+    await press("Cancel");
+    await render();
+
+    // Its text changed on another device meanwhile.
+    await press("Warm-up felt heavy");
+    changeNote(today, { text: "Warm-up was slow" });
+    await render();
+    await press("Pin to Bench Press");
+    expect(host.textContent).toContain("changed on another device");
+    expect(noteContent(today)).toMatchObject({ pinned: false, text: "Warm-up was slow" });
+  });
+
+  it("refuses to delete an exercise note whose text or pin changed since its edit began", async () => {
+    const { today } = benchWithNotes();
+    const render = () => act(() => root.render(h(ActiveWorkoutScreen)));
+    await render();
+    const live = () => !(store.get("exercise_note", today)?.deleted ?? true);
+    await press("Warm-up felt heavy");
+    changeNote(today, { pinned: true });
+    await render();
+    await press("Delete note");
+    await confirmAction("Delete note");
+    expect(live()).toBe(true);
+    expect(host.textContent).toContain(
+      "This note was changed on another device. This is the new version.",
+    );
+    expect(noteContent(today)).toMatchObject({ pinned: true, text: "Warm-up felt heavy" });
+    await press("Cancel");
+    await render();
+
+    await press("Pinned. Warm-up felt heavy");
+    changeNote(today, { text: "Warm-up was slow" });
+    await render();
+    await press("Delete note");
+    await confirmAction("Delete note");
+    expect(live()).toBe(true);
+    expect(host.textContent).toContain(
+      "This note was changed on another device. This is the new version.",
+    );
+    expect(noteContent(today)).toMatchObject({ pinned: true, text: "Warm-up was slow" });
+    // Recovered: the copy is now the new version, so a second Delete goes through.
+    await press("Delete note");
+    await confirmAction("Delete note");
+    expect(live()).toBe(false);
+  });
+
+  it("keeps a draft refused when another note is tapped, and Done on the note saves it", async () => {
+    const { today } = benchWithNotes();
+    const render = () => act(() => root.render(h(ActiveWorkoutScreen)));
+    await render();
+    await press("Warm-up felt heavy");
+    await typeIn("Edit note", "Warm-up felt fine");
+    changeNote(today, { text: "Warm-up was slow" });
+    await render();
+    await press("Last time. Elbow felt sore");
+    expect(host.textContent).toContain(UNSAVED);
+    expect(noteContent(today)).toMatchObject({ text: "Warm-up was slow", pinned: false });
+    expect(host.querySelectorAll('[aria-label="Edit note"]')).toHaveLength(1);
+    expect(editField()?.value).toBe("Elbow felt sore");
+    expect(labels(/Warm-up/)).toEqual(["Warm-up was slow"]);
+    // Tapped again, the note offers the typed text against the newer copy.
+    await press("Warm-up was slow");
+    expect(host.querySelectorAll('[aria-label="Edit note"]')).toHaveLength(1);
+    expect(editField()?.value).toBe("Warm-up felt fine");
+    expect(host.textContent).toContain(REPLACE_OR_KEEP);
+    expect(host.textContent).not.toContain(UNSAVED);
+    await press("Done");
+    expect(editField()).toBeNull();
+    expect(noteContent(today)).toMatchObject({ text: "Warm-up felt fine", pinned: false });
+    expect(host.textContent).not.toContain("changed on another device");
+  });
+
+  it("keeps the other device's text when a draft refused on leaving is cancelled", async () => {
+    const { today } = benchWithNotes();
+    const render = () => act(() => root.render(h(ActiveWorkoutScreen)));
+    await render();
+    await press("Warm-up felt heavy");
+    await typeIn("Edit note", "Warm-up felt fine");
+    changeNote(today, { text: "Warm-up was slow" });
+    await render();
+    await press("Last time. Elbow felt sore");
+    await press("Warm-up was slow");
+    expect(editField()?.value).toBe("Warm-up felt fine");
+    await press("Cancel");
+    expect(editField()).toBeNull();
+    expect(noteContent(today)).toMatchObject({ text: "Warm-up was slow", pinned: false });
+    expect(labels(/Warm-up/)).toEqual(["Warm-up was slow"]);
+    expect(host.textContent).not.toContain("changed elsewhere");
+    // The draft is gone: edited again, the note starts from the newer copy.
+    await press("Warm-up was slow");
+    expect(editField()?.value).toBe("Warm-up was slow");
+    expect(host.textContent).not.toContain("changed on another device");
+  });
+
+  it("never writes the old text back after a refused pin when nothing was typed", async () => {
+    const { today } = benchWithNotes();
+    const render = () => act(() => root.render(h(ActiveWorkoutScreen)));
+    await render();
+    await press("Warm-up felt heavy");
+    changeNote(today, { text: "Warm-up was slow" });
+    await render();
+    await press("Pin to Bench Press");
+    expect(host.textContent).toContain(NEW_VERSION);
+    expect(editField()?.value).toBe("Warm-up was slow");
+    const before = store.get("exercise_note", today);
+    expect(before?.content).toMatchObject({ text: "Warm-up was slow", pinned: false });
+    await press("Done");
+    expect(editField()).toBeNull();
+    expect(store.get("exercise_note", today)).toEqual(before);
+  });
+
+  it("writes nothing for an edit that only adds spaces when another note is tapped", async () => {
+    const { today } = benchWithNotes();
+    await act(() => root.render(h(ActiveWorkoutScreen)));
+    const before = store.get("exercise_note", today);
+    const put = vi.spyOn(store, "put");
+    onTestFinished(() => put.mockRestore());
+    await press("Warm-up felt heavy");
+    await typeIn("Edit note", "Warm-up felt heavy ");
+    await press("Last time. Elbow felt sore");
+    expect(editField()?.value).toBe("Elbow felt sore");
+    expect(put).not.toHaveBeenCalled();
+    expect(store.get("exercise_note", today)).toEqual(before);
+    expect(host.textContent).not.toContain("changed elsewhere");
+  });
+
+  it("says an empty draft left by tapping another note needs text, and saves nothing", async () => {
+    const { today } = benchWithNotes();
+    await act(() => root.render(h(ActiveWorkoutScreen)));
+    const before = store.get("exercise_note", today);
+    const put = vi.spyOn(store, "put");
+    onTestFinished(() => put.mockRestore());
+    await press("Warm-up felt heavy");
+    await typeIn("Edit note", "   ");
+    await press("Last time. Elbow felt sore");
+    expect(host.textContent).toContain("Enter a note.");
+    expect(host.textContent).not.toContain("changed elsewhere");
+    expect(put).not.toHaveBeenCalled();
+    expect(store.get("exercise_note", today)).toEqual(before);
+    // Tapped again, it starts from the stored text with nothing to settle.
+    await press("Warm-up felt heavy");
+    expect(editField()?.value).toBe("Warm-up felt heavy");
+    expect(host.textContent).not.toContain("Enter a note.");
+    expect(host.textContent).not.toContain("changed on another device");
+  });
+
+  it("pins and deletes an agent's note without offering its text for editing", async () => {
+    const { workout } = benchWithNotes();
+    store.put("exercise_note", "coach-note", {
+      exerciseId: EXERCISES.bench.id,
+      workoutId: workout,
+      pinned: false,
+      text: "Drive through the heels",
+      createdAt: "2026-03-02T09:06:00.000Z",
+      agent: "Coach",
+    });
+    const render = () => act(() => root.render(h(ActiveWorkoutScreen)));
+    await render();
+    await press("by Coach. Drive through the heels");
+    // The agent's text is shown, not offered for editing.
+    expect(editField()).toBeNull();
+    expect(labels(/heels/)).toEqual(["by Coach. Drive through the heels"]);
+    const pin = () => host.querySelector('[role="switch"][aria-label="Pin to Bench Press"]');
+    expect(pin()?.getAttribute("aria-checked")).toBe("false");
+    // A pin is saved at once, without Done.
+    await press("Pin to Bench Press");
+    expect(noteContent("coach-note")).toEqual({
+      exerciseId: EXERCISES.bench.id,
+      workoutId: workout,
+      pinned: true,
+      text: "Drive through the heels",
+      createdAt: "2026-03-02T09:06:00.000Z",
+      agent: "Coach",
+    });
+    await render();
+    expect(pin()?.getAttribute("aria-checked")).toBe("true");
+    expect(host.textContent).toContain("Shows on every Bench Press");
+    expect(labels(/heels/)).toEqual(["Pinned. by Coach. Drive through the heels"]);
+    // Unpinned and pinned again from the same edit.
+    await press("Pin to Bench Press");
+    expect(noteContent("coach-note")).toMatchObject({ pinned: false });
+    await render();
+    await press("Pin to Bench Press");
+    expect(noteContent("coach-note")).toMatchObject({
+      pinned: true,
+      text: "Drive through the heels",
+    });
+    await press("Done");
+    expect(pin()).toBeNull();
+    await render();
+
+    await press("Pinned. by Coach. Drive through the heels");
+    await press("Delete note");
+    // Nothing goes until the deletion is confirmed, and Keep it keeps the note.
+    expect(host.textContent).toContain("This note and its replies will be deleted.");
+    await press("Keep it");
+    expect(host.querySelector('[role="dialog"][aria-label="Delete note"]')).toBeNull();
+    expect(noteContent("coach-note")).toMatchObject({ pinned: true });
+    await press("Delete note");
+    await confirmAction("Delete note");
+    expect(host.querySelector('[role="dialog"]')).toBeNull();
+    expect(store.get("exercise_note", "coach-note")?.deleted ?? true).toBe(true);
+    await render();
+    expect(labels(/heels/)).toEqual([]);
+  });
+
+  it("deletes the lifter's note with its replies once confirmed", async () => {
+    const { today, lastTime } = benchWithNotes();
+    store.put("exercise_note_comment", "on-today", {
+      noteId: today,
+      text: "Sleep?",
+      createdAt: "2026-03-02T09:07:00.000Z",
+      agent: "Coach",
+    });
+    store.put("exercise_note_comment", "on-last-time", {
+      noteId: lastTime,
+      text: "Ice it",
+      createdAt: "2026-03-01T20:00:00.000Z",
+      agent: "Coach",
+    });
+    const render = () => act(() => root.render(h(ActiveWorkoutScreen)));
+    await render();
+    await press("Warm-up felt heavy. 1 reply");
+    await press("Delete note");
+    expect(noteContent(today)).toMatchObject({ text: "Warm-up felt heavy" });
+    await confirmAction("Delete note");
+    expect(host.querySelector('[role="dialog"]')).toBeNull();
+    expect(store.get("exercise_note", today)?.deleted ?? true).toBe(true);
+    expect(store.list("exercise_note_comment").map((row) => row.id)).toEqual(["on-last-time"]);
+    await render();
+    expect(labels(/heavy/)).toEqual([]);
+    expect(noteContent(lastTime)).toMatchObject({ text: "Elbow felt sore" });
+  });
+
+  it("opens an agent's new reply under its note by itself, and adds and deletes the lifter's reply", async () => {
+    const { lastTime } = benchWithNotes();
+    store.put("exercise_note_comment", "reply", {
+      noteId: lastTime,
+      text: "Drop the weight 5 kg today",
+      createdAt: "2026-03-01T20:00:00.000Z",
+      agent: "Coach",
+    });
+    const render = () => act(() => root.render(h(ActiveWorkoutScreen)));
+    await render();
+    // Shown without a tap, and seen as soon as it shows: nothing calls it new any more.
+    expect(host.textContent).toContain("Drop the weight 5 kg today");
+    expect(host.textContent).toContain("COACH");
+    expect(labels(/sore|repl/)).toEqual(["Last time. Elbow felt sore. 1 reply", "1 reply"]);
+    expect(repliesButton("1 reply")?.getAttribute("aria-expanded")).toBe("true");
+    // The agent's reply can't be deleted here, and Send waits for text.
+    expect(host.querySelector('[aria-label="Delete your reply"]')).toBeNull();
+    expect(host.querySelector('[aria-label="Send reply"]')).toBeNull();
+
+    vi.setSystemTime(new Date("2026-03-02T09:30:00.000Z"));
+    const field = await typeIn("Reply to Elbow felt sore", "  Did that, felt fine  ");
+    await press("Send reply");
+    const own = () =>
+      store
+        .list("exercise_note_comment")
+        .map((row) => row.content)
+        .filter((comment) => comment?.agent === null);
+    expect(own()).toEqual([
+      {
+        noteId: lastTime,
+        text: "Did that, felt fine",
+        createdAt: "2026-03-02T09:30:00.000Z",
+        agent: null,
+      },
+    ]);
+    expect(field.value).toBe("");
+    expect(host.querySelector('[aria-label="Send reply"]')).toBeNull();
+    await render();
+    expect(host.textContent).toContain("YOUMon, Mar 2");
+    expect(host.textContent).toContain("Did that, felt fine");
+    // The lifter's own reply is never new.
+    expect(labels(/sore|repl/)).toEqual([
+      "Last time. Elbow felt sore. 2 replies",
+      "2 replies",
+      "Delete your reply",
+    ]);
+
+    await press("Delete your reply");
+    expect(own()).toEqual([]);
+    expect(store.list("exercise_note_comment").map((row) => row.id)).toEqual(["reply"]);
+    await render();
+    expect(host.textContent).not.toContain("Did that, felt fine");
+    expect(labels(/sore|repl/)).toEqual(["Last time. Elbow felt sore. 1 reply", "1 reply"]);
+
+    // A later reply from the agent opens the replies again while the note is shown.
+    await press("1 reply");
+    expect(host.textContent).not.toContain("Drop the weight 5 kg today");
+    store.put("exercise_note_comment", "reply-2", {
+      noteId: lastTime,
+      text: "Good, keep it there",
+      createdAt: "2026-03-02T09:40:00.000Z",
+      agent: "Coach",
+    });
+    await render();
+    expect(host.textContent).toContain("Good, keep it there");
+    expect(labels(/sore|repl/)).toEqual(["Last time. Elbow felt sore. 2 replies", "2 replies"]);
+    expect(repliesButton("2 replies")?.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("keeps replies already read folded until their button opens them", async () => {
+    const { lastTime } = benchWithNotes();
+    store.put("exercise_note_comment", "reply", {
+      noteId: lastTime,
+      text: "Drop the weight 5 kg today",
+      createdAt: "2026-03-01T20:00:00.000Z",
+      agent: "Coach",
+    });
+    writeDevicePreference(
+      "seenNoteComments",
+      JSON.stringify({ [lastTime]: "2026-03-01T20:00:00.000Z" }),
+    );
+    await act(() => root.render(h(ActiveWorkoutScreen)));
+    expect(labels(/sore|repl/)).toEqual(["Last time. Elbow felt sore. 1 reply", "1 reply"]);
+    expect(repliesButton("1 reply")?.getAttribute("aria-expanded")).toBe("false");
+    expect(host.textContent).not.toContain("Drop the weight 5 kg today");
+    expect(host.querySelector('[aria-label="Reply to Elbow felt sore"]')).toBeNull();
+    await press("1 reply");
+    expect(repliesButton("1 reply")?.getAttribute("aria-expanded")).toBe("true");
+    expect(host.textContent).toContain("Drop the weight 5 kg today");
+    expect(host.querySelector('[aria-label="Reply to Elbow felt sore"]')).not.toBeNull();
+    await press("1 reply");
+    expect(repliesButton("1 reply")?.getAttribute("aria-expanded")).toBe("false");
+    expect(host.textContent).not.toContain("Drop the weight 5 kg today");
+    expect(host.querySelector('[aria-label="Reply to Elbow felt sore"]')).toBeNull();
+  });
+
+  it("opens the workout's notes under its tile and adds one there", async () => {
+    vi.setSystemTime(new Date("2026-03-01T09:00:00.000Z"));
+    const past = beginWorkout(store);
+    const pastPlank = addExercise(store, past, EXERCISES.plank, 0);
+    const pastSet = store.list("workout_set", { parentId: pastPlank })[0];
+    if (!pastSet) throw Error("Missing set");
+    logSet(store, pastSet.id, { durationSeconds: 60 });
+    vi.setSystemTime(new Date("2026-03-01T10:00:00.000Z"));
+    finishWorkout(store, past, {
+      note: { text: "Slept badly", pinned: false },
+      countForRoutine: false,
+    });
+    vi.setSystemTime(new Date("2026-03-02T09:00:00.000Z"));
+    const workout = beginWorkout(store);
+    addExercise(store, workout, EXERCISES.plank, 0);
+    writeWorkoutNote(store, workout, null, { text: "Gym was busy", pinned: false });
+    const render = () => act(() => root.render(h(ActiveWorkoutScreen)));
+    await render();
+    const tile = () => host.querySelector('button[aria-label^="Workout notes, "]');
+    expect(tile()?.getAttribute("aria-label")).toBe("Workout notes, 2");
+    expect(tile()?.getAttribute("aria-expanded")).toBe("false");
+    expect(host.querySelector('input[aria-label="Workout note"]')).toBeNull();
+    await press("Workout notes, 2");
+    expect(pushRoute).not.toHaveBeenCalled();
+    expect(tile()?.getAttribute("aria-expanded")).toBe("true");
+    expect(labels(/badly|busy|Rack/)).toEqual(["Last time. Slept badly", "Gym was busy"]);
+
+    vi.setSystemTime(new Date("2026-03-02T09:15:00.000Z"));
+    await typeIn("Workout note", "Rack 3 was free");
+    // A workout without a routine has nowhere for a pinned note to come back.
+    expect(host.querySelector('[role="switch"][aria-label^="Pin to"]')).toBeNull();
+    expect(host.textContent).toContain("Shows in your next workout");
+    await press("Save workout note");
+    expect(
+      store
+        .list("workout_note")
+        .map((row) => row.content)
+        .filter((note) => note?.workoutId === workout)
+        .sort((a, b) => String(a?.createdAt).localeCompare(String(b?.createdAt))),
+    ).toEqual([
+      expect.objectContaining({ text: "Gym was busy" }),
+      {
+        workoutId: workout,
+        pinned: false,
+        text: "Rack 3 was free",
+        createdAt: "2026-03-02T09:15:00.000Z",
+        agent: null,
+      },
+    ]);
+    await render();
+    expect(tile()?.getAttribute("aria-label")).toBe("Workout notes, 3");
+    expect(labels(/badly|busy|Rack/)).toEqual([
+      "Last time. Slept badly",
+      "Gym was busy",
+      "Rack 3 was free",
+    ]);
+    await press("Workout notes, 3");
+    expect(tile()?.getAttribute("aria-expanded")).toBe("false");
+    expect(host.querySelector('input[aria-label="Workout note"]')).toBeNull();
+  });
+
+  it("pins a workout note to the routine from the notes under the tile", async () => {
+    const routine = createRoutine(
+      store,
+      "Strength",
+      null,
+      [{ id: "press", exercise: EXERCISES.bench, sets: [{ id: "a", values: { reps: "8" } }] }],
+      readSettings(store),
+    );
+    const workout = beginWorkout(store, routine);
+    await act(() => root.render(h(ActiveWorkoutScreen)));
+    await press("Workout notes, 0");
+    await typeIn("Workout note", "Bring chalk");
+    expect(host.textContent).toContain("Shows in the next Strength");
+    await press("Pin to Strength");
+    expect(host.textContent).toContain("Shows in every Strength");
+    await press("Save workout note");
+    expect(store.list("workout_note").map((row) => row.content)).toEqual([
+      {
+        workoutId: workout,
+        pinned: true,
+        text: "Bring chalk",
+        createdAt: "2026-03-02T09:00:00.000Z",
+        agent: null,
+      },
+    ]);
+  });
+
+  it("writes the first reply to a note from its edit, and folds the empty thread when it ends", async () => {
+    const { workout } = benchWithNotes();
+    store.put("exercise_note", "coach-note", {
+      exerciseId: EXERCISES.bench.id,
+      workoutId: workout,
+      pinned: false,
+      text: "Drive through the heels",
+      createdAt: "2026-03-02T09:06:00.000Z",
+      agent: "Coach",
+    });
+    const render = () => act(() => root.render(h(ActiveWorkoutScreen)));
+    await render();
+    const replyField = (to: string) =>
+      host.querySelector<HTMLInputElement>(`input[aria-label="Reply to ${to}"]`);
+    // A note without replies offers none until it is being edited.
+    expect(labels(/^Reply to this note$/)).toEqual([]);
+    expect(replyField("Drive through the heels")).toBeNull();
+    await press("by Coach. Drive through the heels");
+    expect(labels(/^Reply to this note$/)).toEqual(["Reply to this note"]);
+    expect(replyField("Drive through the heels")).toBeNull();
+    await press("Reply to this note");
+    expect(labels(/^Reply to this note$/)).toEqual([]);
+    expect(replyField("Drive through the heels")?.value).toBe("");
+    expect(host.querySelector('[aria-label="Send reply"]')).toBeNull();
+
+    vi.setSystemTime(new Date("2026-03-02T09:30:00.000Z"));
+    await typeIn("Reply to Drive through the heels", " Will try ");
+    await press("Send reply");
+    expect(store.list("exercise_note_comment").map((row) => row.content)).toEqual([
+      {
+        noteId: "coach-note",
+        text: "Will try",
+        createdAt: "2026-03-02T09:30:00.000Z",
+        agent: null,
+      },
+    ]);
+    expect(replyField("Drive through the heels")?.value).toBe("");
+    await render();
+    expect(host.textContent).toContain("YOUMon, Mar 2");
+    expect(labels(/heels|^Reply to this note$|repl/)).toEqual([
+      "by Coach. Drive through the heels. 1 reply",
+      "1 reply",
+      "Delete your reply",
+    ]);
+    // With a reply, the thread stays open once the edit ends.
+    await press("Done");
+    expect(host.textContent).toContain("Will try");
+    expect(repliesButton("1 reply")?.getAttribute("aria-expanded")).toBe("true");
+
+    // Opened for a first reply that wasn't written, the empty thread folds with the edit.
+    await press("Warm-up felt heavy");
+    await press("Reply to this note");
+    expect(replyField("Warm-up felt heavy")).not.toBeNull();
+    await press("Done");
+    expect(editField()).toBeNull();
+    expect(replyField("Warm-up felt heavy")).toBeNull();
+    expect(labels(/^Reply to this note$/)).toEqual([]);
+    expect(store.list("exercise_note_comment")).toHaveLength(1);
+  });
+
+  it("keeps the dot on replies that were new for as long as their note is shown", async () => {
+    const { lastTime } = benchWithNotes();
+    store.put("exercise_note_comment", "read-reply", {
+      noteId: lastTime,
+      text: "Ice it tonight",
+      createdAt: "2026-03-01T19:00:00.000Z",
+      agent: "Coach",
+    });
+    store.put("exercise_note_comment", "new-reply", {
+      noteId: lastTime,
+      text: "Drop the weight 5 kg today",
+      createdAt: "2026-03-01T20:00:00.000Z",
+      agent: "Coach",
+    });
+    // The first reply was read on this device before the second came.
+    writeDevicePreference(
+      "seenNoteComments",
+      JSON.stringify({ [lastTime]: "2026-03-01T19:00:00.000Z" }),
+    );
+    /** Each reply's text with whether a dot marks it new, from its byline. */
+    const replies = () =>
+      [...host.querySelectorAll("div")]
+        .filter((el) => el.children.length === 0 && /^(COACH|YOU)$/.test(el.textContent ?? ""))
+        .map((author) => ({
+          text: author.parentElement?.nextElementSibling?.textContent,
+          dot: isNewDot(author.previousElementSibling),
+        }));
+    const render = () => act(() => root.render(h(ActiveWorkoutScreen)));
+    const records: MutationRecord[] = [];
+    const changes = new MutationObserver((batch) => records.push(...batch));
+    changes.observe(host, { childList: true, subtree: true });
+    await render();
+    // The replies button wore a dot named New until its replies came into view and were seen.
+    const buttonDots = [...records, ...changes.takeRecords()]
+      .filter((record) => record.target instanceof HTMLButtonElement)
+      .flatMap((record) =>
+        [...record.removedNodes]
+          .filter((node) => isNewDot(node))
+          .map(() => (record.target as Element).getAttribute("aria-label")),
+      );
+    changes.disconnect();
+    expect(buttonDots).toEqual(["2 replies"]);
+    // Seen as it came into view, so the line no longer calls it new, but its dot stays.
+    expect(labels(/sore|repl/)).toEqual(["Last time. Elbow felt sore. 2 replies", "2 replies"]);
+    expect(JSON.parse(String(readDevicePreference("seenNoteComments")))).toEqual({
+      [lastTime]: "2026-03-01T20:00:00.000Z",
+    });
+    expect(replies()).toEqual([
+      { text: "Ice it tonight", dot: false },
+      { text: "Drop the weight 5 kg today", dot: true },
+    ]);
+    await render();
+    expect(replies()).toEqual([
+      { text: "Ice it tonight", dot: false },
+      { text: "Drop the weight 5 kg today", dot: true },
+    ]);
+    // Folding and opening the replies keeps it too, while the note stays on screen.
+    await press("2 replies");
+    await press("2 replies");
+    expect(replies()).toEqual([
+      { text: "Ice it tonight", dot: false },
+      { text: "Drop the weight 5 kg today", dot: true },
+    ]);
+    // Shown again later, it is no longer new.
+    await act(() => root.render(null));
+    await render();
+    expect(replies()).toEqual([]);
+    await press("2 replies");
+    expect(replies()).toEqual([
+      { text: "Ice it tonight", dot: false },
+      { text: "Drop the weight 5 kg today", dot: false },
+    ]);
+  });
+
+  it("edits, pins and answers a workout note under the tile, with no pin for a note from a workout without a routine", async () => {
+    vi.setSystemTime(new Date("2026-03-01T09:00:00.000Z"));
+    const past = beginWorkout(store);
+    const pastPlank = addExercise(store, past, EXERCISES.plank, 0);
+    const pastSet = store.list("workout_set", { parentId: pastPlank })[0];
+    if (!pastSet) throw Error("Missing set");
+    logSet(store, pastSet.id, { durationSeconds: 60 });
+    vi.setSystemTime(new Date("2026-03-01T10:00:00.000Z"));
+    finishWorkout(store, past, {
+      note: { text: "Slept badly", pinned: false },
+      countForRoutine: false,
+    });
+    vi.setSystemTime(new Date("2026-03-02T09:00:00.000Z"));
+    const routine = createRoutine(
+      store,
+      "Strength",
+      null,
+      [{ id: "press", exercise: EXERCISES.bench, sets: [{ id: "a", values: { reps: "8" } }] }],
+      readSettings(store),
+    );
+    const workout = beginWorkout(store, routine);
+    writeWorkoutNote(store, workout, null, { text: "Gym was busy", pinned: false });
+    const noteId = store.list("workout_note").find((row) => row.content?.workoutId === workout)?.id;
+    if (!noteId) throw Error("Missing note");
+    store.put("workout_note_comment", "coach-reply", {
+      noteId,
+      text: "Try the early slot",
+      createdAt: "2026-03-02T09:01:00.000Z",
+      agent: "Coach",
+    });
+    const workoutNote = (id: string) => store.get("workout_note", id)?.content;
+    const render = () => act(() => root.render(h(ActiveWorkoutScreen)));
+    await render();
+    await press("Workout notes, 2, new reply");
+    expect(labels(/badly|busy/)).toEqual(["Last time. Slept badly", "Gym was busy. 1 reply"]);
+    // The agent's new reply shows under the note by itself.
+    expect(host.textContent).toContain("Try the early slot");
+
+    vi.setSystemTime(new Date("2026-03-02T09:10:00.000Z"));
+    const field = await typeIn("Reply to Gym was busy", " Will do ");
+    await press("Send reply");
+    expect(
+      store
+        .list("workout_note_comment")
+        .map((row) => row.content)
+        .sort((a, b) => String(a?.createdAt).localeCompare(String(b?.createdAt))),
+    ).toEqual([
+      expect.objectContaining({ text: "Try the early slot", agent: "Coach" }),
+      { noteId, text: "Will do", createdAt: "2026-03-02T09:10:00.000Z", agent: null },
+    ]);
+    expect(field.value).toBe("");
+    await render();
+    expect(labels(/badly|busy/)).toEqual(["Last time. Slept badly", "Gym was busy. 2 replies"]);
+
+    // A note from a workout without a routine has nowhere to be pinned.
+    await press("Last time. Slept badly");
+    expect(editField()?.value).toBe("Slept badly");
+    expect(host.querySelector('[role="switch"]')).toBeNull();
+    expect(host.textContent).toContain("Shows in your next workout");
+    await press("Done");
+    expect(editField()).toBeNull();
+
+    await press("Gym was busy. 2 replies");
+    const pin = () => host.querySelector('[role="switch"][aria-label="Pin to Strength"]');
+    expect(pin()?.getAttribute("aria-checked")).toBe("false");
+    await typeIn("Edit note", "Gym was quiet");
+    await press("Done");
+    expect(editField()).toBeNull();
+    expect(workoutNote(noteId)).toEqual({
+      workoutId: workout,
+      pinned: false,
+      text: "Gym was quiet",
+      createdAt: "2026-03-02T09:00:00.000Z",
+      agent: null,
+    });
+    await render();
+    await press("Gym was quiet. 2 replies");
+    await press("Pin to Strength");
+    expect(workoutNote(noteId)).toMatchObject({ pinned: true, text: "Gym was quiet" });
+    await render();
+    expect(pin()?.getAttribute("aria-checked")).toBe("true");
+    await press("Done");
+    expect(labels(/badly|busy|quiet/)).toEqual([
+      "Last time. Slept badly",
+      "Pinned. Gym was quiet. 2 replies",
+    ]);
+    // The note from the earlier workout is left as it was.
+    expect(
+      store
+        .list("workout_note")
+        .map((row) => row.content)
+        .filter((note) => note?.workoutId === past),
+    ).toEqual([expect.objectContaining({ text: "Slept badly", pinned: false })]);
+  });
+
+  it.each([
+    ["a routine workout counted for it", true, true],
+    ["a routine workout not counted for it", true, false],
+    ["a workout without a routine", false, true],
+  ] as const)("offers to pin the Finish note only for %s", async (_, fromRoutine, counted) => {
+    const routine = createRoutine(
+      store,
+      "Strength",
+      null,
+      [
+        {
+          id: "hold",
+          exercise: EXERCISES.plank,
+          sets: [{ id: "a", values: { duration: "0:30" } }],
+        },
+      ],
+      readSettings(store),
+    );
+    const id = fromRoutine ? beginWorkout(store, routine) : beginWorkout(store);
+    const entry = fromRoutine
+      ? store.list("workout_exercise", { parentId: id })[0]?.id
+      : addExercise(store, id, EXERCISES.plank, 0);
+    const set = store.list("workout_set", { parentId: entry ?? "" })[0];
+    if (!set) throw Error("Missing set");
+    logSet(store, set.id, { durationSeconds: 30 });
+    await act(() => root.render(h(FinishScreen)));
+    if (!counted) await press("Count as Strength");
+    await typeIn("Workout note", "New gloves helped");
+    const pin = () => host.querySelector('[role="switch"][aria-label="Pin to Strength"]');
+    if (fromRoutine && counted) {
+      expect(host.textContent).toContain("Shows in the next Strength, then stays with this one.");
+      await press("Pin to Strength");
+      expect(pin()?.getAttribute("aria-checked")).toBe("true");
+      expect(host.textContent).toContain("Shows in every Strength until you delete it.");
+    } else {
+      expect(pin()).toBeNull();
+      expect(host.textContent).toContain("Shows in your next workout, then stays with this one.");
+    }
+    await press("Save workout");
+    await act(feedback.release);
+    expect(store.list("workout_note").map((row) => row.content)).toEqual([
+      {
+        workoutId: id,
+        pinned: fromRoutine && counted,
+        text: "New gloves helped",
+        createdAt: expect.any(String),
+        agent: null,
+      },
+    ]);
+  });
+
+  it("lists an exercise's pinned notes on its screen and pins every note added there", async () => {
+    const workout = beginWorkout(store);
+    addExercise(store, workout, EXERCISES.bench, 0);
+    addExerciseNote(store, {
+      exerciseId: EXERCISES.bench.id,
+      workoutId: workout,
+      text: "Felt quick today",
+      pinned: false,
+    });
+    addExerciseNote(store, {
+      exerciseId: EXERCISES.bench.id,
+      workoutId: null,
+      text: "Keep the elbows tucked",
+      pinned: true,
+    });
+    addExerciseNote(store, {
+      exerciseId: EXERCISES.squat.id,
+      workoutId: null,
+      text: "Wide stance",
+      pinned: true,
+    });
+    detailId = EXERCISES.bench.id;
+    const render = () => act(() => root.render(h(ExerciseScreen)));
+    await render();
+    expect(host.textContent).toContain("Pinned notes");
+    expect(labels(/quick|elbows|stance|Seat/)).toEqual(["Pinned. Keep the elbows tucked"]);
+    expect(host.textContent).not.toContain("Felt quick today");
+    const field = host.querySelector<HTMLInputElement>('input[aria-label="Note for Bench Press"]');
+    expect(field?.placeholder).toBe("Add a pinned note");
+    vi.setSystemTime(new Date("2026-03-02T11:00:00.000Z"));
+    await typeIn("Note for Bench Press", "Seat on 4");
+    // Every note here is pinned, so there is no switch for it.
+    expect(host.querySelector('[role="switch"][aria-label="Pin to Bench Press"]')).toBeNull();
+    expect(host.textContent).toContain("Shows on every Bench Press");
+    await press("Save note for bench press");
+    expect(
+      store
+        .list("exercise_note")
+        .map((row) => row.content)
+        .filter((note) => note?.text === "Seat on 4"),
+    ).toEqual([
+      {
+        exerciseId: EXERCISES.bench.id,
+        workoutId: null,
+        pinned: true,
+        text: "Seat on 4",
+        createdAt: "2026-03-02T11:00:00.000Z",
+        agent: null,
+      },
+    ]);
+    await render();
+    expect(labels(/quick|elbows|stance|Seat/)).toEqual([
+      "Pinned. Keep the elbows tucked",
+      "Pinned. Seat on 4",
+    ]);
+  });
 });

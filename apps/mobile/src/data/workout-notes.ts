@@ -90,7 +90,9 @@ export function writeWorkoutNote(
     throw Error("Only notes on a routine workout can be pinned.");
   if (!draft && !original) return;
   if (draft) {
-    const text = checkedNoteText(draft.text);
+    // Text left as it was is kept exactly, so pinning an agent's note never trims it.
+    const text =
+      current && draft.text === current.text ? current.text : checkedNoteText(draft.text);
     const note = {
       workoutId,
       createdAt: current?.createdAt ?? new Date().toISOString(),

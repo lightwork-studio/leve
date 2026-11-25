@@ -25,11 +25,15 @@ it("seeds valid records, the same way every time", { timeout: 90_000 }, async ()
   expect(firstStart(second, true, NOW)).toBe(true);
   expect(summary(first)).toEqual([
     "body_measurement:13",
+    "exercise_note:3",
+    "exercise_note_comment:1",
     "routine:5",
     "routine_folder:2",
     "settings:1",
     "workout:40",
     "workout_exercise:176",
+    "workout_note:2",
+    "workout_note_comment:1",
     "workout_set:565",
   ]);
   expect(summary(second)).toEqual(summary(first));
@@ -48,7 +52,7 @@ it("never dates anything after the moment it seeds", { timeout: 180_000 }, async
     seedSyntheticData(store, now);
     for (const row of store.db.all("SELECT kind, local_content FROM records")) {
       const content = JSON.parse(String(row.local_content)) as Record<string, unknown>;
-      for (const field of ["startedAt", "endedAt", "takenAt", "completedAt"]) {
+      for (const field of ["startedAt", "endedAt", "takenAt", "completedAt", "createdAt"]) {
         if (typeof content[field] === "string") {
           expect(
             Date.parse(content[field] as string),

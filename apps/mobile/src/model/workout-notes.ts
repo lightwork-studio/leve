@@ -6,6 +6,8 @@ import type { ExerciseNote, NoteComment, WithId, Workout, WorkoutNote } from "./
 
 interface CarriedNote {
   workoutId: string;
+  /** The routine of the workout it was written in; null for a workout without one. */
+  workoutRoutineId: string | null;
   workoutTitle: string;
   workoutStartedAt: string;
   note: WorkoutNote;
@@ -88,6 +90,7 @@ export function carriedWorkoutNotes(
       if (shows)
         carried.push({
           workoutId: id,
+          workoutRoutineId: routine,
           workoutTitle: content.title,
           workoutStartedAt: content.startedAt,
           note,

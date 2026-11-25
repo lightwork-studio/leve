@@ -1,5 +1,5 @@
 import { type JsonObject, jsonEqual } from "@leve/contract";
-import type { DeviceRecord, DeviceStore, Resolution } from "@leve/storage";
+import type { DeviceRecord, DeviceStore } from "@leve/storage";
 import type { ExerciseNote, NoteComment, WithId, Workout, WorkoutEntry } from "../model/types.ts";
 import { type ExerciseCardNotes, exerciseCardNotes } from "../model/workout-notes.ts";
 import { newId } from "./ids.ts";
@@ -79,6 +79,7 @@ export function commentsByNote(store: DeviceStore, kind: NoteKind) {
 export function workoutExerciseNotes(
   store: DeviceStore,
   workoutId: string,
+  history: ReadonlyMap<string, WithId<Workout>[]> = workoutsByExercise(store),
 ): Map<string, ExerciseCardNotes> {
   const result = new Map<string, ExerciseCardNotes>();
   const row = store.get("workout", workoutId);
@@ -92,6 +93,20 @@ export function workoutExerciseNotes(
   if (exerciseIds.size === 0) return result;
   const notes = exerciseNotesByExercise(store);
   if (![...exerciseIds].some((id) => notes.has(id))) return result;
+  const comments = commentsByNote(store, "exercise_note");
+  for (const exerciseId of exerciseIds) {
+    const own = notes.get(exerciseId);
+    if (!own) continue;
+    result.set(exerciseId, exerciseCardNotes(own, target, history.get(exerciseId) ?? [], comments));
+  }
+  return result;
+}
+
+/**
+ * The workouts that include each exercise. It reads all of history, so the running workout keeps
+ * it until history changes rather than reading it again for every set.
+ */
+export function workoutsByExercise(store: DeviceStore) {
   const workouts = new Map(
     store
       .list("workout")
@@ -100,25 +115,16 @@ export function workoutExerciseNotes(
         { id: workout.id, content: workout.content as unknown as Workout },
       ]),
   );
-  const withExercise = new Map<string, WithId<Workout>[]>();
+  const byExercise = new Map<string, WithId<Workout>[]>();
   for (const entry of store.list("workout_exercise")) {
     const { exerciseId, workoutId: owner } = entry.content as unknown as WorkoutEntry;
     const workout = workouts.get(owner);
-    if (!exerciseIds.has(exerciseId) || !workout) continue;
-    const list = withExercise.get(exerciseId) ?? [];
+    if (!workout) continue;
+    const list = byExercise.get(exerciseId) ?? [];
     if (!list.some((item) => item.id === workout.id)) list.push(workout);
-    withExercise.set(exerciseId, list);
+    byExercise.set(exerciseId, list);
   }
-  const comments = commentsByNote(store, "exercise_note");
-  for (const exerciseId of exerciseIds) {
-    const own = notes.get(exerciseId);
-    if (!own) continue;
-    result.set(
-      exerciseId,
-      exerciseCardNotes(own, target, withExercise.get(exerciseId) ?? [], comments),
-    );
-  }
-  return result;
+  return byExercise;
 }
 
 /** Notes written in one workout, by exercise id, oldest first: what a finished workout shows. */
@@ -233,4 +239,25 @@ export function deleteNoteComment(store: DeviceStore, kind: NoteKind, id: string
   if (!row?.content || row.deleted) return;
   if ((row.content.agent ?? null) !== null) throw Error("Only its agent can delete this comment.");
   store.delete(COMMENT_KIND[kind], id);
+}
+
+/**
+ * Settle a note or comment's sync problem with the version the lifter picked: this device's, or
+ * the one the server holds.
+ */
+export function resolveNoteProblem(
+  store: DeviceStore,
+  shown: DeviceRecord,
+  choice: "keep_mine" | "keep_theirs",
+) {
+  const row = store.get(shown.kind, shown.id);
+  if (!row?.problem || !jsonEqual(row, shown))
+    throw Error("This note changed. Review the latest versions before choosing.");
+  const kind: NoteKind = row.kind.startsWith("workout_note") ? "workout_note" : "exercise_note";
+  const reason = readOnlyReason(store, kind);
+  if (reason) throw Error(reason);
+  if (row.inFlight) throw Error("Finish the current sync before choosing a version.");
+  if (choice === "keep_mine" && !row.content)
+    throw Error("This note was deleted here. Take the other version to keep it.");
+  return store.resolve(row.kind, row.id, { choice });
 }
