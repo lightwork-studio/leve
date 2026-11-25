@@ -1,4 +1,4 @@
-import { type JsonObject, MAX_POSITION } from "@leve/contract";
+import { MAX_POSITION } from "@leve/contract";
 import { LIMITS } from "@leve/core";
 import type { DeviceStore } from "@leve/storage";
 import type { Folder, WithId } from "../model/types.ts";
@@ -48,25 +48,14 @@ export function finishFolderRename(
 }
 
 /**
- * Deletes a folder. Its routines move to Not in a folder in the same change, keeping their order
- * value, so nothing in them is lost and every screen agrees on where they are.
+ * Deletes a folder and nothing else. A routine's folder is a soft reference, and a routine whose
+ * folder is gone counts as not in a folder everywhere, so its routines are left untouched: an edit
+ * to one of them on another phone syncs without a conflict.
  */
 export function deleteFolder(store: DeviceStore, folderId: string): void {
   const current = store.get("routine_folder", folderId);
   if (!current?.content || current.deleted) return;
   if (current.problem || current.fromRestore)
     throw new Error("Resolve the sync issue on this folder before deleting it.");
-  const routines = store
-    .list("routine")
-    .filter((routine) => !routine.deleted && routine.content?.folderId === folderId);
-  if (routines.some((routine) => routine.problem || routine.fromRestore))
-    throw new Error("Resolve the sync issues on this folder's routines before deleting it.");
-  store.putAndDelete(
-    routines.map((routine) => ({
-      kind: "routine",
-      id: routine.id,
-      content: { ...(routine.content as JsonObject), folderId: null },
-    })),
-    [{ kind: "routine_folder", id: folderId }],
-  );
+  store.delete("routine_folder", folderId);
 }

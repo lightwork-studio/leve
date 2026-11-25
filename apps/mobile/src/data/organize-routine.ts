@@ -1,4 +1,4 @@
-import { jsonEqual, MAX_POSITION } from "@leve/contract";
+import { type JsonObject, jsonEqual, MAX_POSITION } from "@leve/contract";
 import { type EffortScale, LIMITS } from "@leve/core";
 import type { DeviceStore } from "@leve/storage";
 
@@ -74,13 +74,16 @@ export function organizeRoutine(
 }
 
 /**
- * Deletes a routine. Workouts started from it keep their own copy of what was done, so History is
- * unchanged; a workout running from it carries on.
+ * Deletes the routine as it was opened. Workouts started from it keep their own copy of what was
+ * done, so History is unchanged; a workout running from it carries on. A version that arrived since
+ * it was opened is refused, so an edit made elsewhere is never deleted unseen.
  */
-export function deleteRoutine(store: DeviceStore, id: string): void {
+export function deleteRoutine(store: DeviceStore, id: string, opened: JsonObject): void {
   const record = store.get("routine", id);
   if (record?.deleted || !record?.content) throw new Error("This routine is no longer available.");
   if (record.problem || record.fromRestore)
     throw new Error("Resolve the sync issue on this routine before deleting it.");
+  if (!jsonEqual(record.content, opened))
+    throw new Error("This routine changed. Reopen it to see the latest before deleting it.");
   store.delete("routine", id);
 }

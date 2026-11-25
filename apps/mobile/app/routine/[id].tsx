@@ -161,6 +161,9 @@ function RoutineEditor({
   const [copyError, setCopyError] = useState("");
   const [copyAttempt, setCopyAttempt] = useState(0);
   const savingCopy = useRef(false);
+  // Set once this editor deletes the routine, so it doesn't turn into "no longer available" on
+  // the way out.
+  const deleted = useRef(false);
   const folders = store
     .list("routine_folder")
     .map((folder) => ({ id: folder.id, title: String(folder.content?.title ?? "") }));
@@ -191,7 +194,9 @@ function RoutineEditor({
     if (savingCopy.current || copyName === null) return;
     savingCopy.current = true;
     try {
-      change((db) => createRoutine(db, copyName, folderId, plan, settings, notes, effortScale));
+      // A folder deleted since the routine was filed in it leaves the copy in none, as it shows.
+      const filed = folders.some((folder) => folder.id === folderId) ? folderId : null;
+      change((db) => createRoutine(db, copyName, filed, plan, settings, notes, effortScale));
     } catch (cause) {
       savingCopy.current = false;
       haptic.warning();
@@ -201,7 +206,7 @@ function RoutineEditor({
     }
     back();
   };
-  if (!available) return <Unavailable back={back} />;
+  if (!available && !deleted.current) return <Unavailable back={back} />;
   return (
     <Page scrollEnabled={!reorderGripHeld}>
       <ScreenHeader
@@ -285,8 +290,10 @@ function RoutineEditor({
               keep="Keep routine"
               onConfirm={() => {
                 try {
-                  change((db) => deleteRoutine(db, id));
+                  deleted.current = true;
+                  change((db) => deleteRoutine(db, id, initial));
                 } catch (cause) {
+                  deleted.current = false;
                   haptic.warning();
                   setError((cause as Error).message);
                   return;

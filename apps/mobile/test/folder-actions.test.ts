@@ -234,7 +234,7 @@ const plan = (title: string, folderId: string | null, position: number) => ({
   effortScale: null,
 });
 
-it("deletes a synced folder and files its routines nowhere on every phone", {
+it("deletes a synced folder, leaving its routines untouched and shown in no folder on every phone", {
   timeout: 60000,
 }, async () => {
   const world = new World();
@@ -252,11 +252,19 @@ it("deletes a synced folder and files its routines nowhere on every phone", {
     await a.sync();
     await b.sync();
 
+    // While A deletes the folder, B renames a routine in it: both changes land, with no conflict.
+    b.store.put("routine", "push", plan("Push heavy", "ppl", 1));
     deleteFolder(a.store, "ppl");
-    // Deleting it again, as a second tap might, changes nothing.
+    const queued = a.store.prepareSubmissions("1.0").map((item) => item.submission);
+    expect(queued).toEqual([
+      expect.objectContaining({ op: "delete", kind: "routine_folder", id: "ppl" }),
+    ]);
+    // Deleting it again, as a second tap might, queues nothing more.
     deleteFolder(a.store, "ppl");
+    expect(a.store.prepareSubmissions("1.0")).toHaveLength(1);
     await a.sync();
     await b.sync();
+    await a.sync();
     for (const phone of [a, b]) {
       const groups = trainData(phone.store, 0).groups;
       expect(
@@ -266,10 +274,13 @@ it("deletes a synced folder and files its routines nowhere on every phone", {
         ]),
       ).toEqual([
         ["Mobility", ["Hips"]],
-        [null, ["Push", "Pull", "Full body"]],
+        [null, ["Push heavy", "Pull", "Full body"]],
       ]);
-      // The routines keep everything else, including their order.
-      expect(phone.store.get("routine", "pull")?.content).toEqual(plan("Pull", null, 2));
+      expect(phone.store.get("routine", "pull")?.content).toEqual(plan("Pull", "ppl", 2));
+      expect(phone.store.get("routine", "push")).toMatchObject({
+        status: "synced",
+        content: plan("Push heavy", "ppl", 1),
+      });
       expect(phone.store.prepareSubmissions("1.0")).toEqual([]);
     }
     expect(await server.row("athlete", "routine_folder", "ppl")).toMatchObject({
@@ -280,7 +291,7 @@ it("deletes a synced folder and files its routines nowhere on every phone", {
   }
 });
 
-it("refuses to delete a folder while one of its routines has a sync conflict", {
+it("refuses to delete a folder while it has a sync conflict", {
   timeout: 60000,
 }, async () => {
   const world = new World();
@@ -290,24 +301,25 @@ it("refuses to delete a folder while one of its routines has a sync conflict", {
     const a = await world.phone("a", account);
     const b = await world.phone("b", account);
     a.store.put("routine_folder", "ppl", { title: "PPL", position: 1 });
-    a.store.put("routine", "push", plan("Push", "ppl", 1));
     await a.sync();
     await b.sync();
-    b.store.put("routine", "push", plan("Push B", "ppl", 1));
+    b.store.put("routine_folder", "ppl", { title: "Split", position: 1 });
     await b.sync();
-    a.store.put("routine", "push", plan("Push A", "ppl", 1));
+    a.store.put("routine_folder", "ppl", { title: "Strength", position: 1 });
     await a.sync();
-    expect(a.store.get("routine", "push")?.problem).not.toBeNull();
+    expect(a.store.get("routine_folder", "ppl")?.problem).not.toBeNull();
 
-    expect(() => deleteFolder(a.store, "ppl")).toThrow(/sync issues/);
-    expect(a.store.get("routine_folder", "ppl")?.deleted).toBe(false);
-    expect(a.store.get("routine", "push")?.content?.folderId).toBe("ppl");
+    expect(() => deleteFolder(a.store, "ppl")).toThrow(/sync issue on this folder/);
+    expect(a.store.get("routine_folder", "ppl")).toMatchObject({
+      deleted: false,
+      content: { title: "Strength" },
+    });
   } finally {
     await world.dispose();
   }
 });
 
-it("deletes a folder that never synced without sending it", async () => {
+it("deletes a folder that never synced without sending anything", async () => {
   const store = await openDeviceStore({
     engine: createSqlJsEngine(SQL),
     path: "/local-delete.db",
@@ -322,8 +334,9 @@ it("deletes a folder that never synced without sending it", async () => {
       op: "put",
       kind: "routine",
       id: "r",
-      content: plan("Legs", null, 4),
+      content: plan("Legs", "new", 4),
     }),
   ]);
+  expect(trainData(store, 0).groups.map((group) => group.folder)).toEqual([null]);
   store.close();
 });

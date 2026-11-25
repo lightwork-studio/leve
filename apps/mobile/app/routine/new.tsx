@@ -91,7 +91,9 @@ function RoutineForm({
     if (saving.current) return;
     saving.current = true;
     try {
-      change((store) => createRoutine(store, name, folder, plan, settings, notes, effortScale));
+      // A folder deleted while the form was open leaves the routine in none, as the form shows.
+      const filed = folders.some((f) => f.id === folder) ? folder : null;
+      change((store) => createRoutine(store, name, filed, plan, settings, notes, effortScale));
     } catch (error) {
       saving.current = false;
       haptic.warning();

@@ -619,10 +619,23 @@ it.each([
   },
 );
 
-it("deletes a folder from its edit dialog, and hands a refusal back to the dialog", async () => {
+it("deletes a folder from its edit dialog, shows where its routines went, and hands a refusal back", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   change.mockReset();
-  showToast.mockClear();
+  const row = (id: string, title: string) => ({
+    id,
+    title,
+    exerciseNames: [],
+    exerciseCount: 0,
+    daysSinceLast: null,
+  });
+  groupsOverride = [
+    {
+      folder: { id: "Home", content: { title: "Home", position: 1 } },
+      routines: [row("h", "Push")],
+    },
+    { folder: null, routines: [row("l", "Full body")] },
+  ];
   let screen: ReactTestRenderer | undefined;
   try {
     await act(() => {
@@ -631,8 +644,10 @@ it("deletes a folder from its edit dialog, and hands a refusal back to the dialo
     if (!screen) throw Error("Train did not mount");
     const root = screen.root;
     const dialog = () => root.findAllByType("Dialog" as never);
+    // Not in a folder starts closed.
+    expect(labelled(root, /^Add routine$/)).toEqual([]);
     await act(() => press(root, "Edit Home folder"));
-    expect(dialog()[0]?.props.routineCount).toBe(20);
+    expect(dialog()[0]?.props.routineCount).toBe(1);
     // A refusal from the store reaches the dialog to show, and the dialog stays open.
     change.mockImplementationOnce(() => {
       throw new Error("Resolve the sync issue on this folder before deleting it.");
@@ -647,15 +662,16 @@ it("deletes a folder from its edit dialog, and hands a refusal back to the dialo
       write({
         get: (kind: string, id: string) =>
           kind === "routine_folder" ? { id, content: { title: id }, deleted: false } : null,
-        list: () => [],
-        putAndDelete: (_: unknown, removals: { id: string }[]) =>
-          deleted.push(...removals.map((r) => r.id)),
+        delete: (kind: string, id: string) => deleted.push(`${kind}:${id}`),
       }),
     );
     await act(() => dialog()[0]?.props.onDelete());
-    expect(deleted).toEqual(["Home"]);
+    expect(deleted).toEqual(["routine_folder:Home"]);
     expect(dialog()).toHaveLength(0);
+    // Not in a folder opens, where the folder's routines now are.
+    expect(labelled(root, /^Add routine$/)).toEqual(["Add routine"]);
   } finally {
+    groupsOverride = null;
     change.mockReset();
     await act(() => screen?.unmount());
     vi.unstubAllGlobals();

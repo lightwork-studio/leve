@@ -124,14 +124,21 @@ it("deletes a synced routine on every phone and keeps the workouts started from 
     const account = { server: "s", account: "athlete", transport: server.transport("athlete") };
     const a = await world.phone("a", account);
     const b = await world.phone("b", account);
-    const routine = { title: "Friday", folderId: null, notes: "", exercises: [], position: 0 };
+    const routine = {
+      title: "Friday",
+      folderId: null,
+      notes: "",
+      exercises: [],
+      position: 0,
+      effortScale: null,
+    };
     a.store.put("routine", "r", routine);
     a.store.put("routine", "other", { ...routine, title: "Monday", position: 1 });
     const workout = beginWorkout(a.store, "r");
     await a.sync();
     await b.sync();
 
-    deleteRoutine(b.store, "r");
+    deleteRoutine(b.store, "r", routine);
     await b.sync();
     await a.sync();
     for (const phone of [a, b]) {
@@ -141,7 +148,44 @@ it("deletes a synced routine on every phone and keeps the workouts started from 
       expect(phone.store.get("workout", workout)?.content?.routineId).toBe("r");
     }
     expect(await server.row("athlete", "routine", "r")).toMatchObject({ state: "deleted" });
-    expect(() => deleteRoutine(a.store, "r")).toThrow(/no longer available/);
+    expect(() => deleteRoutine(a.store, "r", routine)).toThrow(/no longer available/);
+  } finally {
+    await world.dispose();
+  }
+});
+
+it("refuses to delete a routine that changed since it was opened, or has a sync conflict", {
+  timeout: 60000,
+}, async () => {
+  const world = new World();
+  try {
+    const server = world.server({ releases: ["1.0"] });
+    const account = { server: "s", account: "athlete", transport: server.transport("athlete") };
+    const a = await world.phone("a", account);
+    const b = await world.phone("b", account);
+    const opened = { title: "Friday", folderId: null, notes: "", exercises: [], position: 0 };
+    a.store.put("routine", "r", opened);
+    await a.sync();
+    await b.sync();
+    // B renames it while A has it open; A downloads the rename before confirming the delete.
+    b.store.put("routine", "r", { ...opened, title: "Friday heavy" });
+    await b.sync();
+    await a.sync();
+    expect(() => deleteRoutine(a.store, "r", opened)).toThrow(/changed/);
+    await a.sync();
+    expect(await server.row("athlete", "routine", "r")).toMatchObject({ state: "live" });
+    expect(a.store.get("routine", "r")?.content?.title).toBe("Friday heavy");
+
+    // A conflicting edit is settled by review first, even against the version A opened.
+    const theirs = { ...opened, title: "Friday heavy" };
+    b.store.put("routine", "r", { ...theirs, notes: "Belt" });
+    await b.sync();
+    a.store.put("routine", "r", { ...theirs, notes: "Straps" });
+    await a.sync();
+    const conflicted = a.store.get("routine", "r");
+    expect(conflicted?.problem).not.toBeNull();
+    expect(() => deleteRoutine(a.store, "r", conflicted?.content ?? {})).toThrow(/sync issue/);
+    expect(a.store.get("routine", "r")?.deleted).toBe(false);
   } finally {
     await world.dispose();
   }

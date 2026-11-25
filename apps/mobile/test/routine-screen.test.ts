@@ -1998,6 +1998,12 @@ it("deletes a routine only once confirmed, leaving the workout running from it",
     await tapText(root, "Delete routine");
     await act(() => sheet().props.onConfirm());
     expect(back).toHaveBeenCalledTimes(1);
+    // On its way out, the editor doesn't turn into "no longer available".
+    expect(
+      root.findAll(
+        (n) => n.type === Text && n.props.children === "This routine is no longer available.",
+      ),
+    ).toHaveLength(0);
     await act(() => rendered?.unmount());
     rendered = undefined;
     store.close();
@@ -2007,6 +2013,47 @@ it("deletes a routine only once confirmed, leaving the workout running from it",
       id: running,
       content: { routineId: "routine" },
     });
+  } finally {
+    await act(() => rendered?.unmount());
+    store.close();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("shows a routine whose folder was deleted as in no folder, and copies it into none", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  store = await openDeviceStore({
+    engine: createSqlJsEngine(await initSqlJs()),
+    path: "/routine-folder-gone",
+    appVersion: "test",
+  });
+  let rendered: ReactTestRenderer | undefined;
+  try {
+    store.put("routine_folder", "kept", { title: "Kept", position: 1 });
+    store.put("routine", "routine", { ...routine, folderId: "gone" });
+    await act(() => {
+      rendered = create(createElement(RoutineDetails));
+    });
+    if (!rendered) throw new Error("Missing editor");
+    const root = rendered.root;
+    const folder = root.find((n) => n.type === ("MenuRow" as never) && n.props.label === "Folder");
+    expect(folder.props.value).toBe("Not in a folder");
+    expect(folder.props.hint).toBeUndefined();
+    expect(
+      folder.props.menu.items.map((item: { label: string; checked: boolean }) => [
+        item.label,
+        item.checked,
+      ]),
+    ).toEqual([
+      ["Not in a folder", true],
+      ["Kept", false],
+    ]);
+    await tapText(root, "Save as new routine");
+    await act(() => root.findByType("Dialog" as never).props.confirm.onPress());
+    const copy = store.list("routine").find((row) => row.id !== "routine");
+    expect(copy?.content).toMatchObject({ title: "Monday (copy)", folderId: null });
+    // The original keeps its reference untouched.
+    expect(store.get("routine", "routine")?.content?.folderId).toBe("gone");
   } finally {
     await act(() => rendered?.unmount());
     store.close();

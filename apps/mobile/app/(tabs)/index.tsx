@@ -220,6 +220,9 @@ export default function TrainScreen() {
             onDelete={() => {
               change((store) => deleteFolder(store, renaming.id));
               haptic.tap();
+              // Its routines join the ones not in a folder: open that group to show them there.
+              if (groups.some((g) => g.folder?.id === renaming.id && g.routines.length > 0))
+                setOpen((current) => new Set(current).add("unfiled"));
               setRenaming(null);
             }}
           />

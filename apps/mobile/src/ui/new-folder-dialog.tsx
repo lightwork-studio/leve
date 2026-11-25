@@ -1,5 +1,6 @@
 import { LIMITS } from "@leve/core";
 import { useState } from "react";
+import { Keyboard } from "react-native";
 import { DestructiveButton } from "./action-sheet.tsx";
 import { Dialog, DialogField } from "./dialog.tsx";
 import { haptic } from "./haptics.ts";
@@ -55,6 +56,8 @@ export function NewFolderDialog({
                 : `“${initialName}” will be deleted. Its ${count === 1 ? "routine stays and moves" : `${count} routines stay and move`} to Not in a folder.`
             }
             keep="Keep folder"
+            // The name field has the keyboard up, and the sheet rises from the bottom.
+            onAsk={() => Keyboard.dismiss()}
             onConfirm={() => {
               try {
                 onDelete();
