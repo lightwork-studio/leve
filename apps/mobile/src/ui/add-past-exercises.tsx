@@ -1,5 +1,5 @@
 import type { EffortScale, SetDistanceUnit, WeightUnit } from "@leve/core";
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { ScrollView, Text, TextInput, View } from "react-native";
 import { useAppData } from "../data/app-data.tsx";
 import type { PickerExercise } from "../data/exercises.ts";
@@ -61,7 +61,18 @@ export function AddPastExercises({
   const distanceUnit = distanceUnitFor(0, prefs);
   const styles = useStyles(sheet);
   const { change, store } = useAppData();
-  const history = usePastWorkouts(true) ?? [];
+  const history = usePastWorkouts(true);
+  // The session before this one, looked up once per exercise rather than on every keystroke.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new history read starts afresh.
+  const earlier = useMemo(() => new Map<string, ReturnType<typeof sessionBefore>>(), [history]);
+  const sessionFor = (exerciseId: string) => {
+    if (!earlier.has(exerciseId))
+      earlier.set(
+        exerciseId,
+        sessionBefore(history ?? [], exerciseId, { before: startedAt, exceptWorkoutId: workoutId }),
+      );
+    return earlier.get(exerciseId) ?? null;
+  };
   const [drafts, setDrafts] = useState<Record<string, Drafted>>({});
   const [error, setError] = useState("");
   // Each exercise starts with one empty set; its ids stay put so a repeated save adds nothing.
@@ -94,6 +105,9 @@ export function AddPastExercises({
           unit,
           distanceUnit,
           effortScale,
+          recordsEffort:
+            recordsEffort &&
+            setColumns(exercise.type, unit).some(({ metric }) => metric === "reps"),
         });
         if ("error" in resolved) throw Error(resolved.error);
         return { entryId, exercise, sets: resolved.sets };
@@ -132,10 +146,7 @@ export function AddPastExercises({
                     key={exercise.id}
                     exercise={exercise}
                     rows={draftFor(exercise.id).rows}
-                    before={sessionBefore(history, exercise.id, {
-                      before: startedAt,
-                      exceptWorkoutId: workoutId,
-                    })}
+                    before={sessionFor(exercise.id)}
                     recordsEffort={recordsEffort}
                     effortScale={effortScale}
                     unit={unit}

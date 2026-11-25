@@ -176,7 +176,7 @@ export function ExercisePicker({
     );
   }
   const title = PAGE_TITLES[page];
-  const caption = multi && selected.length ? `${selected.length} selected` : eyebrow;
+  const caption = eyebrow ?? (multi && selected.length ? `${selected.length} selected` : undefined);
   return (
     <BottomSheet
       title={title}

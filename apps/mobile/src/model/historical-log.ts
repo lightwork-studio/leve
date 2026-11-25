@@ -30,7 +30,8 @@ export const blankRow = (row: LogRow) =>
 
 /**
  * The sets an exercise's rows log, in order, skipping blank rows. Refuses an exercise with no set
- * and any set its type can't log, naming the exercise and the set.
+ * and any set its type can't log, naming the exercise and the row as it is shown. Effort typed
+ * while it could be recorded is dropped once it can't.
  */
 export function resolveRows(
   rows: readonly LogRow[],
@@ -42,12 +43,14 @@ export function resolveRows(
     unit: WeightUnit;
     distanceUnit: SetDistanceUnit;
     effortScale: EffortScale;
+    recordsEffort: boolean;
   },
 ): { sets: { id: string; content: WorkoutSet }[] } | { error: string } {
-  const filled = rows.filter((row) => !blankRow(row));
-  if (!filled.length) return { error: `Enter a set for ${options.exercise}.` };
+  const shown = options.recordsEffort ? rows : rows.map((row) => ({ ...row, effort: "" }));
+  if (shown.every(blankRow)) return { error: `Enter a set for ${options.exercise}.` };
   const sets: { id: string; content: WorkoutSet }[] = [];
-  for (const [index, row] of filled.entries()) {
+  for (const [index, row] of shown.entries()) {
+    if (blankRow(row)) continue;
     const where = `${options.exercise}, set ${index + 1}`;
     const set = { ...emptyWorkoutSet(options.entryId), type: row.type };
     const result = resolveLog({

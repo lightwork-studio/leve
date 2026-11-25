@@ -335,6 +335,12 @@ describe("filling in a finished workout", () => {
       exceptWorkoutId: "this",
     });
     expect(found?.startedAt).toBe("2026-11-11T08:00:00.000Z");
+    expect(
+      sessionBefore(history, "bench", {
+        before: "2026-11-18T08:00:00.000Z",
+        exceptWorkoutId: "before",
+      })?.startedAt,
+    ).toBe("2026-11-04T08:00:00.000Z");
     expect(found?.sets.map((s) => [s.type, s.weightKg])).toEqual([
       ["warmup", 20],
       ["normal", 45],
@@ -369,19 +375,30 @@ describe("filling in a finished workout", () => {
       unit: "kg" as const,
       distanceUnit: "m" as const,
       effortScale: "rir" as const,
+      recordsEffort: true,
     };
     const blank = { id: "x", type: "normal" as const, draft: { weight: " " }, effort: "" };
     expect(blankRow(blank)).toBe(true);
     expect(resolveRows([blank], options)).toEqual({ error: "Enter a set for Bench Press." });
     const working = { id: "w", type: "normal" as const, draft: { weight: "60" }, effort: "" };
     expect(resolveRows([warmup, blank, working], options)).toEqual({
-      error: "Bench Press, set 2: Enter reps to log this set.",
+      error: "Bench Press, set 3: Enter reps to log this set.",
     });
     expect(
       resolveRows([{ ...working, draft: { weight: "60", reps: "5" }, effort: "11" }], options),
     ).toEqual({
       error: "Bench Press, set 1: Enter a whole number from 0 to 10 for reps in reserve.",
     });
+    // Effort typed before it stopped being recordable isn't saved, and alone makes no set.
+    const hidden = { ...options, recordsEffort: false };
+    expect(resolveRows([{ ...blank, effort: "2" }], hidden)).toEqual({
+      error: "Enter a set for Bench Press.",
+    });
+    const withoutEffort = resolveRows(
+      [{ ...working, draft: { weight: "60", reps: "5" }, effort: "2" }],
+      hidden,
+    );
+    expect("sets" in withoutEffort && withoutEffort.sets[0]?.content.repsInReserve).toBeUndefined();
     const resolved = resolveRows(
       [warmup, blank, { ...working, draft: { weight: "60", reps: "5" }, effort: "2" }],
       options,

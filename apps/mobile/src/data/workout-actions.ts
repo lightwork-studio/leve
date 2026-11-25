@@ -314,6 +314,9 @@ export function addHistoricalExercises(
     });
     for (const [position, set] of sets.entries()) {
       checkReserveWrite(store, set.content.repsInReserve);
+      // A new set's RPE is null unless one was typed.
+      if (set.content.rpe != null && !canRecordSetReserve(store, "rpe"))
+        throw new WorkoutActionError("Finish syncing with a compatible server to edit RPE.");
       const logged: WorkoutSet = {
         ...set.content,
         workoutExerciseId: entryId,
