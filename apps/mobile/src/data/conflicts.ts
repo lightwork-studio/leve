@@ -6,7 +6,7 @@ import type { DeviceRecord, DeviceStore, Resolution } from "@leve/storage";
 import { durationLabel, weightInput } from "../ui/format.ts";
 import { exerciseNoteReadOnlyReason } from "./exercise-notes.ts";
 import { newId } from "./ids.ts";
-import { readSettings } from "./read.ts";
+import { readSettings, rejectedWorkoutDeletion, workoutDetailProblems } from "./read.ts";
 import { workoutRestReadOnlyReason } from "./workout-actions.ts";
 import { workoutNoteReadOnlyReason } from "./workout-notes.ts";
 import { unavailableReviewFields } from "./workout-review.ts";
@@ -252,9 +252,18 @@ function deletedAncestor(store: DeviceStore, row: DeviceRecord): DeviceRecord | 
 const deletedThere = (row: DeviceRecord) =>
   recordCase(row) === "gone_there" && row.problem?.reason !== "parent_deleted";
 
+/**
+ * Keeping a deletion made here, over an account version that holds things below it (comments
+ * added there, say): those would go too. Only offered for a record with nothing below it.
+ */
+function deletesAccountChildren(store: DeviceStore, row: DeviceRecord): boolean {
+  return recordCase(row) === "gone_here" && store.serverDescendants(row.kind, row.id).length > 0;
+}
+
 /** Whether keeping this phone's side is possible for `row` within the records shown. */
 function phonePlanOk(store: DeviceStore, row: DeviceRecord, shown: Set<string>): boolean {
   const plan = resolutionFor(row, "phone");
+  if (deletesAccountChildren(store, row)) return false;
   if (plan !== "with_parent") return plan !== null;
   // Kept by copying the deleted record above it: that record has to be here, being copied.
   const ancestor = deletedAncestor(store, row);
@@ -266,8 +275,24 @@ function reviewOnScreen(
   store: DeviceStore,
   key: string,
   records: DeviceRecord[],
-): Conflict["review"] | undefined {
+): Conflict["review"] | "wait" | undefined {
   if (!key.startsWith("workout:") || key.includes("|")) return undefined;
+  const review = routedReview(store, key, records);
+  if (!review || review === "wait") return review;
+  // Only lead somewhere that can settle it: otherwise the popup settles it itself.
+  const workoutId = key.slice("workout:".length);
+  const settlesThere =
+    review.target.pathname === "/(tabs)/history"
+      ? records.some(rejectedWorkoutDeletion)
+      : workoutDetailProblems(store, workoutId).length > 0;
+  return settlesThere ? review : undefined;
+}
+
+function routedReview(
+  store: DeviceStore,
+  key: string,
+  records: DeviceRecord[],
+): Conflict["review"] | "wait" | undefined {
   const deletion = (kinds: string[], which: RecordCase) =>
     records.some((row) => kinds.includes(row.kind) && recordCase(row) === which);
   const workoutId = key.slice("workout:".length);
@@ -277,6 +302,8 @@ function reviewOnScreen(
     shownWorkout?.content && !shownWorkout.deleted
       ? { pathname: "/workout/[id]", params: { id: workoutId } }
       : { pathname: "/(tabs)/history" };
+  // Deleted here and waiting to upload: its screen is gone until that sync answers.
+  if (shownWorkout?.deleted && shownWorkout.status === "pending") return "wait";
   // Below a deleted note, a comment is kept by saving its note as new: the popup does that.
   const underDeletedWorkoutPart = (row: DeviceRecord) =>
     row.problem?.reason === "parent_deleted" &&
@@ -321,6 +348,7 @@ export function conflicts(store: DeviceStore): Conflict[] {
     if (records.some((row) => !recordCase(row) || blocked(store, row))) continue;
     // A deletion reaching into a workout is reviewed on the workout's own screen.
     const review = reviewOnScreen(store, key, records);
+    if (review === "wait") continue;
     if (review) {
       result.push({ ...describe(store, key, records, false), review });
       continue;
@@ -624,20 +652,23 @@ function sideLines(
   const label = recordLabel(store, row);
   if (!mine) return [{ label: label || "This", value: gone }];
   if (!theirs) {
-    // Nothing to compare with: name what it is.
+    // Nothing to compare with: everything it holds, so keeping or letting it go is seen in full.
     if (row.kind === "workout_set") return [{ label, value: setValue(store, mine) }];
-    if (typeof mine.bodyweightKg === "number")
-      return [{ label: "Bodyweight", value: valueLabel(store, "bodyweightKg", mine.bodyweightKg) }];
-    const name = mine.title ?? mine.name ?? mine.text ?? mine.exerciseName;
-    if (typeof name === "string")
-      return [
-        {
+    const lines: ConflictLine[] = [];
+    for (const name of Object.keys(mine)) {
+      if (HIDDEN.has(name) || mine[name] === null || mine[name] === undefined) continue;
+      if (name === "exercises" && row.kind === "routine")
+        lines.push(...routineExerciseLines(store, mine.exercises, []));
+      else
+        lines.push({
           label:
-            label && label !== name ? label : row.kind === "workout_exercise" ? "Exercise" : "Name",
-          value: short(name),
-        },
-      ];
-    return [{ label: label || "This", value: "Kept" }];
+            label && row.kind !== "workout" && row.kind !== "body_measurement"
+              ? `${label} · ${LABELS[name] ?? name}`
+              : (LABELS[name] ?? name),
+          value: valueLabel(store, name, mine[name]),
+        });
+    }
+    return lines.length ? lines : [{ label: label || "This", value: "Kept" }];
   }
   const fields = [...new Set([...Object.keys(mine), ...Object.keys(theirs)])].filter(
     (name) => !jsonEqual(mine[name] ?? null, theirs[name] ?? null),
@@ -808,7 +839,9 @@ function describe(
         : {
             why: rejected
               ? "This phone's change couldn't be saved in your account."
-              : "This version can't be kept on its own.",
+              : records.some((row) => deletesAccountChildren(store, row))
+                ? "Your account added or changed things below it. Keep its version to look at them first."
+                : "This version can't be kept on its own.",
           }),
       confirm: goneBoth
         ? "Keep it deleted"

@@ -215,8 +215,10 @@ it("sends a deletion again when it's kept over a change made elsewhere", async (
     key: "body_measurement:m1",
     title: "Bodyweight",
     phone: { lines: [{ label: "Entry", value: "Deleted" }], confirm: "Delete it" },
-    account: { lines: [{ label: "Bodyweight", value: "80.4 kg" }] },
   });
+  // The account's version in full: what keeping the deletion throws away.
+  expect(conflict!.account.lines).toContainEqual({ label: "Bodyweight", value: "80.4 kg" });
+  expect(conflict!.account.lines.map((line) => line.label)).toContain("Taken");
   settleConflict(b.store, conflict!, "phone");
   await b.sync();
   expect(conflicts(b.store)).toEqual([]);
@@ -506,4 +508,35 @@ it("shows the account's comments before a note's deletion is kept over them", as
   await b.sync();
   const [conflict] = conflicts(b.store);
   expect(conflict?.account.lines).toContainEqual({ label: "Comment", value: "Try a pause rep" });
+});
+
+it("only offers the account's version for a note deleted here that gained comments there", async () => {
+  const { a, b } = await twoPhones((store) => {
+    store.put("workout", "w1", workout("Push Day"));
+    store.put("workout_note", "n1", note("Felt strong"));
+  });
+  a.store.put("workout_note_comment", "c1", comment("Try a pause rep"));
+  await a.sync();
+  b.store.delete("workout_note", "n1");
+  await b.sync();
+  const [conflict] = conflicts(b.store);
+  expect(conflict?.phone.choosable).toBe(false);
+  expect(() => settleConflict(b.store, conflict!, "phone")).toThrow();
+  settleConflict(b.store, conflict!, "account");
+  await b.sync();
+  expect((await serverRow("workout_note_comment", "c1"))?.state).toBe("live");
+});
+
+it("waits while a workout deleted here is still to upload, instead of leading to a screen that's gone", async () => {
+  const { a, b } = await twoPhones((store) => {
+    store.put("workout", "w1", workout("Push Day"));
+    store.put("workout_exercise", "e1", entry("w1"));
+    store.put("workout_set", "s1", set(80, 8));
+  });
+  a.store.delete("workout_exercise", "e1");
+  await a.sync();
+  b.store.put("workout_set", "s1", set(85, 8));
+  await b.sync();
+  b.store.delete("workout", "w1");
+  expect(conflicts(b.store)).toEqual([]);
 });

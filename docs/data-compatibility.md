@@ -247,18 +247,19 @@ The server answers each submission:
 A rejected local version is kept, and the app asks about it straight away. A popup goes through
 the conflicts one at a time, each as the person thinks of it: a whole workout with its exercises,
 sets, notes and rest; a routine; a folder; a bodyweight entry; a note with its comments; a custom
-exercise; the settings. It shows only what differs on each side, chooses nothing in advance, and
-can't be put off, except that it waits while a workout is in progress. One choice settles every
-record of that conflict, and is checked for every record before any is applied. A deletion that
-reaches into a workout (a workout or exercise deleted on one side while the other changed what's
-in it) isn't settled in the popup: the popup says what happened and leads to the workout's review
-in History or on the workout, which shows every set first, and it asks again until that review is
-done. A conflict that can't be settled yet (a sync still running, a server restore, fields this
-server or app doesn't know, or work below something deleted in the account that is still on its
-way there and back) waits until it can. Letting go of something the account deleted first shows
-everything this phone holds below it, and keeping a deletion over a change made elsewhere first
-shows what the account's version holds. Work recorded entirely offline
-is flagged on the start screen. A conflicted record is not resubmitted automatically. An `invalid`
+exercise; the settings. It shows only what differs on each side (or, where one side is gone, all
+of the other), chooses nothing in advance, and can't be put off, except that it waits while a
+workout is in progress. One choice settles every record of that conflict, and is checked for
+every record before any is applied. A workout or exercise deleted on one side while the other
+changed it or what's in it is reviewed where the app already does so, in History or on the
+workout: the popup says what happened, leads there, and asks again until it is settled. It leads
+there only when that screen can settle it; otherwise the popup settles it itself. A conflict that
+can't be settled yet (a sync still running, a server restore, fields this server or app doesn't
+know, a workout deleted here that is still to upload, or work below something deleted in the
+account that is still on its way there and back) waits until it can. Letting go of something the
+account deleted first shows everything this phone holds below it. Keeping a deletion made here is
+offered only when the account holds nothing below it, after showing the account's version. Work
+recorded entirely offline is flagged on the start screen. A conflicted record is not resubmitted automatically. An `invalid`
 answer is handled the same way, unless the user already edited the record again, in which case the
 newer version is sent. The kept version is the newest local one. The user can:
 
@@ -271,13 +272,14 @@ newer version is sent. The kept version is the newest local one. The user can:
   descendant it still shows under new ids. Deleted records are never restored under their old id. A
   child whose parent was deleted is saved by saving its parent as new.
 - Keep mine is not offered for a record deleted in the account or one this build can't show. For a
-  single record (one with nothing below it) deleted here but changed in the account, the popup
-  offers keeping the deletion: it shows the account's version, then sends the deletion again
-  against it. A workout or exercise is restored for review first, as above.
+  record deleted here but changed in the account, the popup offers keeping the deletion only when
+  the account holds nothing below it: it shows the account's version, then sends the deletion
+  again against it. Otherwise only the account's version can be kept, to be looked at first.
 - A refused (`invalid`) change is decided on its own, so undoing it never undoes valid changes made
   beside it. The popup offers only undoing it (keep theirs), since the server won't take it as it
-  is. One that never reached the account isn't asked about in the popup, since undoing it would
-  also drop what waits below it unseen; it is edited again where it is shown.
+  is. One with no account copy (never reached the account, or deleted there since) isn't asked
+  about in the popup, since undoing it would also drop what waits below it unseen; it is edited
+  again where it is shown.
 
 ## Downloading
 
