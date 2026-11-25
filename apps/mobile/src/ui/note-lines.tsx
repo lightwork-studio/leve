@@ -1,5 +1,5 @@
 import { LIMITS } from "@leve/core";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Text, TextInput, View } from "react-native";
 import { useAppData } from "../data/app-data.tsx";
 import type { NoteKind } from "../data/exercise-notes.ts";
@@ -140,12 +140,14 @@ function NoteItem({
   const own = note.agent === null;
   const row = store.get(kind, note.id);
   const problem = row?.problem ? row : null;
+  // A reply being typed keeps its thread open, even one opened empty to write the first reply.
+  const [replying, setReplying] = useState(false);
   // Open with no replies yet only to write the first one.
-  const showReplies = repliesOpen && (note.comments.length > 0 || editing);
+  const showReplies = repliesOpen && (note.comments.length > 0 || editing || replying);
   // An empty thread opened to write a first reply closes again once editing ends.
   useEffect(() => {
-    if (!editing && note.comments.length === 0) setRepliesOpen(false);
-  }, [editing, note.comments.length]);
+    if (!editing && note.comments.length === 0 && !replying) setRepliesOpen(false);
+  }, [editing, note.comments.length, replying]);
   // Replies that were new when they came into view keep their dot while the note is on screen.
   const [fresh, setFresh] = useState<ReadonlySet<string>>(new Set());
   useEffect(() => {
@@ -171,12 +173,65 @@ function NoteItem({
     setError("");
     onEdit(true);
   };
-  const done = () =>
-    attempt(
-      () => writes.edit(opened, text),
-      () => onEdit(false),
-    );
-  const removal = useConfirmation(() => attempt(() => writes.remove(opened)));
+  /** Saves typed text, and returns the copy of the note it was saved over. */
+  const saveDraft = () => {
+    if (!own || text === opened.text) return opened;
+    writes.edit(opened, text);
+    // Stored trimmed, so the copy to check later writes against is trimmed too.
+    const saved = { ...opened, text: text.trim() };
+    setOpened(saved);
+    setText(saved.text);
+    return saved;
+  };
+  /** A write refused because the note changed elsewhere: show its latest copy to decide on. */
+  const refused = (cause: unknown) => {
+    const changed = note.text !== opened.text || note.pinned !== opened.pinned;
+    if (changed) {
+      // Nothing typed: take the new text, so a later Done can't write the old one back.
+      const typed = text !== opened.text;
+      setOpened(note);
+      if (!typed) setText(note.text);
+      setError(
+        own && typed && text !== note.text
+          ? "This note was changed on another device. Done replaces it with your text; Cancel keeps the new version."
+          : "This note was changed on another device. This is the new version.",
+      );
+    } else setError(problemText(cause, "Couldn't save the note."));
+  };
+  const done = () => {
+    try {
+      saveDraft();
+      setError("");
+      onEdit(false);
+    } catch (cause) {
+      refused(cause);
+    }
+  };
+  const cancel = () => {
+    setText(opened.text);
+    setError("");
+    onEdit(false);
+  };
+  // Leaving edit mode another way, such as by tapping another note, keeps what was typed.
+  const wasEditing = useRef(editing);
+  useEffect(() => {
+    if (wasEditing.current && !editing && own && text !== opened.text) {
+      try {
+        saveDraft();
+      } catch (cause) {
+        refused(cause);
+      }
+    }
+    wasEditing.current = editing;
+  });
+  const removal = useConfirmation(() => {
+    try {
+      writes.remove(opened);
+      setError("");
+    } catch (cause) {
+      refused(cause);
+    }
+  });
   const count = `${note.comments.length} ${note.comments.length === 1 ? "reply" : "replies"}`;
   const spoken = [
     note.pinned ? "Pinned" : note.label,
@@ -211,7 +266,15 @@ function NoteItem({
           <Tap
             accessibilityRole="button"
             accessibilityLabel={spoken}
-            accessibilityHint={own ? "Edits this note" : "Pins or deletes this note"}
+            accessibilityHint={
+              editing
+                ? "Closes this note's edit"
+                : own
+                  ? "Edits this note"
+                  : note.pinTo !== null || note.pinned
+                    ? "Pins or deletes this note"
+                    : "Deletes this note"
+            }
             accessibilityState={{ expanded: editing }}
             onPress={() => (editing ? onEdit(false) : startEditing())}
             scaleTo={0.99}
@@ -239,7 +302,7 @@ function NoteItem({
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             style={styles.replies}
           >
-            {unread && <View style={styles.dot} />}
+            {unread && <View style={styles.dot} accessibilityLabel="New" />}
             <CommentIcon color={unread || showReplies ? c.fg : c.fg3} size={ICON} />
             <Text style={[styles.replyCount, (unread || showReplies) && styles.replyCountNew]}>
               {note.comments.length}
@@ -254,21 +317,22 @@ function NoteItem({
               accessibilityRole="switch"
               accessibilityLabel={note.pinTo ? `Pin to ${note.pinTo}` : "Pinned"}
               accessibilityState={{ checked: note.pinned }}
-              onPress={() =>
-                attempt(() => {
-                  writes.setPinned(opened, !note.pinned);
-                  setOpened({ ...opened, pinned: !note.pinned });
-                })
-              }
+              onPress={() => {
+                try {
+                  const saved = saveDraft();
+                  writes.setPinned(saved, !note.pinned);
+                  setOpened({ ...saved, pinned: !note.pinned });
+                  setError("");
+                } catch (cause) {
+                  refused(cause);
+                }
+              }}
               style={[styles.pin, note.pinned && styles.pinOn]}
             >
               <PinIcon color={note.pinned ? c.bg : c.fg2} size={12} />
               <Text style={[styles.pinText, note.pinned && styles.pinTextOn]}>Pin</Text>
             </Tap>
           )}
-          <Text style={styles.hint} numberOfLines={2}>
-            {note.pinned ? note.pinnedHint : note.unpinnedHint}
-          </Text>
           {note.comments.length === 0 && !showReplies && (
             <Tap
               accessibilityRole="button"
@@ -287,6 +351,17 @@ function NoteItem({
           >
             <Text style={styles.quietText}>Delete</Text>
           </Tap>
+          <View style={styles.flex} />
+          {own && (
+            <Tap
+              accessibilityRole="button"
+              accessibilityLabel="Cancel"
+              onPress={cancel}
+              style={styles.quiet}
+            >
+              <Text style={styles.quietText}>Cancel</Text>
+            </Tap>
+          )}
           <Tap
             accessibilityRole="button"
             accessibilityLabel="Done"
@@ -296,6 +371,11 @@ function NoteItem({
             <Text style={styles.saveText}>Done</Text>
           </Tap>
         </View>
+      )}
+      {editing && (
+        <Text style={styles.editHint} numberOfLines={2}>
+          {note.pinned ? note.pinnedHint : note.unpinnedHint}
+        </Text>
       )}
       {problem && (
         <View style={styles.problem}>
@@ -330,6 +410,7 @@ function NoteItem({
           note={note}
           unread={(comment) => fresh.has(comment.id) || isUnread(comment, seen)}
           onError={setError}
+          onReplying={setReplying}
         />
       )}
       {error !== "" && (
@@ -358,19 +439,25 @@ function Replies({
   note,
   unread,
   onError,
+  onReplying,
 }: {
   kind: NoteKind;
   note: NoteLine;
   unread: (comment: NoteComment) => boolean;
   onError: (message: string) => void;
+  onReplying: (replying: boolean) => void;
 }) {
   const styles = useStyles(sheet);
   const writes = useNoteWrites(kind);
   const [text, setText] = useState("");
+  const type = (next: string) => {
+    setText(next);
+    onReplying(next.trim() !== "");
+  };
   const send = () => {
     try {
       writes.reply(note.id, text);
-      setText("");
+      type("");
       onError("");
     } catch (cause) {
       onError(problemText(cause, "Couldn't save the reply."));
@@ -381,7 +468,7 @@ function Replies({
       {note.comments.map((comment) => (
         <View key={comment.id} style={styles.reply}>
           <View style={styles.byline}>
-            {unread(comment) && <View style={styles.dot} />}
+            {unread(comment) && <View style={styles.dot} accessibilityLabel="New" />}
             <Text style={styles.prefix}>{(comment.agent ?? "You").toUpperCase()}</Text>
             <Text style={styles.when}>{dayLabel(comment.createdAt)}</Text>
             {comment.agent === null && (
@@ -409,7 +496,7 @@ function Replies({
           label={`Reply to ${note.text}`}
           placeholder="Reply"
           value={text}
-          onChange={setText}
+          onChange={type}
         />
         {text.trim() !== "" && (
           <Tap
@@ -605,6 +692,7 @@ const sheet = themedStyles((c) => ({
   },
   saveText: { ...type.action, color: c.bg },
   quiet: { height: 28, paddingHorizontal: 6, justifyContent: "center" },
+  editHint: { ...type.meta, fontSize: 10.5, color: c.fg3, paddingLeft: ICON + 8, paddingBottom: 4 },
   quietText: { ...type.action, color: c.fg2 },
   error: { ...type.meta, color: c.alert, paddingLeft: ICON + 8, paddingBottom: 4 },
   problem: { paddingLeft: ICON + 8, paddingBottom: 4, gap: 2 },

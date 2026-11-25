@@ -44,6 +44,12 @@ export function useNoteWrites(kind: NoteKind) {
   const run = (write: (store: DeviceStore) => unknown) => {
     change(write);
   };
+  /** Refuses a change to a note that differs from the copy the lifter saw. */
+  const unchanged = (db: DeviceStore, seen: SeenNote) => {
+    const latest = stored(db, kind, seen.id);
+    if (latest.text !== seen.text || latest.pinned !== seen.pinned)
+      throw Error("This note changed. Reopen it to see the latest version.");
+  };
   return {
     /** Change the text of the lifter's own note. */
     edit(seen: SeenNote, text: string) {
@@ -56,9 +62,7 @@ export function useNoteWrites(kind: NoteKind) {
             pinned: seen.pinned,
           });
         else {
-          const latest = stored(db, kind, seen.id);
-          if (latest.text !== seen.text)
-            throw Error("This note changed. Reopen it to see the latest version.");
+          unchanged(db, seen);
           editExerciseNote(db, seen.id, text);
         }
       });
@@ -72,9 +76,7 @@ export function useNoteWrites(kind: NoteKind) {
             pinned,
           });
         else {
-          const latest = stored(db, kind, seen.id);
-          if (latest.pinned !== seen.pinned)
-            throw Error("This note changed. Reopen it to see the latest version.");
+          unchanged(db, seen);
           setExerciseNotePinned(db, seen.id, pinned);
         }
       });
@@ -82,8 +84,10 @@ export function useNoteWrites(kind: NoteKind) {
     /** Delete a note with its comments. */
     remove(seen: SeenNote) {
       run((db) => {
-        if (kind === "exercise_note") deleteExerciseNote(db, seen.id);
-        else writeWorkoutNote(db, String(seen.workoutId), asWorkoutNote(seen), null);
+        if (kind === "exercise_note") {
+          unchanged(db, seen);
+          deleteExerciseNote(db, seen.id);
+        } else writeWorkoutNote(db, String(seen.workoutId), asWorkoutNote(seen), null);
       });
     },
     /** Answer a note. */
