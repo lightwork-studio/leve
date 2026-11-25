@@ -492,3 +492,69 @@ it("still asks about other clashes in a workout that also holds a refused change
   // The refused set has no account copy, so it isn't asked about; the name clash still is.
   expect(conflicts(b.store).map((item) => item.key)).toEqual(["workout:w1"]);
 });
+
+it("waits while work logged under something deleted in the account is still to upload", async () => {
+  const { a, b } = await twoPhones((store) => {
+    store.put("workout", "w1", workout("Push Day"));
+    store.put("workout_exercise", "e1", entry("w1"));
+    store.put("workout_set", "s1", set(80, 8));
+  });
+  a.store.delete("workout_exercise", "e1");
+  await a.sync();
+  b.store.put("workout_set", "s1", set(85, 8));
+  await b.sync();
+  // Logged under the exercise after its deletion arrived, and not uploaded yet.
+  b.store.put("workout_set", "s10", { ...set(100, 3), position: 2 });
+  expect(conflicts(b.store)).toEqual([]);
+
+  // Once it has come back as part of the conflict, it is shown, and letting the exercise go says so.
+  await b.sync();
+  const [conflict] = conflicts(b.store);
+  const shown = [...conflict!.phone.lines].map((line) => line.value).join(" | ");
+  expect(shown).toContain("100 kg × 3");
+  expect(conflict!.phone.lines).toContainEqual({ label: "Holds", value: "2 sets" });
+});
+
+it("counts a note written under a workout deleted in the account", async () => {
+  const { a, b } = await twoPhones((store) => {
+    store.put("workout", "w1", workout("Pull Day"));
+    store.put("workout_exercise", "e1", entry("w1"));
+    store.put("workout_set", "s1", set(60, 10));
+  });
+  a.store.delete("workout", "w1");
+  await a.sync();
+  b.store.put("workout_set", "s1", set(65, 10));
+  await b.sync();
+  b.store.put("workout_note", "n9", {
+    workoutId: "w1",
+    pinned: false,
+    text: "Left shoulder hurt on set 3",
+    createdAt: STARTED,
+    agent: null,
+  });
+  // Not shown until it has been through the account and come back.
+  expect(conflicts(b.store)).toEqual([]);
+  await b.sync();
+  const [conflict] = conflicts(b.store);
+  expect(conflict!.phone.lines).toContainEqual({
+    label: "Holds",
+    value: "1 exercise · 1 set · 1 note",
+  });
+});
+
+it("shows the account's sets when a deletion is kept over an edit made there", async () => {
+  const { a, b } = await twoPhones((store) => {
+    store.put("workout", "w1", workout("Leg Day"));
+    store.put("workout_exercise", "e1", entry("w1"));
+    store.put("workout_set", "s1", set(100, 5));
+  });
+  a.store.put("workout_set", "s1", set(140, 5));
+  await a.sync();
+  b.store.delete("workout", "w1");
+  await b.sync();
+  const [conflict] = conflicts(b.store);
+  expect(conflict!.account.lines).toContainEqual({
+    label: "Bench Press · Set 1",
+    value: "140 kg × 5",
+  });
+});

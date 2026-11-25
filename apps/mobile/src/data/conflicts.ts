@@ -194,6 +194,21 @@ const byDepth = (a: DeviceRecord, b: DeviceRecord) =>
   a.kind.localeCompare(b.kind) ||
   a.id.localeCompare(b.id);
 
+/** Everything this phone still shows below a record, every kind, parents before children. */
+function localBelow(store: DeviceStore, kind: string, id: string): DeviceRecord[] {
+  const below: DeviceRecord[] = [];
+  for (const { kind: child } of store.contract.childKinds(kind)) {
+    for (const row of store.list(child, { parentId: id })) {
+      below.push(row, ...localBelow(store, child, row.id));
+    }
+  }
+  return below;
+}
+
+/** Records the account deleted but this phone changed: letting them go drops what's below. */
+const deletedThere = (row: DeviceRecord) =>
+  recordCase(row) === "gone_there" && row.problem?.reason !== "parent_deleted";
+
 /** Every conflict that can be settled now, oldest first. */
 export function conflicts(store: DeviceStore): Conflict[] {
   const groups = new Map<string, DeviceRecord[]>();
@@ -208,6 +223,18 @@ export function conflicts(store: DeviceStore): Conflict[] {
     // A part that can't be settled yet holds back its whole group, so a choice never covers only
     // half of what clashes.
     if (records.some((row) => !recordCase(row) || blocked(store, row))) continue;
+    // Work below something deleted in the account that hasn't come back as part of this conflict
+    // yet (still to upload, or on its way) would go with it unseen: wait until it has.
+    const shown = new Set(records.map((row) => `${row.kind}:${row.id}`));
+    const unsettled = records
+      .filter(deletedThere)
+      .flatMap((row) => localBelow(store, row.kind, row.id))
+      .some(
+        (row) =>
+          !shown.has(`${row.kind}:${row.id}`) &&
+          (row.inFlight || row.status === "pending" || row.status === "partial"),
+      );
+    if (unsettled) continue;
     // What goes along with a copied ancestor needs that ancestor here, being copied.
     const copiesAncestor = records.some(
       (row) => recordCase(row) === "gone_there" && resolutionFor(row, "phone") !== "with_parent",
@@ -444,7 +471,14 @@ function recordLabel(store: DeviceStore, row: DeviceRecord): string {
             )
           : [];
       const index = siblings.findIndex((set) => set.id === row.id);
-      const set = index >= 0 ? `Set ${index + 1}` : "Set";
+      // Gone from this phone (deleted here): its place in the account's order instead.
+      const position = field(row, "position");
+      const set =
+        index >= 0
+          ? `Set ${index + 1}`
+          : typeof position === "number" && Number.isInteger(position)
+            ? `Set ${position}`
+            : "Set";
       return typeof name === "string" ? `${name} · ${set}` : set;
     }
     case "workout_note":
@@ -559,15 +593,26 @@ function describe(
         .filter(([n]) => n > 0)
         .map(([n, noun]) => `${n} ${noun}${n === 1 ? "" : "s"}`);
       if (parts.length) account.push({ label: "Holds", value: parts.join(" · ") });
+      // And the sets themselves, as the account has them: an edit made there shows.
+      for (const item of below) {
+        if (item.kind !== "workout_set") continue;
+        const set = store.get(item.kind, item.id);
+        const values = set?.server?.state === "live" ? set.server.content : null;
+        if (set && values)
+          account.push({ label: recordLabel(store, set), value: setValue(store, values) });
+      }
     }
-    // Letting go a workout the account no longer has drops what this phone holds below it.
-    if (which === "gone_there" && row.kind === "workout") {
-      const entries = store.list("workout_exercise", { parentId: row.id });
-      const sets = store.list("workout_set", { parentIds: entries.map((entry) => entry.id) });
+    // Letting go something the account no longer has drops what this phone holds below it.
+    if (deletedThere(row)) {
+      const below = localBelow(store, row.kind, row.id);
+      const count = (...kinds: string[]) =>
+        below.filter((item) => kinds.includes(item.kind)).length;
       const said = (
         [
-          [entries.length, "exercise"],
-          [sets.length, "set"],
+          [count("workout_exercise"), "exercise"],
+          [count("workout_set"), "set"],
+          [count("workout_note"), "note"],
+          [count("workout_note_comment", "exercise_note_comment"), "comment"],
         ] as const
       )
         .filter(([n]) => n > 0)

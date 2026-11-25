@@ -250,8 +250,11 @@ sets, notes and rest; a routine; a folder; a bodyweight entry; a note with its c
 exercise; the settings. It shows only what differs on each side, chooses nothing in advance, and
 can't be put off, except that it waits while a workout is in progress. One choice settles every
 record of that conflict. A conflict that can't be settled yet (a sync still running, a server
-restore, or fields this server or app doesn't know) waits until it can. Keeping a deletion over a
-change made elsewhere first shows what the account's version holds. Work recorded entirely offline
+restore, fields this server or app doesn't know, or work below something deleted in the account
+that hasn't been uploaded and come back yet) waits until it can; one the popup can't settle at all
+(some cases after a server restore) stays with the screen it belongs to. Letting go of something
+the account deleted first shows everything this phone holds below it, and keeping a deletion over
+a change made elsewhere first shows what the account's version holds. Work recorded entirely offline
 is flagged on the start screen. A conflicted record is not resubmitted automatically. An `invalid`
 answer is handled the same way, unless the user already edited the record again, in which case the
 newer version is sent. The kept version is the newest local one. The user can:
