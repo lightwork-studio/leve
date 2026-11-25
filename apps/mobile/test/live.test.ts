@@ -20,7 +20,6 @@ const routine = {
   id: "push",
   content: {
     title: "Push day",
-    notes: "",
     folderId: null,
     position: 1,
     exercises: [
@@ -79,7 +78,6 @@ const tree = (
     id,
     content: {
       title: id,
-      description: "",
       startedAt,
       endedAt: ended ? startedAt : null,
       routineId,
@@ -110,7 +108,6 @@ describe("starting a workout", () => {
     const started = startWorkout({ routine, now: Date.parse("2026-11-12T18:00:00.000Z"), newId });
     expect(started.workout.content).toMatchObject({
       title: "Push day",
-      description: "",
       startedAt: "2026-11-12T18:00:00.000Z",
       endedAt: null,
       routineId: "push",

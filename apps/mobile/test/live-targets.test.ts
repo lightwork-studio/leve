@@ -21,7 +21,6 @@ const entry = (
       exerciseType: "weight_reps",
       position: 1,
       supersetId,
-      notes: [],
       restSeconds: 90,
       doubleDumbbellVolume: false,
     },
@@ -36,7 +35,6 @@ const workout = (entries: ReturnType<typeof entry>[]): WorkoutTree => ({
     id: "w",
     content: {
       title: "",
-      description: "",
       startedAt: done,
       endedAt: null,
       routineId: null,

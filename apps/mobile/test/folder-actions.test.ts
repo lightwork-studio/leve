@@ -228,7 +228,6 @@ it("keeps a rejected folder and its sync problem intact when rename is attempted
 const plan = (title: string, folderId: string | null, position: number) => ({
   title,
   folderId,
-  notes: "",
   position,
   exercises: [],
   effortScale: null,

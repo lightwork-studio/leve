@@ -48,7 +48,6 @@ export function workoutRecords(prefix: string, index: number, start: number): Hi
         position: e + 1,
         supersetId: null,
         restSeconds: 120,
-        notes: [],
         doubleDumbbellVolume: false,
       },
     });
@@ -78,8 +77,6 @@ export function workoutRecords(prefix: string, index: number, start: number): Hi
     id,
     content: {
       title: `Session ${index}`,
-      description:
-        index % 5 === 0 ? "Felt strong today, slept well, added weight on the top set." : "",
       startedAt: iso(start),
       endedAt: iso(clock + 2 * 60 * 1000),
       routineId: null,

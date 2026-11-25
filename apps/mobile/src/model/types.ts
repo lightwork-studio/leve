@@ -7,25 +7,40 @@ export type PlanTarget = Omit<RoutineSet, "id">;
 export interface WorkoutPlan {
   title: string;
   effortScale?: EffortScale;
-  exercises: (Omit<RoutineExercise, "id" | "sets" | "notes"> & { sets: PlanTarget[] })[];
+  exercises: (Omit<RoutineExercise, "id" | "sets"> & { sets: PlanTarget[] })[];
 }
 
-export type WorkoutNote = Omit<RecordContent<"workout_note">, "reply" | "workoutId"> & {
+/** A note on a whole workout. `agent` is null when the lifter wrote it. */
+export type WorkoutNote = Omit<RecordContent<"workout_note">, "workoutId" | "agent"> & {
   id: string;
-  reply: NonNullable<RecordContent<"workout_note">["reply"]> | null;
+  agent: string | null;
 };
+
+/** A note on an exercise, kept apart from any workout so a pinned one outlives the workout. */
+export type ExerciseNote = Omit<RecordContent<"exercise_note">, "workoutId" | "agent"> & {
+  id: string;
+  workoutId: string | null;
+  agent: string | null;
+};
+
+/** A comment on a workout or exercise note, by the lifter (`agent` null) or an agent. */
+export interface NoteComment {
+  id: string;
+  noteId: string;
+  text: string;
+  createdAt: string;
+  agent: string | null;
+}
 
 export interface Workout {
   initialPlan?: WorkoutPlan | null;
   title: string;
-  description: string;
   startedAt: string;
   endedAt: string | null;
   routineId: string | null;
 }
 
 export interface WorkoutEntry {
-  notes?: { id: string; text: string; createdAt: string }[];
   workoutId: string;
   exerciseId: string;
   exerciseName: string;
@@ -67,7 +82,6 @@ export interface RoutineSet {
 
 export interface RoutineExercise {
   supersetId?: number | null;
-  notes?: WorkoutEntry["notes"];
   id: string;
   exerciseId: string;
   exerciseName: string;
@@ -80,7 +94,6 @@ export interface RoutineExercise {
 export interface Routine {
   effortScale?: EffortScale | null;
   title: string;
-  notes: string;
   folderId: string | null;
   position: number;
   exercises: RoutineExercise[];

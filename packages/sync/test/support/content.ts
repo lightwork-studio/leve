@@ -13,7 +13,6 @@ export const ENDED = "2026-11-10T19:05:00.000Z";
 
 export const workout = (title: string, extra: JsonObject = {}): JsonObject => ({
   title,
-  description: "",
   startedAt: STARTED,
   endedAt: null,
   routineId: null,
@@ -28,7 +27,6 @@ export const entry = (workoutId: string, exerciseName: string, extra: JsonObject
   position: 1,
   supersetId: null,
   restSeconds: 90,
-  notes: [],
   doubleDumbbellVolume: false,
   ...extra,
 });

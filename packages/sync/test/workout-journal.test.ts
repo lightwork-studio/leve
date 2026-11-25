@@ -17,10 +17,10 @@ it("syncs individual notes and replies independently across a restart, older edi
     first.store.put("workout", "source", workout("Legs", { endedAt: ENDED }));
     const pin = {
       workoutId: "source",
-      kind: "sticky",
+      pinned: true,
       text: "Use rack three",
       createdAt: STARTED,
-      reply: null,
+      agent: null,
     };
     first.store.put("workout_note", "pin", pin);
     await first.sync();
@@ -34,9 +34,9 @@ it("syncs individual notes and replies independently across a restart, older edi
     await peer.push([
       peer.put("workout", "source", workout("Renamed", { initialPlan: null, endedAt: ENDED })),
     ]);
-    const answer = { text: "Keep six reps", createdAt: ENDED };
-    reader.store.put("workout_note", "pin", { ...pin, reply: answer });
-    first.store.put("workout_note", "q", { ...pin, kind: "session", text: "Last set felt easy" });
+    const answer = "Coach";
+    reader.store.put("workout_note", "pin", { ...pin, agent: answer });
+    first.store.put("workout_note", "q", { ...pin, pinned: false, text: "Last set felt easy" });
     await first.sync();
     await server.restart({ releases: ["1.2"] });
     await reader.sync();
@@ -45,7 +45,7 @@ it("syncs individual notes and replies independently across a restart, older edi
     await server.restart({ releases: ["2.0"] });
     await reader.sync();
     await first.sync();
-    expect(first.store.get("workout_note", "pin")?.content?.reply).toEqual(answer);
+    expect(first.store.get("workout_note", "pin")?.content?.agent).toEqual(answer);
     expect(reader.store.get("workout_note", "q")?.content?.text).toBe("Last set felt easy");
     expect(reader.store.get("workout", "source")?.content?.title).toBe("Renamed");
     reader.store.delete("workout_note", "pin");
@@ -79,10 +79,10 @@ it("round-trips a 200,000-byte workout from the archived 1.2 peer while a note i
     expect(phone.store.get("workout", "full")?.content).toEqual(original);
     phone.store.put("workout_note", "cue", {
       workoutId: "full",
-      kind: "sticky",
+      pinned: true,
       text: "Raise the seat",
       createdAt: STARTED,
-      reply: null,
+      agent: null,
     });
     await phone.sync();
     expect((await server.row("alice", "workout_note", "cue"))?.content?.text).toBe(
@@ -164,10 +164,10 @@ it.each(["workout_note", "workout_rest"])(
       if (kind === "workout_note")
         a.store.put(kind, id, {
           workoutId: "w",
-          kind: "sticky",
+          pinned: true,
           text: "Seat 4",
           createdAt: STARTED,
-          reply: null,
+          agent: null,
         });
       else a.store.put(kind, id, { workoutId: "w", seconds: 0 });
       await a.sync();
@@ -287,7 +287,7 @@ it.each([
   },
 );
 
-it("keeps an explicitly cleared rest and reply for review after a backup is restored through an older release", async () => {
+it("keeps an explicitly cleared rest and note author for review after a backup is restored through an older release", async () => {
   const world = new World(previewContract);
   try {
     const server = world.server();
@@ -297,14 +297,14 @@ it("keeps an explicitly cleared rest and reply for review after a backup is rest
       transport: server.transport("alice"),
     });
     a.store.put("workout", "w", workout("Session"));
-    const note = { workoutId: "w", kind: "session", text: "Seat height?", createdAt: STARTED };
-    const reply = { text: "Try four", createdAt: ENDED };
-    a.store.put("workout_note", "n", { ...note, reply });
+    const note = { workoutId: "w", pinned: false, text: "Seat height?", createdAt: STARTED };
+    const reply = "Coach";
+    a.store.put("workout_note", "n", { ...note, agent: reply });
     a.store.put("workout_rest", "w", { workoutId: "w", seconds: 45 });
     await a.sync();
     const backup = join(world.directory, "prior.db");
     await server.snapshot("alice", backup);
-    a.store.put("workout_note", "n", { ...note, reply: null });
+    a.store.put("workout_note", "n", { ...note, agent: null });
     a.store.put("workout_rest", "w", { workoutId: "w", seconds: null });
     await a.sync();
     await server.restart({ releases: ["1.2"] });
@@ -315,8 +315,8 @@ it("keeps an explicitly cleared rest and reply for review after a backup is rest
     await a.sync();
     expect(a.store.get("workout_note", "n")).toMatchObject({
       status: "conflict",
-      content: { reply: null },
-      server: { content: { reply } },
+      content: { agent: null },
+      server: { content: { agent: reply } },
     });
     expect(a.store.get("workout_rest", "w")).toMatchObject({
       status: "conflict",
@@ -326,7 +326,7 @@ it("keeps an explicitly cleared rest and reply for review after a backup is rest
     a.store.resolve("workout_note", "n", { choice: "keep_mine" });
     a.store.resolve("workout_rest", "w", { choice: "keep_theirs" });
     await a.sync();
-    expect((await server.row("alice", "workout_note", "n"))?.content?.reply).toBeNull();
+    expect((await server.row("alice", "workout_note", "n"))?.content?.agent).toBeNull();
     expect(a.store.get("workout_rest", "w")?.content?.seconds).toBe(45);
     expect(a.store.hasUnsyncedWork()).toBe(false);
   } finally {
@@ -507,10 +507,10 @@ it.each(["before", "after"])(
       await phone.sync();
       phone.store.put("workout_note", "n", {
         workoutId: "w",
-        kind: "sticky",
+        pinned: true,
         text: "Pin",
         createdAt: STARTED,
-        reply: null,
+        agent: null,
       });
       net.next("lose_reply", "/sync/push");
       expect(await phone.sync()).toMatchObject({ state: "offline" });
@@ -567,9 +567,9 @@ it("keeps an unsynced note for explicit review when its cached workout's deletio
     observer.store.put("workout_note", "n", {
       workoutId: "w",
       text: "My local note",
-      kind: "session",
+      pinned: false,
       createdAt: STARTED,
-      reply: null,
+      agent: null,
     });
     await server.restoreWithCommand("alice", emptyBackup);
     await observer.restart();
@@ -604,9 +604,9 @@ it("preserves an explicit note deletion while reconciling its workout's interrup
     writer.store.put("workout_note", "n", {
       workoutId: "w",
       text: "Retired cue",
-      kind: "sticky",
+      pinned: true,
       createdAt: STARTED,
-      reply: null,
+      agent: null,
     });
     await writer.sync();
     const backup = join(world.directory, "with-note.db");

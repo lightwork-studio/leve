@@ -559,7 +559,6 @@ const SessionRow = memo(function SessionRow({
               </Text>
             ))}
           </Text>
-          {session.notes.length > 0 && <Text style={styles.note}>{session.notes.join("\n")}</Text>}
         </View>
         {figure !== "" && metric && (
           <View style={styles.sessionValue}>

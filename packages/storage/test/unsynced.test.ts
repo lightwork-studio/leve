@@ -11,7 +11,7 @@ import { fixtureContract } from "../src/test-support/versions.ts";
 afterAll(removeTempDirs);
 
 const T = "2026-11-10T08:00:00.000Z";
-const workout = { title: "Push", description: "", startedAt: T, endedAt: null };
+const workout = { title: "Push", startedAt: T, endedAt: null };
 const folder = { title: "Strength", position: 1 };
 
 async function openPhone(contract = fixtureContract) {

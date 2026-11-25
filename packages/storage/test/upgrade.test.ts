@@ -519,7 +519,6 @@ describe("upgrading device storage during a server restore", () => {
     const store = await openOldStore(path);
     const workout = {
       title: "Legs",
-      description: "",
       startedAt: "2026-11-09T07:00:00.000Z",
       endedAt: "2026-11-09T08:00:00.000Z",
       routineId: null,
@@ -639,7 +638,6 @@ it("reopens a genuine 1.0 device after an interrupted production migration and r
   const before = readDeviceFile(path);
   expect(before.records.find((r) => r.id === "w-live")?.local?.content).toEqual({
     title: "Leg day (heavy)",
-    description: "",
     startedAt: "2026-11-10T08:12:00.000Z",
     endedAt: null,
     routineId: null,
@@ -863,7 +861,6 @@ it.each(["release", "wrong shared ID", "foreign note"])(
             revision: 1,
             content: {
               title: "Session",
-              description: "",
               startedAt: "2026-11-10T09:00:00.000Z",
               endedAt: null,
               routineId: null,
@@ -894,9 +891,9 @@ it.each(["release", "wrong shared ID", "foreign note"])(
               content: {
                 workoutId: "other",
                 text: "Another workout",
-                kind: "session",
+                pinned: false,
                 createdAt: "2026-11-10T09:00:00.000Z",
-                reply: null,
+                agent: null,
               },
             },
           ],

@@ -32,7 +32,6 @@ async function post(path: string, body: unknown = {}) {
 const state = async (): Promise<any> => (await fetch(`${playground.url}/dev/state`)).json();
 const workout = (title: string) => ({
   title,
-  description: "",
   startedAt: "2026-11-12T08:00:00.000Z",
   endedAt: null,
   routineId: null,
@@ -136,7 +135,6 @@ it("lets the assistant delete a workout only with the descendants it saw", async
       position: 1,
       supersetId: null,
       restSeconds: 120,
-      notes: [],
       doubleDumbbellVolume: false,
     },
   });

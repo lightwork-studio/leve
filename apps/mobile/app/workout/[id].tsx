@@ -5,11 +5,12 @@ import { useRef, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppData } from "../../src/data/app-data.tsx";
+import { notesWrittenIn } from "../../src/data/exercise-notes.ts";
 import { useWorkoutDetail } from "../../src/data/queries.ts";
 import { discardWorkout } from "../../src/data/workout-actions.ts";
 import { deletedWorkoutReview, workoutDeletionSnapshot } from "../../src/data/workout-review.ts";
 import { supersetLabels } from "../../src/model/supersets.ts";
-import type { WithId, WorkoutEntry, WorkoutSet } from "../../src/model/types.ts";
+import type { ExerciseNote, WithId, WorkoutEntry, WorkoutSet } from "../../src/model/types.ts";
 import { radius, space, touch, type } from "../../src/theme.ts";
 import { ActionSheet, useConfirmation } from "../../src/ui/action-sheet.tsx";
 import { AddPastExercises } from "../../src/ui/add-past-exercises.tsx";
@@ -54,6 +55,8 @@ export default function WorkoutDetailScreen() {
   const [adding, setAdding] = useState(false);
   const [problem, setProblem] = useState("");
   const { change, store } = useAppData();
+  // Read with the workout's data, so a new or deleted note shows on the next render.
+  const writtenNotes = notesWrittenIn(store, id);
   // What the workout held when deleting it was asked: it is deleted only if nothing changed since.
   const deletionReview = useRef<ReturnType<typeof workoutDeletionSnapshot>>(null);
   const styles = useStyles(sheet);
@@ -248,25 +251,10 @@ export default function WorkoutDetailScreen() {
           <FieldError message={problem} />
 
           <Group label="Notes">
-            {data.tree.workout.content.description !== "" && (
-              <Row
-                title={data.tree.workout.content.description}
-                chevron={!!ended}
-                {...(ended
-                  ? {
-                      onPress: () => setEditing(true),
-                      accessibilityLabel: `Description, ${data.tree.workout.content.description}`,
-                      accessibilityHint: "Edit the name, duration and description",
-                    }
-                  : {})}
-                style={styles.description}
-              />
-            )}
             <Row
               title="Workout notes"
-              detail="Session and pinned notes, and coach replies"
+              detail="This workout's notes, pinned notes and comments"
               chevron
-              divider={data.tree.workout.content.description !== ""}
               onPress={() => router.push({ pathname: "/workout/notes/[id]", params: { id } })}
               accessibilityLabel="Workout notes"
             />
@@ -275,6 +263,7 @@ export default function WorkoutDetailScreen() {
           {visibleEntries.map(({ entry, sets }, index) => (
             <ExerciseCard
               key={entry.id}
+              notes={writtenNotes.get(entry.content.exerciseId) ?? []}
               workoutId={id}
               effortScale={data.tree.workout.content.initialPlan?.effortScale}
               group={groups[index]}
@@ -332,6 +321,7 @@ export default function WorkoutDetailScreen() {
  * logged, each tappable to correct it.
  */
 function ExerciseCard({
+  notes,
   group,
   workoutId,
   effortScale,
@@ -341,6 +331,7 @@ function ExerciseCard({
   unit,
   prefs,
 }: {
+  notes: readonly ExerciseNote[];
   group: string | undefined;
   entry: WithId<WorkoutEntry>;
   workoutId: string;
@@ -372,7 +363,7 @@ function ExerciseCard({
             </View>
           </Tap>
         </Link>
-        {finished && !!entry.content.notes?.length && <ExerciseNotes entry={entry} expanded />}
+        {finished && notes.length > 0 && <ExerciseNotes entry={entry} notes={notes} expanded />}
         <SetTable
           workoutId={workoutId}
           effortScale={effortScale}
@@ -454,7 +445,6 @@ const sheet = themedStyles((c) => ({
   footnote: { ...type.caption, fontSize: 12, color: c.fg3, paddingTop: 9, paddingHorizontal: 6 },
   muted: { ...type.body, color: c.fg2 },
   missingText: { paddingHorizontal: space.xl },
-  description: { paddingVertical: 14 },
   row: {
     flexDirection: "row",
     alignItems: "center",

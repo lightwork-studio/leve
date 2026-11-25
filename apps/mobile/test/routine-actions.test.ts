@@ -148,7 +148,7 @@ it("keeps A's targets through a template edit, restart and finish, then starts B
   expect(reread.tree.entries[0]?.sets[1]?.id).toBe(added);
   logSet(store, retained.id, { weightKg: 19, reps: 5 });
   logSet(store, required(right?.sets[0]).id, { weightKg: 28, reps: 3 });
-  finishWorkout(store, a, { title: "Actual session", description: "", countForRoutine: true });
+  finishWorkout(store, a, { title: "Actual session", countForRoutine: true });
   const b = beginWorkout(store, routine);
   store.delete("routine", routine);
   store.close();
@@ -204,48 +204,6 @@ it("shows stored legacy rows and logged values with unknown original targets and
   expect(workoutDetail(store, a)?.routineTitle).toBeNull();
   store.close();
 });
-
-it.each(["1.0", "2.0"] as const)(
-  "syncs template cues written offline to the matching exercise on release %s",
-  async (release) => {
-    const world = new World(release === "2.0" ? previewContract : undefined);
-    try {
-      const server = world.server({ releases: [release] });
-      const account = { server: "s", account: "athlete", transport: server.transport("athlete") };
-      const writer = await world.phone("writer", account);
-      const reader = await world.phone("reader", account);
-      const cue = { id: "cue", text: "Keep cadence even", createdAt: "2026-11-01T08:00:00.000Z" };
-      const routine = createRoutine(
-        writer.store,
-        "Two intervals",
-        null,
-        [
-          { ...plan[0], cues: [{ key: "draft", note: cue }] },
-          { ...plan[0], id: "other-interval", sets: [{ id: "other-set", values: {} }] },
-        ],
-        readSettings(writer.store),
-        "Bring a timer.\nStart on the track.",
-      );
-      await writer.restart();
-      await writer.sync();
-      await reader.sync();
-      await reader.restart();
-      expect((await server.row("athlete", "routine", routine))?.content?.exercises).toMatchObject([
-        { notes: [cue] },
-        { notes: [] },
-      ]);
-      expect(reader.store.get("routine", routine)?.content?.notes).toBe(
-        "Bring a timer.\nStart on the track.",
-      );
-      const id = beginWorkout(reader.store, routine);
-      expect(
-        reader.store.list("workout_exercise", { parentId: id }).map((row) => row.content?.notes),
-      ).toEqual([[cue], []]);
-    } finally {
-      await world.dispose();
-    }
-  },
-);
 
 it("refuses incomplete or disputed sources and preserves unavailable measurements when copying a workout", async () => {
   const store = await openDeviceStore({

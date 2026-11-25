@@ -92,7 +92,6 @@ const RELEASE: ReleaseId = "1.0";
 
 const exercise = (fields: JsonObject): JsonObject => ({
   supersetId: null,
-  notes: [],
   doubleDumbbellVolume: false,
   ...fields,
 });
@@ -125,7 +124,6 @@ const INITIAL: { kind: string; id: string; revision: number; content: JsonObject
     revision: 1,
     content: {
       title: "Push day",
-      description: "Bench focus",
       startedAt: "2026-11-09T17:00:00.000Z",
       endedAt: "2026-11-09T18:05:30.000Z",
       routineId: "r-1",
@@ -142,7 +140,6 @@ const INITIAL: { kind: string; id: string; revision: number; content: JsonObject
       exerciseType: "weight_reps",
       position: 1,
       restSeconds: 120,
-      notes: [{ id: "n-1", text: "Elbows tucked", createdAt: "2026-11-09T17:02:00.000Z" }],
     }),
   },
   {
@@ -241,7 +238,7 @@ const INITIAL: { kind: string; id: string; revision: number; content: JsonObject
     kind: "routine",
     id: "r-old",
     revision: 10,
-    content: { title: "Old split", notes: "", folderId: null, position: 2, exercises: [] },
+    content: { title: "Old split", folderId: null, position: 2, exercises: [] },
   },
   {
     kind: "routine",
@@ -249,7 +246,6 @@ const INITIAL: { kind: string; id: string; revision: number; content: JsonObject
     revision: 11,
     content: {
       title: "Push A",
-      notes: "Heavy week",
       folderId: null,
       position: 1,
       exercises: [
@@ -260,7 +256,6 @@ const INITIAL: { kind: string; id: string; revision: number; content: JsonObject
           exerciseType: "weight_reps",
           supersetId: null,
           restSeconds: 120,
-          notes: [],
           useRepRange: true,
           sets: [
             routineSet({
@@ -287,7 +282,6 @@ const INITIAL: { kind: string; id: string; revision: number; content: JsonObject
           exerciseType: "duration",
           supersetId: null,
           restSeconds: 60,
-          notes: [],
           useRepRange: false,
           sets: [routineSet({ id: "rs-3", type: "normal", durationSeconds: 60 })],
         },
@@ -410,7 +404,7 @@ export async function buildDeviceFixture(
     driver.setTime(PHASE_TIMES.answered);
     store.put("workout", "w-done", {
       ...(INITIAL[0]?.content as JsonObject),
-      ...(release === "1.0" ? { description: "Edited after finishing" } : { perceivedEffort: 8 }),
+      ...(release === "1.0" ? { title: "Edited after finishing" } : { perceivedEffort: 8 }),
     });
     dispatchOne(driver, "sub-w-done");
     store.put("custom_exercise", "cx-1", {
@@ -461,7 +455,6 @@ export async function buildDeviceFixture(
     dispatchOne(driver, "sub-bm-1");
     const live = {
       title: "Leg day",
-      description: "",
       startedAt: "2026-11-10T08:12:00.000Z",
       endedAt: null,
       routineId: null,
@@ -559,11 +552,24 @@ export async function createLargeDeviceFixture(path: string): Promise<void> {
             exerciseType: "weight_reps",
             position: 10 + i,
             restSeconds: 60,
-            notes: [{ id: `n-${i}`, text: "x".repeat(4000), createdAt: PHASE_TIMES.edited }],
           }),
         });
+        changes.push({
+          state: "live",
+          kind: "exercise_note",
+          id: `n-bulk-${String(i).padStart(4, "0")}`,
+          revision: 900 + i,
+          content: {
+            exerciseId: "barbell-curl",
+            workoutId: "w-done",
+            pinned: false,
+            text: "x".repeat(4000),
+            createdAt: PHASE_TIMES.edited,
+            agent: null,
+          },
+        });
       }
-      driver.store.applyPull(changes, 899);
+      driver.store.applyPull(changes, 1699);
     } finally {
       driver.store.close();
     }

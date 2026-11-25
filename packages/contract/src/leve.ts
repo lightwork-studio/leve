@@ -53,12 +53,9 @@ const opt = <T>(schema: import("./schema.ts").Schema<T>) => ({
   since: v,
 });
 
-const note = object({
-  id: id(),
-  text: string({ maxLength: LIMITS.noteLength }),
-  createdAt: dateTime(),
-});
-const notes = array(note, 100);
+const noteText = string({ minLength: 1, maxLength: LIMITS.noteLength });
+/** The agent that wrote a note or comment; the field is null when the lifter wrote it. */
+const agentName = string({ minLength: 1, maxLength: LIMITS.agentNameLength });
 const position = number({ minimum: -MAX_POSITION, maximum: MAX_POSITION });
 const weightKg = number({ minimum: 0, maximum: MAX_KG });
 const reps = integer(0, MAX_REPS);
@@ -100,7 +97,6 @@ const routineExercise = object({
   exerciseType: enumOf(EXERCISE_TYPES),
   supersetId: nullable(supersetId),
   restSeconds,
-  notes,
   useRepRange: boolean(),
   sets: array(routineSet, LIMITS.routineMaxSets),
 });
@@ -114,7 +110,6 @@ export const LEVE_CONTRACT_DEFINITION = {
         initialPlan:
           "Routine title, effort scale, and ordered exercise and set targets captured at start; null when unknown or unplanned",
         title: "Workout name shown in history",
-        description: "Free-text notes about the whole workout",
         startedAt: "When the workout started (UTC)",
         endedAt: "startedAt plus the active duration; null while the workout is in progress",
         routineId: "The routine the workout was started from, if any; a soft reference",
@@ -145,7 +140,6 @@ export const LEVE_CONTRACT_DEFINITION = {
           ),
         },
         title: req(string({ maxLength: LIMITS.titleLength })),
-        description: req(string({ maxLength: LIMITS.descriptionLength })),
         startedAt: req(dateTime()),
         /** Null while the workout is in progress. */
         endedAt: opt(dateTime()),
@@ -171,30 +165,73 @@ export const LEVE_CONTRACT_DEFINITION = {
       parent: { kind: "workout", field: "workoutId" },
       meanings: {
         workoutId: "The workout in which this note was written",
-        kind: "Session notes belong to one workout; sticky notes also appear in later workouts",
-        text: "The lifter’s note",
+        pinned:
+          "Pinned notes show in every later workout of the same routine until deleted or unpinned; other notes show in the next workout of that routine (the next workout of any kind for a workout without a routine). Only a note on a workout with a routine can be pinned",
+        text: "The note",
         createdAt: "Time the note was written in UTC",
-        reply:
-          "Optional coach reply and time it was supplied, shown in the first eligible later workout",
+        agent: "Name of the agent that wrote the note; null when the lifter wrote it",
       },
       fields: {
-        workoutId: { since: v, required: true, schema: id() },
-        kind: { since: v, required: true, schema: enumOf(["session", "sticky"] as const) },
-        text: {
-          since: v,
-          required: true,
-          schema: string({ minLength: 1, maxLength: LIMITS.noteLength }),
-        },
-        createdAt: { since: v, required: true, schema: dateTime() },
-        reply: {
-          since: v,
-          schema: nullable(
-            object({
-              text: string({ minLength: 1, maxLength: LIMITS.noteLength }),
-              createdAt: dateTime(),
-            }),
-          ),
-        },
+        workoutId: req(id()),
+        pinned: req(boolean()),
+        text: req(noteText),
+        createdAt: req(dateTime()),
+        agent: opt(agentName),
+      },
+    },
+    workout_note_comment: {
+      since: v,
+      parent: { kind: "workout_note", field: "noteId" },
+      meanings: {
+        noteId: "The workout note this comment answers",
+        text: "The comment",
+        createdAt:
+          "Time the comment was written in UTC; a comment newer than the note's last showing brings the note back once",
+        agent: "Name of the agent that wrote the comment; null when the lifter wrote it",
+      },
+      fields: {
+        noteId: req(id()),
+        text: req(noteText),
+        createdAt: req(dateTime()),
+        agent: opt(agentName),
+      },
+    },
+    exercise_note: {
+      since: v,
+      meanings: {
+        exerciseId: "Built-in or custom exercise the note is about; a soft reference",
+        workoutId:
+          "The workout in which the note was written; a soft reference, null when written outside a workout. Deleting the workout keeps the note",
+        pinned:
+          "Pinned notes show on the exercise in every workout until deleted; other notes show on it in the next workout that includes the exercise",
+        text: "The note",
+        createdAt: "Time the note was written in UTC",
+        agent: "Name of the agent that wrote the note; null when the lifter wrote it",
+      },
+      fields: {
+        exerciseId: req(string({ minLength: 1, maxLength: 100 })),
+        workoutId: opt(id()),
+        pinned: req(boolean()),
+        text: req(noteText),
+        createdAt: req(dateTime()),
+        agent: opt(agentName),
+      },
+    },
+    exercise_note_comment: {
+      since: v,
+      parent: { kind: "exercise_note", field: "noteId" },
+      meanings: {
+        noteId: "The exercise note this comment answers",
+        text: "The comment",
+        createdAt:
+          "Time the comment was written in UTC; a comment newer than the note's last showing brings the note back once",
+        agent: "Name of the agent that wrote the comment; null when the lifter wrote it",
+      },
+      fields: {
+        noteId: req(id()),
+        text: req(noteText),
+        createdAt: req(dateTime()),
+        agent: opt(agentName),
       },
     },
     workout_exercise: {
@@ -207,7 +244,6 @@ export const LEVE_CONTRACT_DEFINITION = {
         position: "Order within the workout; lower first, ties ordered by id",
         supersetId: "Entries of one workout sharing this number form a superset; null if none",
         restSeconds: "Rest timer after a set in seconds; 0 means off",
-        notes: "Notes on this entry, each with its own id and creation time",
         doubleDumbbellVolume: "Count the set weight twice in volume (one dumbbell per hand)",
       },
       parent: { kind: "workout", field: "workoutId" },
@@ -217,7 +253,6 @@ export const LEVE_CONTRACT_DEFINITION = {
         position: req(position),
         supersetId: opt(supersetId),
         restSeconds: req(restSeconds),
-        notes: req(notes),
         /** Count dumbbell weight twice in volume. */
         doubleDumbbellVolume: req(boolean()),
       },
@@ -272,7 +307,6 @@ export const LEVE_CONTRACT_DEFINITION = {
       since: v,
       meanings: {
         title: "Routine name",
-        notes: "Free-text notes on the routine",
         folderId: "The folder holding the routine; null when unfiled or the folder is gone",
         position: "Order within its folder; lower first, ties ordered by id",
         effortScale:
@@ -282,7 +316,6 @@ export const LEVE_CONTRACT_DEFINITION = {
       },
       fields: {
         title: req(string({ maxLength: LIMITS.titleLength })),
-        notes: req(string({ maxLength: LIMITS.descriptionLength })),
         folderId: opt(id()),
         position: req(position),
         effortScale: opt(effortScale),
@@ -397,8 +430,19 @@ export const LEVE_CONTRACT_DEFINITION = {
     },
     workout_journal: {
       since: v,
-      description: "Workout notes, pinned reminders and linked coach replies",
-      fields: [["workout_note", "text"]],
+      description: "Workout notes, pinned workout notes and their comments",
+      fields: [
+        ["workout_note", "text"],
+        ["workout_note_comment", "text"],
+      ],
+    },
+    exercise_notes: {
+      since: v,
+      description: "Exercise notes, pinned exercise notes and their comments",
+      fields: [
+        ["exercise_note", "text"],
+        ["exercise_note_comment", "text"],
+      ],
     },
     reps_in_reserve: {
       since: v,

@@ -56,7 +56,6 @@ function tree(day: number, sets: SetSpec[], routineId: string | null = null): Wo
       id: workoutId,
       content: {
         title: routineId ? "Push" : `Day ${day}`,
-        description: "",
         startedAt: new Date(start).toISOString(),
         endedAt: new Date(start + 72 * 60_000).toISOString(),
         routineId,

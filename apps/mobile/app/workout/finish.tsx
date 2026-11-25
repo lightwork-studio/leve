@@ -71,7 +71,8 @@ export default function FinishScreen() {
   const [draft, setDraft] = useState<{
     id: string;
     title?: TextDraft;
-    description?: TextDraft;
+    /** A note on the whole workout, saved with it as a workout note. */
+    note?: TextDraft;
     /**
      * How long the workout lasted, when the lifter set it (otherwise it ends on saving), and the
      * start it was counted from: saving is refused if the start changed since.
@@ -112,14 +113,12 @@ export default function FinishScreen() {
   const { tree, summary, settings, initialPlan } = data;
   const edits = draft?.id === tree.workout.id ? draft : undefined;
   const title = edits?.title?.value ?? tree.workout.content.title;
-  const notes = edits?.description?.value ?? tree.workout.content.description;
-  const edit = (field: "title" | "description", value: string) =>
+  const notes = edits?.note?.value ?? "";
+  const edit = (field: "title" | "note", value: string) =>
     setDraft((current) => {
       const same = current?.id === tree.workout.id ? current : { id: tree.workout.id };
-      return {
-        ...same,
-        [field]: { original: same[field]?.original ?? tree.workout.content[field], value },
-      };
+      const original = field === "title" ? tree.workout.content.title : "";
+      return { ...same, [field]: { original: same[field]?.original ?? original, value } };
     });
   const effort = workoutEffort(summary, settings.weightUnit);
   const progress = setProgress(tree);
@@ -153,13 +152,12 @@ export default function FinishScreen() {
           tree.workout.id,
           {
             ...(edits?.title && { title: edits.title.value }),
-            ...(edits?.description && { description: edits.description.value }),
+            ...(edits?.note && { note: { text: edits.note.value, pinned: false } }),
             ...(edits?.duration && { durationSeconds: edits.duration.seconds }),
             countForRoutine,
           },
           {
             ...(edits?.title && { title: edits.title.original }),
-            ...(edits?.description && { description: edits.description.original }),
             ...(edits?.duration && { startedAt: edits.duration.from, endedAt: null }),
           },
         ),
@@ -304,11 +302,11 @@ export default function FinishScreen() {
 
           <Group label="Notes">
             <TextInput
-              accessibilityLabel="Workout description"
-              maxLength={LIMITS.descriptionLength}
+              accessibilityLabel="Workout note"
+              maxLength={LIMITS.noteLength}
               value={notes}
               editable={!saving}
-              onChangeText={(value) => edit("description", value)}
+              onChangeText={(value) => edit("note", value)}
               multiline
               placeholder="How did it go?"
               placeholderTextColor={c.fg3}

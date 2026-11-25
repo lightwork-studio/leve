@@ -1121,10 +1121,10 @@ it.each([2, 3] as const)(
     account.transaction((tx) =>
       tx.writeLive("workout_note", "pin", {
         workoutId: record.id,
-        kind: "sticky",
+        pinned: true,
         text: "Rack three",
         createdAt: RESTORE_TIME,
-        reply: null,
+        agent: null,
       }),
     );
     await service.close();

@@ -220,7 +220,6 @@ it("opens History from the Progress training-days comparison", async () => {
       store.put("workout", id, {
         routineId: null,
         title: id,
-        description: "",
         startedAt: day + "T12:00:00.000Z",
         endedAt: day + "T13:00:00.000Z",
       });

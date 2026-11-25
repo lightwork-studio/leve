@@ -192,53 +192,73 @@ describe("after a server restore", () => {
 });
 
 describe("size limits", () => {
-  const note = (index: number) => ({
-    id: `n${index}`,
-    text: "x".repeat(10_000),
-    createdAt: "2026-11-10T18:00:00.000Z",
+  const set = (index: number) => ({
+    id: `s${index}`,
+    type: "normal",
+    weightKg: 60,
+    reps: 8,
+    repRangeMin: null,
+    repRangeMax: null,
+    distanceMeters: null,
+    durationSeconds: null,
+    count: null,
+    rpe: null,
+    repsInReserve: null,
   });
-  const large = (workoutId: string, notes: number, name = "Big") =>
-    entry(workoutId, name, { notes: Array.from({ length: notes }, (_, i) => note(i)) });
+  // About 27,000 bytes per exercise: seven fit in one record, eight don't.
+  const large = (exercises: number, title = "Big") => ({
+    title,
+    folderId: null,
+    position: 1,
+    effortScale: null,
+    exercises: Array.from({ length: exercises }, (_, i) => ({
+      id: `x${i}`,
+      exerciseId: "bench",
+      exerciseName: "Bench",
+      exerciseType: "weight_reps",
+      supersetId: null,
+      restSeconds: 90,
+      useRepRange: false,
+      sets: Array.from({ length: 150 }, (_, j) => set(j)),
+    })),
+  });
 
   it("refuses a record over 200,000 bytes on the device and on the server", async () => {
     const server = world.server();
     const { phone } = await phoneOn(server, "phone");
-    phone.store.put("workout", "w1", workout("Notes"));
-    expectSynced(await phone.sync());
-    expect(jsonBytes(large("w1", 19))).toBeLessThan(200_000);
-    expect(jsonBytes(large("w1", 20))).toBeGreaterThan(200_000);
-    expect(() => phone.store.put("workout_exercise", "e1", large("w1", 20))).toThrow(/200000/);
-    phone.store.put("workout_exercise", "e1", large("w1", 19));
+    expect(jsonBytes(large(7))).toBeLessThan(200_000);
+    expect(jsonBytes(large(8))).toBeGreaterThan(200_000);
+    expect(() => phone.store.put("routine", "r1", large(8))).toThrow(/200000/);
+    phone.store.put("routine", "r1", large(7));
 
     const peer = new Peer1(server.transport("alice"));
     await peer.pull();
-    const tooBig = peer.put("workout_exercise", "e2", large("w1", 20));
-    const fine = peer.put("workout_exercise", "e3", large("w1", 19));
+    const tooBig = peer.put("routine", "r2", large(8));
+    const fine = peer.put("routine", "r3", large(7));
     expect(await peer.push([tooBig, fine])).toMatchObject({
       results: [{ status: "invalid", code: "invalid_content" }, { status: "accepted" }],
     });
-    expect(await server.row("alice", "workout_exercise", "e2")).toBeUndefined();
+    expect(await server.row("alice", "routine", "r2")).toBeUndefined();
   });
 
   it("uploads many large records in requests under 1 MiB and downloads them in bounded pages", async () => {
     const server = world.server();
     const { phone, net } = await phoneOn(server, "phone");
-    phone.store.put("workout", "w1", workout("Notes"));
-    const ids = Array.from({ length: 12 }, (_, i) => `e${String(i + 1).padStart(2, "0")}`);
-    for (const id of ids) phone.store.put("workout_exercise", id, large("w1", 15, id));
-    expect(await phone.sync()).toMatchObject({ state: "synced", pushed: 13 });
+    const ids = Array.from({ length: 12 }, (_, i) => `r${String(i + 1).padStart(2, "0")}`);
+    for (const id of ids) phone.store.put("routine", id, large(5, id));
+    expect(await phone.sync()).toMatchObject({ state: "synced", pushed: 12 });
 
     const pushes = net.log.filter((e) => e.path === "/sync/push");
     expect(pushes.length).toBeGreaterThanOrEqual(2);
     for (const push of pushes) expect(jsonBytes(push.request)).toBeLessThan(1_048_576);
-    expect(sentSubmissions(net.log).map((s) => s.id)).toEqual(["w1", ...ids]);
+    expect(sentSubmissions(net.log).map((s) => s.id)).toEqual(ids);
 
     const reader = await phoneOn(server, "reader");
     expectSynced(await reader.phone.sync());
     const pages = reader.net.log.filter((e) => e.path === "/sync/pull");
     const first = pages[0]?.response?.body as { changes: unknown[]; hasMore: boolean };
     expect(first.hasMore).toBe(true);
-    expect(first.changes.length).toBeLessThan(13);
+    expect(first.changes.length).toBeLessThan(12);
     for (const page of pages) {
       const body = page.response?.body as { changes: { content?: unknown }[] };
       expect(body.changes.length).toBeGreaterThan(0);
@@ -247,7 +267,7 @@ describe("size limits", () => {
       const beforeLast = contents.slice(0, -1).reduce((a, b) => a + b, 0);
       expect(beforeLast).toBeLessThan(800_000);
     }
-    expect(reader.phone.store.list("workout_exercise").map((r) => r.id)).toEqual(ids);
+    expect(reader.phone.store.list("routine").map((r) => r.id)).toEqual(ids);
   });
 });
 

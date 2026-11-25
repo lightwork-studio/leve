@@ -10,7 +10,7 @@ import {
   previewFrozen,
 } from "../../contract/test/support/preview-contract.ts";
 import { maximumWorkout } from "../../storage/src/test-support/max-workout.ts";
-import { ENDED, HISTORY, STARTED, workout } from "./support/content.ts";
+import { HISTORY, STARTED, workout } from "./support/content.ts";
 import { World } from "./support/harness.ts";
 
 it("keeps server-only note and rest records out of a release-1.2 phone’s offline database", async () => {
@@ -31,10 +31,10 @@ it("keeps server-only note and rest records out of a release-1.2 phone’s offli
     expect(() =>
       phone.store.put("workout_note", "journal", {
         workoutId: "w",
-        kind: "sticky",
+        pinned: true,
         text: "Adjust the seat",
         createdAt: STARTED,
-        reply: null,
+        agent: null,
       }),
     ).toThrow(/unknown record kind/);
     expect(() => phone.store.put("workout_rest", "w", { workoutId: "w", seconds: 60 })).toThrow(
@@ -61,10 +61,10 @@ it("preserves notes, replies and workout rest when a 1.2 phone edits the session
     expect(jsonBytes(original)).toBe(200_000);
     const note = {
       workoutId: "w",
-      kind: "sticky",
+      pinned: true,
       text: "Use rack 3",
       createdAt: STARTED,
-      reply: { text: "Try six reps", createdAt: ENDED },
+      agent: "Coach",
     };
     const rest = { workoutId: "w", seconds: 75 };
     const initial = await writer.push([
@@ -115,10 +115,10 @@ async function checkHiddenWorkoutChildren(filterHiddenChildren: boolean) {
     await old.hello();
     const note = {
       workoutId: "w",
-      kind: "session",
+      pinned: false,
       text: "Adjust the seat",
       createdAt: STARTED,
-      reply: { text: "Use the low setting", createdAt: ENDED },
+      agent: "Coach",
     };
     const rest = { workoutId: "w", seconds: 60 };
     await current.push([
@@ -292,8 +292,8 @@ it("replays the frozen first upload against current storage", async () => {
     const reply = await server.service.push("alice", { ...wire.pushRequest, lineage });
     expect(reply.status).toBe(200);
     expect(reply.body).toEqual(wire.pushResponse);
-    // The frozen example writes ten records and one update, then deletes a parent.
-    expect(reply.writtenRevisions).toBe("111111111110");
+    // The frozen example writes thirteen records and one update, then deletes a parent.
+    expect(reply.writtenRevisions).toBe("111111111111110");
   } finally {
     await world.dispose();
   }

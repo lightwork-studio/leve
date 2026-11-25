@@ -549,7 +549,6 @@ export function checkRestoredDeletedTree(variant: Variant = {}): Promise<void> {
       position: 1,
       supersetId: null,
       restSeconds: 90,
-      notes: [],
       doubleDumbbellVolume: false,
     });
     device.store.put("workout_set", "s3", {

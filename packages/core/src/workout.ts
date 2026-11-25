@@ -30,17 +30,11 @@ export const LIMITS = {
   titleLength: 100,
   descriptionLength: 2000,
   noteLength: 10_000,
+  agentNameLength: 60,
   folderTitleLength: 30,
   routineMaxExercises: 50,
   routineMaxSets: 150,
 } as const;
-
-/** A note attached to an exercise. */
-export interface ExerciseNote {
-  id: string;
-  text: string;
-  createdAt: string;
-}
 
 /**
  * One logged set. All metrics are stored in base units: weight in kg, distance in metres,
@@ -70,7 +64,6 @@ export interface WorkoutExercise {
   supersetId: number | null;
   /** Rest timer in seconds, 0 = off. */
   restSeconds: number;
-  notes: ExerciseNote[];
   /** Count dumbbell weight twice in volume (copied from the exercise setting when logged). */
   doubleDumbbellVolume: boolean;
   sets: WorkoutSet[];
@@ -78,7 +71,6 @@ export interface WorkoutExercise {
 
 export interface Workout extends Synced {
   title: string;
-  description: string;
   startedAt: string;
   /** startedAt + active duration. */
   endedAt: string;
@@ -104,8 +96,6 @@ export interface RoutineExercise {
   exerciseId: string;
   supersetId: number | null;
   restSeconds: number;
-  /** Notes shown every time this routine is logged. */
-  notes: ExerciseNote[];
   /** Whether sets target a rep range instead of fixed reps. */
   useRepRange: boolean;
   sets: RoutineSet[];
@@ -113,7 +103,6 @@ export interface RoutineExercise {
 
 export interface Routine extends Synced {
   title: string;
-  notes: string;
   folderId: string | null;
   /** Lower comes first within a folder. */
   position: number;

@@ -32,7 +32,6 @@ const workout = (
   id,
   content: {
     title: id,
-    description: "",
     startedAt: new Date(start).toISOString(),
     endedAt: minutes === null ? null : new Date(start + minutes * 60_000).toISOString(),
     routineId,
@@ -297,7 +296,7 @@ describe("train", () => {
   it("groups routines by folder and says when each was last done", () => {
     const routine = (id: string, folderId: string | null, position: number) => ({
       id,
-      content: { title: id, notes: "", folderId, position, exercises: [] } satisfies Routine,
+      content: { title: id, folderId, position, exercises: [] } satisfies Routine,
     });
     const groups = routineGroups(
       [
@@ -381,7 +380,7 @@ describe("time zones and odd data", () => {
       [
         {
           id: "push",
-          content: { title: "Push", notes: "", folderId: null, position: 1, exercises: [] },
+          content: { title: "Push", folderId: null, position: 1, exercises: [] },
         },
       ],
       [],
@@ -403,7 +402,6 @@ describe("up next", () => {
     id,
     content: {
       title: `Title ${id}`,
-      notes: "",
       folderId,
       position,
       exercises: [],

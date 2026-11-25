@@ -80,7 +80,6 @@ const meter = (): SqlMeter => ({ rowsRead: 0, rowsWritten: 0 });
 const T = "2026-11-10T08:00:00.000Z";
 const workout: JsonObject = {
   title: "Push",
-  description: "",
   startedAt: T,
   endedAt: T,
   routineId: null,
