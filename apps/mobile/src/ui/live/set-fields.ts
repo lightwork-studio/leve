@@ -300,8 +300,9 @@ export function logValues(options: {
 }
 
 /**
- * A set's values in a line, as "60 × 8", "1:30" or "2 km · 10:00". With `withUnit`, the weight
- * keeps its unit next to reps too ("60 kg × 8"), for places without the set's other context.
+ * A set's values in a line, as "60 × 8", "1:30" or "2 km · 10:00". With `withUnit`, a weight
+ * keeps its unit next to reps too ("60 kg × 8"), for places without the set's other context; a
+ * placeholder without a value ("–", "Add weight") stays bare.
  */
 export function valuesLine(
   views: { metric: SetMetric; view: FieldView }[],
@@ -311,7 +312,9 @@ export function valuesLine(
   const reps = views.some((v) => v.metric === "reps");
   return views
     .map(({ metric, view }) =>
-      metric === "weight" && (withUnit || !reps) ? `${view.text} ${unit}` : view.text,
+      metric === "weight" && (!reps || (withUnit && view.value !== null))
+        ? `${view.text} ${unit}`
+        : view.text,
     )
     .join(reps ? " × " : " · ");
 }
