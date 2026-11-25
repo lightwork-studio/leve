@@ -196,7 +196,6 @@ it("puts a routine moved to no folder after the routines whose folder is gone", 
 const routineAt = (title: string, folderId: string | null, position: number) => ({
   title,
   folderId,
-  notes: "",
   position,
   exercises: [],
   effortScale: null,

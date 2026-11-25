@@ -25,7 +25,7 @@ import { ExercisePicker } from "./exercise-picker.tsx";
 import { TitleField } from "./field.tsx";
 import { announce } from "./focus.ts";
 import { haptic } from "./haptics.ts";
-import { CheckIcon, GripIcon, LinkIcon, PlusIcon, TimerIcon } from "./icons.tsx";
+import { GripIcon, LinkIcon, PlusIcon, TimerIcon } from "./icons.tsx";
 import { RestDialog } from "./live/rest-dialog.tsx";
 import { ModeTile } from "./mode-tile.tsx";
 import { MoreButton } from "./popover-menu.tsx";
