@@ -157,6 +157,13 @@ vi.mock("../src/ui/chart-controls.tsx", () => ({
 }));
 let settled = true;
 vi.mock("../src/ui/use-settled.ts", () => ({ useSettled: () => settled }));
+// Records what each jump or move brings into sight, still scrolling as it would in a browser.
+const { reveal } = vi.hoisted(() => ({ reveal: vi.fn() }));
+vi.mock("../src/ui/reveal.ts", async (load) => {
+  const actual = await load<typeof import("../src/ui/reveal.ts")>();
+  reveal.mockImplementation(actual.revealInList);
+  return { revealInList: reveal };
+});
 vi.mock("../src/ui/enter.tsx", () => ({
   Enter: ({ children }: { children: ReactNode }) => children,
   StillOnOpen: ({ children }: { children: ReactNode }) => children,
@@ -1124,40 +1131,36 @@ it("keeps the moved exercise’s control and unfinished set together through rep
   const first = addExercise(store, workout, EXERCISES.bench, 0);
   const second = addExercise(store, workout, EXERCISES.bench, 0);
   const last = addExercise(store, workout, EXERCISES.plank, 0);
-  const reveal = vi.spyOn(HTMLElement.prototype, "scrollIntoView");
-  try {
-    await act(() => root.render(h(ActiveWorkoutScreen)));
-    await typeInto("kg for set 1", "72.5");
-    await press("Done typing");
-    await press("Manage Bench Press");
-    await press("Move Bench Press down from position 1");
-    const focusedMove = async (label: string) => {
-      const button = document.activeElement;
-      if (!(button instanceof HTMLButtonElement)) throw Error("Move control lost focus");
-      expect(button.getAttribute("aria-label")).toBe(label);
-      await vi.waitFor(() => expect(reveal.mock.contexts).toContain(button));
-      reveal.mockClear();
-      return button;
-    };
-    const order = () =>
-      store.list("workout_exercise", { parentId: workout }).map((entry) => entry.id);
-    const down = await focusedMove("Move Bench Press down from position 2");
-    expect(order()).toEqual([second, first, last]);
-    await act(() => down.click());
-    const up = await focusedMove("Move Bench Press up from position 3");
-    expect(order()).toEqual([second, last, first]);
-    await act(() => up.click());
-    await focusedMove("Move Bench Press up from position 2");
-    expect(order()).toEqual([second, first, last]);
-    const weights = Array.from(host.querySelectorAll('button[aria-label="kg for set 1"]')).map(
-      (cell) => cell.textContent,
-    );
-    // The typed weight moved with its exercise, now second.
-    expect(weights).toEqual(["–", "72.5"]);
-    expect(store.list("workout_set", { parentId: first })[0]?.content?.completedAt).toBeNull();
-  } finally {
-    reveal.mockRestore();
-  }
+  reveal.mockClear();
+  await act(() => root.render(h(ActiveWorkoutScreen)));
+  await typeInto("kg for set 1", "72.5");
+  await press("Done typing");
+  await press("Manage Bench Press");
+  await press("Move Bench Press down from position 1");
+  const focusedMove = async (label: string) => {
+    const button = document.activeElement;
+    if (!(button instanceof HTMLButtonElement)) throw Error("Move control lost focus");
+    expect(button.getAttribute("aria-label")).toBe(label);
+    await vi.waitFor(() => expect(reveal).toHaveBeenCalledWith(button, "nearest"));
+    reveal.mockClear();
+    return button;
+  };
+  const order = () =>
+    store.list("workout_exercise", { parentId: workout }).map((entry) => entry.id);
+  const down = await focusedMove("Move Bench Press down from position 2");
+  expect(order()).toEqual([second, first, last]);
+  await act(() => down.click());
+  const up = await focusedMove("Move Bench Press up from position 3");
+  expect(order()).toEqual([second, last, first]);
+  await act(() => up.click());
+  await focusedMove("Move Bench Press up from position 2");
+  expect(order()).toEqual([second, first, last]);
+  const weights = Array.from(host.querySelectorAll('button[aria-label="kg for set 1"]')).map(
+    (cell) => cell.textContent,
+  );
+  // The typed weight moved with its exercise, now second.
+  expect(weights).toEqual(["–", "72.5"]);
+  expect(store.list("workout_set", { parentId: first })[0]?.content?.completedAt).toBeNull();
 });
 
 it("saves notes during a workout and protects a newer note when the editor is stale", async () => {
@@ -3744,9 +3747,9 @@ it("jumps between the entries of a superset in workout order without checking of
   await act(() => root.render(h(ActiveWorkoutScreen)));
   const destination = heading("Bench Press", 1);
   if (!destination) throw Error("Missing second bench press heading");
-  const reveal = vi.spyOn(destination, "scrollIntoView");
+  reveal.mockClear();
   await jump(0);
-  expect(reveal).toHaveBeenCalledOnce();
+  expect(reveal).toHaveBeenCalledExactlyOnceWith(destination, "start");
   expect(document.activeElement).toBe(heading("Bench Press", 1));
   await jump(1);
   expect(document.activeElement).toBe(heading("Squat", 1));
@@ -4021,10 +4024,10 @@ describe("the logging dock and the number pad", () => {
     await act(() => root.render(h(ActiveWorkoutScreen)));
     const squat = host.querySelector<HTMLButtonElement>('button[aria-label="Squat"]');
     if (!squat) throw Error("Missing squat heading");
-    const reveal = vi.spyOn(squat, "scrollIntoView");
+    reveal.mockClear();
     expect(host.querySelector('[aria-label="Log set 1 of Bench Press"]')).not.toBeNull();
     await press("Jump to Squat, 0 of 1 set done");
-    expect(reveal).toHaveBeenCalledOnce();
+    expect(reveal).toHaveBeenCalledExactlyOnceWith(squat, "start");
     expect(document.activeElement).toBe(squat);
     expect(host.querySelector('[aria-label="Log set 1 of Squat"]')).not.toBeNull();
   });

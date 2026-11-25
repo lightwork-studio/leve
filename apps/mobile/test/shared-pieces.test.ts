@@ -310,6 +310,66 @@ describe("fields, search and notices", () => {
     ).toBe("Push");
   });
 
+  it("rings a focused or refused field with an even border all the way round", async () => {
+    const render = (error?: string) =>
+      act(() =>
+        root.render(
+          h(TextField, {
+            label: "Description",
+            multiline: true,
+            placeholder: "How did it go?",
+            value: "",
+            onChangeText: () => {},
+            ...(error ? { error } : {}),
+          }),
+        ),
+      );
+    const ring = () => document.querySelector<HTMLElement>('[data-testid="field-ring"]');
+    // Each side's width, and the one colour all four sides share ("" if they differ).
+    const sides = (element: HTMLElement) => {
+      const style = getComputedStyle(element);
+      const colors = new Set([
+        style.borderTopColor,
+        style.borderRightColor,
+        style.borderBottomColor,
+        style.borderLeftColor,
+      ]);
+      return {
+        widths: [
+          style.borderTopWidth,
+          style.borderRightWidth,
+          style.borderBottomWidth,
+          style.borderLeftWidth,
+        ],
+        color: colors.size === 1 ? [...colors][0] : "",
+      };
+    };
+    const even = ["1.5px", "1.5px", "1.5px", "1.5px"];
+
+    await render();
+    expect(ring()).toBeNull();
+
+    const input = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Description"]');
+    if (!input) throw Error("Missing the description field");
+    await act(async () => input.focus());
+    const focused = ring();
+    if (!focused) throw Error("No ring while typing");
+    const typing = sides(focused);
+    expect(typing.widths).toEqual(even);
+    expect(typing.color).not.toBe("");
+
+    await act(async () => input.blur());
+    expect(ring()).toBeNull();
+
+    await render("Too long.");
+    const refused = ring();
+    if (!refused) throw Error("No ring on a refused field");
+    const refusal = sides(refused);
+    expect(refusal.widths).toEqual(even);
+    expect(refusal.color).not.toBe("");
+    // A refusal rings in the alert colour, not the typing one.
+    expect(refusal.color).not.toBe(typing.color);
+  });
   it("offers clearing a search only once there is text", async () => {
     const change = vi.fn();
     const render = (value: string) =>

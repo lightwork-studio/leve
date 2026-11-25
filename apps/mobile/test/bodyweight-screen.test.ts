@@ -18,6 +18,7 @@ import { BarChart } from "../src/ui/bar-chart.tsx";
 import { BodyweightEditor } from "../src/ui/bodyweight-editor.tsx";
 import { ChartTabs, Segmented } from "../src/ui/chart-controls.tsx";
 import { dayLabel } from "../src/ui/format.ts";
+import { Group } from "../src/ui/group.tsx";
 import { LineChart } from "../src/ui/line-chart.tsx";
 import { MuscleCard } from "../src/ui/muscle-map.tsx";
 
@@ -253,6 +254,30 @@ it("opens History from the Progress training-days comparison", async () => {
   }
 });
 
+it("leaves out Records and Main lifts in a fresh app with nothing logged", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  store = await openDeviceStore({
+    engine: createSqlJsEngine(await initSqlJs()),
+    path: "/fresh.db",
+    appVersion: "test",
+  });
+  let screen: ReactTestRenderer | undefined;
+  try {
+    await act(() => {
+      screen = create(createElement(ProgressScreen));
+    });
+    if (!screen) throw Error("Missing Progress screen");
+    const labels = screen.root.findAllByType(Group).map((g) => g.props.label);
+    expect(labels).toContain("More");
+    expect(labels).not.toContain("Records");
+    expect(labels).not.toContain("Main lifts");
+  } finally {
+    await act(() => screen?.unmount());
+    store.close();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("follows the bar the lifter scrubs to, resets it with the range, and lists main lifts", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   store = await openDeviceStore({
@@ -317,6 +342,7 @@ it("follows the bar the lifter scrubs to, resets it with the range, and lists ma
       params: { id: EXERCISES.bench.id },
     });
     expect(links).toContain("/exercises");
+    expect(root.findAllByType(Group).map((g) => g.props.label)).toContain("Main lifts");
   } finally {
     await act(() => screen?.unmount());
     store.close();
