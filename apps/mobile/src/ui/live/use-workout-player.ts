@@ -23,6 +23,7 @@ import {
   afterLog,
   dockTarget,
   entryDistanceUnit,
+  exerciseAfterLog,
   pendingAsk,
   previousForWorkout,
 } from "./targets.ts";
@@ -155,7 +156,7 @@ export function useWorkoutPlayer() {
       return ask((error as Error).message);
     }
     haptic.tap();
-    focusExercise(entry.entry.id);
+    focusExercise(exerciseAfterLog(tree, entry.entry.id));
     afterLog(store, tree.workout.id, entry, set.id, setDrafts);
     return true;
   };

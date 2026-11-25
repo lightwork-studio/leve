@@ -1,10 +1,11 @@
-import { type EffortScale, RPE_VALUES } from "@leve/core";
+import { type EffortScale, RIR_MAX, RPE_VALUES } from "@leve/core";
 
 export const effortLabel = (scale: EffortScale) => (scale === "rpe" ? "RPE" : "RIR");
 export const effortField = (scale: EffortScale) => (scale === "rpe" ? "rpe" : "repsInReserve");
 
 type EffortValues = { rpe?: number | null; repsInReserve?: number | null };
-export const RIR_MAX = 10;
+
+export { RIR_MAX };
 
 export function parseEffort(text: string, scale: "rpe"): (typeof RPE_VALUES)[number] | null;
 export function parseEffort(text: string, scale: EffortScale): number | null;
@@ -18,7 +19,7 @@ export function parseEffort(text: string, scale: EffortScale): number | null {
   }
   const rpe = RPE_VALUES.find((rating) => rating === Number(value));
   if (rpe === undefined || !/^\d+(?:\.\d+)?$/.test(value))
-    throw new Error(`Choose a target RPE of ${RPE_VALUES.join(", ")} or leave it empty.`);
+    throw new Error("Enter an RPE from 1 to 10 in steps of 0.5, or leave it empty.");
   return rpe;
 }
 
@@ -50,10 +51,13 @@ export function routineEffortScale(routine: {
   return routine.exercises.some(({ sets }) => sets.some((set) => set.rpe != null)) ? "rpe" : "rir";
 }
 
-/** Match only whole-number equivalents; RPE 6 covers several RIR values. */
+/**
+ * Match only whole-number equivalents: RIR 0 to 9 is RPE 10 to 1. Half-step RPE and RIR 10 have
+ * none.
+ */
 export function equivalentEffort(value: number, to: EffortScale): number | null {
   const reserve = to === "rir" ? 10 - value : value;
-  return Number.isInteger(reserve) && reserve >= 0 && reserve <= 3
+  return Number.isInteger(reserve) && reserve >= 0 && reserve <= 9
     ? to === "rir"
       ? reserve
       : 10 - reserve

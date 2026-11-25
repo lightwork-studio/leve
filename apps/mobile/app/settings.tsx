@@ -142,8 +142,8 @@ export default function SettingsScreen() {
   };
   const save = (patch: NonNullable<typeof optimistic.patch>) => queue(() => patch);
 
-  const fresh = useConfirmation(async () => {
-    const failed = await startAgain(reset);
+  const startOver = (sampleData: boolean) => async () => {
+    const failed = await startAgain(() => reset(sampleData));
     if (failed) showProblem(failed);
     else {
       // Synced settings, Track RIR among them, went with the deleted data. The appearance is kept
@@ -151,7 +151,10 @@ export default function SettingsScreen() {
       saveAppearanceSetting("system");
       haptic.success();
     }
-  });
+  };
+  const fresh = useConfirmation(startOver(buildInfo.sampleData));
+  // TestFlight starts empty, but can be filled with the made-up data to try things out.
+  const sample = useConfirmation(startOver(true));
 
   const rest = settings.defaultRestSeconds;
   const stepRest = (direction: -1 | 1) =>
@@ -264,7 +267,9 @@ export default function SettingsScreen() {
               footnote={
                 buildInfo.sampleData
                   ? "This preview keeps made-up workouts on this device only. Starting again deletes everything here, including your settings, and brings the made-up data back."
-                  : "Deleting everything removes your workouts and settings from this device. Leve then starts empty."
+                  : buildInfo.sampleDataOnRequest
+                    ? "Deleting everything removes your workouts and settings from this device. Leve then starts empty, or with made-up workouts when you start again with sample data."
+                    : "Deleting everything removes your workouts and settings from this device. Leve then starts empty."
               }
             >
               <ChoiceRow
@@ -294,7 +299,7 @@ export default function SettingsScreen() {
               )}
               <ToggleRow
                 label="Show targets"
-                hint="Show routine targets under set values"
+                hint="Routine goals under set values, weight until first logged"
                 on={showTargets}
                 onChange={saveShowTargets}
                 divider
@@ -331,6 +336,18 @@ export default function SettingsScreen() {
                   fresh.ask();
                 }}
               />
+              {buildInfo.sampleDataOnRequest && (
+                <ActionRow
+                  label="Start again with sample data"
+                  danger
+                  divider
+                  accessibilityHint="Asks before it does anything"
+                  onPress={() => {
+                    haptic.warning();
+                    sample.ask();
+                  }}
+                />
+              )}
             </Group>
 
             <Text style={styles.about} accessibilityLabel={`Leve, ${buildDetails.join(", ")}`}>
@@ -371,6 +388,17 @@ export default function SettingsScreen() {
             busyLabel="Starting again…"
             onConfirm={fresh.confirm}
             onClose={fresh.cancel}
+          />
+        )}
+        {sample.asking && (
+          <ActionSheet
+            message="Everything on this device, including your workouts and settings, will be deleted and made-up sample workouts loaded in their place."
+            action="Delete and load sample data"
+            keep="Keep my data"
+            busy={sample.busy}
+            busyLabel="Starting again…"
+            onConfirm={sample.confirm}
+            onClose={sample.cancel}
           />
         )}
       </View>

@@ -10,6 +10,7 @@ export default defineProject({
       // Native-only modules get Node stand-ins in tests.
       { find: "expo-crypto", replacement: support("expo-crypto.ts") },
       { find: "expo-file-system", replacement: support("expo-file-system.ts") },
+      { find: "expo-updates", replacement: support("expo-updates.ts") },
       {
         find: /^(@clerk\/expo(\/apple|\/token-cache|\/resource-cache)?|expo-apple-authentication)$/,
         replacement: support("clerk-expo.ts"),

@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { space } from "../theme.ts";
 import { moveFocus } from "./focus.ts";
+import { revealInList } from "./reveal.ts";
 import { Tap } from "./tap.tsx";
 
 export function ExerciseMoveButtons({
@@ -49,7 +50,7 @@ export function ExerciseMoveButtons({
     if (!button) return;
     if (Platform.OS === "web") {
       const control = button as unknown as HTMLElement;
-      const frame = requestAnimationFrame(() => control.scrollIntoView({ block: "nearest" }));
+      const frame = requestAnimationFrame(() => revealInList(control, "nearest"));
       const cancelFocus = moveFocus(button);
       return () => {
         cancelAnimationFrame(frame);

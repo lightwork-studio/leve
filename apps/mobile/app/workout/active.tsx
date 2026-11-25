@@ -72,9 +72,24 @@ import {
   stepText,
   typeKey,
 } from "../../src/model/inline-edit.ts";
-import { routineTarget, setProgress, topOfRepRanges } from "../../src/model/live.ts";
+import {
+  hintTarget,
+  type PreviousSet,
+  routineTarget,
+  setProgress,
+  topOfRepRanges,
+} from "../../src/model/live.ts";
 import { correctionValues, parseTyped, previousValue } from "../../src/model/log-values.ts";
-import { asksRir, countsReps, showsRirColumn, stepRir, typeRir } from "../../src/model/rir.ts";
+import {
+  asksRir,
+  countsReps,
+  showsRirColumn,
+  stepRir,
+  stepRpe,
+  typedRpe,
+  typeRir,
+  typeRpe,
+} from "../../src/model/rir.ts";
 import { supersetMemberships } from "../../src/model/supersets.ts";
 import type { WorkoutPlan } from "../../src/model/types.ts";
 import { countsTowardTotals } from "../../src/model/volume.ts";
@@ -130,6 +145,7 @@ import {
   dockTarget,
   type Entry,
   entryDistanceUnit,
+  exerciseAfterLog,
   type LiveSet,
   labelOf,
   pendingAsk,
@@ -140,6 +156,7 @@ import { layout } from "../../src/ui/motion.ts";
 import { WorkoutMuscleSummary } from "../../src/ui/muscle-map.tsx";
 import { goHome } from "../../src/ui/navigation.ts";
 import { showToast } from "../../src/ui/notice.tsx";
+import { revealInList } from "../../src/ui/reveal.ts";
 import { SetChip, setNumbers } from "../../src/ui/set-chip.tsx";
 import { SetSyncReview } from "../../src/ui/set-sync-review.tsx";
 import { inputValue } from "../../src/ui/set-values.ts";
@@ -195,9 +212,10 @@ interface Editing {
   correction?: { text: string | undefined; opened: Opened };
 }
 
-/** Reps in reserve being typed on the pad (after 5+), for one set. */
+/** Effort being typed on the pad (after RIR 5+ or RPE 6−), for one set. */
 interface RirTyping {
   setId: string;
+  scale: EffortScale;
   text: string;
   /** Just opened: the first key replaces what it shows. */
   fresh: boolean;
@@ -291,7 +309,7 @@ export default function ActiveWorkoutScreen() {
     if (Platform.OS !== "web") Keyboard.dismiss();
     if (Platform.OS === "web" && heading) {
       // An earlier card may have grown without resizing this heading.
-      (heading as unknown as HTMLElement).scrollIntoView?.({ block: "start" });
+      revealInList(heading as unknown as HTMLElement, "start");
     } else {
       revealCard.current = id;
       revealPendingCard();
@@ -508,7 +526,7 @@ export default function ActiveWorkoutScreen() {
       const row = rows.current.get(editingSet);
       if (!row) return;
       if (Platform.OS === "web") {
-        (row as unknown as HTMLElement).scrollIntoView?.({ block: "nearest" });
+        revealInList(row as unknown as HTMLElement, "nearest");
         return;
       }
       row.measureInWindow?.((_x, y, _w, height) => {
@@ -912,7 +930,7 @@ export default function ActiveWorkoutScreen() {
     setRirPicker(null);
     setRirTyping(null);
     setFieldProblem(null);
-    focusExercise(entry.entry.id);
+    focusExercise(exerciseAfterLog(tree, entry.entry.id));
     haptic.tap();
     afterLog(store, tree.workout.id, entry, set.id, setDrafts);
     // Asked about this set now; a question about an earlier one goes unanswered.
@@ -1025,16 +1043,18 @@ export default function ActiveWorkoutScreen() {
     setRirPicker(null);
   };
   /**
-   * 5+: opens the pad on the set's RIR (5 when it has none), for anything up to 10. Nothing is
-   * recorded until Done.
+   * RIR 5+ or RPE 6−: opens the pad on the set's value (RIR 5 or RPE 6 when it has none), for any
+   * RIR up to 10 or any RPE from 1 to 10. Nothing is recorded until Done.
    */
   const moreRir = (entry: Entry, set: LiveSet) => {
     if (editing && !commit(editing)) return;
     closeEditors();
     if (set.content.completedAt === null) focusSet(entry.entry.id, set.id);
     else focusExercise(entry.entry.id);
-    const reserve = set.content.repsInReserve;
-    setRirTyping({ setId: set.id, text: reserve == null ? "5" : String(reserve), fresh: true });
+    const scale = scaleFor(set);
+    const value = effortValue(set.content, scale);
+    const text = value === null ? (scale === "rpe" ? "6" : "5") : String(value);
+    setRirTyping({ setId: set.id, scale, text, fresh: true });
   };
   const toggleRirPicker = (entry: Entry, set: LiveSet, from: "list" | "dock") => {
     if (gate()) return;
@@ -1050,7 +1070,8 @@ export default function ActiveWorkoutScreen() {
   };
   const pressRir = (key: PadKey) => {
     if (!rirTyping) return;
-    const next = typeRir(rirTyping.text, key, rirTyping.fresh);
+    const type = rirTyping.scale === "rpe" ? typeRpe : typeRir;
+    const next = type(rirTyping.text, key, rirTyping.fresh);
     if (next === null) {
       haptic.warning();
       return;
@@ -1062,7 +1083,12 @@ export default function ActiveWorkoutScreen() {
     if (!rirTyping) return;
     const found = find(rirTyping.setId);
     const text = rirTyping.text.trim();
-    if (found && !recordRir(found.set, text === "" ? null : Number(text))) return;
+    const value = rirTyping.scale === "rpe" ? typedRpe(text) : text === "" ? null : Number(text);
+    if (value === undefined) {
+      haptic.warning();
+      return;
+    }
+    if (found && !recordRir(found.set, value)) return;
     if (rirAsk === rirTyping.setId) setRirAsk(null);
     setRirTyping(null);
   };
@@ -1200,28 +1226,36 @@ export default function ActiveWorkoutScreen() {
         </>
       );
     }
-    // Reps in reserve after 5+: the pad, for whole numbers up to 10, with one Done (its last key).
+    // Effort after RIR 5+ or RPE 6−: the pad, for whole RIR up to 10 or RPE from 1 to 10 in half
+    // steps, with one Done (its last key).
     if (rirTyping && typing) {
       const { entry, set, setIndex } = typing;
       const name = setName(entry, set);
+      const rpe = rirTyping.scale === "rpe";
+      const effortName = rpe ? "RPE" : "reps in reserve";
       return (
         <>
           <EditHeader
             chip={labelOf(entry, setIndex)}
             logged={set.content.completedAt !== null}
             exercise={entry.entry.content.exerciseName}
-            detail={`${name} · reps in reserve · 0 to 10`}
-            announcement={`${entry.entry.content.exerciseName}, ${name}, reps in reserve: ${rirTyping.text || "empty"}`}
+            detail={`${name} · ${effortName} · ${rpe ? "1 to 10" : "0 to 10"}`}
+            announcement={`${entry.entry.content.exerciseName}, ${name}, ${effortName}: ${rirTyping.text || "empty"}`}
             onCancel={cancelRir}
           />
           <Keypad
             tall
             metric="reps"
-            step="1"
+            decimal={rpe}
+            step={rpe ? "0.5" : "1"}
             next={{ to: null }}
             onKey={pressRir}
             onStep={(direction) =>
-              setRirTyping({ ...rirTyping, text: stepRir(rirTyping.text, direction), fresh: true })
+              setRirTyping({
+                ...rirTyping,
+                text: (rpe ? stepRpe : stepRir)(rirTyping.text, direction),
+                fresh: true,
+              })
             }
             onNext={doneRir}
           />
@@ -1322,7 +1356,9 @@ export default function ActiveWorkoutScreen() {
     const distanceUnit = distanceUnitOf(entry);
     const fromDock = typingFromDock ? editing : null;
     const timer = readSetStopwatch(store, tree.workout.id, set.id);
-    const planned = showTargets ? routineTarget(initialPlan, set.content) : undefined;
+    const planned = showTargets
+      ? hintTarget(initialPlan, set.content, previous?.get(entry.entry.id)?.sets[setIndex])
+      : undefined;
     const scale = scaleFor(set);
     const currentEffort = effortValue(set.content, scale);
     const plannedEffort = effortCaption(planned, initialPlan?.effortScale);
@@ -1615,6 +1651,7 @@ export default function ActiveWorkoutScreen() {
                         fieldProblem={editing?.setId === fieldProblem?.setId ? null : fieldProblem}
                         viewOf={(set, setIndex, metric) => viewOf(entry, set, setIndex, metric)}
                         previousLine={(setIndex) => previousLine(entry, setIndex)}
+                        previousSet={(setIndex) => previous?.get(entry.entry.id)?.sets[setIndex]}
                         showRir={showsRirColumn({
                           trackRir,
                           type: entry.entry.content.exerciseType,
@@ -1972,6 +2009,7 @@ function EntryCard({
   fieldProblem,
   viewOf,
   previousLine,
+  previousSet,
   showRir,
   canStoreRir,
   rirRowId,
@@ -2023,6 +2061,8 @@ function EntryCard({
   fieldProblem: FieldProblem | null;
   viewOf: (set: LiveSet, setIndex: number, metric: SetMetric) => FieldView;
   previousLine: (setIndex: number) => string;
+  /** Last time's values for a set, when there were any. */
+  previousSet: (setIndex: number) => PreviousSet | undefined;
   /** Whether the sets show a reps in reserve column. */
   showRir: boolean;
   /** Whether reps in reserve can be changed (the account can store it). */
@@ -2315,6 +2355,7 @@ function EntryCard({
                   problem={fieldProblem?.setId === set.id ? fieldProblem.message : null}
                   views={metrics.map((m) => viewOf(set, i, m))}
                   previous={previousLine(i)}
+                  previousSet={previousSet(i)}
                   showRir={showRir}
                   canStoreRir={canStoreRir(set)}
                   rirOpen={rirRowId === set.id}
@@ -2389,6 +2430,7 @@ function SetRow({
   problem,
   views,
   previous,
+  previousSet,
   showRir,
   canStoreRir,
   rirOpen,
@@ -2428,6 +2470,7 @@ function SetRow({
   problem: string | null;
   views: FieldView[];
   previous: string;
+  previousSet: PreviousSet | undefined;
   showRir: boolean;
   canStoreRir: boolean;
   /** Whether the reps in reserve strip is open under this row. */
@@ -2469,7 +2512,7 @@ function SetRow({
     [],
   );
   const timing = running !== undefined;
-  const target = showTargets ? routineTarget(plan, set.content) : undefined;
+  const target = showTargets ? hintTarget(plan, set.content, previousSet) : undefined;
   const highlighted = isCurrent || editing !== null || editorOpen || rirOpen;
   const reserve = effortValue(set.content, effortScale);
   const effortTarget = effortCaption(target, plan?.effortScale);

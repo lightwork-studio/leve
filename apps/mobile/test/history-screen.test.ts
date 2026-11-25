@@ -1,15 +1,15 @@
 /// <reference lib="dom" />
-import { Link, router, useLocalSearchParams } from "expo-router";
+import { Link, useLocalSearchParams } from "expo-router";
 import { act, createElement, type ReactElement } from "react";
 import { FlatList, SectionList, Text, TextInput, View } from "react-native";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { expect, it, vi } from "vitest";
-import HistoryScreen from "../app/(tabs)/history.tsx";
-import WorkoutCalendar, { CalendarMonth } from "../app/history/calendar.tsx";
+import HistoryScreen, { savedSettleMs } from "../app/(tabs)/history.tsx";
 import type { useHistory } from "../src/data/queries.ts";
 import type { WorkoutSummary } from "../src/model/past-workouts.ts";
 import type { WorkoutRecord } from "../src/model/progress.ts";
 import { palettes } from "../src/theme.ts";
+import { flashDuration } from "../src/ui/flash.tsx";
 
 /** The palette on screen while the system is in dark mode, as these tests set it. */
 const dark = palettes.dark;
@@ -17,16 +17,45 @@ const dark = palettes.dark;
 let historyMonths: ReturnType<typeof useHistory>["months"] = [];
 let fixtureRecords = new Map<string, WorkoutRecord[]>();
 
+// The History tab's navigation (its route params, and the stack it sits in), and its list.
+const { navigation, stackEvents, sessionList } = vi.hoisted(() => {
+  const stackEvents: { type: string; listener: (event: unknown) => void }[] = [];
+  return {
+    stackEvents,
+    navigation: {
+      setParams: vi.fn(),
+      getParent: () => ({
+        addListener: (type: string, listener: (event: unknown) => void) => {
+          const entry = { type, listener };
+          stackEvents.push(entry);
+          return () => stackEvents.splice(stackEvents.indexOf(entry), 1);
+        },
+      }),
+    },
+    sessionList: { scrollToLocation: vi.fn(), getScrollResponder: vi.fn() },
+  };
+});
+
 vi.mock("expo-router", () => ({
   Link: "Link",
   useLocalSearchParams: vi.fn(() => ({})),
+  useNavigation: () => navigation,
   router: { canGoBack: () => false, replace: vi.fn() },
 }));
+vi.mock("react-native-reanimated", () => ({ useReducedMotion: () => false }));
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 0 }) }));
 vi.mock("react-native", () => ({
   useColorScheme: () => "dark",
-  SectionList: ({ ListHeaderComponent }: { ListHeaderComponent: ReactElement }) =>
+  SectionList: ({
     ListHeaderComponent,
+    ref,
+  }: {
+    ListHeaderComponent: ReactElement;
+    ref?: { current: unknown } | null;
+  }) => {
+    if (ref) ref.current = sessionList;
+    return ListHeaderComponent;
+  },
   FlatList: "Pages",
   Platform: { OS: "web" },
   View: "View",
@@ -42,7 +71,7 @@ vi.mock("../src/ui/icons.tsx", () => ({
   SearchIcon: "Search",
   CloseIcon: "Close",
 }));
-vi.mock("../src/ui/flash.tsx", () => ({ Flash: "Flash" }));
+vi.mock("../src/ui/flash.tsx", () => ({ Flash: "Flash", flashDuration: 2400 }));
 vi.mock("../src/ui/screen.tsx", () => ({
   TabTitle: "Title",
   BackButton: "BackButton",
@@ -279,6 +308,21 @@ it("opens only the sessions for a trained date and collapses the list on a secon
     expect(refreshed.parent?.props.style).toEqual(
       days.findByProps({ children: 8 }).parent?.props.style,
     );
+
+    // A session added to that date later, say by sync, leaves it closed until it is picked.
+    historyMonths = month([
+      session("Synced", [2026, 10, 9, 7]),
+      session("Other day", [2026, 10, 10, 8]),
+    ]);
+    await act(() => screen.update(createElement(HistoryScreen)));
+    await act(() =>
+      card?.update(pager().props.renderItem({ item: pager().props.data[0], index: 0 })),
+    );
+    expect(links()).toEqual([]);
+    const synced = days.findByProps({ accessibilityLabel: `${longDate(2026, 10, 9)}, 1 workout` });
+    expect(synced.props.accessibilityState.expanded).toBe(false);
+    await act(() => synced.props.onPress());
+    expect(links()).toEqual(["Synced"]);
   } finally {
     await act(() => {
       card?.unmount();
@@ -435,153 +479,214 @@ it("finds a workout by its fourth movement, shows the match on its card, and cle
   }
 });
 
-it.each([
-  ["History", {}, {}],
-  ["Progress", { from: "progress" }, { from: "progress" }],
-] as const)(
-  "opens leap-day sessions from the %s calendar in the chosen weekday order",
-  async (_tab, entryParams, linkOrigin) => {
-    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-    const sessions = ["Morning", "Evening"].map((title, index) => ({
-      id: title.toLowerCase(),
-      title,
-      startedAt: new Date(2024, 1, 29, 8 + index * 10).toISOString(),
-      durationMinutes: index === 0 ? 0 : 25,
-      volumeKg: 0,
-      sets: 1,
-      reps: 0,
-      loggedWarmups: 0,
-      excludedWarmups: 0,
-      recordedSeconds: null,
-      missingTimedSets: 0,
-      exercises: [],
-    }));
-    let screen: ReactTestRenderer | undefined;
-    try {
-      vi.mocked(useLocalSearchParams).mockReturnValue(entryParams);
-      await act(() => {
-        screen = create(createElement(WorkoutCalendar));
-      });
-      if (!screen) throw Error("Missing calendar");
-      const renderMonth = screen.root.findByType(FlatList).props.renderItem;
-      const month = { key: "2024-02", year: 2024, month: 1, workouts: sessions };
-      await act(() => screen?.update(renderMonth({ item: month })));
-      const root = screen.root;
-      const text = () => root.findAllByType(Text).map((n) => n.children.join(""));
-      expect(
-        root.findByProps({ accessibilityLabel: "2 sessions on 1 training day" }),
-      ).toBeDefined();
-      const weekdays = root.findAll((n) => n.type === Text && n.props["aria-hidden"]);
-      expect(weekdays.map((n) => n.children.join(""))).toEqual(["M", "T", "W", "T", "F", "S", "S"]);
-      expect(text()).not.toContain("30");
-      const day = root.findByProps({ accessibilityRole: "button" });
-      expect(day.props.accessibilityLabel).toContain("2 workouts");
-      expect(day.findByType(Text).children.join("")).toBe("29");
-      // Thursday, the fourth column with Monday first.
-      const cell = day.parent;
-      expect(cell?.parent?.children.indexOf(cell)).toBe(3);
-      expect(text()).not.toContain("Morning");
-      await act(() => day.props.onPress());
-      expect(text()).toContain("Evening");
-      expect(text().some((label) => label.endsWith(" · <1 min"))).toBe(true);
-      expect(root.findAllByType(Link).map((link) => link.props.href)).toEqual(
-        expect.arrayContaining(
-          ["morning", "evening"].map((id) => ({
-            pathname: "/workout/[id]",
-            params: { id, back: "Calendar", ...linkOrigin },
-          })),
-        ),
-      );
-      await act(() => day.props.onPress());
-      expect(text()).not.toContain("Evening");
-    } finally {
-      vi.mocked(useLocalSearchParams).mockReturnValue({});
-      await act(() => screen?.unmount());
-      vi.unstubAllGlobals();
-    }
-  },
-);
-
-it("closes the calendar date after its final workout disappears and keeps today identifiable", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const today = new Date(2026, 10, 10, 12).getTime();
-  const workout = {
-    id: "walk",
-    title: "Lunch walk",
-    startedAt: new Date(today).toISOString(),
-    durationMinutes: 20,
-    volumeKg: 0,
-    sets: 1,
-    reps: 0,
-    loggedWarmups: 0,
-    excludedWarmups: 0,
-    recordedSeconds: null,
-    missingTimedSets: 0,
-    exercises: [],
-  };
-  const month = (workouts: (typeof workout)[]) =>
-    createElement(CalendarMonth, {
-      month: { key: "2026-11", year: 2026, month: 10, workouts },
-      today,
-      firstWeekday: 1,
-    });
-  let screen: ReactTestRenderer | undefined;
+it("keeps the month controls on screen, greyed out, while there is only one month", async () => {
+  historyMonths = [];
+  const { screen, root, layout } = await mountHistory();
   try {
-    await act(() => {
-      screen = create(month([workout]));
-    });
-    if (!screen) throw Error("Missing calendar month");
-    const root = screen.root;
-    const trained = () => root.findByProps({ accessibilityRole: "button" });
-    await act(() => trained().props.onPress());
-    expect(root.findByType(Link).props.href.params.id).toBe("walk");
-
-    await act(() => screen?.update(month([])));
-    expect(root.findAllByType(Link)).toHaveLength(0);
-    expect(root.findAllByProps({ accessibilityRole: "button" })).toHaveLength(0);
-
-    await act(() => screen?.update(month([{ ...workout, id: "swim", title: "Evening swim" }])));
-    expect(trained().props.accessibilityState.expanded).toBe(false);
-    expect(root.findAllByType(Link)).toHaveLength(0);
-    expect(trained().props.accessibilityLabel).toContain("today");
-    await act(() => trained().props.onPress());
-    expect(root.findByType(Link).props.href.params.id).toBe("swim");
-
-    await act(() => screen?.update(month([])));
-    expect(root.findByProps({ children: 10 }).props.accessibilityLabel).toContain("today");
-    const emptyDate = new Date(2026, 10, 11).toLocaleDateString(undefined, {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-    expect(root.findByProps({ children: 11 }).props.accessibilityLabel).toBe(emptyDate);
+    await layout(362);
+    for (const label of ["Show newer month", "Show older month"]) {
+      const control = root.findByProps({ accessibilityLabel: label });
+      expect(control.props.disabled).toBe(true);
+      expect(control.props.accessibilityState).toEqual({ disabled: true });
+    }
+    // The month card is the calendar: History's title offers no separate one.
+    expect(root.findByType("Title" as never).props.action).toBeUndefined();
   } finally {
-    await act(() => screen?.unmount());
+    await act(() => screen.unmount());
     vi.unstubAllGlobals();
   }
 });
 
-it.each([
-  [{ from: "progress" }, "Progress", "/progress"],
-  [{}, "History", "/history"],
-] as const)(
-  "returns from the calendar to its entry tab when opened without a navigation stack (%j)",
-  async (params, tab, path) => {
-    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-    vi.mocked(useLocalSearchParams).mockReturnValue(params);
-    let screen: ReactTestRenderer | undefined;
-    try {
-      await act(() => {
-        screen = create(createElement(WorkoutCalendar));
+it("opens leap-day sessions from an earlier month in the chosen weekday order", async () => {
+  historyMonths = [
+    monthOf(2024, 1, [
+      session("evening", [2024, 1, 29, 18], { durationMinutes: 25 }),
+      session("morning", [2024, 1, 29, 8], { durationMinutes: 0 }),
+    ]),
+  ];
+  const { screen, root, layout } = await mountHistory({
+    createNodeMock: (node) => (node.type === FlatList ? { scrollToOffset: () => {} } : null),
+  });
+  let card: ReactTestRenderer | undefined;
+  try {
+    await layout(362);
+    await act(() => root.findByProps({ accessibilityLabel: "Show older month" }).props.onPress());
+    const pager = () => root.findByType(FlatList);
+    const renderFebruary = () =>
+      pager().props.renderItem({ item: pager().props.data[1], index: 1 });
+    await act(() => {
+      card = create(renderFebruary());
+    });
+    if (!card) throw Error("Missing month card");
+    const days = card.root;
+    const text = () => root.findAllByType(Text).map((n) => n.children.join(""));
+    expect(days.findByProps({ accessibilityLabel: "2 sessions on 1 training day" })).toBeDefined();
+    const weekdays = days.findAll((n) => n.type === Text && n.props["aria-hidden"]);
+    expect(weekdays.map((n) => n.children.join(""))).toEqual(["M", "T", "W", "T", "F", "S", "S"]);
+    expect(days.findAllByProps({ children: 30 })).toHaveLength(0);
+    const day = days.findByProps({ accessibilityRole: "button" });
+    expect(day.props.accessibilityLabel).toContain("2 workouts");
+    expect(day.findByType(Text).children.join("")).toBe("29");
+    // Thursday, the fourth column with Monday first.
+    const cell = day.parent;
+    expect(cell?.parent?.children.indexOf(cell)).toBe(3);
+    expect(text()).not.toContain("morning");
+    await act(() => day.props.onPress());
+    expect(text()).toContain("evening");
+    expect(text().some((label) => label.endsWith(" · <1 min"))).toBe(true);
+    expect(root.findAllByType(Link).map((link) => link.props.href)).toEqual(
+      ["evening", "morning"].map((id) => ({ pathname: "/workout/[id]", params: { id } })),
+    );
+    await act(() => card?.update(renderFebruary()));
+    await act(() => days.findByProps({ accessibilityRole: "button" }).props.onPress());
+    expect(text()).not.toContain("evening");
+  } finally {
+    await act(() => {
+      card?.unmount();
+      screen.unmount();
+    });
+    historyMonths = [];
+    vi.unstubAllGlobals();
+  }
+});
+
+it("picks out the workout just saved once the finish sheet has gone, in view, and only once", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.useFakeTimers();
+  historyMonths = [
+    monthOf(2026, 10, [
+      session("Push", [2026, 10, 10, 18], {
+        exercises: [{ id: "bench", name: "Bench Press", sets: 3, bars: [] }],
+      }),
+      session("Legs", [2026, 10, 8, 18]),
+    ]),
+  ];
+  let screen: ReactTestRenderer | undefined;
+  try {
+    await act(() => {
+      screen = create(createElement(HistoryScreen));
+    });
+    if (!screen) throw Error("Missing History");
+    const root = screen.root;
+    const list = () => root.findByType(SectionList);
+    const lit = () =>
+      list()
+        .props.sections.flatMap((section: { data: { id: string }[] }) =>
+          section.data.map((item, index) => list().props.renderItem({ item, index, section })),
+        )
+        .filter((row: ReactElement<{ flash: boolean }>) => row.props.flash)
+        .map((row: ReactElement<{ workout: { id: string } }>) => row.props.workout.id);
+    const finishSheetClosed = (closing: boolean) =>
+      act(() => {
+        for (const { type, listener } of [...stackEvents]) {
+          if (type === "transitionEnd") listener({ data: { closing } });
+        }
       });
-      if (!screen) throw new Error("Missing calendar");
-      const back = screen.root.findByProps({ accessibilityLabel: `Back to ${tab}` });
-      await act(() => back.props.onPress());
-      expect(router.replace).toHaveBeenLastCalledWith(path);
-    } finally {
-      await act(() => screen?.unmount());
-      vi.clearAllMocks();
-      vi.unstubAllGlobals();
-    }
-  },
-);
+
+    // Searching for Legs before training: the Push saved next would be hidden by it.
+    await act(() => root.findByType(TextInput).props.onChangeText("legs"));
+    expect(list().props.sections[0].data.map((w: { id: string }) => w.id)).toEqual(["Legs"]);
+
+    vi.mocked(useLocalSearchParams).mockReturnValue({ saved: "Push" });
+    await act(() => screen?.update(createElement(HistoryScreen)));
+    expect(root.findByType(TextInput).props.value).toBe("");
+    expect(navigation.setParams).toHaveBeenCalledWith({ saved: undefined });
+    // Nothing lights up under the finish sheet while it is still closing.
+    expect(lit()).toEqual([]);
+    await finishSheetClosed(true);
+    expect(lit()).toEqual([]);
+    expect(sessionList.scrollToLocation).not.toHaveBeenCalled();
+
+    await finishSheetClosed(false);
+    expect(lit()).toEqual(["Push"]);
+    // The list's first item counts as 1 (its month's header is 0).
+    expect(sessionList.scrollToLocation).toHaveBeenCalledExactlyOnceWith({
+      sectionIndex: 0,
+      itemIndex: 1,
+      viewPosition: 0.5,
+      animated: true,
+    });
+    // The fallback doesn't light it a second time.
+    await act(() => vi.advanceTimersByTime(savedSettleMs));
+    expect(lit()).toEqual(["Push"]);
+    await act(() => vi.advanceTimersByTime(flashDuration - savedSettleMs));
+    expect(lit()).toEqual([]);
+
+    // With its id taken off the route, History doesn't play it again.
+    vi.mocked(useLocalSearchParams).mockReturnValue({});
+    await act(() => screen?.update(createElement(HistoryScreen)));
+    await act(() => vi.advanceTimersByTime(savedSettleMs + flashDuration));
+    expect(lit()).toEqual([]);
+    expect(sessionList.scrollToLocation).toHaveBeenCalledTimes(1);
+  } finally {
+    await act(() => screen?.unmount());
+    vi.mocked(useLocalSearchParams).mockReturnValue({});
+    vi.clearAllMocks();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    historyMonths = [];
+  }
+});
+
+it("lights a saved workout after a moment when the closing sheet doesn't report it, keeping a search that shows it", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.useFakeTimers();
+  historyMonths = [
+    monthOf(2026, 10, [session("Legs", [2026, 10, 8, 18])]),
+    monthOf(2026, 9, [session("Hike", [2026, 9, 20, 9]), session("Easy legs", [2026, 9, 2, 9])]),
+  ];
+  let screen: ReactTestRenderer | undefined;
+  try {
+    await act(() => {
+      screen = create(createElement(HistoryScreen));
+    });
+    if (!screen) throw Error("Missing History");
+    const root = screen.root;
+    const list = () => root.findByType(SectionList);
+    await act(() => root.findByType(TextInput).props.onChangeText("legs"));
+    // Synced in from another device while this one was training: an older workout.
+    vi.mocked(useLocalSearchParams).mockReturnValue({ saved: "Easy legs" });
+    await act(() => screen?.update(createElement(HistoryScreen)));
+    expect(root.findByType(TextInput).props.value).toBe("legs");
+    await act(() => vi.advanceTimersByTime(savedSettleMs - 1));
+    expect(sessionList.scrollToLocation).not.toHaveBeenCalled();
+    await act(() => vi.advanceTimersByTime(1));
+    const october = list().props.sections[1];
+    expect(october.data.map((w: { id: string }) => w.id)).toEqual(["Easy legs"]);
+    expect(
+      list().props.renderItem({ item: october.data[0], index: 0, section: october }).props.flash,
+    ).toBe(true);
+    expect(sessionList.scrollToLocation).toHaveBeenCalledExactlyOnceWith({
+      sectionIndex: 1,
+      itemIndex: 1,
+      viewPosition: 0.5,
+      animated: true,
+    });
+
+    // Its row hadn't been drawn yet: the list heads for about where it is, then tries once more.
+    const scrollTo = vi.fn();
+    sessionList.getScrollResponder.mockReturnValue({ scrollTo });
+    const failed = { averageItemLength: 90, index: 4, highestMeasuredFrameIndex: 2 };
+    await act(() => list().props.onScrollToIndexFailed(failed));
+    expect(scrollTo).toHaveBeenCalledExactlyOnceWith({ y: 360, animated: false });
+    await act(() => vi.advanceTimersByTime(100));
+    expect(sessionList.scrollToLocation).toHaveBeenCalledTimes(2);
+    expect(sessionList.scrollToLocation).toHaveBeenLastCalledWith({
+      sectionIndex: 1,
+      itemIndex: 1,
+      viewPosition: 0.5,
+      animated: true,
+    });
+    // Failing again doesn't keep retrying.
+    await act(() => list().props.onScrollToIndexFailed(failed));
+    await act(() => vi.advanceTimersByTime(1000));
+    expect(sessionList.scrollToLocation).toHaveBeenCalledTimes(2);
+  } finally {
+    await act(() => screen?.unmount());
+    vi.mocked(useLocalSearchParams).mockReturnValue({});
+    vi.clearAllMocks();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    historyMonths = [];
+  }
+});

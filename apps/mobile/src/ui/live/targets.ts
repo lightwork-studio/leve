@@ -3,6 +3,7 @@ import type { DeviceStore } from "@leve/storage";
 import { restTimer } from "../../data/rest-timer.ts";
 import { type PreviousExercise, previousExercise, setLabel, setNumbers } from "../../model/live.ts";
 import type { WorkoutTree } from "../../model/past-workouts.ts";
+import { supersetMemberships } from "../../model/supersets.ts";
 import type { Settings, WorkoutPlan } from "../../model/types.ts";
 import type { DistancePreferences } from "../format.ts";
 import { clearSetStopwatch } from "../use-set-stopwatch.ts";
@@ -121,6 +122,24 @@ export function dockTarget(
     if (next >= 0) return at(entryIndex, next);
   }
   return null;
+}
+
+/**
+ * The exercise to select once a set is logged. In a superset the lifter alternates, so it is the
+ * next member, in order and wrapping around, that still has a set to log. Otherwise, or when every
+ * other member is finished, it stays the exercise that was logged. The logged exercise itself is
+ * never checked, so `tree` may still show the logged set as open.
+ */
+export function exerciseAfterLog(tree: WorkoutTree, entryId: string): string {
+  const groups = supersetMemberships(tree.entries.map(({ entry }) => entry.content.supersetId));
+  const start = tree.entries.findIndex(({ entry }) => entry.id === entryId);
+  let index = groups[start]?.next;
+  while (index !== undefined && index !== start) {
+    const member = tree.entries[index];
+    if (member?.sets.some(loggable)) return member.entry.id;
+    index = groups[index]?.next;
+  }
+  return entryId;
 }
 
 /** After a set is logged: its rest starts, and what was typed for it is cleared. */

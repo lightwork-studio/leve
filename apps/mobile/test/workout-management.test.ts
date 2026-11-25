@@ -19,6 +19,7 @@ import { workoutFrame } from "../src/activity/frame.ts";
 import { type WorkoutContent, workoutSession } from "../src/activity/session.ts";
 import { pickerLibrary } from "../src/data/custom-exercises.ts";
 import { type BuiltInExercise, EXERCISES } from "../src/data/exercises.ts";
+import { newId } from "../src/data/ids.ts";
 import {
   applyAppChange,
   historyData,
@@ -35,17 +36,20 @@ import { saveShowTargets } from "../src/data/show-targets.ts";
 import {
   addExercise,
   addExerciseNote,
+  addHistoricalExercises,
   addHistoricalSet,
   addSet,
   beginWorkout,
   discardWorkout,
   finishWorkout,
+  type HistoricalExercise,
   logSet,
   moveWorkoutExercise,
   removeWorkoutExercise,
   removeWorkoutSet,
   updateSet,
 } from "../src/data/workout-actions.ts";
+import { emptyWorkoutSet } from "../src/model/live.ts";
 import type { WorkoutSet } from "../src/model/types.ts";
 import { MiniPlayer } from "../src/ui/live/mini-player.tsx";
 import { useWorkoutPlayer } from "../src/ui/live/use-workout-player.ts";
@@ -126,6 +130,17 @@ vi.mock("../src/data/queries.ts", async (load) => ({
   useProgress: () => progressData(store),
 }));
 vi.mock("../src/ui/line-chart.tsx", () => ({ LineChart: () => null }));
+const toasts: string[] = [];
+vi.mock("../src/ui/notice.tsx", async (load) => {
+  const notice = await load<typeof import("../src/ui/notice.tsx")>();
+  return {
+    ...notice,
+    showToast: (text: string) => {
+      toasts.push(text);
+      notice.showToast(text);
+    },
+  };
+});
 vi.mock("../src/ui/use-now.ts", () => ({ useToday: () => Date.now() }));
 vi.mock("../src/ui/chart-controls.tsx", () => ({
   Segmented: ({
@@ -142,6 +157,13 @@ vi.mock("../src/ui/chart-controls.tsx", () => ({
 }));
 let settled = true;
 vi.mock("../src/ui/use-settled.ts", () => ({ useSettled: () => settled }));
+// Records what each jump or move brings into sight, still scrolling as it would in a browser.
+const { reveal } = vi.hoisted(() => ({ reveal: vi.fn() }));
+vi.mock("../src/ui/reveal.ts", async (load) => {
+  const actual = await load<typeof import("../src/ui/reveal.ts")>();
+  reveal.mockImplementation(actual.revealInList);
+  return { revealInList: reveal };
+});
 vi.mock("../src/ui/enter.tsx", () => ({
   Enter: ({ children }: { children: ReactNode }) => children,
   StillOnOpen: ({ children }: { children: ReactNode }) => children,
@@ -393,6 +415,11 @@ afterEach(async () => {
   backRoute.mockReset();
   canGoBack.mockReset();
 });
+/** A plank set as drafted, for adding to a finished workout. */
+function plankSet(durationSeconds: number | null): WorkoutSet {
+  return { ...emptyWorkoutSet(""), durationSeconds };
+}
+
 async function press(label: string) {
   const button = Array.from(host.querySelectorAll("button")).find(
     (el) => el.textContent === label || el.getAttribute("aria-label") === label,
@@ -1104,40 +1131,36 @@ it("keeps the moved exercise’s control and unfinished set together through rep
   const first = addExercise(store, workout, EXERCISES.bench, 0);
   const second = addExercise(store, workout, EXERCISES.bench, 0);
   const last = addExercise(store, workout, EXERCISES.plank, 0);
-  const reveal = vi.spyOn(HTMLElement.prototype, "scrollIntoView");
-  try {
-    await act(() => root.render(h(ActiveWorkoutScreen)));
-    await typeInto("kg for set 1", "72.5");
-    await press("Done typing");
-    await press("Manage Bench Press");
-    await press("Move Bench Press down from position 1");
-    const focusedMove = async (label: string) => {
-      const button = document.activeElement;
-      if (!(button instanceof HTMLButtonElement)) throw Error("Move control lost focus");
-      expect(button.getAttribute("aria-label")).toBe(label);
-      await vi.waitFor(() => expect(reveal.mock.contexts).toContain(button));
-      reveal.mockClear();
-      return button;
-    };
-    const order = () =>
-      store.list("workout_exercise", { parentId: workout }).map((entry) => entry.id);
-    const down = await focusedMove("Move Bench Press down from position 2");
-    expect(order()).toEqual([second, first, last]);
-    await act(() => down.click());
-    const up = await focusedMove("Move Bench Press up from position 3");
-    expect(order()).toEqual([second, last, first]);
-    await act(() => up.click());
-    await focusedMove("Move Bench Press up from position 2");
-    expect(order()).toEqual([second, first, last]);
-    const weights = Array.from(host.querySelectorAll('button[aria-label="kg for set 1"]')).map(
-      (cell) => cell.textContent,
-    );
-    // The typed weight moved with its exercise, now second.
-    expect(weights).toEqual(["–", "72.5"]);
-    expect(store.list("workout_set", { parentId: first })[0]?.content?.completedAt).toBeNull();
-  } finally {
-    reveal.mockRestore();
-  }
+  reveal.mockClear();
+  await act(() => root.render(h(ActiveWorkoutScreen)));
+  await typeInto("kg for set 1", "72.5");
+  await press("Done typing");
+  await press("Manage Bench Press");
+  await press("Move Bench Press down from position 1");
+  const focusedMove = async (label: string) => {
+    const button = document.activeElement;
+    if (!(button instanceof HTMLButtonElement)) throw Error("Move control lost focus");
+    expect(button.getAttribute("aria-label")).toBe(label);
+    await vi.waitFor(() => expect(reveal).toHaveBeenCalledWith(button, "nearest"));
+    reveal.mockClear();
+    return button;
+  };
+  const order = () =>
+    store.list("workout_exercise", { parentId: workout }).map((entry) => entry.id);
+  const down = await focusedMove("Move Bench Press down from position 2");
+  expect(order()).toEqual([second, first, last]);
+  await act(() => down.click());
+  const up = await focusedMove("Move Bench Press up from position 3");
+  expect(order()).toEqual([second, last, first]);
+  await act(() => up.click());
+  await focusedMove("Move Bench Press up from position 2");
+  expect(order()).toEqual([second, first, last]);
+  const weights = Array.from(host.querySelectorAll('button[aria-label="kg for set 1"]')).map(
+    (cell) => cell.textContent,
+  );
+  // The typed weight moved with its exercise, now second.
+  expect(weights).toEqual(["–", "72.5"]);
+  expect(store.list("workout_set", { parentId: first })[0]?.content?.completedAt).toBeNull();
 });
 
 it("saves notes during a workout and protects a newer note when the editor is stale", async () => {
@@ -1252,6 +1275,57 @@ it("shows the records before saving, then saves the workout and opens History at
   expect(store.list("workout_set", { parentId: entry })).toHaveLength(1);
   expect(navigateRoute).toHaveBeenCalledWith({ pathname: "/history", params: { saved: id } });
 });
+
+it.each(["kept", "deleted", "another running"] as const)(
+  "saves the workout and then starts the routine chosen on Train (%s)",
+  async (state) => {
+    const id = beginWorkout(store);
+    const entry = addExercise(store, id, EXERCISES.bench, 0);
+    const [set] = store.list("workout_set", { parentId: entry });
+    if (!set) throw Error("Missing set");
+    logSet(store, set.id, { weightKg: 60, reps: 5 });
+    const next = createRoutine(
+      store,
+      "Pull day",
+      null,
+      [
+        {
+          id: "row",
+          exercise: EXERCISES.bench,
+          sets: [{ id: "a", values: { weight: "40", reps: "8" } }],
+        },
+      ],
+      readSettings(store),
+    );
+    detailReturn = { next } as typeof detailReturn;
+    await act(() => root.render(h(FinishScreen)));
+    expect(host.textContent).toContain("Pull day starts after saving.");
+    // Changed on another device while the summary was open: saving still saves.
+    if (state === "deleted") store.delete("routine", next);
+    const other = newId();
+    if (state === "another running") {
+      const content = store.get("workout", id)?.content;
+      if (!content) throw Error("Missing workout");
+      store.put("workout", other, { ...content, title: "On the iPad" });
+    }
+    toasts.length = 0;
+    await press("Save workout");
+    await act(feedback.release);
+    expect(store.get("workout", id)?.content?.endedAt).toEqual(expect.any(String));
+    if (state === "kept") {
+      expect(store.activeWorkout()?.content).toMatchObject({ routineId: next, endedAt: null });
+      expect(pushRoute).toHaveBeenCalledWith("/workout/active");
+      expect(navigateRoute).not.toHaveBeenCalled();
+      expect(toasts).toEqual(["Workout added to History"]);
+    } else {
+      // Nothing else starts, and the running workout from the iPad isn't opened in its place.
+      expect(store.activeWorkout()?.id ?? null).toBe(state === "deleted" ? null : other);
+      expect(pushRoute).not.toHaveBeenCalled();
+      expect(navigateRoute).toHaveBeenCalledWith({ pathname: "/history", params: { saved: id } });
+      expect(toasts).toEqual(["Workout added to History. Pull day couldn’t be started."]);
+    }
+  },
+);
 
 it("sets how long the workout lasted before saving it, by the same rules as a saved one", async () => {
   const id = beginWorkout(store);
@@ -1772,7 +1846,7 @@ it("uses a corrected previous set while the current workout stays open", async (
   ).toHaveLength(0);
 });
 
-it("uses previous values and routine suggestions without a separate target caption", async () => {
+it("hints a routine weight only where no weight was logged last time", async () => {
   const past = beginWorkout(store);
   const priorEntry = addExercise(store, past, EXERCISES.bench, 0);
   const priorSet = store.list("workout_set", { parentId: priorEntry })[0];
@@ -1800,11 +1874,16 @@ it("uses previous values and routine suggestions without a separate target capti
   const render = () => act(() => root.render(h(ActiveWorkoutScreen)));
   await render();
   expect(host.textContent).toContain("92.5 × 6");
-  expect(fieldTarget("kg for set 1")).toBe("40");
+  // Last time's 92.5 kg leads set 1; set 2 has no history, so its routine weight still shows.
+  expect(fieldTarget("kg for set 1")).toBeNull();
   expect(fieldTarget("reps for set 1")).toBe("8–10");
   expect(fieldTarget("kg for set 2")).toBe("0");
   expect(fieldTarget("reps for set 2")).toBe("10–12");
   expect(fieldText("reps for set 2")).toBe("10");
+  // The dock follows the same rule for the set it logs next.
+  expect(field("Type weight")?.textContent).toMatch(/^92\.5kg/);
+  expect(field("Type weight")?.textContent).not.toContain("·");
+  expect(field("Type reps")?.textContent).toBe("6reps · 8–10");
   await act(() => saveShowTargets(false));
   expect(fieldTarget("kg for set 1")).toBeNull();
   expect(fieldTarget("reps for set 1")).toBeNull();
@@ -1815,7 +1894,8 @@ it("uses previous values and routine suggestions without a separate target capti
   await act(() => saveShowTargets(true));
   change((db) => saveSettings(db, { weightUnit: "lbs" }));
   await render();
-  expect(fieldTarget("lbs for set 1")).toBe("88.2");
+  expect(fieldTarget("lbs for set 1")).toBeNull();
+  expect(fieldTarget("lbs for set 2")).toBe("0");
   expect(fieldTarget("reps for set 1")).toBe("8–10");
   await press("Log set 1");
   await render();
@@ -1823,8 +1903,9 @@ it("uses previous values and routine suggestions without a separate target capti
     weightKg: 92.5,
     reps: 6,
   });
-  expect(fieldTarget("lbs for set 1")).toBe("88.2");
+  expect(fieldTarget("lbs for set 1")).toBeNull();
   expect(fieldTarget("lbs for set 2")).toBe("0");
+  expect(field("Type weight")?.textContent).toMatch(/lbs · 0$/);
 });
 
 it("keeps previous running values and the next set’s planned duration in the fields", async () => {
@@ -2133,6 +2214,65 @@ it("shows planned effort in the dock and can record actual effort with captions 
   await press("RPE 8.5");
   expect(readWorkoutTree(store, workout)?.entries[0]?.sets[0]?.content.rpe).toBe(8.5);
   expect(fieldText("RPE for set 1")).toBe("8.5");
+});
+
+it("records RPE 6 or less on the pad that 6− opens, in half steps from 1 to 10", async () => {
+  const routine = createRoutine(
+    store,
+    "Easy",
+    null,
+    [
+      {
+        id: "bench",
+        exercise: EXERCISES.bench,
+        restSecondsText: "0",
+        sets: [
+          { id: "light", values: { reps: "8" }, effortText: "4.5" },
+          { id: "next", values: { reps: "8" }, effortText: "6" },
+        ],
+      },
+    ],
+    readSettings(store),
+    "",
+    "rpe",
+  );
+  saveSettings(store, { trackRepsInReserve: true });
+  const workout = beginWorkout(store, routine);
+  const rpe = () => readWorkoutTree(store, workout)?.entries[0]?.sets[0]?.content.rpe;
+  await act(() => root.render(h(ActiveWorkoutScreen)));
+  expect(fieldTarget("RPE for set 1")).toBe("4.5");
+  await press("Log set 1");
+  // The strip offers 6− in place of a plain 6, and nothing below it.
+  expect(field("RPE 6")).toBeNull();
+  expect(field("RPE 5")).toBeNull();
+  await press("6 or less: opens the number pad");
+  // The pad opens on 6, takes a decimal point, and records only on Done.
+  expect(fieldText("RPE for set 1")).toBe("6");
+  expect(field("Decimal point")).not.toBeNull();
+  expect(rpe()).toBeNull();
+  // 0 isn't an RPE, and only halves follow the point: 4.3 is refused, 4.5 kept.
+  await pressKey("0");
+  expect(fieldText("RPE for set 1")).toBe("6");
+  await pressKey("4");
+  await pressKey("Decimal point");
+  await pressKey("3");
+  await pressKey("5");
+  expect(fieldText("RPE for set 1")).toBe("4.5");
+  await press("Done");
+  expect(rpe()).toBe(4.5);
+  // It reopens on the logged value; steps go by half and stop at 1.
+  await press("RPE for set 1");
+  await press("6 or less: opens the number pad");
+  expect(fieldText("RPE for set 1")).toBe("4.5");
+  for (let i = 0; i < 9; i++) await press("Step down 0.5");
+  expect(fieldText("RPE for set 1")).toBe("1");
+  await press("Step up 0.5");
+  await press("Done");
+  expect(rpe()).toBe(1.5);
+  // Values the strip already offers are still picked directly.
+  await press("RPE for set 1");
+  await press("RPE 7.5");
+  expect(rpe()).toBe(7.5);
 });
 
 it("shows a legacy RPE target beside the actual RIR without reinterpreting either", async () => {
@@ -2577,7 +2717,7 @@ it("keeps an unsynced reserve value read-only during the first richer download",
   expect(store.get("workout_set", record.id)?.content?.repsInReserve).toBe(0);
 });
 
-it("picks an omitted exercise in History and saves it only with a valid first set", async () => {
+it("adds several omitted exercises in History with all their sets, starting from the session before", async () => {
   const editField = async (label: string, value: string) => {
     const input = host.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`);
     if (!input) throw Error(`Missing field ${label}`);
@@ -2586,44 +2726,104 @@ it("picks an omitted exercise in History and saves it only with a valid first se
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
   };
-  const pick = async (name: string) => {
-    await press("Workout options");
-    await press("Add exercise");
-    expect(host.querySelector('[role="dialog"][aria-label="Add exercise"]')).not.toBeNull();
+  const fieldValue = (label: string) =>
+    host.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)?.value;
+  const select = async (name: string) => {
     await editField("Search exercises", name);
-    const button = Array.from(host.querySelectorAll("button")).find((button) => {
-      const label = button.getAttribute("aria-label") ?? "";
-      return label.startsWith(`Add ${name},`) || label.startsWith(`Add ${name} again,`);
-    });
-    if (!button) throw Error(`Missing ${name} in exercise picker`);
-    await act(() => button.click());
-    expect(host.querySelector('[role="dialog"][aria-label="First set"]')).not.toBeNull();
+    const row = Array.from(
+      host.querySelectorAll<HTMLButtonElement>('button[role="checkbox"]'),
+    ).find((button) => button.getAttribute("aria-label")?.startsWith(`${name},`));
+    if (!row) throw Error(`Missing ${name} in exercise picker`);
+    await act(() => row.click());
   };
+  /** A finished bench session on a given day, with the weights logged. */
+  const session = (day: string, kg: number[]) => {
+    const workout = beginWorkout(store);
+    const entry = addExercise(store, workout, EXERCISES.bench, 0);
+    for (const [index, weightKg] of kg.entries()) {
+      const set =
+        index === 0 ? store.list("workout_set", { parentId: entry })[0]?.id : addSet(store, entry);
+      if (!set) throw Error("Missing set");
+      logSet(store, set, { weightKg, reps: 10 });
+    }
+    finishWorkout(store, workout, { countForRoutine: false });
+    redate(workout, day);
+    return workout;
+  };
+  const redate = (workout: string, day: string) => {
+    const content = store.get("workout", workout)?.content;
+    store.put("workout", workout, {
+      ...content,
+      startedAt: `${day}T08:00:00.000Z`,
+      endedAt: `${day}T09:00:00.000Z`,
+    });
+  };
+  session("2026-11-11", [40, 50]);
   detailId = beginWorkout(store);
-  const bench = addExercise(store, detailId, EXERCISES.bench, 60);
-  const original = store.list("workout_set", { parentId: bench })[0];
-  if (!original) throw Error("Missing first set");
-  logSet(store, original.id, { reps: 8 });
+  const curl = addExercise(store, detailId, EXERCISES.curl, 0);
+  const curlSet = store.list("workout_set", { parentId: curl })[0];
+  if (!curlSet) throw Error("Missing curl set");
+  logSet(store, curlSet.id, { weightKg: 12, reps: 10 });
   await act(() => root.render(h(WorkoutDetailScreen)));
   expect(host.textContent).not.toContain("Add exercise");
   finishWorkout(store, detailId, { countForRoutine: false });
+  redate(detailId, "2026-11-18");
+  // A later session isn't what an older workout's sets are filled in from.
+  session("2026-11-22", [90]);
   const activeId = beginWorkout(store);
   const activeBefore = readWorkoutTree(store, activeId);
   const before = readWorkoutTree(store, detailId);
   await act(() => root.render(h(WorkoutDetailScreen)));
+
+  await press("Add exercises to this workout");
+  expect(host.querySelector('[role="dialog"][aria-label="Add exercise"]')).not.toBeNull();
+  await select("Bench Press");
+  await select("Plank");
+  await press("Next, 2 exercises");
+  expect(host.querySelector('[role="dialog"][aria-label="Log sets"]')).not.toBeNull();
+  expect(host.textContent).toContain("No earlier sessions");
+  // Back to the list keeps the choice.
+  await press("Exercises");
+  await press("Review selection");
+  expect(
+    Array.from(host.querySelectorAll('button[aria-checked="true"]')).map(
+      (button) => button.getAttribute("aria-label")?.split(",")[0],
+    ),
+  ).toEqual(["Bench Press", "Plank"]);
+  await press("Back");
+  await press("Next, 2 exercises");
+
   const pending = store.summary();
-  await pick("Plank");
-  await press("Save exercise and set");
-  expect(host.textContent).toContain("Enter a time to log this set.");
-  await press("Cancel");
+  await press("Save · 2 exercises · 0 sets");
+  expect(host.textContent).toContain("Enter a set for Bench Press.");
+  const copy = Array.from(host.querySelectorAll("button")).find((button) =>
+    button.getAttribute("aria-label")?.startsWith("Copy Bench Press from"),
+  );
+  if (!copy) throw Error("Missing copy from the session before");
+  await act(() => copy.click());
+  expect([fieldValue("Bench Press set 1 KG"), fieldValue("Bench Press set 2 KG")]).toEqual([
+    "40",
+    "50",
+  ]);
+  await press("Add set to Bench Press");
+  expect(fieldValue("Bench Press set 3 KG")).toBe("50");
+  await editField("Bench Press set 3 REPS", "6");
+  await press("Bench Press set 1, Working");
+  await editField("Plank set 1 TIME", "45");
+  await press("Add set to Plank");
+  await editField("Plank set 2 TIME", "");
+  await press("Add set to Plank");
+  await editField("Plank set 3 TIME", "1:00");
+  await editField("Bench Press set 2 REPS", "");
+  await press("Save · 2 exercises · 5 sets");
+  expect(host.textContent).toContain("Before this: Wed, Nov 11 · 2 sets · top 50 kg × 10 reps");
+  expect(host.textContent).toContain("Bench Press, set 2: Enter reps to log this set.");
   expect(store.summary()).toEqual(pending);
   expect(readWorkoutTree(store, detailId)).toEqual(before);
-  for (const seconds of [35, 60]) {
-    await pick("Plank");
-    await editField("Time (m:ss or seconds)", String(seconds));
-    await press("Save exercise and set");
-    await act(() => root.render(h(WorkoutDetailScreen)));
-  }
+
+  await editField("Bench Press set 2 REPS", "9");
+  await press("Save · 2 exercises · 5 sets");
+  expect(host.querySelector('[role="dialog"][aria-label="Log sets"]')).toBeNull();
   const after = readWorkoutTree(store, detailId);
   expect(after?.workout).toEqual(before?.workout);
   expect(after?.entries[0]).toEqual(before?.entries[0]);
@@ -2632,38 +2832,81 @@ it("picks an omitted exercise in History and saves it only with a valid first se
       exercise: entry.content.exerciseId,
       position: entry.content.position,
       sets: sets.map(({ content }) => [
-        content.durationSeconds,
+        content.type,
+        content.weightKg,
+        content.reps ?? content.durationSeconds,
         content.completedAt,
         content.planSlot,
       ]),
     })),
   ).toEqual([
     {
-      exercise: EXERCISES.plank.id,
+      exercise: EXERCISES.bench.id,
       position: 2,
-      sets: [[35, before?.workout.content.endedAt, null]],
+      sets: [
+        ["warmup", 40, 10, "2026-11-18T09:00:00.000Z", null],
+        ["normal", 50, 9, "2026-11-18T09:00:00.000Z", null],
+        ["normal", 50, 6, "2026-11-18T09:00:00.000Z", null],
+      ],
     },
     {
       exercise: EXERCISES.plank.id,
       position: 3,
-      sets: [[60, before?.workout.content.endedAt, null]],
+      sets: [
+        ["normal", null, 45, "2026-11-18T09:00:00.000Z", null],
+        ["normal", null, 60, "2026-11-18T09:00:00.000Z", null],
+      ],
     },
   ]);
   expect(readWorkoutTree(store, activeId)).toEqual(activeBefore);
-  expect(workoutDetail(store, detailId)?.summary.sets).toBe(3);
-  await pick("Biceps Curl");
-  await editField("REPS", "6");
-  await editField("Reps in reserve", "0");
-  await press("Save exercise and set");
-  const added = readWorkoutTree(store, detailId)?.entries.at(-1);
-  expect(added?.entry.content.exerciseId).toBe(EXERCISES.curl.id);
-  expect(
-    added?.sets.map(({ content }) => [content.reps, content.repsInReserve, content.completedAt]),
-  ).toEqual([[6, 0, before?.workout.content.endedAt]]);
-  expect(readWorkoutTree(store, activeId)).toEqual(activeBefore);
+  expect(workoutDetail(store, detailId)?.summary.sets).toBe(6);
 });
 
-it("rejects an archived custom pick and rolls back a renumber and entry when its first set is refused", () => {
+it("leaves a finished workout unchanged when exercises added after the fact are refused", () => {
+  const workout = beginWorkout(store);
+  const bench = addExercise(store, workout, EXERCISES.bench, 0);
+  const benchSet = store.list("workout_set", { parentId: bench })[0];
+  if (!benchSet) throw Error("Missing bench set");
+  logSet(store, benchSet.id, { reps: 8 });
+  const plank = (entryId: string, ...seconds: (number | null)[]) => ({
+    entryId,
+    exercise: EXERCISES.plank,
+    sets: seconds.map((value, index) => ({ id: `${entryId}-${index}`, content: plankSet(value) })),
+  });
+  expect(() => addHistoricalExercises(store, workout, [plank("a", 30)])).toThrow("workout changed");
+  finishWorkout(store, workout, { countForRoutine: false });
+  const before = readWorkoutTree(store, workout);
+  const pending = store.summary();
+  const refused: [HistoricalExercise[], string][] = [
+    [[plank("a", 30), plank("b", 40, null)], "Plank, set 2: Enter a time to log this set."],
+    [[plank("a", 30), plank("b")], "Enter a set for Plank."],
+    [
+      [
+        plank("a", 30),
+        { ...plank("b", 40), exercise: { ...EXERCISES.plank, type: "weight_reps" } },
+      ],
+      "Plank changed",
+    ],
+    [[plank("a", 30), plank("a", 40)], "already been saved"],
+    [[], "Select an exercise"],
+  ];
+  for (const [additions, message] of refused) {
+    expect(() => addHistoricalExercises(store, workout, additions)).toThrow(message);
+    expect(store.summary()).toEqual(pending);
+    expect(readWorkoutTree(store, workout)).toEqual(before);
+  }
+  addHistoricalExercises(store, workout, [plank("a", 30, 45)]);
+  expect(() => addHistoricalExercises(store, workout, [plank("a", 30, 45)])).toThrow(
+    "already been saved",
+  );
+  expect(
+    readWorkoutTree(store, workout)?.entries.map(({ sets }) =>
+      sets.map(({ content }) => content.durationSeconds ?? content.reps),
+    ),
+  ).toEqual([[8], [30, 45]]);
+});
+
+it("rejects an archived custom pick and rolls back a renumber and entry when its set is refused", () => {
   const workout = beginWorkout(store);
   const bench = addExercise(store, workout, EXERCISES.bench, 30);
   const original = readWorkoutTree(store, workout)?.entries[0]?.sets[0];
@@ -2686,16 +2929,13 @@ it("rejects an archived custom pick and rolls back a renumber and entry when its
   const exercise = pickerLibrary(store).find((row) => row.id === "custom-hold");
   if (!exercise) throw Error("Missing custom pick");
   const saved = (id: string) =>
-    addHistoricalSet(
-      store,
-      workout,
-      "duration",
+    addHistoricalExercises(store, workout, [
       {
-        id,
-        content: { ...original.content, workoutExerciseId: "extra-entry", durationSeconds: 45 },
+        entryId: "extra-entry",
+        exercise,
+        sets: [{ id, content: { ...original.content, durationSeconds: 45 } }],
       },
-      exercise,
-    );
+    ]);
   store.put("custom_exercise", "custom-hold", { ...custom, archived: true });
   expect(() => saved("set")).toThrow("Choose it again");
   store.put("custom_exercise", "custom-hold", custom);
@@ -3314,22 +3554,15 @@ it("keeps the workout menu beside Review while the details have a sync issue", a
   });
 });
 
-it("returns a directly opened workout to the calendar or its source exercise", async () => {
+it("returns a directly opened workout to History or its source exercise", async () => {
   detailId = "missing-workout";
   canGoBack.mockReturnValue(false);
   const open = () => act(() => root.render(h(WorkoutDetailScreen)));
-  detailReturn = { back: "Calendar" };
-  await open();
-  await press("Calendar");
-  expect(replaceRoute).toHaveBeenLastCalledWith("/history/calendar");
-
+  // A link saved while the calendar screen existed opens on History now.
   detailReturn = { back: "Calendar", from: "progress" };
   await open();
-  await press("Calendar");
-  expect(replaceRoute).toHaveBeenLastCalledWith({
-    pathname: "/history/calendar",
-    params: { from: "progress" },
-  });
+  await press("History");
+  expect(replaceRoute).toHaveBeenLastCalledWith("/history");
 
   detailReturn = { back: "Calendar", fromExercise: "my-calendar-exercise" };
   await open();
@@ -3514,9 +3747,9 @@ it("jumps between the entries of a superset in workout order without checking of
   await act(() => root.render(h(ActiveWorkoutScreen)));
   const destination = heading("Bench Press", 1);
   if (!destination) throw Error("Missing second bench press heading");
-  const reveal = vi.spyOn(destination, "scrollIntoView");
+  reveal.mockClear();
   await jump(0);
-  expect(reveal).toHaveBeenCalledOnce();
+  expect(reveal).toHaveBeenCalledExactlyOnceWith(destination, "start");
   expect(document.activeElement).toBe(heading("Bench Press", 1));
   await jump(1);
   expect(document.activeElement).toBe(heading("Squat", 1));
@@ -3791,14 +4024,55 @@ describe("the logging dock and the number pad", () => {
     await act(() => root.render(h(ActiveWorkoutScreen)));
     const squat = host.querySelector<HTMLButtonElement>('button[aria-label="Squat"]');
     if (!squat) throw Error("Missing squat heading");
-    const reveal = vi.spyOn(squat, "scrollIntoView");
+    reveal.mockClear();
     expect(host.querySelector('[aria-label="Log set 1 of Bench Press"]')).not.toBeNull();
     await press("Jump to Squat, 0 of 1 set done");
-    expect(reveal).toHaveBeenCalledOnce();
+    expect(reveal).toHaveBeenCalledExactlyOnceWith(squat, "start");
     expect(document.activeElement).toBe(squat);
     expect(host.querySelector('[aria-label="Log set 1 of Squat"]')).not.toBeNull();
   });
+
+  it("moves the dock to the next exercise of a superset after each logged set", async () => {
+    supersetWorkout();
+    const screen = () => act(() => root.render(h(ActiveWorkoutScreen)));
+    await screen();
+    await press("Log set 1 of Bench Press");
+    await screen();
+    expect(host.querySelector('[aria-label="Log set 1 of Squat"]')).not.toBeNull();
+    await press("Log set 1 of Squat");
+    await screen();
+    expect(host.querySelector('[aria-label="Log set 2 of Bench Press"]')).not.toBeNull();
+    await press("Log set 2 of Bench Press");
+    await screen();
+    await press("Log set 2 of Squat");
+    await screen();
+    expect(host.querySelector('[aria-label^="Log set"]')).toBeNull();
+  });
 });
+
+/** A bench and squat superset of two sets each, with last time's values to log them from. */
+function supersetWorkout() {
+  const past = beginWorkout(store);
+  for (const [exercise, weightKg] of [
+    [EXERCISES.bench, 80],
+    [EXERCISES.squat, 105],
+  ] as const) {
+    const id = addExercise(store, past, exercise, 0);
+    addSet(store, id);
+    for (const set of store.list("workout_set", { parentId: id }))
+      logSet(store, set.id, { weightKg, reps: 5 });
+  }
+  finishWorkout(store, past, { countForRoutine: false });
+  const workout = beginWorkout(store);
+  for (const exercise of [EXERCISES.bench, EXERCISES.squat]) {
+    const id = addExercise(store, workout, exercise, 0);
+    addSet(store, id);
+    const row = store.get("workout_exercise", id);
+    if (!row?.content) throw Error("Missing entry");
+    store.put("workout_exercise", id, { ...row.content, supersetId: 0 });
+  }
+  return workout;
+}
 
 function PlayerProbe({ capture }: { capture: (frame: ReturnType<typeof workoutFrame>) => void }) {
   capture(workoutFrame(useWorkoutPlayer(), Date.now(), true));
@@ -3806,6 +4080,18 @@ function PlayerProbe({ capture }: { capture: (frame: ReturnType<typeof workoutFr
 }
 
 describe("the minimised workout", () => {
+  it("logs a superset in turn, moving to the next exercise after each set", async () => {
+    supersetWorkout();
+    const mini = () => act(() => root.render(h(MiniPlayer)));
+    await mini();
+    await press("Log set 1 of Bench Press");
+    await mini();
+    expect(host.querySelector('[aria-label="Log set 1 of Squat"]')).not.toBeNull();
+    await press("Log set 1 of Squat");
+    await mini();
+    expect(host.querySelector('[aria-label="Log set 2 of Bench Press"]')).not.toBeNull();
+  });
+
   it("resumes with the logged values and previous-set suggestions before the transition ends", async () => {
     const past = beginWorkout(store);
     const pastBench = addExercise(store, past, EXERCISES.bench, 0);
@@ -3898,7 +4184,8 @@ describe("the minimised workout", () => {
       },
     };
     const factory = { getInstances: () => [handle], start: () => handle };
-    let session = workoutSession(factory, "leve-preview");
+    const memory = { shown: () => undefined, remember: () => {}, forget: () => {} };
+    let session = workoutSession(factory, "leve-preview", memory);
     let pending = Promise.resolve();
     const capture = (frame: ReturnType<typeof workoutFrame>) => {
       pending = session.publish(frame);
@@ -3926,7 +4213,7 @@ describe("the minimised workout", () => {
       store.setNegotiated("1.0", [], scenario === "restored lineage" ? "lineage-B" : "lineage-A");
     }
     const versionBefore = store.editVersion("workout_set", set.id);
-    session = workoutSession(factory, "leve-preview");
+    session = workoutSession(factory, "leve-preview", memory);
     await act(() => root.render(h(PlayerProbe, { capture })));
     await pending;
     const accepted = session.interact(handle.getId(), ticket);
@@ -3967,6 +4254,7 @@ describe("the minimised workout", () => {
       const session = workoutSession(
         { getInstances: () => [handle], start: () => handle },
         "leve-preview",
+        { shown: () => undefined, remember: () => {}, forget: () => {} },
       );
       let ready = Promise.resolve();
       const capture = (frame: ReturnType<typeof workoutFrame>) => {
@@ -4010,6 +4298,7 @@ describe("the minimised workout", () => {
         },
       },
       "leve-preview",
+      { shown: () => undefined, remember: () => {}, forget: () => {} },
     );
     await session.publish(null);
     let pending = Promise.resolve();

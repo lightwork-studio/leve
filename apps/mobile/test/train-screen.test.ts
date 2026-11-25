@@ -7,7 +7,11 @@ import TrainScreen from "../app/(tabs)/index.tsx";
 
 let reduced = false;
 let activeTitle: string | null = "Bench";
+let activeRoutine: string | null = null;
+let activeId = "w1";
 let upNext: { id: string; title: string } | null = null;
+// Replaces the two folders of twenty routines each, for the cases that need other groups.
+let groupsOverride: unknown[] | null = null;
 const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 vi.mock("react-native-reanimated", () => ({ useReducedMotion: () => reduced }));
 const push = vi.fn();
@@ -15,6 +19,7 @@ const change = vi.fn();
 vi.mock("expo-router", () => ({ router: { push: (...args: unknown[]) => push(...args) } }));
 vi.mock("react-native", () => ({
   useColorScheme: () => "dark",
+  Platform: { OS: "web" },
   View: "View",
   Text: "Text",
   StyleSheet: { create: (s: object) => s },
@@ -27,17 +32,39 @@ vi.mock("../src/ui/commit-button.tsx", () => ({ CommitButton: "CommitButton" }))
 vi.mock("../src/ui/enter.tsx", () => ({ Enter: "Enter" }));
 vi.mock("../src/ui/tap.tsx", () => ({ Tap: "Tap" }));
 vi.mock("../src/ui/new-folder-dialog.tsx", () => ({ NewFolderDialog: "Dialog" }));
-// A row's ⋯ menu keeps its items in the tree, to be pressed by name.
-vi.mock("../src/ui/popover-menu.tsx", () => ({ MoreButton: "MoreButton" }));
-vi.mock("../src/ui/group.tsx", () => ({ Group: "Group" }));
 vi.mock("../src/ui/use-now.ts", () => ({ useNow: () => 0 }));
-vi.mock("../src/ui/haptics.ts", () => ({ haptic: { tap: vi.fn(), select: vi.fn() } }));
+vi.mock("../src/ui/haptics.ts", () => ({
+  haptic: { tap: vi.fn(), select: vi.fn(), warning: vi.fn() },
+}));
+// The sheet keeps its choices in the tree, to be pressed by name.
+vi.mock("../src/ui/action-sheet.tsx", () => ({ ActionSheet: "ActionSheet" }));
+// Work after feedback runs at once, unless a test holds it to see the busy state first.
+let held: (() => void)[] | null = null;
+vi.mock("../src/ui/after-feedback.ts", () => ({
+  afterFeedback: (run: () => void) => {
+    if (held) held.push(run);
+    else run();
+    return () => {};
+  },
+}));
+const showToast = vi.fn();
+vi.mock("../src/ui/notice.tsx", () => ({ showToast: (text: string) => showToast(text) }));
+const skipRest = vi.fn();
+vi.mock("../src/data/rest-timer.ts", () => ({
+  restTimer: { skip: (...args: unknown[]) => skipRest(...args) },
+}));
+// Each snapshot differs, so the one discarded can be traced to the tap that opened the sheet.
+let snapshots = 0;
+const snapshot = vi.fn(() => ({ seen: ++snapshots }));
+const replace = vi.fn();
+vi.mock("../src/data/workout-review.ts", () => ({
+  workoutDeletionSnapshot: (...args: unknown[]) => snapshot(...(args as [])),
+  replaceReviewedActiveWorkout: (...args: unknown[]) => replace(...args),
+}));
 vi.mock("../src/ui/icons.tsx", () => ({
   ChevronIcon: "Chevron",
   EditIcon: "Edit",
-  LibraryIcon: "Library",
   FolderIcon: "Folder",
-  FolderPlusIcon: "FolderPlus",
   ForwardIcon: "Forward",
   GearIcon: "Gear",
   MoreIcon: "More",
@@ -45,16 +72,32 @@ vi.mock("../src/ui/icons.tsx", () => ({
   PlusIcon: "Plus",
   TrayIcon: "Tray",
 }));
-vi.mock("../src/data/app-data.tsx", () => ({ useAppData: () => ({ change }) }));
+const appStore = { name: "store" };
+vi.mock("../src/data/app-data.tsx", () => ({ useAppData: () => ({ change, store: appStore }) }));
 const beginWorkout = vi.fn();
 vi.mock("../src/data/workout-actions.ts", () => ({
   beginWorkout: (...args: unknown[]) => beginWorkout(...args),
 }));
 vi.mock("../src/data/queries.ts", () => ({
+  // The running workout: one set logged of two.
+  useLive: () =>
+    activeTitle === null
+      ? null
+      : {
+          tree: {
+            workout: { content: { title: activeTitle } },
+            entries: [
+              { sets: [{ content: { completedAt: "x" } }, { content: { completedAt: null } }] },
+            ],
+          },
+        },
   useTrain: () => ({
     settings: { weightUnit: "kg" },
     upNext,
-    active: activeTitle === null ? null : { content: { title: activeTitle } },
+    active:
+      activeTitle === null
+        ? null
+        : { id: activeId, content: { title: activeTitle, routineId: activeRoutine } },
     week: {
       workouts: 2,
       minutes: 75,
@@ -68,21 +111,31 @@ vi.mock("../src/data/queries.ts", () => ({
         volumeKg: index === 0 ? 8000 : index === 3 ? 4480 : 0,
       })),
     },
-    groups: ["Home", "Gym"].map((id) => ({
-      folder: { id, content: { title: id, position: 1 } },
-      routines: Array.from({ length: 20 }, (_, i) => ({
-        id: String(i),
-        title: `Routine ${i + 1}`,
-        exerciseNames: i === 0 ? ["Bench Press"] : [],
-        exerciseCount: i === 0 ? 1 : 0,
-        daysSinceLast: null,
+    groups:
+      groupsOverride ??
+      ["Home", "Gym"].map((id) => ({
+        folder: { id, content: { title: id, position: 1 } },
+        routines: Array.from({ length: 20 }, (_, i) => ({
+          id: String(i),
+          title: `Routine ${i + 1}`,
+          exerciseNames: i === 0 ? ["Bench Press"] : [],
+          exerciseCount: i === 0 ? 1 : 0,
+          daysSinceLast: null,
+        })),
       })),
-    })),
   }),
 }));
 
+/** Presses the control with this accessibility label. */
+const press = (root: ReactTestRenderer["root"], label: string) =>
+  root.findByProps({ accessibilityLabel: label }).props.onPress();
+const labelled = (root: ReactTestRenderer["root"], pattern: RegExp) =>
+  root
+    .findAll((n) => typeof n.type === "string" && pattern.test(n.props.accessibilityLabel ?? ""))
+    .map((n) => n.props.accessibilityLabel);
+
 it.each([false, true])(
-  "reveals the expanded folder header after layout, opens rename independently, and leaves the main action to the running workout (reduced motion %s)",
+  "reveals the expanded folder header after layout, renames only open folders, and leaves the main action to the running workout (reduced motion %s)",
   async (preference) => {
     reduced = preference;
     // A routine is up next, but while a workout runs the slot shows that workout instead.
@@ -107,11 +160,12 @@ it.each([false, true])(
         root.findAll((n) => n.type === View && typeof n.props.onLayout === "function");
       const layout = (y: number, height: number) => ({ nativeEvent: { layout: { y, height } } });
       layouts()[0]?.props.onLayout(layout(270, 2500));
-      await act(() => choose(root, "Gym folder options", "Rename folder"));
-      const closedFolderDialog = root.findByProps({ initialName: "Gym" });
-      expect(root.find((n) => n.props.accessibilityState?.expanded === false)).toBeDefined();
+      // Only an open folder offers rename, beside its header; a closed one is opened first.
+      expect(labelled(root, /^Rename /)).toEqual(["Rename Home folder"]);
+      await act(() => press(root, "Rename Home folder"));
+      const openFolderDialog = root.findByProps({ initialName: "Home" });
       expect(nextFrame).toBeUndefined();
-      await act(() => closedFolderDialog.props.onFinish(null));
+      await act(() => openFolderDialog.props.onFinish(null));
       await act(() =>
         root.find((n) => n.props.accessibilityState?.expanded === false).props.onPress(),
       );
@@ -119,7 +173,7 @@ it.each([false, true])(
       expect(scrollTo).not.toHaveBeenCalled();
       nextFrame?.();
       expect(scrollTo).toHaveBeenCalledWith({ y: 1282, animated: !preference });
-      await act(() => choose(root, "Gym folder options", "Rename folder"));
+      await act(() => press(root, "Rename Gym folder"));
       expect(root.findByProps({ initialName: "Gym" })).toBeDefined();
       expect(root.findAll((n) => n.props.accessibilityState?.expanded === true)).toHaveLength(2);
       // While a workout runs, the slot shows it (with its own Resume), so Train offers no start.
@@ -196,10 +250,7 @@ const rowAction = (root: ReactTestRenderer["root"], title: string) => {
   while (target && typeof target.props.onPress !== "function") target = target.parent;
   return target;
 };
-const menuOf = (root: ReactTestRenderer["root"], title: string) =>
-  root.findByProps({ label: `${title} options` });
-
-it("starts a routine from a tap on its row, and edits it from the row's menu", async () => {
+it("starts a routine from a tap on its row, and edits it from the row's pencil", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   activeTitle = null;
   change.mockClear();
@@ -226,10 +277,10 @@ it("starts a routine from a tap on its row, and edits it from the row's menu", a
     expect(beginWorkout).toHaveBeenCalledWith({}, "0");
     expect(push.mock.calls).toEqual([["/workout/active"]]);
 
-    // Editing moved to the row's menu.
-    const menu = menuOf(root, "Routine 1");
-    expect(menu.props.items.map((item: { label: string }) => item.label)).toEqual(["Edit routine"]);
-    await act(() => menu.props.items[0].onPress());
+    // The pencil beside the row edits the routine and starts nothing.
+    const edit = root.findByProps({ accessibilityLabel: "Edit Routine 1" });
+    expect(edit).not.toBe(row);
+    await act(() => edit.props.onPress());
     expect(push.mock.calls[1]).toEqual([{ pathname: "/routine/[id]", params: { id: "0" } }]);
     expect(change).toHaveBeenCalledTimes(1);
   } finally {
@@ -239,10 +290,11 @@ it("starts a routine from a tap on its row, and edits it from the row's menu", a
   }
 });
 
-it("starts nothing from a routine while a workout runs, but still edits it", async () => {
+it("asks what to do with the running workout before starting another routine", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  change.mockClear();
-  push.mockClear();
+  // Routine 2 is the one running.
+  activeRoutine = "1";
+  for (const mock of [change, push, snapshot, replace, skipRest, showToast]) mock.mockClear();
   let screen: ReactTestRenderer | undefined;
   try {
     await act(() => {
@@ -250,37 +302,107 @@ it("starts nothing from a routine while a workout runs, but still edits it", asy
     });
     if (!screen) throw Error("Train did not mount");
     const root = screen.root;
-    expect(rowAction(root, "Routine 1")).toBeNull();
-    expect(root.findAll((n) => /^Start Routine/.test(n.props.accessibilityLabel ?? ""))).toEqual(
-      [],
-    );
+    const sheet = () => root.findAllByType("ActionSheet" as never)[0];
+    const tap = (title: string) => act(() => rowAction(root, title)?.props.onPress());
+    // The sheet replaces the note that used to explain why nothing happened.
     expect(
       root.findAll((n) => n.type === Text && /Finish or discard/.test(String(n.props.children))),
-    ).toHaveLength(1);
-    await act(() => menuOf(root, "Routine 1").props.items[0].onPress());
-    expect(push.mock.calls).toEqual([[{ pathname: "/routine/[id]", params: { id: "0" } }]]);
-    expect(change).not.toHaveBeenCalled();
-  } finally {
-    await act(() => screen?.unmount());
-    vi.unstubAllGlobals();
-  }
-});
+    ).toHaveLength(0);
 
-it("opens the exercise library from Train, so back leads to Train", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  push.mockClear();
-  let screen: ReactTestRenderer | undefined;
-  try {
+    // The running routine's own row opens that workout again; the others ask first.
+    expect(rowAction(root, "Routine 2")?.props.accessibilityLabel).toMatch(/^Resume Routine 2, /);
+    expect(rowAction(root, "Routine 1")?.props).toMatchObject({
+      accessibilityLabel: expect.stringMatching(/^Start Routine 1, /),
+      accessibilityHint: "Asks what to do with the running workout first",
+    });
+    await tap("Routine 2");
+    expect(push.mock.calls).toEqual([["/workout/active"]]);
+    expect(sheet()).toBeUndefined();
+
+    await tap("Routine 1");
+    expect(sheet()?.props).toMatchObject({
+      message: "Bench is still running, with 1 logged set. Discarding it can’t be undone.",
+      action: "Discard and start Routine 1",
+    });
+    expect(sheet()?.props.choices.map((c: { label: string }) => c.label)).toEqual([
+      "Resume Bench",
+      "Finish, then start Routine 1",
+    ]);
+    // What the person is shown is noted as the sheet opens; nothing is written yet.
+    expect(snapshot).toHaveBeenCalledWith(appStore, "w1");
+    expect(change).not.toHaveBeenCalled();
+
+    await act(() => sheet()?.props.choices[0].onPress());
+    expect(sheet()).toBeUndefined();
+    await tap("Routine 1");
+    await act(() => sheet()?.props.choices[1].onPress());
+    await tap("Routine 1");
+    await act(() => sheet()?.props.onClose());
+    expect(sheet()).toBeUndefined();
+    expect(push.mock.calls.slice(1)).toEqual([
+      ["/workout/active"],
+      [{ pathname: "/workout/finish", params: { next: "0" } }],
+    ]);
+    expect(change).not.toHaveBeenCalled();
+
+    // Discarding replaces the workout as it was shown with the routine, then opens it. The sheet
+    // shows it is busy for a frame first, and a second press meanwhile does nothing.
+    await tap("Routine 1");
+    const seen = snapshot.mock.results.at(-1)?.value;
+    const taken = snapshot.mock.calls.length;
+    held = [];
+    await act(() => sheet()?.props.onConfirm());
+    await act(() => sheet()?.props.onConfirm());
+    expect(sheet()?.props.busy).toBe(true);
+    expect(held).toHaveLength(1);
+    expect(change).not.toHaveBeenCalled();
+    const queued = held;
+    held = null;
     await act(() => {
-      screen = create(createElement(TrainScreen));
+      for (const run of queued) run();
     });
-    if (!screen) throw Error("Train did not mount");
-    const library = screen.root.findByProps({
-      accessibilityLabel: "Exercises, records and history by name or muscle",
+    expect(change).toHaveBeenCalledTimes(1);
+    const [apply, scope] = change.mock.calls[0] ?? [];
+    expect(scope).toBe("active-workout");
+    apply(appStore);
+    expect(snapshot).toHaveBeenCalledTimes(taken);
+    expect(replace).toHaveBeenCalledWith(appStore, "w1", seen, "0");
+    expect(skipRest).toHaveBeenCalledWith(appStore, "w1");
+    expect(push.mock.calls.at(-1)).toEqual(["/workout/active"]);
+    expect(sheet()).toBeUndefined();
+
+    // A refusal (the workout changed meanwhile) says why and starts nothing.
+    push.mockClear();
+    skipRest.mockClear();
+    change.mockImplementationOnce(() => {
+      throw Error("The active workout changed. Review it before discarding.");
     });
-    await act(() => library.props.onPress());
-    expect(push.mock.calls).toEqual([[{ pathname: "/exercises", params: { from: "train" } }]]);
+    await tap("Routine 3");
+    await act(() => sheet()?.props.onConfirm());
+    expect(showToast).toHaveBeenCalledWith(
+      "The active workout changed. Review it before discarding.",
+    );
+    expect(push).not.toHaveBeenCalled();
+    expect(skipRest).not.toHaveBeenCalled();
+    expect(sheet()).toBeUndefined();
+
+    // A sheet opened for a workout that has since ended isn't shown for the next one.
+    await tap("Routine 3");
+    expect(sheet()).toBeDefined();
+    activeId = "w2";
+    await act(() => screen?.update(createElement(TrainScreen)));
+    expect(sheet()).toBeUndefined();
+    activeId = "w1";
+    push.mockClear();
+
+    // Editing from the row's pencil still works while a workout runs, without asking first.
+    await act(() => press(root, "Edit Routine 1"));
+    expect(sheet()).toBeUndefined();
+    expect(push.mock.calls).toEqual([[{ pathname: "/routine/[id]", params: { id: "0" } }]]);
   } finally {
+    activeRoutine = null;
+    activeId = "w1";
+    held = null;
     await act(() => screen?.unmount());
     vi.unstubAllGlobals();
   }
@@ -394,16 +516,14 @@ it("offers the routine up next when idle and starts it just as its card does", a
   }
 });
 
-/** Presses the item called `item` in the menu whose tile is labelled `menu`. */
-const choose = (root: ReactTestRenderer["root"], menu: string, item: string) => {
-  const items: { label: string; onPress: () => void }[] = root.findByProps({ label: menu }).props
-    .items;
-  const found = items.find((entry) => entry.label === item);
-  if (!found) throw Error(`${menu} has no ${item}`);
-  found.onPress();
+/** The card a row sits in: the nearest `Enter` (closed folders) or `View` above it. */
+const cardOf = (root: ReactTestRenderer["root"], label: string) => {
+  let node = root.findByProps({ accessibilityLabel: label }).parent;
+  while (node && node.type !== ("Enter" as never) && node.type !== View) node = node.parent;
+  return node;
 };
 
-it("adds a routine or a folder from the one + menu, and a routine straight into a folder", async () => {
+it("adds a routine at the end of each open folder, and a folder after the closed ones", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   change.mockClear();
   push.mockClear();
@@ -414,37 +534,120 @@ it("adds a routine or a folder from the one + menu, and a routine straight into 
     });
     if (!screen) throw Error("Train did not mount");
     const root = screen.root;
-    // The heading has a single + tile; its menu holds both things to add.
-    expect(root.findAllByProps({ accessibilityLabel: "New folder" })).toHaveLength(0);
-    expect(root.findAllByProps({ accessibilityLabel: "New routine" })).toHaveLength(0);
-    const add = root.findByProps({ label: "Add routine or folder" });
-    expect(add.props.items.map((item: { label: string }) => item.label)).toEqual([
-      "New routine",
-      "New folder",
-    ]);
-    await act(() => choose(root, "Add routine or folder", "New routine"));
-    expect(push.mock.calls).toEqual([["/routine/new"]]);
-    expect(root.findAllByType("Dialog" as never)).toHaveLength(0);
-    await act(() => choose(root, "Add routine or folder", "New folder"));
+    // The heading holds no add button, and no row has a ⋯ menu.
+    expect(root.findAll((n) => /options$|^Add routine or folder$/.test(n.props.label))).toEqual([]);
+    // Home starts open and ends with its own add row; Gym is closed, so it offers none yet.
+    expect(labelled(root, /^Add routine/)).toEqual(["Add routine to Home"]);
+    await act(() => press(root, "Add routine to Home"));
+    expect(push.mock.calls).toEqual([[{ pathname: "/routine/new", params: { folder: "Home" } }]]);
+
+    // New folder ends the card of closed folders, right under Gym.
+    const closed = cardOf(root, "New folder");
+    expect(closed?.type).toBe("Enter");
+    expect(
+      closed?.findAll(
+        (n) => n.type === ("Tap" as never) && n.props.accessibilityState?.expanded === false,
+      ),
+    ).toHaveLength(1);
+    await act(() => press(root, "New folder"));
     const dialog = root.findByType("Dialog" as never);
     expect(dialog.props.initialName).toBeUndefined();
+    await act(() => dialog.props.onFinish(null));
 
-    // Each folder's menu, open (Home) or closed (Gym), adds a routine filed in that folder.
-    for (const [title, id] of [
-      ["Home", "Home"],
-      ["Gym", "Gym"],
-    ]) {
-      push.mockClear();
-      const menu = root.findByProps({ label: `${title} folder options` });
-      expect(menu.props.items.map((item: { label: string }) => item.label)).toEqual([
-        "New routine",
-        "Rename folder",
-      ]);
-      await act(() => choose(root, `${title} folder options`, "New routine"));
-      expect(push.mock.calls).toEqual([[{ pathname: "/routine/new", params: { folder: id } }]]);
-    }
+    // With Gym open too, each folder ends with its own add row, and New folder ends the section.
+    await act(() =>
+      root.find((n) => n.props.accessibilityState?.expanded === false).props.onPress(),
+    );
+    expect(labelled(root, /^Add routine/)).toEqual(["Add routine to Home", "Add routine to Gym"]);
+    expect(labelled(root, /^New folder$/)).toHaveLength(1);
+    expect(cardOf(root, "New folder")?.findAllByType("Tap" as never)).toHaveLength(1);
+    push.mockClear();
+    await act(() => press(root, "Add routine to Gym"));
+    expect(push.mock.calls).toEqual([[{ pathname: "/routine/new", params: { folder: "Gym" } }]]);
     expect(change).not.toHaveBeenCalled();
   } finally {
+    await act(() => screen?.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it.each([
+  ["no routines or folders yet", []],
+  [
+    "only routines outside a folder",
+    [
+      {
+        folder: null,
+        routines: [
+          { id: "r", title: "Full body", exerciseNames: [], exerciseCount: 0, daysSinceLast: null },
+        ],
+      },
+    ],
+  ],
+])("still offers both adds with %s, filing the routine in no folder", async (_, groups) => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  groupsOverride = groups;
+  push.mockClear();
+  let screen: ReactTestRenderer | undefined;
+  try {
+    await act(() => {
+      screen = create(createElement(TrainScreen));
+    });
+    if (!screen) throw Error("Train did not mount");
+    const root = screen.root;
+    // There is no folder to rename.
+    expect(labelled(root, /^Rename /)).toEqual([]);
+    expect(labelled(root, /^Add routine|^New folder$/)).toEqual(["Add routine", "New folder"]);
+    await act(() => press(root, "Add routine"));
+    expect(push.mock.calls).toEqual([["/routine/new"]]);
+    await act(() => press(root, "New folder"));
+    expect(root.findByType("Dialog" as never).props.initialName).toBeUndefined();
+  } finally {
+    groupsOverride = null;
+    await act(() => screen?.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("offers Add routine in an open empty folder, and New folder once after a closed run between open ones", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const folder = (id: string, position: number) => ({ id, content: { title: id, position } });
+  groupsOverride = [
+    { folder: folder("Arms", 1), routines: [] },
+    {
+      folder: folder("Legs", 2),
+      routines: [
+        { id: "l", title: "Squat day", exerciseNames: [], exerciseCount: 0, daysSinceLast: null },
+      ],
+    },
+    { folder: folder("Mobility", 3), routines: [] },
+  ];
+  let screen: ReactTestRenderer | undefined;
+  try {
+    await act(() => {
+      screen = create(createElement(TrainScreen));
+    });
+    if (!screen) throw Error("Train did not mount");
+    const root = screen.root;
+    // Arms starts open with nothing in it: its card still holds the row that fills it.
+    expect(cardOf(root, "Add routine to Arms")?.findAllByType("Tap" as never)).toHaveLength(1);
+    // Open Mobility, leaving Legs as a closed run between two open folders.
+    const closed = () =>
+      root.findAll(
+        (n) => n.type === ("Tap" as never) && n.props.accessibilityState?.expanded === false,
+      );
+    expect(closed()).toHaveLength(2);
+    await act(() => closed()[1]?.props.onPress());
+    expect(closed()).toHaveLength(1);
+    expect(labelled(root, /^Add routine/)).toEqual([
+      "Add routine to Arms",
+      "Add routine to Mobility",
+    ]);
+    // New folder ends the section on its own, not the card of Legs in the middle.
+    expect(labelled(root, /^New folder$/)).toHaveLength(1);
+    expect(cardOf(root, "New folder")?.findAllByType("Tap" as never)).toHaveLength(1);
+  } finally {
+    groupsOverride = null;
     await act(() => screen?.unmount());
     vi.unstubAllGlobals();
   }

@@ -306,7 +306,7 @@ it("selects the last folder in the scrollable form and saves the chosen exercise
     // A target RPE the scale doesn't have is refused, and nothing is saved.
     await act(() => rpe.props.onChangeText("11"));
     await pressText("Save routine");
-    expect(alertText(root)).toMatch(/target RPE/);
+    expect(alertText(root)).toMatch(/RPE from 1 to 10/);
     expect(store.list("routine")).toHaveLength(0);
     await act(() => rpe.props.onChangeText("7,5"));
     // The rest chip opens the rest dialog; what it sets is this exercise's rest.
@@ -355,6 +355,44 @@ it("selects the last folder in the scrollable form and saves the chosen exercise
       { restSeconds: 75 },
       { exerciseId: EXERCISES.plank.id },
     ]);
+  } finally {
+    await act(() => rendered?.unmount());
+    store.close();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("opens a blank routine on its name with the keyboard up, and not again after reordering", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  store = await openDeviceStore({
+    engine: createSqlJsEngine(await initSqlJs()),
+    path: "/focus-name",
+    appVersion: "test",
+  });
+  let rendered: ReactTestRenderer | undefined;
+  try {
+    await act(() => {
+      rendered = create(createElement(NewRoutine));
+    });
+    if (!rendered) throw new Error("Missing routine form");
+    const root = rendered.root.findByType(ScrollView);
+    const name = () =>
+      root.find((n) => n.type === TextInput && n.props.accessibilityLabel === "Routine name");
+    expect(name().props.autoFocus).toBe(true);
+    await tapText(root, "Add exercise");
+    await act(() =>
+      root
+        .find((n) => typeof n.props.onPickMany === "function")
+        .props.onPickMany([EXERCISES.plank, EXERCISES.bench]),
+    );
+    await act(() => name().props.onChangeText("Friday"));
+    await toggleReorder(rendered);
+    expect(
+      root.findAll((n) => n.type === TextInput && n.props.accessibilityLabel === "Routine name"),
+    ).toEqual([]);
+    await toggleReorder(rendered);
+    expect(name().props.value).toBe("Friday");
+    expect(name().props.autoFocus).toBe(false);
   } finally {
     await act(() => rendered?.unmount());
     store.close();
@@ -568,6 +606,51 @@ it("requires confirmation to clear an incompatible target and preserves the runn
   }
 });
 
+it("converts every whole RIR target below 10 to RPE and back", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  store = await openDeviceStore({
+    engine: createSqlJsEngine(await initSqlJs()),
+    path: "/routine-wide-scale",
+    appVersion: "test",
+  });
+  let rendered: ReactTestRenderer | undefined;
+  try {
+    store.put("routine", "routine", {
+      ...routine,
+      effortScale: "rir",
+      exercises: [
+        {
+          ...entry,
+          sets: [
+            { ...target, rpe: null, repsInReserve: 5 },
+            { ...target, id: "second", rpe: null, repsInReserve: 9 },
+            { ...target, id: "third", rpe: null, repsInReserve: 10 },
+          ],
+        },
+      ],
+    });
+    await act(() => {
+      rendered = create(createElement(RoutineDetails));
+    });
+    if (!rendered) throw Error("Missing routine editor");
+    const root = rendered.root;
+    const choosing = () => root.findByProps({ label: "Effort scale" });
+    const value = (set: number, scale: string) =>
+      root.findByProps({ accessibilityLabel: `Old press set ${set} target ${scale}` }).props.value;
+    // RIR 10 has no RPE (it would be 0), so switching asks first.
+    await act(() => choosing().props.onChoose("rpe"));
+    await act(() => root.findByType("Dialog" as never).props.confirm.onPress());
+    expect([1, 2, 3].map((set) => value(set, "RPE"))).toEqual(["5", "1", ""]);
+    await act(() => choosing().props.onChoose("rir"));
+    expect(root.findAllByType("Dialog" as never)).toHaveLength(0);
+    expect([1, 2, 3].map((set) => value(set, "RIR"))).toEqual(["5", "9", ""]);
+  } finally {
+    await act(() => rendered?.unmount());
+    store.close();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("adds the first effort target to a stored set without changing its other targets", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   store = await openDeviceStore({
@@ -590,6 +673,195 @@ it("adds the first effort target to a stored set without changing its other targ
     await tapText(root, "Save routine");
     expect(store.get("routine", "routine")?.content?.exercises).toEqual([
       { ...entry, sets: [{ ...existing, repsInReserve: 0 }] },
+    ]);
+  } finally {
+    await act(() => rendered?.unmount());
+    store.close();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("fills a typed target into the blank sets of its kind and leaves set values alone", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  store = await openDeviceStore({
+    engine: createSqlJsEngine(await initSqlJs()),
+    path: "/fill-blank-sets",
+    appVersion: "test",
+  });
+  let rendered: ReactTestRenderer | undefined;
+  try {
+    await act(() => {
+      rendered = create(createElement(NewRoutine));
+    });
+    if (!rendered) throw new Error("Missing routine form");
+    const root = rendered.root;
+    const field = (label: string) =>
+      root.findByProps({ accessibilityLabel: `Bench Press ${label}` });
+    const type = async (label: string, ...steps: string[]) => {
+      for (const text of steps) await act(() => field(label).props.onChangeText(text));
+      await act(() => field(label).props.onBlur());
+    };
+    const column = (heading: string) =>
+      [1, 2, 3, 4, 5].map((n) => field(`set ${n} ${heading}`).props.value);
+    const warmUp = async (n: number) => {
+      await act(() => field(`set ${n} type: Working`).props.onPress());
+      await tapText(root, "Warm-up");
+    };
+    await act(() =>
+      root.findByProps({ accessibilityLabel: "Routine name" }).props.onChangeText("Push"),
+    );
+    await tapText(root, "Add exercise");
+    await act(() =>
+      root
+        .find((n) => typeof n.props.onPickMany === "function")
+        .props.onPickMany([EXERCISES.bench]),
+    );
+    for (let n = 0; n < 4; n++)
+      await act(() =>
+        root.findByProps({ accessibilityLabel: "Add set to Bench Press" }).props.onPress(),
+      );
+    await warmUp(1);
+    await warmUp(2);
+    // Warm-ups and working sets each fill only their own kind.
+    await type("set 1 KG", "40");
+    expect(column("KG")).toEqual(["40", "40", "", "", ""]);
+    await type("set 3 REPS", "5");
+    expect(column("REPS")).toEqual(["", "", "5", "5", "5"]);
+    // Every keystroke reaches the sets that were blank when typing started.
+    await type("set 4 KG", "1", "10", "100");
+    expect(column("KG")).toEqual(["40", "40", "100", "100", "100"]);
+    // Once every working set has a weight, a new one changes only its own set.
+    await type("set 5 KG", "105");
+    expect(column("KG")).toEqual(["40", "40", "100", "100", "105"]);
+    // A set turned into a warm-up while the keyboard stays up stops following.
+    await act(() => root.findByProps({ label: "Effort scale" }).props.onChoose("rpe"));
+    await act(() => field("set 3 target RPE").props.onChangeText("7"));
+    expect(column("target RPE")).toEqual(["", "", "7", "7", "7"]);
+    await warmUp(5);
+    await type("set 3 target RPE", "8");
+    expect(column("target RPE")).toEqual(["", "", "8", "8", "7"]);
+    await tapText(root, "Save routine");
+    expect(store.list("routine")[0]?.content?.exercises).toMatchObject([
+      {
+        sets: [
+          { type: "warmup", weightKg: 40, reps: null, rpe: null },
+          { type: "warmup", weightKg: 40, reps: null, rpe: null },
+          { weightKg: 100, reps: 5, rpe: 8 },
+          { weightKg: 100, reps: 5, rpe: 8 },
+          { type: "warmup", weightKg: 105, reps: 5, rpe: 7 },
+        ],
+      },
+    ]);
+  } finally {
+    await act(() => rendered?.unmount());
+    store.close();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("starts an added set from the last working set's targets, skipping warm-ups", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  store = await openDeviceStore({
+    engine: createSqlJsEngine(await initSqlJs()),
+    path: "/add-set-copies",
+    appVersion: "test",
+  });
+  let rendered: ReactTestRenderer | undefined;
+  try {
+    await act(() => {
+      rendered = create(createElement(NewRoutine));
+    });
+    if (!rendered) throw new Error("Missing routine form");
+    const root = rendered.root;
+    const field = (label: string) =>
+      root.findByProps({ accessibilityLabel: `Bench Press ${label}` });
+    const set = (n: number) =>
+      ["KG", "REPS", "target RIR"].map((column) => field(`set ${n} ${column}`).props.value);
+    const addSet = () =>
+      act(() => root.findByProps({ accessibilityLabel: "Add set to Bench Press" }).props.onPress());
+    await act(() =>
+      root.findByProps({ accessibilityLabel: "Routine name" }).props.onChangeText("Push"),
+    );
+    await tapText(root, "Add exercise");
+    await act(() =>
+      root
+        .find((n) => typeof n.props.onPickMany === "function")
+        .props.onPickMany([EXERCISES.bench]),
+    );
+    const enter = async (label: string, text: string) => {
+      await act(() => field(label).props.onChangeText(text));
+      await act(() => field(label).props.onBlur());
+    };
+    const warmUp = async (n: number) => {
+      await act(() => field(`set ${n} type: Working`).props.onPress());
+      await tapText(root, "Warm-up");
+    };
+    // With only warm-ups there is nothing to copy.
+    await warmUp(1);
+    await enter("set 1 KG", "40");
+    await addSet();
+    expect(set(2)).toEqual(["", "", ""]);
+    expect(field("set 2 type: Working")).toBeDefined();
+    await enter("set 2 KG", "100");
+    await enter("set 2 REPS", "8");
+    await enter("set 2 target RIR", "2");
+    await addSet();
+    expect(set(3)).toEqual(["100", "8", "2"]);
+    // A warm-up is never the source: the next set copies the last working set.
+    await warmUp(3);
+    await addSet();
+    expect(set(4)).toEqual(["100", "8", "2"]);
+    expect(field("set 4 type: Working")).toBeDefined();
+    // A set added while its source is being typed in takes the rest of the typing.
+    await act(() => field("set 4 KG").props.onChangeText("11"));
+    await addSet();
+    expect(set(5)).toEqual(["11", "8", "2"]);
+    await enter("set 4 KG", "110");
+    expect(set(5)).toEqual(["110", "8", "2"]);
+    await tapText(root, "Save routine");
+    expect(store.list("routine")[0]?.content?.exercises).toMatchObject([
+      {
+        sets: [
+          { type: "warmup", weightKg: 40, reps: null },
+          { type: "normal", weightKg: 100, reps: 8, repsInReserve: 2 },
+          { type: "warmup", weightKg: 100, reps: 8, repsInReserve: 2 },
+          { type: "normal", weightKg: 110, reps: 8, repsInReserve: 2 },
+          { type: "normal", weightKg: 110, reps: 8, repsInReserve: 2 },
+        ],
+      },
+    ]);
+  } finally {
+    await act(() => rendered?.unmount());
+    store.close();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("keeps stored targets when a blank stored set gets a typed value", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  store = await openDeviceStore({
+    engine: createSqlJsEngine(await initSqlJs()),
+    path: "/fill-stored-sets",
+    appVersion: "test",
+  });
+  let rendered: ReactTestRenderer | undefined;
+  try {
+    const plain = entry;
+    store.put("routine", "routine", { ...routine, exercises: [plain] });
+    await act(() => {
+      rendered = create(createElement(RoutineDetails));
+    });
+    if (!rendered) throw Error("Missing routine editor");
+    const root = rendered.root;
+    const weight = root.findByProps({ accessibilityLabel: "Old press set 2 KG" });
+    expect(weight.props.value).toBe("");
+    await act(() => weight.props.onChangeText("50"));
+    expect(root.findByProps({ accessibilityLabel: "Old press set 1 KG" }).props.value).not.toBe(
+      "50",
+    );
+    await tapText(root, "Save routine");
+    expect(store.get("routine", "routine")?.content?.exercises).toEqual([
+      { ...plain, sets: [target, { ...target, id: "second", weightKg: 50 }] },
     ]);
   } finally {
     await act(() => rendered?.unmount());
@@ -738,6 +1010,10 @@ it.each(["empty", "conflict", "saved"])(
         return;
       }
       await pressText("Add set");
+      // The new set starts from set 2's range; clearing its minimum leaves only a maximum.
+      await act(() =>
+        root.findByProps({ accessibilityLabel: "Old press set 3 Min reps" }).props.onChangeText(""),
+      );
       await act(() =>
         root
           .findByProps({ accessibilityLabel: "Old press set 3 Max reps" })
@@ -814,7 +1090,7 @@ it.each(["empty", "conflict", "saved"])(
         if (!movement) throw new Error("Missing exercise from the edited plan");
         expect(
           store.list("workout_set", { parentId: movement.id }).map((row) => row.content?.type),
-        ).toEqual(["failure", "drop", "normal"]);
+        ).toEqual(["failure", "drop", "drop"]);
       }
     } finally {
       await act(() => rendered?.unmount());
@@ -1184,6 +1460,11 @@ it("starts an editable new routine from the logged sets of a completed workout",
     expect(root.findByProps({ accessibilityLabel: "Routine name" }).props.value).toBe(
       "Park session",
     );
+    // Already named from the workout, so the keyboard stays down.
+    expect(
+      root.find((n) => n.type === TextInput && n.props.accessibilityLabel === "Routine name").props
+        .autoFocus,
+    ).toBe(false);
     expect(
       root.findAllByProps({ accessibilityLabel: "Farmer carry rest, 0:45. Change it" }),
     ).toHaveLength(1);
@@ -1191,9 +1472,9 @@ it("starts an editable new routine from the logged sets of a completed workout",
     const rpe = (set: number) =>
       root.findByProps({ accessibilityLabel: `Bench Press set ${set} target RPE` });
     expect(rpe(1).props.value).toBe("9");
-    await act(() => rpe(2).props.onChangeText("6.5"));
+    await act(() => rpe(2).props.onChangeText("6.3"));
     await tapText(root, "Save routine");
-    expect(alertText(root)).toMatch(/target RPE/);
+    expect(alertText(root)).toMatch(/RPE from 1 to 10/);
     expect(store.list("routine")).toHaveLength(0);
     await act(() => rpe(2).props.onChangeText("8.5"));
     await act(() => rpe(3).props.onChangeText(""));

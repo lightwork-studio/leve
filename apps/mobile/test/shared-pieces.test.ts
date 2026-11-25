@@ -9,6 +9,7 @@ import { ChoiceRow, Stepper, ToggleRow } from "../src/ui/choice-row.tsx";
 import { EmptyState } from "../src/ui/empty-state.tsx";
 import { ExercisePicker } from "../src/ui/exercise-picker.tsx";
 import { ErrorRow, FieldError, TextField } from "../src/ui/field.tsx";
+import { SetStrip, type StripField } from "../src/ui/live/dock.tsx";
 import { gridRows, RestDialog } from "../src/ui/live/rest-dialog.tsx";
 import { NewFolderDialog } from "../src/ui/new-folder-dialog.tsx";
 import { Banner, showToast, TOAST_MS, ToastHost } from "../src/ui/notice.tsx";
@@ -309,6 +310,66 @@ describe("fields, search and notices", () => {
     ).toBe("Push");
   });
 
+  it("rings a focused or refused field with an even border all the way round", async () => {
+    const render = (error?: string) =>
+      act(() =>
+        root.render(
+          h(TextField, {
+            label: "Description",
+            multiline: true,
+            placeholder: "How did it go?",
+            value: "",
+            onChangeText: () => {},
+            ...(error ? { error } : {}),
+          }),
+        ),
+      );
+    const ring = () => document.querySelector<HTMLElement>('[data-testid="field-ring"]');
+    // Each side's width, and the one colour all four sides share ("" if they differ).
+    const sides = (element: HTMLElement) => {
+      const style = getComputedStyle(element);
+      const colors = new Set([
+        style.borderTopColor,
+        style.borderRightColor,
+        style.borderBottomColor,
+        style.borderLeftColor,
+      ]);
+      return {
+        widths: [
+          style.borderTopWidth,
+          style.borderRightWidth,
+          style.borderBottomWidth,
+          style.borderLeftWidth,
+        ],
+        color: colors.size === 1 ? [...colors][0] : "",
+      };
+    };
+    const even = ["1.5px", "1.5px", "1.5px", "1.5px"];
+
+    await render();
+    expect(ring()).toBeNull();
+
+    const input = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Description"]');
+    if (!input) throw Error("Missing the description field");
+    await act(async () => input.focus());
+    const focused = ring();
+    if (!focused) throw Error("No ring while typing");
+    const typing = sides(focused);
+    expect(typing.widths).toEqual(even);
+    expect(typing.color).not.toBe("");
+
+    await act(async () => input.blur());
+    expect(ring()).toBeNull();
+
+    await render("Too long.");
+    const refused = ring();
+    if (!refused) throw Error("No ring on a refused field");
+    const refusal = sides(refused);
+    expect(refusal.widths).toEqual(even);
+    expect(refusal.color).not.toBe("");
+    // A refusal rings in the alert colour, not the typing one.
+    expect(refusal.color).not.toBe(typing.color);
+  });
   it("offers clearing a search only once there is text", async () => {
     const change = vi.fn();
     const render = (value: string) =>
@@ -574,5 +635,51 @@ describe("dialogs and refused saves", () => {
       ["Off", "·", "·"],
     ]);
     expect(keys(gridRows(cells(["1", "2", "Off"])))).toEqual([["1", "2", "Off"]]);
+  });
+});
+
+describe("the dock's logging strip on the web", () => {
+  const field = (metric: "weight" | "reps", text: string): StripField => ({
+    metric,
+    name: metric,
+    text,
+    firm: true,
+    unit: metric === "weight" ? "kg" : "reps",
+    steps: 0,
+    editing: false,
+    onStep: () => {},
+    onEdit: () => {},
+  });
+
+  // `flex: 0` is CSS's `0 1 0%` on the web, whose zero basis wins over a width: the fields drew
+  // as their 1 px hairline and left the check alone at the strip's start. The fields now share
+  // the strip by growing from nothing, reps up to three 44 pt targets, and the effort column keeps
+  // its width as its basis.
+  it.each([false, true])("lays its columns out by flex (effort %s)", async (effort) => {
+    await act(() =>
+      root.render(
+        h(SetStrip, {
+          fields: [field("weight", "57.5"), field("reps", "7")],
+          ...(effort ? { effort: { label: "RIR", value: 2, target: null } } : {}),
+          logLabel: "Log set 1",
+          canLog: true,
+          onLog: () => {},
+        }),
+      ),
+    );
+    const strip = byLabel("Log set 1")?.parentElement as
+      | (HTMLElement & { __reactLayoutHandler?: (event: unknown) => void })
+      | null;
+    if (!strip?.__reactLayoutHandler) throw Error("No measured strip");
+    await act(() => strip.__reactLayoutHandler?.({ nativeEvent: { layout: { width: 347 } } }));
+    const columns = ([...strip.children].slice(0, -1) as HTMLElement[]).map((column) => {
+      const style = getComputedStyle(column);
+      return [style.flexGrow, style.flexShrink, style.flexBasis, style.maxWidth, style.width];
+    });
+    expect(columns).toEqual([
+      ["1", "1", "0px", "", ""],
+      ["1", "1", "0px", "133px", ""],
+      ...(effort ? [["0", "0", "48px", "", "48px"]] : []),
+    ]);
   });
 });

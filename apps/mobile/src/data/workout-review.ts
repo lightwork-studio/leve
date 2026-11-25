@@ -2,7 +2,13 @@ import { jsonEqual } from "@leve/contract";
 import type { DeviceRecord, DeviceStore, Resolution } from "@leve/storage";
 import { newId } from "./ids.ts";
 import { rejectedWorkoutDeletion, reviewWorkoutId } from "./read.ts";
-import { discardActiveWorkout, workoutRestReadOnlyReason } from "./workout-actions.ts";
+import {
+  checkActiveDiscard,
+  discardActiveWorkout,
+  WorkoutActionError,
+  workoutRestReadOnlyReason,
+  workoutStart,
+} from "./workout-actions.ts";
 import { workoutNoteReadOnlyReason } from "./workout-notes.ts";
 
 export function unavailableReviewFields(store: DeviceStore, row: DeviceRecord) {
@@ -68,6 +74,30 @@ export function discardReviewedActiveWorkout(
   if (!reviewed || !jsonEqual(reviewed, workoutDeletionSnapshot(store, id)))
     throw Error("The active workout changed. Review it before discarding.");
   discardActiveWorkout(store, id);
+}
+
+/**
+ * Discards the active workout, as it was when the person chose to, and starts the routine in its
+ * place, in one write: either both happen or neither does. Another unfinished workout (synced from
+ * another device) refuses, since the routine couldn't start while it runs.
+ */
+export function replaceReviewedActiveWorkout(
+  store: DeviceStore,
+  id: string,
+  reviewed: ReturnType<typeof workoutDeletionSnapshot>,
+  routineId: string,
+): string {
+  if (!reviewed || !jsonEqual(reviewed, workoutDeletionSnapshot(store, id)))
+    throw Error("The active workout changed. Review it before discarding.");
+  const otherRunning = store
+    .list("workout")
+    .some((row) => row.id !== id && row.content && !row.deleted && row.content.endedAt === null);
+  if (otherRunning)
+    throw new WorkoutActionError("Another workout is running. Finish or discard it first.");
+  checkActiveDiscard(store, id);
+  const started = workoutStart(store, routineId);
+  store.putAndDelete(started.records, [{ kind: "workout", id }]);
+  return started.id;
 }
 
 export function deletedWorkoutReview(store: DeviceStore, workoutId: string) {

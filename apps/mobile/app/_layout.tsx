@@ -60,7 +60,6 @@ export default function RootLayout() {
             screens={[
               { name: "(tabs)", transition: "push" },
               { name: "bodyweight", transition: "push" },
-              { name: "history/calendar", transition: "push" },
               { name: "workout/[id]", transition: "push" },
               { name: "workout/active", transition: "cover", transparent: true },
               { name: "workout/notes/[id]", transition: "push" },

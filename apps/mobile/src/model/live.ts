@@ -113,6 +113,21 @@ export function routineTarget(plan: WorkoutPlan | null, set: WorkoutSet) {
     : { ...target, repRangeMin: null, repRangeMax: null };
 }
 
+/**
+ * The target shown as a hint under a set. A routine's weight is where an exercise starts, so it is
+ * hinted only until a weight was logged at that position; after that, last time's weight leads.
+ * Reps, ranges, time, distance and effort stay goals and are always hinted.
+ */
+export function hintTarget(
+  plan: WorkoutPlan | null,
+  set: WorkoutSet,
+  previous: PreviousSet | undefined,
+) {
+  const target = routineTarget(plan, set);
+  if (!target || previous?.weightKg == null) return target;
+  return { ...target, weightKg: null };
+}
+
 export type PreviousSet = Pick<
   WorkoutSet,
   "weightKg" | "reps" | "durationSeconds" | "distanceMeters" | "count"
@@ -227,6 +242,43 @@ export function previousExercise(
     };
   }
   return { sets: [], topOfRange: null };
+}
+
+/**
+ * The last finished session of an exercise that started before a moment, with the sets logged in
+ * it in order: what a set logged after the fact can start from. Later sessions don't count, so
+ * filling in an old workout suggests what came before it, not last week's numbers.
+ */
+export function sessionBefore(
+  history: WorkoutTree[],
+  exerciseId: string,
+  options: { before: string; exceptWorkoutId: string },
+): { startedAt: string; sets: WorkoutSet[] } | null {
+  const before = Date.parse(options.before);
+  const candidates = history
+    .filter(
+      (t) =>
+        t.workout.id !== options.exceptWorkoutId &&
+        t.workout.content.endedAt !== null &&
+        Date.parse(t.workout.content.startedAt) < before,
+    )
+    .sort(
+      (a, b) => Date.parse(b.workout.content.startedAt) - Date.parse(a.workout.content.startedAt),
+    );
+  for (const tree of candidates) {
+    const entry = tree.entries.find(
+      (e) =>
+        e.entry.content.exerciseId === exerciseId &&
+        e.sets.some((s) => s.content.completedAt !== null),
+    );
+    if (!entry) continue;
+    const sets = entry.sets
+      .filter((s) => s.content.completedAt !== null)
+      .map((s) => s.content)
+      .sort((a, b) => a.position - b.position);
+    return { startedAt: tree.workout.content.startedAt, sets };
+  }
+  return null;
 }
 
 export function previousSets(

@@ -5,23 +5,19 @@ import { useRef, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppData } from "../../src/data/app-data.tsx";
-import type { BuiltInExercise } from "../../src/data/exercises.ts";
-import { newId } from "../../src/data/ids.ts";
 import { useWorkoutDetail } from "../../src/data/queries.ts";
 import { discardWorkout } from "../../src/data/workout-actions.ts";
 import { deletedWorkoutReview, workoutDeletionSnapshot } from "../../src/data/workout-review.ts";
-import { emptyWorkoutSet } from "../../src/model/live.ts";
 import { supersetLabels } from "../../src/model/supersets.ts";
 import type { WithId, WorkoutEntry, WorkoutSet } from "../../src/model/types.ts";
 import { radius, space, touch, type } from "../../src/theme.ts";
 import { ActionSheet, useConfirmation } from "../../src/ui/action-sheet.tsx";
+import { AddPastExercises } from "../../src/ui/add-past-exercises.tsx";
 import { ExerciseNotes } from "../../src/ui/exercise-notes.tsx";
-import { ExercisePicker } from "../../src/ui/exercise-picker.tsx";
 import { FieldError } from "../../src/ui/field.tsx";
 import {
   type DistancePreferences,
   dayLabel,
-  distanceUnitFor,
   readoutMinutes,
   readoutWeight,
   timeLabel,
@@ -29,14 +25,14 @@ import {
   workoutMinutesLabel,
 } from "../../src/ui/format.ts";
 import { Group, Row } from "../../src/ui/group.tsx";
+import { PlusIcon } from "../../src/ui/icons.tsx";
 import { MuscleStrip } from "../../src/ui/muscle-strip.tsx";
 import { type MenuItem, MoreButton } from "../../src/ui/popover-menu.tsx";
 import { Readouts } from "../../src/ui/readout.tsx";
 import { BackButton } from "../../src/ui/screen.tsx";
-import { SetEditor } from "../../src/ui/set-editor.tsx";
 import { SetTable } from "../../src/ui/set-table.tsx";
 import { Tap } from "../../src/ui/tap.tsx";
-import { themedStyles, useStyles } from "../../src/ui/themed.ts";
+import { themedStyles, useColors, useStyles } from "../../src/ui/themed.ts";
 import { WorkoutDetailsEditor } from "../../src/ui/workout-details-editor.tsx";
 
 type Unit = "kg" | "lbs";
@@ -47,12 +43,10 @@ export default function WorkoutDetailScreen() {
     id,
     back: backTo,
     fromExercise,
-    from,
   } = useLocalSearchParams<{
     id: string;
     back?: string;
     fromExercise?: string;
-    from?: string;
   }>();
   const data = useWorkoutDetail(id);
   const insets = useSafeAreaInsets();
@@ -63,20 +57,16 @@ export default function WorkoutDetailScreen() {
   // What the workout held when deleting it was asked: it is deleted only if nothing changed since.
   const deletionReview = useRef<ReturnType<typeof workoutDeletionSnapshot>>(null);
   const styles = useStyles(sheet);
+  const c = useColors();
 
-  const fromCalendar = backTo === "Calendar" && !fromExercise;
   const backLabel = fromExercise
     ? backTo || "Exercise"
-    : fromCalendar
-      ? "Calendar"
-      : (router.canGoBack() && backTo) || "History";
+    : (router.canGoBack() && backTo) || "History";
   const back = () => {
     if (router.canGoBack()) return router.back();
     if (fromExercise)
       return router.replace({ pathname: "/exercise/[id]", params: { id: fromExercise } });
-    if (fromCalendar && from === "progress")
-      return router.replace({ pathname: "/history/calendar", params: { from: "progress" } });
-    router.replace(fromCalendar ? "/history/calendar" : "/history");
+    router.replace("/history");
   };
   const unit = data?.settings.weightUnit ?? "kg";
   const effort = data && workoutEffort(data.summary, unit);
@@ -295,11 +285,26 @@ export default function WorkoutDetailScreen() {
               prefs={data.settings}
             />
           ))}
+          {ended && (
+            <Tap
+              accessibilityRole="button"
+              accessibilityLabel="Add exercises to this workout"
+              onPress={() => setAdding(true)}
+              scaleTo={0.98}
+              style={styles.addExercise}
+            >
+              <PlusIcon color={c.fg2} size={15} strokeWidth={2} />
+              <Text style={styles.addExerciseLabel}>Add exercise</Text>
+            </Tap>
+          )}
           {ended && adding && (
-            <AddHistoricalExercise
+            <AddPastExercises
               key={id}
               workoutId={id}
+              startedAt={data.tree.workout.content.startedAt}
+              eyebrow={`${data.summary.title || "Workout"} · ${dayLabel(data.summary.startedAt)}`}
               included={data.tree.entries.map(({ entry }) => entry.content.exerciseId)}
+              effortScale={data.tree.workout.content.initialPlan?.effortScale ?? "rir"}
               unit={unit}
               prefs={data.settings}
               onClose={() => setAdding(false)}
@@ -319,52 +324,6 @@ export default function WorkoutDetailScreen() {
         </>
       )}
     </ScrollView>
-  );
-}
-
-/** Adding an exercise to a finished workout: pick it, then enter its first set. */
-function AddHistoricalExercise({
-  workoutId,
-  included,
-  unit,
-  prefs,
-  onClose,
-}: {
-  workoutId: string;
-  included: string[];
-  unit: Unit;
-  prefs: DistancePreferences;
-  onClose: () => void;
-}) {
-  const [draft, setDraft] = useState<{ exercise: BuiltInExercise; set: WithId<WorkoutSet> } | null>(
-    null,
-  );
-  return (
-    <ExercisePicker
-      included={included}
-      onClose={onClose}
-      onPick={(exercise) =>
-        setDraft({ exercise, set: { id: newId(), content: emptyWorkoutSet(newId()) } })
-      }
-      nextPage={
-        draft && {
-          title: "First set",
-          content: (
-            <SetEditor
-              set={draft.set}
-              exercise={draft.exercise.name}
-              exerciseType={draft.exercise.type}
-              newExercise={draft.exercise}
-              rowLabel="1"
-              addToWorkout={workoutId}
-              unit={unit}
-              distanceUnit={distanceUnitFor(0, prefs)}
-              onClose={onClose}
-            />
-          ),
-        }
-      }
-    />
   );
 }
 
@@ -459,6 +418,20 @@ const sheet = themedStyles((c) => ({
   tileLabel: { ...type.action, color: c.fg2 },
   alert: { color: c.alert },
   group: { marginHorizontal: 14, marginBottom: 22 },
+  addExercise: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+    minHeight: 52,
+    marginHorizontal: 14,
+    marginBottom: 22,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: c.line2,
+  },
+  addExerciseLabel: { ...type.action, letterSpacing: 1.47, color: c.fg2 },
   groupHead: {
     flexDirection: "row",
     justifyContent: "space-between",
