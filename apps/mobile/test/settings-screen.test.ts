@@ -33,6 +33,7 @@ const build = vi.hoisted(() => ({
   label: "test",
   releaseNumber: undefined as string | undefined,
   sampleData: true,
+  sampleDataOnRequest: false,
 }));
 vi.mock("../src/build-info.ts", () => ({ buildInfo: build }));
 vi.mock("expo-constants", () => ({ default: { expoConfig: { version: "0.1.0" } } }));
@@ -119,6 +120,7 @@ afterEach(async () => {
   holdAppVersion = false;
   build.releaseNumber = undefined;
   build.sampleData = true;
+  build.sampleDataOnRequest = false;
   await act(() => root.unmount());
   host.remove();
   document.body.innerHTML = "";
@@ -476,6 +478,37 @@ it("offers to delete everything, without promising preview data, in a build that
   ].find((button) => button.textContent === "Delete and start again");
   await act(async () => confirm?.click());
   expect(reset).toHaveBeenCalledTimes(1);
+});
+
+it("offers TestFlight a start again with sample data, apart from deleting everything", async () => {
+  build.sampleData = false;
+  const confirm = (label: string) =>
+    [...document.querySelectorAll<HTMLElement>('[role="alertdialog"] [role="button"]')].find(
+      (button) => button.textContent === label,
+    );
+  await render();
+  expect(document.body.textContent).not.toContain("Start again with sample data");
+
+  await act(() => root.unmount());
+  root = createRoot(host);
+  build.sampleDataOnRequest = true;
+  await render();
+  expect(document.body.textContent).toContain(
+    "Leve then starts empty, or with made-up workouts when you start again with sample data.",
+  );
+  await press("Delete everything on this device");
+  await act(async () => confirm("Delete and start again")?.click());
+  expect(reset).toHaveBeenLastCalledWith(false);
+
+  await press("Start again with sample data");
+  expect(reset).toHaveBeenCalledTimes(1);
+  expect(document.body.textContent).toContain("made-up sample workouts loaded in their place.");
+  await press("Keep my data");
+  expect(reset).toHaveBeenCalledTimes(1);
+  await press("Start again with sample data");
+  await act(async () => confirm("Delete and load sample data")?.click());
+  expect(reset).toHaveBeenCalledTimes(2);
+  expect(reset).toHaveBeenLastCalledWith(true);
 });
 
 it("draws the logo in the about line and still names it Leve", async () => {

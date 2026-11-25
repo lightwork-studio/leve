@@ -10,6 +10,7 @@ export default defineProject({
       "expo-file-system": fileURLToPath(
         new URL("./test/support/expo-file-system.ts", import.meta.url),
       ),
+      "expo-updates": fileURLToPath(new URL("./test/support/expo-updates.ts", import.meta.url)),
     },
   },
   test: { name: "mobile", include: ["test/**/*.test.ts"] },
