@@ -284,7 +284,8 @@ function NoResults({ query, onClear }: { query: string; onClear: () => void }) {
 }
 
 /**
- * The month at a glance, a page per month (the current one first), browsed by swiping or with the
+ * The month at a glance, a page per month laid out oldest to newest like a calendar, opening on the
+ * current month at the right-hand end. Browsed by swiping (right goes back in time) or with the
  * buttons beside its name (disabled at either end, so both while there is one month). A trained
  * date lists its sessions under the card.
  */
@@ -304,7 +305,8 @@ function MonthPager({
   const styles = useStyles(sheet);
   const c = useColors();
   const [width, setWidth] = useState(0);
-  const [page, setPage] = useState(0);
+  // The month on screen by its key, or null for the newest, so it stays put as months come and go.
+  const [shown, setShown] = useState<string | null>(null);
   const list = useRef<FlatList<Month>>(null);
   const [selected, setSelected] = useState<number | null>(null);
   const pages = useMemo(() => monthPages(months, today), [months, today]);
@@ -314,7 +316,10 @@ function MonthPager({
     [pages, today, firstWeekday, recordsIn],
   );
   const last = Math.max(0, pages.length - 1);
-  const current = Math.min(page, last);
+  const at = shown === null ? -1 : pages.findIndex((month) => month.key === shown);
+  // A month that has gone, its last workout deleted, gives way to the newest.
+  const current = at < 0 ? last : at;
+  const show = (to: number) => setShown(to >= last ? null : (pages[to]?.key ?? null));
   const selectedDay = odometers[current]?.cells.find((day) => day?.start === selected);
   // The picked date closes once its last session is gone, so one added later doesn't open it.
   if (
@@ -327,13 +332,13 @@ function MonthPager({
   const goTo = (to: number) => {
     if (to < 0 || to > last || !list.current) return;
     list.current.scrollToOffset({ offset: to * width, animated: false });
-    setPage(to);
+    show(to);
   };
   const controls = (
     <View style={styles.pagerControls}>
       <Tap
         accessibilityRole="button"
-        accessibilityLabel="Show newer month"
+        accessibilityLabel="Show older month"
         accessibilityState={{ disabled: current === 0 }}
         disabled={current === 0}
         style={[styles.pagerButton, current === 0 && styles.disabled]}
@@ -343,7 +348,7 @@ function MonthPager({
       </Tap>
       <Tap
         accessibilityRole="button"
-        accessibilityLabel="Show older month"
+        accessibilityLabel="Show newer month"
         accessibilityState={{ disabled: current === last }}
         disabled={current === last}
         style={[styles.pagerButton, current === last && styles.disabled]}
@@ -357,11 +362,13 @@ function MonthPager({
     <View onLayout={({ nativeEvent }) => setWidth(nativeEvent.layout.width)}>
       {width > 0 && (
         <FlatList
-          key={width}
+          // Laid out afresh when the width or the months change, opening on the same month: one
+          // arriving in front of it would otherwise shift the month on screen.
+          key={`${width}:${pages.map((month) => month.key).join()}`}
           ref={list}
           initialScrollIndex={current}
           onScroll={({ nativeEvent }) =>
-            setPage(Math.max(0, Math.min(last, Math.round(nativeEvent.contentOffset.x / width))))
+            show(Math.max(0, Math.round(nativeEvent.contentOffset.x / width)))
           }
           scrollEventThrottle={32}
           horizontal

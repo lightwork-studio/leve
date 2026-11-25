@@ -627,9 +627,16 @@ describe("month odometer", () => {
     expect(odometer.cells).toHaveLength(28);
   });
 
-  it("puts the current month first even before it has a workout", () => {
+  it("orders the months oldest first and adds the current month before it has a workout", () => {
     const march = new Date(2026, 2, 2).getTime();
-    expect(monthPages([month], march).map((page) => page.key)).toEqual(["2026-03", "2026-02"]);
+    expect(monthPages([month], march).map((page) => page.key)).toEqual(["2026-02", "2026-03"]);
+    const january = { ...month, key: "2026-01", month: 0 };
+    // History's months come newest first.
+    expect(monthPages([month, january], march).map((page) => page.key)).toEqual([
+      "2026-01",
+      "2026-02",
+      "2026-03",
+    ]);
     expect(monthPages([month], today)).toEqual([month]);
   });
 });

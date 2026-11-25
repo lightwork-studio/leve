@@ -318,7 +318,9 @@ export function MuscleCard({
 
   return (
     <View>
-      <ChartTabs options={MEASURES} value={measure} onChange={setMeasure} />
+      <View style={styles.tabs}>
+        <ChartTabs options={MEASURES} value={measure} onChange={setMeasure} />
+      </View>
       <View style={styles.readout} accessibilityLiveRegion="polite">
         <Text style={[styles.label, selected && styles.labelOn]}>{readout.label}</Text>
         <Text
@@ -576,6 +578,7 @@ const sheet = themedStyles((c) => ({
   dot: { width: 10, height: 10, borderRadius: 3 },
   primary: { ...type.cardTitle, fontSize: 19, lineHeight: 22, color: c.fg, flexShrink: 1 },
   secondary: { ...type.body, fontSize: 14, lineHeight: 19, color: c.fg2, flexShrink: 1 },
+  tabs: { paddingTop: 4, paddingHorizontal: 16 },
   readout: { paddingTop: 14, paddingHorizontal: 16 },
   label: { ...type.label, color: c.fg3 },
   // Room for the exercises link beside it.

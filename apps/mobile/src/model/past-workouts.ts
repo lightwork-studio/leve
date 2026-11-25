@@ -316,7 +316,10 @@ export function monthOdometer(
   };
 }
 
-/** The months with workouts, newest first, and the current month even before its first one. */
+/**
+ * The months with workouts, oldest first like a calendar read left to right, and the current month
+ * even before its first one.
+ */
 export function monthPages<T extends { key: string; year: number; month: number }>(
   months: (T & { workouts: WorkoutSummary[] })[],
   today: number,
@@ -324,9 +327,8 @@ export function monthPages<T extends { key: string; year: number; month: number 
   const now = new Date(today);
   const year = now.getFullYear();
   const month = now.getMonth();
-  if (months.some((page) => page.year === year && page.month === month)) return months;
-  return [
-    { year, month, key: `${year}-${String(month + 1).padStart(2, "0")}`, workouts: [] },
-    ...months,
-  ].sort((a, b) => b.year - a.year || b.month - a.month);
+  const current = months.some((page) => page.year === year && page.month === month)
+    ? []
+    : [{ year, month, key: `${year}-${String(month + 1).padStart(2, "0")}`, workouts: [] }];
+  return [...current, ...months].sort((a, b) => a.year - b.year || a.month - b.month);
 }
