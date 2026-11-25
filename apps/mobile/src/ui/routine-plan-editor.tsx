@@ -148,7 +148,11 @@ export function RoutineDetailsFields({
             ].map((folder) => ({
               label: folder.title,
               checked: folder.id === (current?.id ?? null),
-              onPress: () => setFolderId(folder.id),
+              // Choosing the folder it already shows in leaves it as it is: a routine whose folder
+              // is gone stays filed as it was unless it is moved somewhere else.
+              onPress: () => {
+                if (folder.id !== (current?.id ?? null)) setFolderId(folder.id);
+              },
             })),
           }}
         />

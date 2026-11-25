@@ -174,15 +174,20 @@ function RoutineEditor({
         effortScale !== openedScale || routineEffortScale({ exercises }) !== effortScale
           ? effortScale
           : opened.effortScale;
-      change((db) =>
+      change((db) => {
+        // A folder chosen here and deleted before saving leaves the routine in none, as the
+        // editor then shows. A folder already gone when it opened stays as it was, unless moved.
+        const target = folderId === null ? null : db.get("routine_folder", folderId);
+        const filed =
+          folderId === opened.folderId || (target?.content && !target.deleted) ? folderId : null;
         organizeRoutine(
           db,
           id,
           opened,
-          { title, folderId, notes, effortScale: scale },
+          { title, folderId: filed, notes, effortScale: scale },
           { opened: opened.exercises, next: exercises },
-        ),
-      );
+        );
+      });
     } catch (e) {
       haptic.warning();
       setError((e as Error).message);
@@ -194,9 +199,12 @@ function RoutineEditor({
     if (savingCopy.current || copyName === null) return;
     savingCopy.current = true;
     try {
-      // A folder deleted since the routine was filed in it leaves the copy in none, as it shows.
-      const filed = folders.some((folder) => folder.id === folderId) ? folderId : null;
-      change((db) => createRoutine(db, copyName, filed, plan, settings, notes, effortScale));
+      change((db) => {
+        // A folder deleted since the routine was filed in it leaves the copy in none, as it shows.
+        const target = folderId === null ? null : db.get("routine_folder", folderId);
+        const filed = target?.content && !target.deleted ? folderId : null;
+        createRoutine(db, copyName, filed, plan, settings, notes, effortScale);
+      });
     } catch (cause) {
       savingCopy.current = false;
       haptic.warning();
@@ -289,6 +297,8 @@ function RoutineEditor({
               message={`“${opened.title}” will be deleted. Workouts you logged from it stay in History.`}
               keep="Keep routine"
               onConfirm={() => {
+                // A second confirm before the screen closes has nothing left to delete.
+                if (deleted.current) return;
                 try {
                   deleted.current = true;
                   change((db) => deleteRoutine(db, id, initial));

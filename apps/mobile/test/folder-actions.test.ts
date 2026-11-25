@@ -254,13 +254,14 @@ it("deletes a synced folder, leaving its routines untouched and shown in no fold
 
     // While A deletes the folder, B renames a routine in it: both changes land, with no conflict.
     b.store.put("routine", "push", plan("Push heavy", "ppl", 1));
-    deleteFolder(a.store, "ppl");
+    const ppl = { id: "ppl", content: { title: "PPL", position: 1 } };
+    deleteFolder(a.store, ppl);
     const queued = a.store.prepareSubmissions("1.0").map((item) => item.submission);
     expect(queued).toEqual([
       expect.objectContaining({ op: "delete", kind: "routine_folder", id: "ppl" }),
     ]);
     // Deleting it again, as a second tap might, queues nothing more.
-    deleteFolder(a.store, "ppl");
+    deleteFolder(a.store, ppl);
     expect(a.store.prepareSubmissions("1.0")).toHaveLength(1);
     await a.sync();
     await b.sync();
@@ -309,7 +310,9 @@ it("refuses to delete a folder while it has a sync conflict", {
     await a.sync();
     expect(a.store.get("routine_folder", "ppl")?.problem).not.toBeNull();
 
-    expect(() => deleteFolder(a.store, "ppl")).toThrow(/sync issue on this folder/);
+    expect(() =>
+      deleteFolder(a.store, { id: "ppl", content: { title: "Strength", position: 1 } }),
+    ).toThrow(/sync issue on this folder/);
     expect(a.store.get("routine_folder", "ppl")).toMatchObject({
       deleted: false,
       content: { title: "Strength" },
@@ -327,7 +330,7 @@ it("deletes a folder that never synced without sending anything", async () => {
   });
   store.put("routine_folder", "new", { title: "New", position: 1 });
   store.put("routine", "r", plan("Legs", "new", 4));
-  deleteFolder(store, "new");
+  deleteFolder(store, { id: "new", content: { title: "New", position: 1 } });
   expect(store.get("routine_folder", "new")).toBeNull();
   expect(store.prepareSubmissions("1.0").map((item) => item.submission)).toEqual([
     expect.objectContaining({
@@ -338,5 +341,22 @@ it("deletes a folder that never synced without sending anything", async () => {
     }),
   ]);
   expect(trainData(store, 0).groups.map((group) => group.folder)).toEqual([null]);
+  store.close();
+});
+
+it("refuses to delete a folder renamed since its dialog opened", async () => {
+  const store = await openDeviceStore({
+    engine: createSqlJsEngine(SQL),
+    path: "/renamed-delete.db",
+    appVersion: "test",
+  });
+  store.put("routine_folder", "f", { title: "Push", position: 1 });
+  const opened = { id: "f", content: { title: "Push", position: 1 } };
+  store.put("routine_folder", "f", { title: "Push heavy", position: 1 });
+  expect(() => deleteFolder(store, opened)).toThrow(/This folder changed/);
+  expect(store.get("routine_folder", "f")).toMatchObject({
+    deleted: false,
+    content: { title: "Push heavy" },
+  });
   store.close();
 });

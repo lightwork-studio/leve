@@ -48,14 +48,16 @@ export function finishFolderRename(
 }
 
 /**
- * Deletes a folder and nothing else. A routine's folder is a soft reference, and a routine whose
- * folder is gone counts as not in a folder everywhere, so its routines are left untouched: an edit
- * to one of them on another phone syncs without a conflict.
+ * Deletes a folder, as it was named when the dialog opened, and nothing else. A routine's folder is
+ * a soft reference, and a routine whose folder is gone counts as not in a folder everywhere, so its
+ * routines are left untouched: an edit to one of them on another phone syncs without a conflict.
  */
-export function deleteFolder(store: DeviceStore, folderId: string): void {
-  const current = store.get("routine_folder", folderId);
+export function deleteFolder(store: DeviceStore, folder: WithId<Folder>): void {
+  const current = store.get("routine_folder", folder.id);
   if (!current?.content || current.deleted) return;
   if (current.problem || current.fromRestore)
     throw new Error("Resolve the sync issue on this folder before deleting it.");
-  store.delete("routine_folder", folderId);
+  if (current.content.title !== folder.content.title)
+    throw new Error("This folder changed. Close the dialog and reopen it to delete it.");
+  store.delete("routine_folder", folder.id);
 }

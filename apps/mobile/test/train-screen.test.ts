@@ -12,6 +12,7 @@ let activeId = "w1";
 let upNext: { id: string; title: string } | null = null;
 // Replaces the two folders of twenty routines each, for the cases that need other groups.
 let groupsOverride: unknown[] | null = null;
+let reviews: unknown[] = [];
 const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 vi.mock("react-native-reanimated", () => ({ useReducedMotion: () => reduced }));
 const push = vi.fn();
@@ -32,6 +33,7 @@ vi.mock("../src/ui/commit-button.tsx", () => ({ CommitButton: "CommitButton" }))
 vi.mock("../src/ui/enter.tsx", () => ({ Enter: "Enter" }));
 vi.mock("../src/ui/tap.tsx", () => ({ Tap: "Tap" }));
 vi.mock("../src/ui/new-folder-dialog.tsx", () => ({ NewFolderDialog: "Dialog" }));
+vi.mock("../src/ui/train-sync-review.tsx", () => ({ TrainSyncReview: "TrainSyncReview" }));
 vi.mock("../src/ui/use-now.ts", () => ({ useNow: () => 0 }));
 vi.mock("../src/ui/haptics.ts", () => ({
   haptic: { tap: vi.fn(), select: vi.fn(), warning: vi.fn() },
@@ -93,6 +95,7 @@ vi.mock("../src/data/queries.ts", () => ({
         },
   useTrain: () => ({
     settings: { weightUnit: "kg" },
+    reviews,
     upNext,
     active:
       activeTitle === null
@@ -716,6 +719,34 @@ it("offers Add routine in an open empty folder, and New folder once after a clos
     expect(labelled(root, /^New folder$/)).toHaveLength(1);
     expect(cardOf(root, "New folder")?.findAllByType("Tap" as never)).toHaveLength(1);
   } finally {
+    groupsOverride = null;
+    await act(() => screen?.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("shows each routine or folder waiting for sync review, with nothing else yet too", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const routine = { kind: "routine", id: "r", deleted: true, status: "conflict" };
+  const folder = { kind: "routine_folder", id: "r", deleted: false, status: "conflict" };
+  reviews = [routine, folder];
+  groupsOverride = [];
+  let screen: ReactTestRenderer | undefined;
+  try {
+    await act(() => {
+      screen = create(createElement(TrainScreen));
+    });
+    if (!screen) throw Error("Train did not mount");
+    const root = screen.root;
+    // A routine and a folder may share an id: each is its own card.
+    expect(root.findAllByType("TrainSyncReview" as never).map((card) => card.props.record)).toEqual(
+      [routine, folder],
+    );
+    expect(
+      root.findAll((n) => n.type === Text && n.props.children === "No routines yet"),
+    ).toHaveLength(1);
+  } finally {
+    reviews = [];
     groupsOverride = null;
     await act(() => screen?.unmount());
     vi.unstubAllGlobals();

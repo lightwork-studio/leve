@@ -1,8 +1,8 @@
-import { type JsonObject, jsonEqual, MAX_POSITION } from "@leve/contract";
+import { type JsonObject, jsonEqual } from "@leve/contract";
 import { type EffortScale, LIMITS } from "@leve/core";
 import type { DeviceStore } from "@leve/storage";
 
-import type { StoredPlan } from "./routine-actions.ts";
+import { nextRoutinePosition, type StoredPlan } from "./routine-actions.ts";
 
 export interface RoutineLocation {
   title: string;
@@ -65,10 +65,8 @@ export function organizeRoutine(
       const target = store.get("routine_folder", draft.folderId);
       if (!target?.content || target.deleted) throw new Error("Choose an available folder.");
     }
-    const siblings = store.list("routine").filter((r) => r.content?.folderId === draft.folderId);
-    const last = siblings.at(-1)?.content?.position;
     next.folderId = draft.folderId;
-    next.position = Math.min(MAX_POSITION, typeof last === "number" ? last + 1 : 1);
+    next.position = nextRoutinePosition(store, draft.folderId);
   }
   if (!jsonEqual(current, next)) store.put("routine", id, next);
 }

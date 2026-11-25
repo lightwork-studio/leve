@@ -91,9 +91,12 @@ function RoutineForm({
     if (saving.current) return;
     saving.current = true;
     try {
-      // A folder deleted while the form was open leaves the routine in none, as the form shows.
-      const filed = folders.some((f) => f.id === folder) ? folder : null;
-      change((store) => createRoutine(store, name, filed, plan, settings, notes, effortScale));
+      change((store) => {
+        // A folder deleted while the form was open leaves the routine in none, as the form shows.
+        const target = folder === null ? null : store.get("routine_folder", folder);
+        const filed = target?.content && !target.deleted ? folder : null;
+        createRoutine(store, name, filed, plan, settings, notes, effortScale);
+      });
     } catch (error) {
       saving.current = false;
       haptic.warning();

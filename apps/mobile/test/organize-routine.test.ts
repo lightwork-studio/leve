@@ -190,3 +190,36 @@ it("refuses to delete a routine that changed since it was opened, or has a sync 
     await world.dispose();
   }
 });
+
+it("puts a routine moved to no folder after the routines whose folder is gone", async () => {
+  const store = await openDeviceStore({
+    engine: createSqlJsEngine(SQL),
+    path: "/unfiled-order.db",
+    appVersion: "test",
+  });
+  const routine = (title: string, folderId: string | null, position: number) => ({
+    title,
+    folderId,
+    notes: "",
+    position,
+    exercises: [],
+    effortScale: null,
+  });
+  store.put("routine_folder", "kept", { title: "Kept", position: 1 });
+  store.put("routine", "loose", routine("Loose", null, 2));
+  // Its folder was deleted: Train shows it with the routines in no folder, after "Loose".
+  store.put("routine", "orphan", routine("Orphan", "gone", 7));
+  store.put("routine", "filed", routine("Filed", "kept", 30));
+  organizeRoutine(
+    store,
+    "filed",
+    { title: "Filed", folderId: "kept" },
+    { title: "Filed", folderId: null },
+  );
+  expect(store.get("routine", "filed")?.content?.position).toBe(8);
+  expect(trainData(store, 0).groups.map((group) => group.routines.map((r) => r.title))).toEqual([
+    [],
+    ["Loose", "Orphan", "Filed"],
+  ]);
+  store.close();
+});

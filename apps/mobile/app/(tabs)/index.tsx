@@ -47,6 +47,7 @@ import { HeaderButton, TabScreen } from "../../src/ui/screen.tsx";
 import { StartActions } from "../../src/ui/start-actions.tsx";
 import { Tap } from "../../src/ui/tap.tsx";
 import { themedStyles, useColors, useStyles } from "../../src/ui/themed.ts";
+import { TrainSyncReview } from "../../src/ui/train-sync-review.tsx";
 import { useNow } from "../../src/ui/use-now.ts";
 
 export default function TrainScreen() {
@@ -55,7 +56,7 @@ export default function TrainScreen() {
   const reduced = useReducedMotion();
   const styles = useStyles(sheet);
   const c = useColors();
-  const { week, groups, upNext, active, settings } = useTrain(now);
+  const { week, groups, upNext, active, settings, reviews } = useTrain(now);
   const { change, store } = useAppData();
   // The routine tapped while another workout runs, and that workout as it was then: discarding it
   // is refused if it changed while the sheet was open.
@@ -189,6 +190,10 @@ export default function TrainScreen() {
             </Text>
           </View>
         </View>
+        {/* Routines and folders the server didn't take as this device had them, to settle here. */}
+        {reviews.map((record) => (
+          <TrainSyncReview key={`${record.kind}/${record.id}`} record={record} />
+        ))}
         {pending && switchTitle && (
           <SwitchSheet
             routine={switchTitle}
@@ -218,7 +223,7 @@ export default function TrainScreen() {
               setRenaming(null);
             }}
             onDelete={() => {
-              change((store) => deleteFolder(store, renaming.id));
+              change((store) => deleteFolder(store, renaming));
               haptic.tap();
               // Its routines join the ones not in a folder: open that group to show them there.
               if (groups.some((g) => g.folder?.id === renaming.id && g.routines.length > 0))
