@@ -41,7 +41,7 @@ it("renames dependency folders in asset paths only for a static web export", () 
   };
   expect(
     rename({
-      httpServerLocation: "/assets/node_modules/.pnpm/sql.js@1.15.2/node_modules/sql.js/dist",
+      httpServerLocation: "/assets/../../node_modules/.pnpm/sql.js@1.15.2/node_modules/sql.js/dist",
     }).httpServerLocation,
-  ).toBe("/assets/dependencies/pnpm-store/sql.js@1.15.2/dependencies/sql.js/dist");
+  ).toBe("/assets/../../dependencies/pnpm-store/sql.js@1.15.2/dependencies/sql.js/dist");
 });
