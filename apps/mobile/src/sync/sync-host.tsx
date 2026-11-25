@@ -111,6 +111,8 @@ function Sync() {
       log: (message) => console.warn(message),
     });
     session.current = running;
+    // A "Not now" was for the question of the session before.
+    setLater(false);
     running.setForeground(AppState.currentState === "active");
     running.start();
     const watch = AppState.addEventListener("change", (state) =>

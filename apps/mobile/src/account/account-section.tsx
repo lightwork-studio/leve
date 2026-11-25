@@ -135,7 +135,7 @@ function Account() {
             }}
           >
             <Text style={styles.warning}>
-              {`${unsynced === 1 ? "1 change hasn't" : `${unsynced} changes haven't`} synced yet. ${unsynced === 1 ? "It stays" : "They stay"} on this phone and ${unsynced === 1 ? "syncs" : "sync"} when you sign in again with this account. Signing in with a different account would ask to delete ${unsynced === 1 ? "it" : "them"}.`}
+              {`${unsynced === 1 ? "1 change hasn't" : `${unsynced} changes haven't`} synced yet. ${unsynced === 1 ? "It stays" : "They stay"} on this phone and ${unsynced === 1 ? "syncs" : "sync"} when you sign in again with this account. Signing in with a different account asks what to do with ${unsynced === 1 ? "it" : "them"} first.`}
             </Text>
           </Dialog>
         ) : null}

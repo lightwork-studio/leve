@@ -243,6 +243,8 @@ export class SyncSession {
   }
 
   #ask(prompt: SyncPrompt): void {
+    // A new question ends any sign-in check: the loop waits for its answer.
+    this.#checkingSignIn = false;
     this.#setStatus({ prompt });
   }
 
@@ -303,7 +305,10 @@ export class SyncSession {
 
   async #run(): Promise<void> {
     while (!this.#stopped) {
-      if ((this.#status.prompt && !this.#checkingSignIn) || (!this.#due && !this.#foreground)) {
+      // Waits while a question is open, except to check a refused sign-in again.
+      const prompt = this.#status.prompt;
+      const checking = prompt?.kind === "sign_in" && this.#checkingSignIn;
+      if ((prompt && !checking) || (!this.#due && !this.#foreground)) {
         await this.#sleep(null);
         continue;
       }

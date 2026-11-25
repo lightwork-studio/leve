@@ -350,6 +350,30 @@ it("tries a refused sign-in again on return to the app, keeping the question up 
   ).not.toBeNull();
 });
 
+it("still asks before combining after a refused sign-in starts working again", async () => {
+  await otherPhone("alice", "f-other");
+  const store = await phone();
+  folder(store, "f-phone", "On the phone");
+  tokens.delete("alice-token");
+  const { session } = start(store, "alice");
+  await until(() => session.status.prompt !== null);
+  expect(session.status.prompt).toEqual({ kind: "sign_in" });
+
+  tokens.set("alice-token", "alice");
+  session.setForeground(true);
+  await until(() => session.status.prompt?.kind === "combine");
+  // Unanswered, the question holds everything back: nothing is tied, downloaded or sent.
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  expect(store.syncState().account).toBeNull();
+  expect(store.get("routine_folder", "f-other")).toBeNull();
+  session.stop();
+
+  const again = start(store, "alice").session;
+  await until(() => again.status.prompt !== null);
+  expect(again.status.prompt).toEqual({ kind: "combine" });
+  expect(await serverFolders("alice")).toEqual(["f-other"]);
+});
+
 it("doesn't count a fresh-token retry that never reached the server", async () => {
   const store = await phone();
   let fresh = 0;

@@ -152,7 +152,7 @@ it("in a build that syncs, warns before signing out with unsynced changes", asyn
   const dialog = () => document.querySelector<HTMLElement>("[role=dialog]");
   expect(dialog()?.textContent).toContain("2 changes haven't synced yet.");
   expect(dialog()?.textContent).toContain(
-    "Signing in with a different account would ask to delete them.",
+    "Signing in with a different account asks what to do with them first.",
   );
   await act(async () => {
     [...(dialog()?.querySelectorAll<HTMLElement>("[role=button]") ?? [])]
