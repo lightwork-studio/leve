@@ -35,8 +35,9 @@ export const EXERCISES = {
   stretch: { id: "builtin:hip-flexor-stretch", name: "Hip Flexor Stretch", type: "duration" },
 } as const satisfies Record<string, BuiltInExercise>;
 
-// Equipment and muscles from free-exercise-db, under the Unlicense:
+// Entries with a sourceId take equipment and muscles from free-exercise-db, under the Unlicense:
 // https://github.com/yuhonas/free-exercise-db/tree/f00c92c7dcf1216a928a52c3706c7ce8e2f71ed5
+// Entries without one are Leve's own additions.
 const seeded = new Map<string, BuiltInExercise>(Object.values(EXERCISES).map((e) => [e.id, e]));
 export const exerciseLibrary = catalog.map((item) => ({
   ...item,

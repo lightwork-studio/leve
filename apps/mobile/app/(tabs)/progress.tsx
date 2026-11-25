@@ -404,10 +404,10 @@ function MoreCard({
   return (
     <View>
       <View style={styles.cells}>
-        <Link href={{ pathname: "/history/calendar", params: { from: "progress" } }} asChild>
+        <Link href="/history" asChild>
           <Tap
             accessibilityRole="link"
-            accessibilityLabel={`Workout calendar. Training days: ${frequency.recent} in the last 28 days, ${frequency.previous} in the previous 28 days.`}
+            accessibilityLabel={`Workout history. Training days: ${frequency.recent} in the last 28 days, ${frequency.previous} in the previous 28 days.`}
             scaleTo={0.98}
             style={styles.cell}
           >

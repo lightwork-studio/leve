@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import { type ComponentRef, memo, useCallback, useRef, useState } from "react";
+import { type ComponentRef, memo, type ReactNode, useCallback, useRef, useState } from "react";
 import { Platform, type ScrollView, Text, View } from "react-native";
 import { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -25,22 +25,18 @@ import { ActionSheet } from "../../src/ui/action-sheet.tsx";
 import { afterFeedback } from "../../src/ui/after-feedback.ts";
 import { Enter } from "../../src/ui/enter.tsx";
 import { dayLabel, minutesLabel, readoutWeight } from "../../src/ui/format.ts";
-import { Group } from "../../src/ui/group.tsx";
 import { haptic } from "../../src/ui/haptics.ts";
 import {
   ChevronIcon,
   EditIcon,
   FolderIcon,
-  FolderPlusIcon,
   GearIcon,
-  LibraryIcon,
   PlusIcon,
   TrayIcon,
 } from "../../src/ui/icons.tsx";
 import { MainAction } from "../../src/ui/main-action.tsx";
 import { NewFolderDialog } from "../../src/ui/new-folder-dialog.tsx";
 import { showToast } from "../../src/ui/notice.tsx";
-import { MoreButton } from "../../src/ui/popover-menu.tsx";
 import { HeaderButton, TabScreen } from "../../src/ui/screen.tsx";
 import { StartActions } from "../../src/ui/start-actions.tsx";
 import { Tap } from "../../src/ui/tap.tsx";
@@ -146,6 +142,8 @@ export default function TrainScreen() {
     },
     [open],
   );
+  const groupRuns = runs(groups, (g) => open.has(groupKey(g)));
+  const newFolder = useCallback(() => setCreatingFolder(true), []);
   const routineCount = groups.reduce((sum, group) => sum + group.routines.length, 0);
   const folderCount = groups.filter((group) => group.folder).length;
 
@@ -184,23 +182,6 @@ export default function TrainScreen() {
                 : ""}
             </Text>
           </View>
-          {/* One + for everything that can be added here, so the heading keeps a single tile. */}
-          <MoreButton
-            label="Add routine or folder"
-            icon={(color, size) => <PlusIcon color={color} size={size + 2} />}
-            items={[
-              {
-                label: "New routine",
-                icon: (color) => <PlusIcon color={color} size={18} />,
-                onPress: () => newRoutine(),
-              },
-              {
-                label: "New folder",
-                icon: (color) => <FolderPlusIcon color={color} size={18} />,
-                onPress: () => setCreatingFolder(true),
-              },
-            ]}
-          />
         </View>
         {pending && switchTitle && (
           <SwitchSheet
@@ -240,7 +221,9 @@ export default function TrainScreen() {
             }}
           />
         )}
-        {runs(groups, (g) => open.has(groupKey(g))).map((run) =>
+        {/* Adding happens where the new thing will appear: "Add routine" ends each open folder,
+            and "New folder" ends the list of closed folders, or the section when none is closed. */}
+        {groupRuns.map((run, r) =>
           run.open ? (
             run.groups.map((group) => (
               <View
@@ -278,33 +261,27 @@ export default function TrainScreen() {
                   key={groupKey(group)}
                   group={group}
                   first={i === 0}
-                  onRename={setRenaming}
                   onToggle={toggle}
                 />
               ))}
+              {r === groupRuns.length - 1 && <NewFolderRow onPress={newFolder} />}
             </Enter>
           ),
         )}
+        {groups.length === 0 ? (
+          // Nothing to file into yet: a routine can still be added on its own, or a folder first.
+          <View style={styles.card}>
+            <AddRoutineRow folder={null} first />
+            <NewFolderRow onPress={newFolder} />
+          </View>
+        ) : (
+          groupRuns.at(-1)?.open && (
+            <Enter leaves style={styles.card}>
+              <NewFolderRow first onPress={newFolder} />
+            </Enter>
+          )
+        )}
       </View>
-
-      <Group label="Library" style={styles.library}>
-        <Tap
-          accessibilityRole="button"
-          accessibilityLabel="Exercises, records and history by name or muscle"
-          onPress={openLibrary}
-          scaleTo={0.98}
-          style={styles.libraryRow}
-        >
-          <View style={styles.badge}>
-            <LibraryIcon color={c.fg2} size={18} />
-          </View>
-          <View style={styles.flex}>
-            <Text style={styles.libraryTitle}>Exercises</Text>
-            <Text style={styles.routineMeta}>Records and history · by name or muscle</Text>
-          </View>
-          <ChevronIcon color={c.fg3} size={16} strokeWidth={2} />
-        </Tap>
-      </Group>
     </TabScreen>
   );
 }
@@ -360,7 +337,6 @@ const newRoutine = (folderId?: string) =>
   router.push(
     folderId ? { pathname: "/routine/new", params: { folder: folderId } } : "/routine/new",
   );
-const openLibrary = () => router.push({ pathname: "/exercises", params: { from: "train" } });
 
 /** The tallest a day's bar is, in points; an untrained day is a stub. */
 const DAY_BAR = 34;
@@ -471,9 +447,10 @@ const OpenGroup = memo(function OpenGroup({
 }) {
   const styles = useStyles(sheet);
   const c = useColors();
+  const { folder } = group;
   return (
     <View>
-      <View style={styles.headerRow}>
+      <View style={[styles.headerRow, folder && styles.headerWithAction]}>
         <Tap
           accessibilityRole="button"
           accessibilityState={{ expanded: true }}
@@ -487,56 +464,94 @@ const OpenGroup = memo(function OpenGroup({
           <View style={styles.flex} />
           <Text style={styles.label}>{group.routines.length}</Text>
         </Tap>
-        <FolderMenu folder={group.folder} onRename={onRename} />
+        {folder && (
+          <IconAction
+            label={`Rename ${folder.content.title} folder`}
+            onPress={() => onRename(folder)}
+          >
+            <EditIcon color={c.fg3} size={15} />
+          </IconAction>
+        )}
       </View>
-      {group.routines.length > 0 && (
-        <View style={styles.card}>
-          {group.routines.map((routine, i) => (
-            <RoutineRow
-              key={routine.id}
-              routine={routine}
-              index={i}
-              first={i === 0}
-              onStart={onStart}
-              running={running === undefined ? "idle" : running === routine.id ? "this" : "other"}
-            />
-          ))}
-        </View>
-      )}
+      <View style={styles.card}>
+        {group.routines.map((routine, i) => (
+          <RoutineRow
+            key={routine.id}
+            routine={routine}
+            index={i}
+            first={i === 0}
+            onStart={onStart}
+            running={running === undefined ? "idle" : running === routine.id ? "this" : "other"}
+          />
+        ))}
+        <AddRoutineRow folder={folder} first={group.routines.length === 0} />
+      </View>
     </View>
   );
 });
 
-/** A folder's ⋯ menu: add a routine straight into it, or rename it. */
-function FolderMenu({
-  folder,
-  onRename,
+/** A bare icon with a full touch target, for the one secondary action a row or header has. */
+function IconAction({
+  label,
+  onPress,
+  children,
 }: {
-  folder: RoutineGroup["folder"];
-  onRename: (folder: NonNullable<RoutineGroup["folder"]>) => void;
+  label: string;
+  onPress: () => void;
+  children: ReactNode;
 }) {
   const styles = useStyles(sheet);
-  if (!folder) return null;
   return (
-    <View style={styles.folderMenu}>
-      <MoreButton
-        small
-        label={`${folder.content.title} folder options`}
-        title={folder.content.title}
-        items={[
-          {
-            label: "New routine",
-            icon: (color) => <PlusIcon color={color} size={18} />,
-            onPress: () => newRoutine(folder.id),
-          },
-          {
-            label: "Rename folder",
-            icon: (color) => <EditIcon color={color} size={18} />,
-            onPress: () => onRename(folder),
-          },
-        ]}
-      />
-    </View>
+    <Tap
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={onPress}
+      style={styles.iconAction}
+    >
+      {children}
+    </Tap>
+  );
+}
+
+/** Ends a folder's card: adds a routine filed in that folder, or in none for the unfiled group. */
+function AddRoutineRow({ folder, first }: { folder: RoutineGroup["folder"]; first: boolean }) {
+  const styles = useStyles(sheet);
+  const c = useColors();
+  return (
+    <Tap
+      accessibilityRole="button"
+      accessibilityLabel={folder ? `Add routine to ${folder.content.title}` : "Add routine"}
+      onPress={() => newRoutine(folder?.id)}
+      scaleTo={0.98}
+      style={[styles.addRoutine, !first && styles.divider]}
+    >
+      <View style={styles.addRoutineIcon}>
+        <PlusIcon color={c.fg2} size={16} />
+      </View>
+      <Text style={styles.addLabel}>Add routine</Text>
+    </Tap>
+  );
+}
+
+/** Ends the closed folders' card, or the section when none is closed. */
+function NewFolderRow({ first = false, onPress }: { first?: boolean; onPress: () => void }) {
+  const styles = useStyles(sheet);
+  const c = useColors();
+  return (
+    <Tap
+      accessibilityRole="button"
+      accessibilityLabel="New folder"
+      onPress={onPress}
+      scaleTo={0.98}
+      style={[styles.closedFolder, !first && styles.divider]}
+    >
+      <View style={[styles.badge, styles.badgeNew]}>
+        <PlusIcon color={c.fg2} size={16} />
+      </View>
+      <Text style={[styles.closedTitle, styles.addLabelColor]} numberOfLines={1}>
+        New folder
+      </Text>
+    </Tap>
   );
 }
 
@@ -544,38 +559,33 @@ const ClosedGroup = memo(function ClosedGroup({
   group,
   first,
   onToggle,
-  onRename,
 }: {
   group: RoutineGroup;
   first: boolean;
   onToggle: (key: string) => void;
-  onRename: (folder: NonNullable<RoutineGroup["folder"]>) => void;
 }) {
   const styles = useStyles(sheet);
   const c = useColors();
   return (
-    <View style={[styles.headerRow, styles.closedRow, !first && styles.divider]}>
-      <Tap
-        accessibilityRole="button"
-        accessibilityState={{ expanded: false }}
-        onPress={() => onToggle(groupKey(group))}
-        style={[styles.closedFolder, styles.flex]}
-      >
-        <View style={styles.badge}>
-          {group.folder ? (
-            <FolderIcon color={c.fg2} size={18} />
-          ) : (
-            <TrayIcon color={c.fg2} size={18} />
-          )}
-        </View>
-        <Text style={styles.closedTitle} numberOfLines={1}>
-          {groupTitle(group)}
-        </Text>
-        <Text style={styles.closedCount}>{group.routines.length}</Text>
-        <ChevronIcon color={c.fg3} size={16} strokeWidth={2} />
-      </Tap>
-      <FolderMenu folder={group.folder} onRename={onRename} />
-    </View>
+    <Tap
+      accessibilityRole="button"
+      accessibilityState={{ expanded: false }}
+      onPress={() => onToggle(groupKey(group))}
+      style={[styles.closedFolder, !first && styles.divider]}
+    >
+      <View style={styles.badge}>
+        {group.folder ? (
+          <FolderIcon color={c.fg2} size={18} />
+        ) : (
+          <TrayIcon color={c.fg2} size={18} />
+        )}
+      </View>
+      <Text style={styles.closedTitle} numberOfLines={1}>
+        {groupTitle(group)}
+      </Text>
+      <Text style={styles.closedCount}>{group.routines.length}</Text>
+      <ChevronIcon color={c.fg3} size={16} strokeWidth={2} />
+    </Tap>
   );
 });
 
@@ -594,6 +604,7 @@ const RoutineRow = memo(function RoutineRow({
   running: "idle" | "this" | "other";
 }) {
   const styles = useStyles(sheet);
+  const c = useColors();
   const shown = routine.exerciseNames.slice(0, 3);
   const more = routine.exerciseNames.length - shown.length;
   const summary = `${routine.exerciseCount} ${routine.exerciseCount === 1 ? "exercise" : "exercises"} · ${lastDoneLabel(routine.daysSinceLast).toLowerCase()}`;
@@ -628,18 +639,12 @@ const RoutineRow = memo(function RoutineRow({
           )}
         </View>
       </Tap>
-      <MoreButton
-        small
-        label={`${routine.title} options`}
-        title={routine.title}
-        items={[
-          {
-            label: "Edit routine",
-            icon: (color) => <EditIcon color={color} size={18} />,
-            onPress: () => router.push({ pathname: "/routine/[id]", params: { id: routine.id } }),
-          },
-        ]}
-      />
+      <IconAction
+        label={`Edit ${routine.title}`}
+        onPress={() => router.push({ pathname: "/routine/[id]", params: { id: routine.id } })}
+      >
+        <EditIcon color={c.fg3} size={17} />
+      </IconAction>
     </View>
   );
 });
@@ -698,8 +703,10 @@ const sheet = themedStyles((c) => ({
   sectionTitle: { flexDirection: "row", alignItems: "baseline", gap: space.md, flexShrink: 1 },
   section: { ...type.heading, color: c.fg },
   sectionAside: { ...type.label, color: c.fg3 },
-  folderMenu: { width: touch, height: touch, alignItems: "center", justifyContent: "center" },
+  iconAction: { width: touch, height: touch, alignItems: "center", justifyContent: "center" },
   headerRow: { flexDirection: "row", alignItems: "center" },
+  // The pencil's glyph lines up with the ones on the routine rows below.
+  headerWithAction: { marginRight: space.xs + 1 },
   groupHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -707,14 +714,12 @@ const sheet = themedStyles((c) => ({
     minHeight: touch,
     paddingLeft: 6,
   },
-  closedRow: { paddingRight: space.xs },
   closedFolder: {
     flexDirection: "row",
     alignItems: "center",
     gap: space.md,
     minHeight: 58,
-    paddingLeft: space.lg,
-    paddingRight: space.sm,
+    paddingHorizontal: space.lg,
   },
   badge: {
     width: 38,
@@ -726,6 +731,7 @@ const sheet = themedStyles((c) => ({
     alignItems: "center",
     justifyContent: "center",
   },
+  badgeNew: { backgroundColor: "transparent", borderStyle: "dashed", borderColor: c.line2 },
   closedTitle: { flex: 1, ...type.rowTitle, color: c.fg },
   closedCount: { ...type.value, color: c.fg2 },
   routine: {
@@ -734,7 +740,7 @@ const sheet = themedStyles((c) => ({
     gap: space.md,
     paddingVertical: space.md,
     paddingLeft: space.lg,
-    paddingRight: space.md,
+    paddingRight: space.xs,
   },
   routineDetails: {
     flex: 1,
@@ -747,14 +753,15 @@ const sheet = themedStyles((c) => ({
   routineTitle: { ...type.cardTitle, fontSize: 19, lineHeight: 22, color: c.fg },
   routineMeta: { ...type.meta, color: c.fg3, marginTop: 4 },
   routineNames: { ...type.caption, color: c.fg2, marginTop: 3 },
-  library: { marginHorizontal: 0, marginTop: space.sm, marginBottom: 0 },
-  libraryRow: {
+  addRoutine: {
     flexDirection: "row",
     alignItems: "center",
     gap: space.md,
-    minHeight: 58,
-    paddingVertical: space.md,
+    minHeight: 48,
     paddingHorizontal: space.lg,
   },
-  libraryTitle: { ...type.rowTitle, color: c.fg },
+  // As wide as the routine numbers, so the + sits in their column.
+  addRoutineIcon: { width: 20, alignItems: "center" },
+  addLabel: { ...type.rowTitle, color: c.fg2 },
+  addLabelColor: { color: c.fg2 },
 }));

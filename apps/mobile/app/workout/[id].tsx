@@ -47,12 +47,10 @@ export default function WorkoutDetailScreen() {
     id,
     back: backTo,
     fromExercise,
-    from,
   } = useLocalSearchParams<{
     id: string;
     back?: string;
     fromExercise?: string;
-    from?: string;
   }>();
   const data = useWorkoutDetail(id);
   const insets = useSafeAreaInsets();
@@ -64,19 +62,14 @@ export default function WorkoutDetailScreen() {
   const deletionReview = useRef<ReturnType<typeof workoutDeletionSnapshot>>(null);
   const styles = useStyles(sheet);
 
-  const fromCalendar = backTo === "Calendar" && !fromExercise;
   const backLabel = fromExercise
     ? backTo || "Exercise"
-    : fromCalendar
-      ? "Calendar"
-      : (router.canGoBack() && backTo) || "History";
+    : (router.canGoBack() && backTo) || "History";
   const back = () => {
     if (router.canGoBack()) return router.back();
     if (fromExercise)
       return router.replace({ pathname: "/exercise/[id]", params: { id: fromExercise } });
-    if (fromCalendar && from === "progress")
-      return router.replace({ pathname: "/history/calendar", params: { from: "progress" } });
-    router.replace(fromCalendar ? "/history/calendar" : "/history");
+    router.replace("/history");
   };
   const unit = data?.settings.weightUnit ?? "kg";
   const effort = data && workoutEffort(data.summary, unit);

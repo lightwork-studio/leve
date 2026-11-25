@@ -18,6 +18,8 @@ rather than exposing it on a network. `EXPO_PUBLIC_COMMIT` and `EXPO_PUBLIC_BUIL
 export time, are shown in the app so you can tell which build is running. A new install starts with made-up
 sample data, which the reset in Settings brings back. `EXPO_PUBLIC_SAMPLE_DATA=off` turns that off,
 so the app starts empty and the reset deletes everything; TestFlight builds and their updates set it.
+TestFlight, recognised by its `preview` update channel, also offers to start again with the sample
+data from Settings.
 
 ## App identities
 

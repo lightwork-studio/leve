@@ -402,6 +402,14 @@
     "type": "bodyweight_reps"
   },
   {
+    "id": "builtin:45-degree-side-bend",
+    "name": "45-Degree Side Bend",
+    "equipment": "Other",
+    "muscles": ["Abdominals"],
+    "secondaryMuscles": ["Lower back"],
+    "type": "bodyweight_reps"
+  },
+  {
     "id": "builtin:90-90-hamstring",
     "name": "90/90 Hamstring",
     "equipment": "Bodyweight",
@@ -454,6 +462,14 @@
     "secondaryMuscles": ["Glutes", "Hamstrings", "Shoulders"],
     "sourceId": "Advanced_Kettlebell_Windmill",
     "type": "weight_reps"
+  },
+  {
+    "id": "builtin:aerobics",
+    "name": "Aerobics",
+    "equipment": "Bodyweight",
+    "muscles": ["Cardio"],
+    "secondaryMuscles": [],
+    "type": "duration"
   },
   {
     "id": "builtin:air-bike",
@@ -627,6 +643,50 @@
     "type": "weight_reps"
   },
   {
+    "id": "builtin:assisted-chest-dip",
+    "name": "Assisted Chest Dip",
+    "equipment": "Machine",
+    "muscles": ["Chest"],
+    "secondaryMuscles": ["Shoulders", "Triceps"],
+    "type": "assisted_bodyweight",
+    "usesBodyweight": true
+  },
+  {
+    "id": "builtin:assisted-chin-up",
+    "name": "Assisted Chin-Up",
+    "equipment": "Machine",
+    "muscles": ["Lats"],
+    "secondaryMuscles": ["Biceps", "Middle back"],
+    "type": "assisted_bodyweight",
+    "usesBodyweight": true
+  },
+  {
+    "id": "builtin:assisted-pistol-squat",
+    "name": "Assisted Pistol Squat",
+    "equipment": "Bodyweight",
+    "muscles": ["Quadriceps"],
+    "secondaryMuscles": ["Glutes", "Hamstrings"],
+    "type": "bodyweight_reps"
+  },
+  {
+    "id": "builtin:assisted-pull-up",
+    "name": "Assisted Pull-Up",
+    "equipment": "Machine",
+    "muscles": ["Lats"],
+    "secondaryMuscles": ["Biceps", "Middle back"],
+    "type": "assisted_bodyweight",
+    "usesBodyweight": true
+  },
+  {
+    "id": "builtin:assisted-triceps-dip",
+    "name": "Assisted Triceps Dip",
+    "equipment": "Machine",
+    "muscles": ["Triceps"],
+    "secondaryMuscles": ["Chest", "Shoulders"],
+    "type": "assisted_bodyweight",
+    "usesBodyweight": true
+  },
+  {
     "id": "builtin:atlas-stone-trainer",
     "name": "Atlas Stone Trainer",
     "equipment": "Other",
@@ -720,6 +780,38 @@
     "usesBodyweight": true
   },
   {
+    "id": "builtin:band-bent-over-row",
+    "name": "Band Bent Over Row",
+    "equipment": "Bands",
+    "muscles": ["Middle back"],
+    "secondaryMuscles": ["Biceps", "Lats", "Shoulders"],
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:band-chest-fly",
+    "name": "Band Chest Fly",
+    "equipment": "Bands",
+    "muscles": ["Chest"],
+    "secondaryMuscles": ["Shoulders"],
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:band-deadlift",
+    "name": "Band Deadlift",
+    "equipment": "Bands",
+    "muscles": ["Glutes"],
+    "secondaryMuscles": ["Hamstrings", "Lower back", "Quadriceps"],
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:band-front-raise",
+    "name": "Band Front Raise",
+    "equipment": "Bands",
+    "muscles": ["Shoulders"],
+    "secondaryMuscles": [],
+    "type": "weight_reps"
+  },
+  {
     "id": "builtin:band-good-morning",
     "name": "Band Good Morning",
     "equipment": "Bands",
@@ -738,12 +830,44 @@
     "type": "bodyweight_reps"
   },
   {
+    "id": "builtin:band-hammer-curl",
+    "name": "Band Hammer Curl",
+    "equipment": "Bands",
+    "muscles": ["Biceps"],
+    "secondaryMuscles": ["Forearms"],
+    "type": "weight_reps"
+  },
+  {
     "id": "builtin:band-hip-adductions",
     "name": "Band Hip Adductions",
     "equipment": "Bands",
     "muscles": ["Adductors"],
     "secondaryMuscles": [],
     "sourceId": "Band_Hip_Adductions",
+    "type": "bodyweight_reps"
+  },
+  {
+    "id": "builtin:band-kneeling-lat-pulldown",
+    "name": "Band Kneeling Lat Pulldown",
+    "equipment": "Bands",
+    "muscles": ["Lats"],
+    "secondaryMuscles": ["Biceps", "Middle back"],
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:band-lat-pulldown",
+    "name": "Band Lat Pulldown",
+    "equipment": "Bands",
+    "muscles": ["Lats"],
+    "secondaryMuscles": ["Biceps", "Middle back"],
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:band-lateral-walk",
+    "name": "Band Lateral Walk",
+    "equipment": "Bands",
+    "muscles": ["Glutes"],
+    "secondaryMuscles": ["Abductors"],
     "type": "bodyweight_reps"
   },
   {
@@ -762,6 +886,14 @@
     "muscles": ["Triceps"],
     "secondaryMuscles": [],
     "sourceId": "Band_Skull_Crusher",
+    "type": "bodyweight_reps"
+  },
+  {
+    "id": "builtin:bar-facing-burpee",
+    "name": "Bar-Facing Burpee",
+    "equipment": "Bodyweight",
+    "muscles": ["Full body"],
+    "secondaryMuscles": ["Chest", "Quadriceps", "Shoulders"],
     "type": "bodyweight_reps"
   },
   {
@@ -798,6 +930,14 @@
     "muscles": ["Biceps"],
     "secondaryMuscles": [],
     "sourceId": "Barbell_Curls_Lying_Against_An_Incline",
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:barbell-front-raise",
+    "name": "Barbell Front Raise",
+    "equipment": "Barbell",
+    "muscles": ["Shoulders"],
+    "secondaryMuscles": [],
     "type": "weight_reps"
   },
   {
@@ -855,12 +995,44 @@
     "type": "weight_reps"
   },
   {
+    "id": "builtin:barbell-jump-shrug",
+    "name": "Barbell Jump Shrug",
+    "equipment": "Barbell",
+    "muscles": ["Full body"],
+    "secondaryMuscles": ["Calves", "Glutes", "Traps"],
+    "type": "weight_reps"
+  },
+  {
     "id": "builtin:barbell-lunge",
     "name": "Barbell Lunge",
     "equipment": "Barbell",
     "muscles": ["Quadriceps"],
     "secondaryMuscles": ["Calves", "Glutes", "Hamstrings"],
     "sourceId": "Barbell_Lunge",
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:barbell-partial-glute-bridge",
+    "name": "Barbell Partial Glute Bridge",
+    "equipment": "Barbell",
+    "muscles": ["Glutes"],
+    "secondaryMuscles": ["Hamstrings"],
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:barbell-press-under",
+    "name": "Barbell Press Under",
+    "equipment": "Barbell",
+    "muscles": ["Full body"],
+    "secondaryMuscles": ["Quadriceps", "Shoulders", "Triceps"],
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:barbell-reverse-lunge",
+    "name": "Barbell Reverse Lunge",
+    "equipment": "Barbell",
+    "muscles": ["Quadriceps"],
+    "secondaryMuscles": ["Glutes", "Hamstrings"],
     "type": "weight_reps"
   },
   {
@@ -918,6 +1090,22 @@
     "type": "weight_reps"
   },
   {
+    "id": "builtin:barbell-single-leg-calf-raise",
+    "name": "Barbell Single-Leg Calf Raise",
+    "equipment": "Barbell",
+    "muscles": ["Calves"],
+    "secondaryMuscles": [],
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:barbell-single-leg-romanian-deadlift",
+    "name": "Barbell Single-Leg Romanian Deadlift",
+    "equipment": "Barbell",
+    "muscles": ["Hamstrings"],
+    "secondaryMuscles": ["Glutes", "Lower back"],
+    "type": "weight_reps"
+  },
+  {
     "id": "builtin:barbell-squat-to-a-bench",
     "name": "Barbell Squat To A Bench",
     "equipment": "Barbell",
@@ -933,6 +1121,14 @@
     "muscles": ["Quadriceps"],
     "secondaryMuscles": ["Calves", "Glutes", "Hamstrings", "Quadriceps"],
     "sourceId": "Barbell_Step_Ups",
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:barbell-thruster",
+    "name": "Barbell Thruster",
+    "equipment": "Barbell",
+    "muscles": ["Full body"],
+    "secondaryMuscles": ["Glutes", "Quadriceps", "Shoulders", "Triceps"],
     "type": "weight_reps"
   },
   {
@@ -954,6 +1150,14 @@
     "type": "duration"
   },
   {
+    "id": "builtin:bear-crawl",
+    "name": "Bear Crawl",
+    "equipment": "Bodyweight",
+    "muscles": ["Full body"],
+    "secondaryMuscles": ["Abdominals", "Quadriceps", "Shoulders"],
+    "type": "distance_duration"
+  },
+  {
     "id": "builtin:bear-crawl-sled-drags",
     "name": "Bear Crawl Sled Drags",
     "equipment": "Other",
@@ -970,6 +1174,14 @@
     "secondaryMuscles": ["Shoulders"],
     "sourceId": "Behind_Head_Chest_Stretch",
     "type": "duration"
+  },
+  {
+    "id": "builtin:belt-squat",
+    "name": "Belt Squat",
+    "equipment": "Machine",
+    "muscles": ["Quadriceps"],
+    "secondaryMuscles": ["Adductors", "Glutes", "Hamstrings"],
+    "type": "weight_reps"
   },
   {
     "id": "builtin:bench-dips",
@@ -1006,7 +1218,7 @@
     "muscles": ["Chest"],
     "secondaryMuscles": ["Shoulders", "Triceps"],
     "sourceId": "Bench_Press_-_With_Bands",
-    "type": "bodyweight_reps"
+    "type": "weight_reps"
   },
   {
     "id": "builtin:bench-press-with-chains",
@@ -1142,6 +1354,14 @@
     "type": "distance_duration"
   },
   {
+    "id": "builtin:bird-dog",
+    "name": "Bird Dog",
+    "equipment": "Bodyweight",
+    "muscles": ["Lower back"],
+    "secondaryMuscles": ["Abdominals", "Glutes"],
+    "type": "bodyweight_reps"
+  },
+  {
     "id": "builtin:board-press",
     "name": "Board Press",
     "equipment": "Barbell",
@@ -1169,12 +1389,44 @@
     "type": "bodyweight_reps"
   },
   {
+    "id": "builtin:bodyweight-calf-raise",
+    "name": "Bodyweight Calf Raise",
+    "equipment": "Bodyweight",
+    "muscles": ["Calves"],
+    "secondaryMuscles": [],
+    "type": "bodyweight_reps"
+  },
+  {
     "id": "builtin:bodyweight-flyes",
     "name": "Bodyweight Flyes",
     "equipment": "E-z curl bar",
     "muscles": ["Chest"],
     "secondaryMuscles": ["Abdominals", "Shoulders", "Triceps"],
     "sourceId": "Bodyweight_Flyes",
+    "type": "bodyweight_reps"
+  },
+  {
+    "id": "builtin:bodyweight-glute-ham-raise",
+    "name": "Bodyweight Glute Ham Raise",
+    "equipment": "Other",
+    "muscles": ["Hamstrings"],
+    "secondaryMuscles": ["Calves", "Glutes"],
+    "type": "bodyweight_reps"
+  },
+  {
+    "id": "builtin:bodyweight-hip-thrust",
+    "name": "Bodyweight Hip Thrust",
+    "equipment": "Bodyweight",
+    "muscles": ["Glutes"],
+    "secondaryMuscles": ["Hamstrings"],
+    "type": "bodyweight_reps"
+  },
+  {
+    "id": "builtin:bodyweight-lunge",
+    "name": "Bodyweight Lunge",
+    "equipment": "Bodyweight",
+    "muscles": ["Quadriceps"],
+    "secondaryMuscles": ["Glutes", "Hamstrings"],
     "type": "bodyweight_reps"
   },
   {
@@ -1187,12 +1439,36 @@
     "type": "bodyweight_reps"
   },
   {
+    "id": "builtin:bodyweight-reverse-lunge",
+    "name": "Bodyweight Reverse Lunge",
+    "equipment": "Bodyweight",
+    "muscles": ["Quadriceps"],
+    "secondaryMuscles": ["Glutes", "Hamstrings"],
+    "type": "bodyweight_reps"
+  },
+  {
     "id": "builtin:bodyweight-squat",
     "name": "Bodyweight Squat",
     "equipment": "Bodyweight",
     "muscles": ["Quadriceps"],
     "secondaryMuscles": ["Glutes", "Hamstrings"],
     "sourceId": "Bodyweight_Squat",
+    "type": "bodyweight_reps"
+  },
+  {
+    "id": "builtin:bodyweight-step-up",
+    "name": "Bodyweight Step-Up",
+    "equipment": "Bodyweight",
+    "muscles": ["Quadriceps"],
+    "secondaryMuscles": ["Glutes", "Hamstrings"],
+    "type": "bodyweight_reps"
+  },
+  {
+    "id": "builtin:bodyweight-sumo-squat",
+    "name": "Bodyweight Sumo Squat",
+    "equipment": "Bodyweight",
+    "muscles": ["Quadriceps"],
+    "secondaryMuscles": ["Adductors", "Glutes"],
     "type": "bodyweight_reps"
   },
   {
@@ -1277,6 +1553,14 @@
     "type": "weight_reps"
   },
   {
+    "id": "builtin:boxing",
+    "name": "Boxing",
+    "equipment": "Other",
+    "muscles": ["Cardio"],
+    "secondaryMuscles": [],
+    "type": "duration"
+  },
+  {
     "id": "builtin:brachialis-smr",
     "name": "Brachialis-SMR",
     "equipment": "Foam roll",
@@ -1293,6 +1577,22 @@
     "secondaryMuscles": ["Triceps"],
     "sourceId": "Bradford_Rocky_Presses",
     "type": "weight_reps"
+  },
+  {
+    "id": "builtin:burpee",
+    "name": "Burpee",
+    "equipment": "Bodyweight",
+    "muscles": ["Full body"],
+    "secondaryMuscles": ["Chest", "Quadriceps", "Shoulders"],
+    "type": "bodyweight_reps"
+  },
+  {
+    "id": "builtin:burpee-broad-jump",
+    "name": "Burpee Broad Jump",
+    "equipment": "Bodyweight",
+    "muscles": ["Full body"],
+    "secondaryMuscles": ["Calves", "Chest", "Glutes", "Quadriceps"],
+    "type": "distance_duration"
   },
   {
     "id": "builtin:butt-ups",
@@ -1319,6 +1619,22 @@
     "muscles": ["Chest"],
     "secondaryMuscles": [],
     "sourceId": "Butterfly",
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:cable-behind-the-back-curl",
+    "name": "Cable Behind-the-Back Curl",
+    "equipment": "Cable",
+    "muscles": ["Biceps"],
+    "secondaryMuscles": ["Forearms"],
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:cable-bench-press",
+    "name": "Cable Bench Press",
+    "equipment": "Cable",
+    "muscles": ["Chest"],
+    "secondaryMuscles": ["Shoulders", "Triceps"],
     "type": "weight_reps"
   },
   {
@@ -1355,6 +1671,14 @@
     "muscles": ["Biceps"],
     "secondaryMuscles": [],
     "sourceId": "Cable_Hammer_Curls_-_Rope_Attachment",
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:cable-hip-abduction",
+    "name": "Cable Hip Abduction",
+    "equipment": "Cable",
+    "muscles": ["Abductors"],
+    "secondaryMuscles": ["Glutes"],
     "type": "weight_reps"
   },
   {
@@ -1409,6 +1733,14 @@
     "muscles": ["Abdominals"],
     "secondaryMuscles": [],
     "sourceId": "Cable_Judo_Flip",
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:cable-lateral-raise",
+    "name": "Cable Lateral Raise",
+    "equipment": "Cable",
+    "muscles": ["Shoulders"],
+    "secondaryMuscles": [],
     "type": "weight_reps"
   },
   {
@@ -1511,12 +1843,44 @@
     "type": "weight_reps"
   },
   {
+    "id": "builtin:cable-squat-row",
+    "name": "Cable Squat Row",
+    "equipment": "Cable",
+    "muscles": ["Full body"],
+    "secondaryMuscles": ["Biceps", "Glutes", "Middle back", "Quadriceps"],
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:cable-triceps-extension",
+    "name": "Cable Triceps Extension",
+    "equipment": "Cable",
+    "muscles": ["Triceps"],
+    "secondaryMuscles": [],
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:cable-triceps-kickback",
+    "name": "Cable Triceps Kickback",
+    "equipment": "Cable",
+    "muscles": ["Triceps"],
+    "secondaryMuscles": [],
+    "type": "weight_reps"
+  },
+  {
     "id": "builtin:cable-wrist-curl",
     "name": "Cable Wrist Curl",
     "equipment": "Cable",
     "muscles": ["Forearms"],
     "secondaryMuscles": [],
     "sourceId": "Cable_Wrist_Curl",
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:cable-y-raise",
+    "name": "Cable Y Raise",
+    "equipment": "Cable",
+    "muscles": ["Shoulders"],
+    "secondaryMuscles": ["Middle back", "Traps"],
     "type": "weight_reps"
   },
   {
@@ -1590,6 +1954,14 @@
     "secondaryMuscles": [],
     "sourceId": "Calves-SMR",
     "type": "duration"
+  },
+  {
+    "id": "builtin:captains-chair-leg-raise",
+    "name": "Captain's Chair Leg Raise",
+    "equipment": "Other",
+    "muscles": ["Abdominals"],
+    "secondaryMuscles": [],
+    "type": "bodyweight_reps"
   },
   {
     "id": "builtin:car-deadlift",
@@ -1782,6 +2154,14 @@
     "type": "weight_reps"
   },
   {
+    "id": "builtin:clamshell",
+    "name": "Clamshell",
+    "equipment": "Bodyweight",
+    "muscles": ["Glutes"],
+    "secondaryMuscles": ["Abductors"],
+    "type": "bodyweight_reps"
+  },
+  {
     "id": "builtin:clean",
     "name": "Clean",
     "equipment": "Barbell",
@@ -1870,6 +2250,14 @@
     "secondaryMuscles": ["Calves", "Glutes", "Hamstrings", "Shoulders", "Traps"],
     "sourceId": "Clean_from_Blocks",
     "type": "weight_reps"
+  },
+  {
+    "id": "builtin:climbing",
+    "name": "Climbing",
+    "equipment": "Other",
+    "muscles": ["Full body"],
+    "secondaryMuscles": [],
+    "type": "duration"
   },
   {
     "id": "builtin:clock-push-up",
@@ -1970,6 +2358,14 @@
     "type": "weight_reps"
   },
   {
+    "id": "builtin:converging-lat-pulldown",
+    "name": "Converging Lat Pulldown",
+    "equipment": "Machine",
+    "muscles": ["Lats"],
+    "secondaryMuscles": ["Biceps", "Middle back"],
+    "type": "weight_reps"
+  },
+  {
     "id": "builtin:cross-body-crunch",
     "name": "Cross-Body Crunch",
     "equipment": "Bodyweight",
@@ -2067,6 +2463,14 @@
     "secondaryMuscles": [],
     "sourceId": "Dead_Bug",
     "type": "bodyweight_reps"
+  },
+  {
+    "id": "builtin:dead-hang",
+    "name": "Dead Hang",
+    "equipment": "Bodyweight",
+    "muscles": ["Forearms"],
+    "secondaryMuscles": ["Lats", "Middle back"],
+    "type": "duration"
   },
   {
     "id": "builtin:deadlift-with-bands",
@@ -2295,6 +2699,14 @@
     "type": "bodyweight_reps"
   },
   {
+    "id": "builtin:downward-dog",
+    "name": "Downward Dog",
+    "equipment": "Bodyweight",
+    "muscles": ["Full body"],
+    "secondaryMuscles": ["Calves", "Hamstrings", "Shoulders"],
+    "type": "bodyweight_reps"
+  },
+  {
     "id": "builtin:downward-facing-balance",
     "name": "Downward Facing Balance",
     "equipment": "Exercise ball",
@@ -2311,6 +2723,14 @@
     "secondaryMuscles": ["Forearms"],
     "sourceId": "Drag_Curl",
     "type": "weight_reps"
+  },
+  {
+    "id": "builtin:dragon-flag",
+    "name": "Dragon Flag",
+    "equipment": "Bodyweight",
+    "muscles": ["Abdominals"],
+    "secondaryMuscles": ["Lats", "Lower back"],
+    "type": "bodyweight_reps"
   },
   {
     "id": "builtin:drop-push",
@@ -2357,6 +2777,22 @@
     "type": "weight_reps"
   },
   {
+    "id": "builtin:dumbbell-curtsy-lunge",
+    "name": "Dumbbell Curtsy Lunge",
+    "equipment": "Dumbbell",
+    "muscles": ["Quadriceps"],
+    "secondaryMuscles": ["Adductors", "Glutes", "Hamstrings"],
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:dumbbell-deadlift",
+    "name": "Dumbbell Deadlift",
+    "equipment": "Dumbbell",
+    "muscles": ["Glutes"],
+    "secondaryMuscles": ["Forearms", "Hamstrings", "Lower back", "Quadriceps"],
+    "type": "weight_reps"
+  },
+  {
     "id": "builtin:dumbbell-floor-press",
     "name": "Dumbbell Floor Press",
     "equipment": "Dumbbell",
@@ -2366,12 +2802,36 @@
     "type": "weight_reps"
   },
   {
+    "id": "builtin:dumbbell-frog-pump",
+    "name": "Dumbbell Frog Pump",
+    "equipment": "Dumbbell",
+    "muscles": ["Glutes"],
+    "secondaryMuscles": ["Adductors", "Hamstrings"],
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:dumbbell-hip-thrust",
+    "name": "Dumbbell Hip Thrust",
+    "equipment": "Dumbbell",
+    "muscles": ["Glutes"],
+    "secondaryMuscles": ["Hamstrings", "Quadriceps"],
+    "type": "weight_reps"
+  },
+  {
     "id": "builtin:dumbbell-incline-shoulder-raise",
     "name": "Dumbbell Incline Shoulder Raise",
     "equipment": "Dumbbell",
     "muscles": ["Shoulders"],
     "secondaryMuscles": ["Triceps"],
     "sourceId": "Dumbbell_Incline_Shoulder_Raise",
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:dumbbell-incline-y-raise",
+    "name": "Dumbbell Incline Y Raise",
+    "equipment": "Dumbbell",
+    "muscles": ["Shoulders"],
+    "secondaryMuscles": ["Middle back", "Traps"],
     "type": "weight_reps"
   },
   {
@@ -2438,6 +2898,14 @@
     "type": "weight_reps"
   },
   {
+    "id": "builtin:dumbbell-overhead-lunge",
+    "name": "Dumbbell Overhead Lunge",
+    "equipment": "Dumbbell",
+    "muscles": ["Quadriceps"],
+    "secondaryMuscles": ["Abdominals", "Glutes", "Hamstrings", "Shoulders"],
+    "type": "weight_reps"
+  },
+  {
     "id": "builtin:dumbbell-prone-incline-curl",
     "name": "Dumbbell Prone Incline Curl",
     "equipment": "Dumbbell",
@@ -2465,12 +2933,36 @@
     "type": "weight_reps"
   },
   {
+    "id": "builtin:dumbbell-renegade-row",
+    "name": "Dumbbell Renegade Row",
+    "equipment": "Dumbbell",
+    "muscles": ["Middle back"],
+    "secondaryMuscles": ["Abdominals", "Biceps", "Lats"],
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:dumbbell-romanian-deadlift",
+    "name": "Dumbbell Romanian Deadlift",
+    "equipment": "Dumbbell",
+    "muscles": ["Hamstrings"],
+    "secondaryMuscles": ["Glutes", "Lower back"],
+    "type": "weight_reps"
+  },
+  {
     "id": "builtin:dumbbell-scaption",
     "name": "Dumbbell Scaption",
     "equipment": "Dumbbell",
     "muscles": ["Shoulders"],
     "secondaryMuscles": ["Traps"],
     "sourceId": "Dumbbell_Scaption",
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:dumbbell-seal-row",
+    "name": "Dumbbell Seal Row",
+    "equipment": "Dumbbell",
+    "muscles": ["Middle back"],
+    "secondaryMuscles": ["Biceps", "Lats", "Shoulders"],
     "type": "weight_reps"
   },
   {
@@ -2510,6 +3002,46 @@
     "type": "weight_reps"
   },
   {
+    "id": "builtin:dumbbell-single-leg-calf-raise",
+    "name": "Dumbbell Single-Leg Calf Raise",
+    "equipment": "Dumbbell",
+    "muscles": ["Calves"],
+    "secondaryMuscles": [],
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:dumbbell-single-leg-hip-thrust",
+    "name": "Dumbbell Single-Leg Hip Thrust",
+    "equipment": "Dumbbell",
+    "muscles": ["Glutes"],
+    "secondaryMuscles": ["Hamstrings"],
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:dumbbell-single-leg-romanian-deadlift",
+    "name": "Dumbbell Single-Leg Romanian Deadlift",
+    "equipment": "Dumbbell",
+    "muscles": ["Hamstrings"],
+    "secondaryMuscles": ["Glutes", "Lower back"],
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:dumbbell-snatch",
+    "name": "Dumbbell Snatch",
+    "equipment": "Dumbbell",
+    "muscles": ["Full body"],
+    "secondaryMuscles": ["Glutes", "Hamstrings", "Shoulders", "Traps"],
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:dumbbell-split-squat",
+    "name": "Dumbbell Split Squat",
+    "equipment": "Dumbbell",
+    "muscles": ["Quadriceps"],
+    "secondaryMuscles": ["Glutes", "Hamstrings"],
+    "type": "weight_reps"
+  },
+  {
     "id": "builtin:dumbbell-squat",
     "name": "Dumbbell Squat",
     "equipment": "Dumbbell",
@@ -2528,6 +3060,14 @@
     "type": "weight_reps"
   },
   {
+    "id": "builtin:dumbbell-squeeze-press",
+    "name": "Dumbbell Squeeze Press",
+    "equipment": "Dumbbell",
+    "muscles": ["Chest"],
+    "secondaryMuscles": ["Shoulders", "Triceps"],
+    "type": "weight_reps"
+  },
+  {
     "id": "builtin:dumbbell-step-ups",
     "name": "Dumbbell Step Ups",
     "equipment": "Dumbbell",
@@ -2537,6 +3077,14 @@
     "type": "weight_reps"
   },
   {
+    "id": "builtin:dumbbell-suitcase-carry",
+    "name": "Dumbbell Suitcase Carry",
+    "equipment": "Dumbbell",
+    "muscles": ["Full body"],
+    "secondaryMuscles": ["Abdominals", "Forearms", "Traps"],
+    "type": "weight_distance"
+  },
+  {
     "id": "builtin:dumbbell-tricep-extension-pronated-grip",
     "name": "Dumbbell Tricep Extension -Pronated Grip",
     "equipment": "Dumbbell",
@@ -2544,6 +3092,22 @@
     "secondaryMuscles": [],
     "sourceId": "Dumbbell_Tricep_Extension_-Pronated_Grip",
     "type": "weight_reps"
+  },
+  {
+    "id": "builtin:dumbbell-waiter-curl",
+    "name": "Dumbbell Waiter Curl",
+    "equipment": "Dumbbell",
+    "muscles": ["Biceps"],
+    "secondaryMuscles": ["Forearms"],
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:dumbbell-walking-lunge",
+    "name": "Dumbbell Walking Lunge",
+    "equipment": "Dumbbell",
+    "muscles": ["Quadriceps"],
+    "secondaryMuscles": ["Calves", "Glutes", "Hamstrings"],
+    "type": "weight_distance"
   },
   {
     "id": "builtin:dynamic-back-stretch",
@@ -2690,6 +3254,14 @@
     "type": "weight_reps"
   },
   {
+    "id": "builtin:fan-bike",
+    "name": "Fan Bike",
+    "equipment": "Machine",
+    "muscles": ["Cardio"],
+    "secondaryMuscles": [],
+    "type": "duration"
+  },
+  {
     "id": "builtin:farmers-walk",
     "name": "Farmer's Walk",
     "equipment": "Other",
@@ -2715,6 +3287,14 @@
     "secondaryMuscles": [],
     "sourceId": "Finger_Curls",
     "type": "weight_reps"
+  },
+  {
+    "id": "builtin:fire-hydrant",
+    "name": "Fire Hydrant",
+    "equipment": "Bodyweight",
+    "muscles": ["Glutes"],
+    "secondaryMuscles": ["Abductors"],
+    "type": "bodyweight_reps"
   },
   {
     "id": "builtin:flat-bench-cable-flyes",
@@ -2778,6 +3358,15 @@
     "secondaryMuscles": ["Chest", "Shoulders"],
     "sourceId": "Floor_Press_with_Chains",
     "type": "weight_reps"
+  },
+  {
+    "id": "builtin:floor-triceps-dip",
+    "name": "Floor Triceps Dip",
+    "equipment": "Bodyweight",
+    "muscles": ["Triceps"],
+    "secondaryMuscles": ["Chest", "Shoulders"],
+    "type": "bodyweight_reps",
+    "usesBodyweight": true
   },
   {
     "id": "builtin:flutter-kicks",
@@ -2903,6 +3492,22 @@
     "muscles": ["Hamstrings"],
     "secondaryMuscles": [],
     "sourceId": "Front_Leg_Raises",
+    "type": "bodyweight_reps"
+  },
+  {
+    "id": "builtin:front-lever-hold",
+    "name": "Front Lever Hold",
+    "equipment": "Bodyweight",
+    "muscles": ["Full body"],
+    "secondaryMuscles": ["Abdominals", "Lats", "Middle back"],
+    "type": "duration"
+  },
+  {
+    "id": "builtin:front-lever-raise",
+    "name": "Front Lever Raise",
+    "equipment": "Bodyweight",
+    "muscles": ["Full body"],
+    "secondaryMuscles": ["Abdominals", "Lats", "Middle back"],
     "type": "bodyweight_reps"
   },
   {
@@ -3043,6 +3648,14 @@
     "type": "bodyweight_reps"
   },
   {
+    "id": "builtin:hiit",
+    "name": "HIIT",
+    "equipment": "Other",
+    "muscles": ["Cardio"],
+    "secondaryMuscles": [],
+    "type": "duration"
+  },
+  {
     "id": "builtin:hammer-grip-incline-db-bench-press",
     "name": "Hammer Grip Incline DB Bench Press",
     "equipment": "Dumbbell",
@@ -3067,6 +3680,14 @@
     "muscles": ["Hamstrings"],
     "secondaryMuscles": [],
     "sourceId": "Hamstring_Stretch",
+    "type": "duration"
+  },
+  {
+    "id": "builtin:handstand-hold",
+    "name": "Handstand Hold",
+    "equipment": "Bodyweight",
+    "muscles": ["Full body"],
+    "secondaryMuscles": ["Abdominals", "Shoulders", "Triceps"],
     "type": "duration"
   },
   {
@@ -3158,6 +3779,14 @@
     "type": "weight_reps"
   },
   {
+    "id": "builtin:hanging-knee-raise",
+    "name": "Hanging Knee Raise",
+    "equipment": "Bodyweight",
+    "muscles": ["Abdominals"],
+    "secondaryMuscles": [],
+    "type": "bodyweight_reps"
+  },
+  {
     "id": "builtin:hanging-leg-raise",
     "name": "Hanging Leg Raise",
     "equipment": "Bodyweight",
@@ -3203,6 +3832,22 @@
     "type": "weight_reps"
   },
   {
+    "id": "builtin:high-knee-skip",
+    "name": "High Knee Skip",
+    "equipment": "Bodyweight",
+    "muscles": ["Full body"],
+    "secondaryMuscles": ["Calves", "Quadriceps"],
+    "type": "bodyweight_reps"
+  },
+  {
+    "id": "builtin:high-knees",
+    "name": "High Knees",
+    "equipment": "Bodyweight",
+    "muscles": ["Full body"],
+    "secondaryMuscles": ["Calves", "Quadriceps"],
+    "type": "bodyweight_reps"
+  },
+  {
     "id": "builtin:hip-circles-prone",
     "name": "Hip Circles (prone)",
     "equipment": "Bodyweight",
@@ -3237,6 +3882,22 @@
     "secondaryMuscles": ["Calves", "Hamstrings"],
     "sourceId": "Hip_Lift_with_Band",
     "type": "bodyweight_reps"
+  },
+  {
+    "id": "builtin:hollow-rock",
+    "name": "Hollow Rock",
+    "equipment": "Bodyweight",
+    "muscles": ["Abdominals"],
+    "secondaryMuscles": [],
+    "type": "duration"
+  },
+  {
+    "id": "builtin:horizontal-leg-press",
+    "name": "Horizontal Leg Press",
+    "equipment": "Machine",
+    "muscles": ["Quadriceps"],
+    "secondaryMuscles": ["Calves", "Glutes", "Hamstrings"],
+    "type": "weight_reps"
   },
   {
     "id": "builtin:hug-a-ball",
@@ -3446,6 +4107,22 @@
     "type": "bodyweight_reps"
   },
   {
+    "id": "builtin:indoor-cycling",
+    "name": "Indoor Cycling",
+    "equipment": "Machine",
+    "muscles": ["Cardio"],
+    "secondaryMuscles": [],
+    "type": "duration"
+  },
+  {
+    "id": "builtin:inline-skating",
+    "name": "Inline Skating",
+    "equipment": "Other",
+    "muscles": ["Cardio"],
+    "secondaryMuscles": [],
+    "type": "duration"
+  },
+  {
     "id": "builtin:intermediate-groin-stretch",
     "name": "Intermediate Groin Stretch",
     "equipment": "Other",
@@ -3608,6 +4285,14 @@
     "type": "distance_duration"
   },
   {
+    "id": "builtin:jumping-jacks",
+    "name": "Jumping Jacks",
+    "equipment": "Bodyweight",
+    "muscles": ["Full body"],
+    "secondaryMuscles": ["Calves", "Shoulders"],
+    "type": "bodyweight_reps"
+  },
+  {
     "id": "builtin:keg-load",
     "name": "Keg Load",
     "equipment": "Other",
@@ -3634,6 +4319,14 @@
     "muscles": ["Shoulders"],
     "secondaryMuscles": ["Triceps"],
     "sourceId": "Kettlebell_Arnold_Press",
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:kettlebell-curl",
+    "name": "Kettlebell Curl",
+    "equipment": "Kettlebells",
+    "muscles": ["Biceps"],
+    "secondaryMuscles": ["Forearms"],
     "type": "weight_reps"
   },
   {
@@ -3745,12 +4438,36 @@
     "type": "weight_reps"
   },
   {
+    "id": "builtin:kettlebell-slingshot",
+    "name": "Kettlebell Slingshot",
+    "equipment": "Kettlebells",
+    "muscles": ["Abdominals"],
+    "secondaryMuscles": ["Forearms", "Shoulders"],
+    "type": "weight_reps"
+  },
+  {
     "id": "builtin:kettlebell-sumo-high-pull",
     "name": "Kettlebell Sumo High Pull",
     "equipment": "Kettlebells",
     "muscles": ["Traps"],
     "secondaryMuscles": ["Adductors", "Glutes", "Hamstrings", "Quadriceps", "Shoulders"],
     "sourceId": "Kettlebell_Sumo_High_Pull",
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:kettlebell-sumo-squat",
+    "name": "Kettlebell Sumo Squat",
+    "equipment": "Kettlebells",
+    "muscles": ["Quadriceps"],
+    "secondaryMuscles": ["Adductors", "Glutes"],
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:kettlebell-swing",
+    "name": "Kettlebell Swing",
+    "equipment": "Kettlebells",
+    "muscles": ["Full body"],
+    "secondaryMuscles": ["Glutes", "Hamstrings", "Lower back", "Shoulders"],
     "type": "weight_reps"
   },
   {
@@ -3804,6 +4521,15 @@
       "Triceps"
     ],
     "sourceId": "Kipping_Muscle_Up",
+    "type": "bodyweight_reps",
+    "usesBodyweight": true
+  },
+  {
+    "id": "builtin:kipping-pull-up",
+    "name": "Kipping Pull-Up",
+    "equipment": "Bodyweight",
+    "muscles": ["Lats"],
+    "secondaryMuscles": ["Abdominals", "Biceps", "Middle back", "Shoulders"],
     "type": "bodyweight_reps",
     "usesBodyweight": true
   },
@@ -3898,6 +4624,14 @@
     "type": "weight_reps"
   },
   {
+    "id": "builtin:kneeling-push-up",
+    "name": "Kneeling Push-Up",
+    "equipment": "Bodyweight",
+    "muscles": ["Chest"],
+    "secondaryMuscles": ["Shoulders", "Triceps"],
+    "type": "bodyweight_reps"
+  },
+  {
     "id": "builtin:kneeling-single-arm-high-pulley-row",
     "name": "Kneeling Single-Arm High Pulley Row",
     "equipment": "Cable",
@@ -3914,6 +4648,14 @@
     "secondaryMuscles": ["Abdominals", "Hamstrings", "Lower back"],
     "sourceId": "Kneeling_Squat",
     "type": "weight_reps"
+  },
+  {
+    "id": "builtin:l-sit-hold",
+    "name": "L-Sit Hold",
+    "equipment": "Bodyweight",
+    "muscles": ["Abdominals"],
+    "secondaryMuscles": ["Quadriceps", "Shoulders", "Triceps"],
+    "type": "duration"
   },
   {
     "id": "builtin:landmine-180s",
@@ -3961,13 +4703,21 @@
     "type": "bodyweight_reps"
   },
   {
+    "id": "builtin:lateral-lunge",
+    "name": "Lateral Lunge",
+    "equipment": "Bodyweight",
+    "muscles": ["Quadriceps"],
+    "secondaryMuscles": ["Adductors", "Glutes", "Hamstrings"],
+    "type": "bodyweight_reps"
+  },
+  {
     "id": "builtin:lateral-raise-with-bands",
     "name": "Lateral Raise - With Bands",
     "equipment": "Bands",
     "muscles": ["Shoulders"],
     "secondaryMuscles": [],
     "sourceId": "Lateral_Raise_-_With_Bands",
-    "type": "bodyweight_reps"
+    "type": "weight_reps"
   },
   {
     "id": "builtin:latissimus-dorsi-smr",
@@ -4066,6 +4816,14 @@
     "muscles": ["Lats"],
     "secondaryMuscles": ["Biceps", "Middle back"],
     "sourceId": "Leverage_Iso_Row",
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:leverage-low-row",
+    "name": "Leverage Low Row",
+    "equipment": "Machine",
+    "muscles": ["Middle back"],
+    "secondaryMuscles": ["Biceps", "Lats"],
     "type": "weight_reps"
   },
   {
@@ -4340,6 +5098,22 @@
     "type": "weight_reps"
   },
   {
+    "id": "builtin:lying-neck-extension",
+    "name": "Lying Neck Extension",
+    "equipment": "Bodyweight",
+    "muscles": ["Neck"],
+    "secondaryMuscles": [],
+    "type": "bodyweight_reps"
+  },
+  {
+    "id": "builtin:lying-neck-flexion",
+    "name": "Lying Neck Flexion",
+    "equipment": "Bodyweight",
+    "muscles": ["Neck"],
+    "secondaryMuscles": [],
+    "type": "bodyweight_reps"
+  },
+  {
     "id": "builtin:lying-one-arm-lateral-raise",
     "name": "Lying One-Arm Lateral Raise",
     "equipment": "Dumbbell",
@@ -4394,6 +5168,46 @@
     "type": "weight_reps"
   },
   {
+    "id": "builtin:machine-back-extension",
+    "name": "Machine Back Extension",
+    "equipment": "Machine",
+    "muscles": ["Lower back"],
+    "secondaryMuscles": ["Glutes", "Hamstrings"],
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:machine-glute-kickback",
+    "name": "Machine Glute Kickback",
+    "equipment": "Machine",
+    "muscles": ["Glutes"],
+    "secondaryMuscles": ["Hamstrings"],
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:machine-hip-thrust",
+    "name": "Machine Hip Thrust",
+    "equipment": "Machine",
+    "muscles": ["Glutes"],
+    "secondaryMuscles": ["Hamstrings", "Quadriceps"],
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:machine-lat-pulldown",
+    "name": "Machine Lat Pulldown",
+    "equipment": "Machine",
+    "muscles": ["Lats"],
+    "secondaryMuscles": ["Biceps", "Middle back"],
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:machine-lateral-raise",
+    "name": "Machine Lateral Raise",
+    "equipment": "Machine",
+    "muscles": ["Shoulders"],
+    "secondaryMuscles": [],
+    "type": "weight_reps"
+  },
+  {
     "id": "builtin:machine-preacher-curls",
     "name": "Machine Preacher Curls",
     "equipment": "Machine",
@@ -4403,12 +5217,52 @@
     "type": "weight_reps"
   },
   {
+    "id": "builtin:machine-pullover",
+    "name": "Machine Pullover",
+    "equipment": "Machine",
+    "muscles": ["Lats"],
+    "secondaryMuscles": ["Chest", "Triceps"],
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:machine-seated-row",
+    "name": "Machine Seated Row",
+    "equipment": "Machine",
+    "muscles": ["Middle back"],
+    "secondaryMuscles": ["Biceps", "Lats", "Shoulders"],
+    "type": "weight_reps"
+  },
+  {
     "id": "builtin:machine-shoulder-military-press",
     "name": "Machine Shoulder (Military) Press",
     "equipment": "Machine",
     "muscles": ["Shoulders"],
     "secondaryMuscles": ["Triceps"],
     "sourceId": "Machine_Shoulder_Military_Press",
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:machine-single-leg-calf-raise",
+    "name": "Machine Single-Leg Calf Raise",
+    "equipment": "Machine",
+    "muscles": ["Calves"],
+    "secondaryMuscles": [],
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:machine-squat",
+    "name": "Machine Squat",
+    "equipment": "Machine",
+    "muscles": ["Quadriceps"],
+    "secondaryMuscles": ["Glutes", "Hamstrings"],
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:machine-torso-rotation",
+    "name": "Machine Torso Rotation",
+    "equipment": "Machine",
+    "muscles": ["Abdominals"],
+    "secondaryMuscles": [],
     "type": "weight_reps"
   },
   {
@@ -4582,6 +5436,15 @@
     "secondaryMuscles": ["Shoulders", "Triceps"],
     "sourceId": "Neck_Press",
     "type": "weight_reps"
+  },
+  {
+    "id": "builtin:negative-pull-up",
+    "name": "Negative Pull-Up",
+    "equipment": "Bodyweight",
+    "muscles": ["Lats"],
+    "secondaryMuscles": ["Biceps", "Middle back"],
+    "type": "weighted_bodyweight",
+    "usesBodyweight": true
   },
   {
     "id": "builtin:oblique-crunches",
@@ -4972,6 +5835,14 @@
     "type": "duration"
   },
   {
+    "id": "builtin:overhead-plate-raise",
+    "name": "Overhead Plate Raise",
+    "equipment": "Other",
+    "muscles": ["Shoulders"],
+    "secondaryMuscles": ["Traps"],
+    "type": "weight_reps"
+  },
+  {
     "id": "builtin:overhead-slam",
     "name": "Overhead Slam",
     "equipment": "Medicine ball",
@@ -5089,6 +5960,14 @@
     "type": "duration"
   },
   {
+    "id": "builtin:pendulum-squat",
+    "name": "Pendulum Squat",
+    "equipment": "Machine",
+    "muscles": ["Quadriceps"],
+    "secondaryMuscles": ["Glutes"],
+    "type": "weight_reps"
+  },
+  {
     "id": "builtin:peroneals-smr",
     "name": "Peroneals-SMR",
     "equipment": "Foam roll",
@@ -5116,6 +5995,22 @@
     "type": "bodyweight_reps"
   },
   {
+    "id": "builtin:pike-push-up",
+    "name": "Pike Push-Up",
+    "equipment": "Bodyweight",
+    "muscles": ["Shoulders"],
+    "secondaryMuscles": ["Chest", "Triceps"],
+    "type": "bodyweight_reps"
+  },
+  {
+    "id": "builtin:pilates",
+    "name": "Pilates",
+    "equipment": "Bodyweight",
+    "muscles": ["Full body"],
+    "secondaryMuscles": [],
+    "type": "duration"
+  },
+  {
     "id": "builtin:pin-presses",
     "name": "Pin Presses",
     "equipment": "Barbell",
@@ -5132,6 +6027,46 @@
     "secondaryMuscles": [],
     "sourceId": "Piriformis-SMR",
     "type": "duration"
+  },
+  {
+    "id": "builtin:pistol-squat",
+    "name": "Pistol Squat",
+    "equipment": "Bodyweight",
+    "muscles": ["Quadriceps"],
+    "secondaryMuscles": ["Calves", "Glutes", "Hamstrings"],
+    "type": "bodyweight_reps"
+  },
+  {
+    "id": "builtin:plank-shoulder-tap",
+    "name": "Plank Shoulder Tap",
+    "equipment": "Bodyweight",
+    "muscles": ["Abdominals"],
+    "secondaryMuscles": ["Shoulders", "Triceps"],
+    "type": "bodyweight_reps"
+  },
+  {
+    "id": "builtin:plank-up-down",
+    "name": "Plank Up-Down",
+    "equipment": "Bodyweight",
+    "muscles": ["Abdominals"],
+    "secondaryMuscles": ["Chest", "Shoulders", "Triceps"],
+    "type": "bodyweight_reps"
+  },
+  {
+    "id": "builtin:plate-crunch",
+    "name": "Plate Crunch",
+    "equipment": "Other",
+    "muscles": ["Abdominals"],
+    "secondaryMuscles": [],
+    "type": "weighted_bodyweight"
+  },
+  {
+    "id": "builtin:plate-curl",
+    "name": "Plate Curl",
+    "equipment": "Other",
+    "muscles": ["Biceps"],
+    "secondaryMuscles": ["Forearms"],
+    "type": "weight_reps"
   },
   {
     "id": "builtin:plate-pinch",
@@ -5520,6 +6455,14 @@
     "type": "weight_reps"
   },
   {
+    "id": "builtin:reverse-grip-concentration-curl",
+    "name": "Reverse-Grip Concentration Curl",
+    "equipment": "Dumbbell",
+    "muscles": ["Biceps"],
+    "secondaryMuscles": ["Forearms"],
+    "type": "weight_reps"
+  },
+  {
     "id": "builtin:reverse-band-bench-press",
     "name": "Reverse Band Bench Press",
     "equipment": "Barbell",
@@ -5654,6 +6597,14 @@
     "type": "weight_reps"
   },
   {
+    "id": "builtin:reverse-plank",
+    "name": "Reverse Plank",
+    "equipment": "Bodyweight",
+    "muscles": ["Abdominals"],
+    "secondaryMuscles": ["Glutes", "Hamstrings", "Lower back"],
+    "type": "duration"
+  },
+  {
     "id": "builtin:reverse-plate-curls",
     "name": "Reverse Plate Curls",
     "equipment": "Other",
@@ -5713,6 +6664,15 @@
     "muscles": ["Triceps"],
     "secondaryMuscles": ["Chest", "Shoulders"],
     "sourceId": "Ring_Dips",
+    "type": "bodyweight_reps",
+    "usesBodyweight": true
+  },
+  {
+    "id": "builtin:ring-pull-up",
+    "name": "Ring Pull-Up",
+    "equipment": "Other",
+    "muscles": ["Lats"],
+    "secondaryMuscles": ["Biceps", "Middle back"],
     "type": "bodyweight_reps",
     "usesBodyweight": true
   },
@@ -5808,6 +6768,14 @@
     "type": "duration"
   },
   {
+    "id": "builtin:running",
+    "name": "Running",
+    "equipment": "Bodyweight",
+    "muscles": ["Cardio"],
+    "secondaryMuscles": [],
+    "type": "distance_duration"
+  },
+  {
     "id": "builtin:running-treadmill",
     "name": "Running, Treadmill",
     "equipment": "Machine",
@@ -5846,6 +6814,14 @@
     "type": "weight_reps"
   },
   {
+    "id": "builtin:sandbag-walking-lunge",
+    "name": "Sandbag Walking Lunge",
+    "equipment": "Other",
+    "muscles": ["Quadriceps"],
+    "secondaryMuscles": ["Calves", "Glutes", "Hamstrings"],
+    "type": "weight_distance"
+  },
+  {
     "id": "builtin:scapular-pull-up",
     "name": "Scapular Pull-Up",
     "equipment": "Unspecified",
@@ -5854,6 +6830,14 @@
     "sourceId": "Scapular_Pull-Up",
     "type": "bodyweight_reps",
     "usesBodyweight": true
+  },
+  {
+    "id": "builtin:scissor-crossovers",
+    "name": "Scissor Crossovers",
+    "equipment": "Bodyweight",
+    "muscles": ["Abdominals"],
+    "secondaryMuscles": [],
+    "type": "bodyweight_reps"
   },
   {
     "id": "builtin:scissor-kick",
@@ -5935,6 +6919,14 @@
     "secondaryMuscles": ["Chest", "Shoulders"],
     "sourceId": "Seated_Biceps",
     "type": "duration"
+  },
+  {
+    "id": "builtin:seated-cable-chest-fly",
+    "name": "Seated Cable Chest Fly",
+    "equipment": "Cable",
+    "muscles": ["Chest"],
+    "secondaryMuscles": ["Shoulders"],
+    "type": "weight_reps"
   },
   {
     "id": "builtin:seated-cable-shoulder-press",
@@ -6234,6 +7226,14 @@
     "type": "duration"
   },
   {
+    "id": "builtin:side-step-squat",
+    "name": "Side-Step Squat",
+    "equipment": "Bodyweight",
+    "muscles": ["Quadriceps"],
+    "secondaryMuscles": ["Adductors", "Glutes"],
+    "type": "bodyweight_reps"
+  },
+  {
     "id": "builtin:side-bridge",
     "name": "Side Bridge",
     "equipment": "Bodyweight",
@@ -6343,6 +7343,14 @@
     "type": "weight_reps"
   },
   {
+    "id": "builtin:single-arm-cable-reverse-fly",
+    "name": "Single-Arm Cable Reverse Fly",
+    "equipment": "Cable",
+    "muscles": ["Shoulders"],
+    "secondaryMuscles": ["Middle back"],
+    "type": "weight_reps"
+  },
+  {
     "id": "builtin:single-arm-linear-jammer",
     "name": "Single-Arm Linear Jammer",
     "equipment": "Barbell",
@@ -6370,12 +7378,28 @@
     "type": "distance_duration"
   },
   {
+    "id": "builtin:single-leg-calf-raise",
+    "name": "Single-Leg Calf Raise",
+    "equipment": "Bodyweight",
+    "muscles": ["Calves"],
+    "secondaryMuscles": [],
+    "type": "bodyweight_reps"
+  },
+  {
     "id": "builtin:single-leg-high-box-squat",
     "name": "Single-Leg High Box Squat",
     "equipment": "Other",
     "muscles": ["Quadriceps"],
     "secondaryMuscles": ["Glutes", "Hamstrings"],
     "sourceId": "Single-Leg_High_Box_Squat",
+    "type": "bodyweight_reps"
+  },
+  {
+    "id": "builtin:single-leg-hip-thrust",
+    "name": "Single-Leg Hip Thrust",
+    "equipment": "Bodyweight",
+    "muscles": ["Glutes"],
+    "secondaryMuscles": ["Hamstrings"],
     "type": "bodyweight_reps"
   },
   {
@@ -6403,6 +7427,14 @@
     "muscles": ["Quadriceps"],
     "secondaryMuscles": [],
     "sourceId": "Single-Leg_Leg_Extension",
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:single-leg-leg-press",
+    "name": "Single-Leg Leg Press",
+    "equipment": "Machine",
+    "muscles": ["Quadriceps"],
+    "secondaryMuscles": ["Glutes", "Hamstrings"],
     "type": "weight_reps"
   },
   {
@@ -6478,6 +7510,22 @@
     "type": "distance_duration"
   },
   {
+    "id": "builtin:ski-ergometer",
+    "name": "Ski Ergometer",
+    "equipment": "Machine",
+    "muscles": ["Cardio"],
+    "secondaryMuscles": [],
+    "type": "distance_duration"
+  },
+  {
+    "id": "builtin:skiing",
+    "name": "Skiing",
+    "equipment": "Other",
+    "muscles": ["Cardio"],
+    "secondaryMuscles": [],
+    "type": "duration"
+  },
+  {
     "id": "builtin:sled-drag-harness",
     "name": "Sled Drag - Harness",
     "equipment": "Other",
@@ -6521,6 +7569,14 @@
     "secondaryMuscles": [],
     "sourceId": "Sled_Reverse_Flye",
     "type": "weight_reps"
+  },
+  {
+    "id": "builtin:sled-rope-pull",
+    "name": "Sled Rope Pull",
+    "equipment": "Other",
+    "muscles": ["Full body"],
+    "secondaryMuscles": ["Biceps", "Forearms", "Lats", "Middle back"],
+    "type": "weight_distance"
   },
   {
     "id": "builtin:sled-row",
@@ -6586,6 +7642,14 @@
     "type": "weight_reps"
   },
   {
+    "id": "builtin:smith-machine-deadlift",
+    "name": "Smith Machine Deadlift",
+    "equipment": "Machine",
+    "muscles": ["Glutes"],
+    "secondaryMuscles": ["Hamstrings", "Lower back", "Quadriceps", "Traps"],
+    "type": "weight_reps"
+  },
+  {
     "id": "builtin:smith-machine-decline-press",
     "name": "Smith Machine Decline Press",
     "equipment": "Machine",
@@ -6610,6 +7674,14 @@
     "muscles": ["Abdominals"],
     "secondaryMuscles": [],
     "sourceId": "Smith_Machine_Hip_Raise",
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:smith-machine-hip-thrust",
+    "name": "Smith Machine Hip Thrust",
+    "equipment": "Machine",
+    "muscles": ["Glutes"],
+    "secondaryMuscles": ["Hamstrings", "Quadriceps"],
     "type": "weight_reps"
   },
   {
@@ -6664,6 +7736,14 @@
     "muscles": ["Calves"],
     "secondaryMuscles": [],
     "sourceId": "Smith_Machine_Reverse_Calf_Raises",
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:smith-machine-shrug",
+    "name": "Smith Machine Shrug",
+    "equipment": "Machine",
+    "muscles": ["Traps"],
+    "secondaryMuscles": [],
     "type": "weight_reps"
   },
   {
@@ -6765,6 +7845,14 @@
     "type": "weight_reps"
   },
   {
+    "id": "builtin:snowboarding",
+    "name": "Snowboarding",
+    "equipment": "Other",
+    "muscles": ["Cardio"],
+    "secondaryMuscles": [],
+    "type": "duration"
+  },
+  {
     "id": "builtin:speed-band-overhead-triceps",
     "name": "Speed Band Overhead Triceps",
     "equipment": "Bands",
@@ -6817,6 +7905,14 @@
     "secondaryMuscles": [],
     "sourceId": "Spider_Curl",
     "type": "weight_reps"
+  },
+  {
+    "id": "builtin:spiderman-plank",
+    "name": "Spiderman Plank",
+    "equipment": "Bodyweight",
+    "muscles": ["Abdominals"],
+    "secondaryMuscles": ["Shoulders"],
+    "type": "bodyweight_reps"
   },
   {
     "id": "builtin:spinal-stretch",
@@ -6891,6 +7987,14 @@
     "type": "bodyweight_reps"
   },
   {
+    "id": "builtin:sprints",
+    "name": "Sprints",
+    "equipment": "Bodyweight",
+    "muscles": ["Cardio"],
+    "secondaryMuscles": [],
+    "type": "distance_duration"
+  },
+  {
     "id": "builtin:squat-jerk",
     "name": "Squat Jerk",
     "equipment": "Barbell",
@@ -6933,7 +8037,15 @@
     "muscles": ["Quadriceps"],
     "secondaryMuscles": ["Calves", "Glutes", "Hamstrings", "Lower back"],
     "sourceId": "Squats_-_With_Bands",
-    "type": "bodyweight_reps"
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:stair-climber-steps",
+    "name": "Stair Climber Steps",
+    "equipment": "Machine",
+    "muscles": ["Cardio"],
+    "secondaryMuscles": [],
+    "type": "steps_duration"
   },
   {
     "id": "builtin:stairmaster",
@@ -7305,6 +8417,14 @@
     "type": "duration"
   },
   {
+    "id": "builtin:standing-plate-press",
+    "name": "Standing Plate Press",
+    "equipment": "Other",
+    "muscles": ["Chest"],
+    "secondaryMuscles": ["Shoulders", "Triceps"],
+    "type": "weight_reps"
+  },
+  {
     "id": "builtin:standing-rope-crunch",
     "name": "Standing Rope Crunch",
     "equipment": "Cable",
@@ -7440,6 +8560,14 @@
     "type": "weight_reps"
   },
   {
+    "id": "builtin:stretching",
+    "name": "Stretching",
+    "equipment": "Bodyweight",
+    "muscles": ["Other"],
+    "secondaryMuscles": [],
+    "type": "duration"
+  },
+  {
     "id": "builtin:stride-jump-crossover",
     "name": "Stride Jump Crossover",
     "equipment": "Other",
@@ -7463,6 +8591,14 @@
       "Traps"
     ],
     "sourceId": "Sumo_Deadlift",
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:sumo-deadlift-high-pull",
+    "name": "Sumo Deadlift High Pull",
+    "equipment": "Barbell",
+    "muscles": ["Full body"],
+    "secondaryMuscles": ["Glutes", "Hamstrings", "Shoulders", "Traps"],
     "type": "weight_reps"
   },
   {
@@ -7582,6 +8718,46 @@
     "type": "bodyweight_reps"
   },
   {
+    "id": "builtin:suspension-biceps-curl",
+    "name": "Suspension Biceps Curl",
+    "equipment": "Other",
+    "muscles": ["Biceps"],
+    "secondaryMuscles": ["Forearms"],
+    "type": "bodyweight_reps"
+  },
+  {
+    "id": "builtin:suspension-chest-fly",
+    "name": "Suspension Chest Fly",
+    "equipment": "Other",
+    "muscles": ["Chest"],
+    "secondaryMuscles": ["Abdominals", "Shoulders"],
+    "type": "bodyweight_reps"
+  },
+  {
+    "id": "builtin:suspension-front-raise",
+    "name": "Suspension Front Raise",
+    "equipment": "Other",
+    "muscles": ["Shoulders"],
+    "secondaryMuscles": ["Abdominals"],
+    "type": "bodyweight_reps"
+  },
+  {
+    "id": "builtin:suspension-squat",
+    "name": "Suspension Squat",
+    "equipment": "Other",
+    "muscles": ["Quadriceps"],
+    "secondaryMuscles": ["Glutes", "Hamstrings"],
+    "type": "bodyweight_reps"
+  },
+  {
+    "id": "builtin:suspension-triceps-extension",
+    "name": "Suspension Triceps Extension",
+    "equipment": "Other",
+    "muscles": ["Triceps"],
+    "secondaryMuscles": ["Abdominals"],
+    "type": "bodyweight_reps"
+  },
+  {
     "id": "builtin:svend-press",
     "name": "Svend Press",
     "equipment": "Other",
@@ -7589,6 +8765,14 @@
     "secondaryMuscles": ["Forearms", "Shoulders", "Triceps"],
     "sourceId": "Svend_Press",
     "type": "weight_reps"
+  },
+  {
+    "id": "builtin:swimming",
+    "name": "Swimming",
+    "equipment": "Other",
+    "muscles": ["Cardio"],
+    "secondaryMuscles": [],
+    "type": "distance_duration"
   },
   {
     "id": "builtin:t-bar-row-with-handle",
@@ -7661,6 +8845,14 @@
     "muscles": ["Abdominals"],
     "secondaryMuscles": [],
     "sourceId": "Toe_Touchers",
+    "type": "bodyweight_reps"
+  },
+  {
+    "id": "builtin:toes-to-bar",
+    "name": "Toes-to-Bar",
+    "equipment": "Bodyweight",
+    "muscles": ["Abdominals"],
+    "secondaryMuscles": ["Lats"],
     "type": "bodyweight_reps"
   },
   {
@@ -7890,6 +9082,14 @@
     "type": "weight_reps"
   },
   {
+    "id": "builtin:walking",
+    "name": "Walking",
+    "equipment": "Bodyweight",
+    "muscles": ["Cardio"],
+    "secondaryMuscles": [],
+    "type": "distance_duration"
+  },
+  {
     "id": "builtin:walking-treadmill",
     "name": "Walking, Treadmill",
     "equipment": "Machine",
@@ -7897,6 +9097,38 @@
     "secondaryMuscles": ["Calves", "Glutes", "Hamstrings"],
     "sourceId": "Walking_Treadmill",
     "type": "distance_duration"
+  },
+  {
+    "id": "builtin:wall-ball",
+    "name": "Wall Ball",
+    "equipment": "Medicine ball",
+    "muscles": ["Full body"],
+    "secondaryMuscles": ["Glutes", "Quadriceps", "Shoulders", "Triceps"],
+    "type": "weight_reps"
+  },
+  {
+    "id": "builtin:wall-sit",
+    "name": "Wall Sit",
+    "equipment": "Bodyweight",
+    "muscles": ["Quadriceps"],
+    "secondaryMuscles": ["Glutes"],
+    "type": "duration"
+  },
+  {
+    "id": "builtin:warm-up",
+    "name": "Warm-Up",
+    "equipment": "Bodyweight",
+    "muscles": ["Full body"],
+    "secondaryMuscles": [],
+    "type": "duration"
+  },
+  {
+    "id": "builtin:weighted-back-extension",
+    "name": "Weighted Back Extension",
+    "equipment": "Other",
+    "muscles": ["Lower back"],
+    "secondaryMuscles": ["Glutes", "Hamstrings"],
+    "type": "weighted_bodyweight"
   },
   {
     "id": "builtin:weighted-ball-hyperextension",
@@ -7927,6 +9159,24 @@
     "usesBodyweight": true
   },
   {
+    "id": "builtin:weighted-chest-dip",
+    "name": "Weighted Chest Dip",
+    "equipment": "Other",
+    "muscles": ["Chest"],
+    "secondaryMuscles": ["Shoulders", "Triceps"],
+    "type": "weighted_bodyweight",
+    "usesBodyweight": true
+  },
+  {
+    "id": "builtin:weighted-chin-up",
+    "name": "Weighted Chin-Up",
+    "equipment": "Other",
+    "muscles": ["Lats"],
+    "secondaryMuscles": ["Biceps", "Forearms", "Middle back"],
+    "type": "weighted_bodyweight",
+    "usesBodyweight": true
+  },
+  {
     "id": "builtin:weighted-crunches",
     "name": "Weighted Crunches",
     "equipment": "Medicine ball",
@@ -7934,6 +9184,14 @@
     "secondaryMuscles": [],
     "sourceId": "Weighted_Crunches",
     "type": "weight_reps"
+  },
+  {
+    "id": "builtin:weighted-decline-crunch",
+    "name": "Weighted Decline Crunch",
+    "equipment": "Other",
+    "muscles": ["Abdominals"],
+    "secondaryMuscles": [],
+    "type": "weighted_bodyweight"
   },
   {
     "id": "builtin:weighted-jump-squat",
@@ -7955,6 +9213,14 @@
     "usesBodyweight": true
   },
   {
+    "id": "builtin:weighted-push-up",
+    "name": "Weighted Push-Up",
+    "equipment": "Other",
+    "muscles": ["Chest"],
+    "secondaryMuscles": ["Shoulders", "Triceps"],
+    "type": "weighted_bodyweight"
+  },
+  {
     "id": "builtin:weighted-sissy-squat",
     "name": "Weighted Sissy Squat",
     "equipment": "Barbell",
@@ -7962,6 +9228,14 @@
     "secondaryMuscles": ["Calves", "Glutes", "Hamstrings"],
     "sourceId": "Weighted_Sissy_Squat",
     "type": "weight_reps"
+  },
+  {
+    "id": "builtin:weighted-sit-up",
+    "name": "Weighted Sit-Up",
+    "equipment": "Other",
+    "muscles": ["Abdominals"],
+    "secondaryMuscles": [],
+    "type": "weighted_bodyweight"
   },
   {
     "id": "builtin:weighted-sit-ups-with-bands",
@@ -7980,6 +9254,15 @@
     "secondaryMuscles": ["Calves", "Glutes", "Hamstrings"],
     "sourceId": "Weighted_Squat",
     "type": "weight_reps"
+  },
+  {
+    "id": "builtin:weighted-triceps-dip",
+    "name": "Weighted Triceps Dip",
+    "equipment": "Other",
+    "muscles": ["Triceps"],
+    "secondaryMuscles": ["Chest", "Shoulders"],
+    "type": "weighted_bodyweight",
+    "usesBodyweight": true
   },
   {
     "id": "builtin:wide-grip-barbell-bench-press",
@@ -8116,6 +9399,14 @@
     "secondaryMuscles": [],
     "sourceId": "Wrist_Rotations_with_Straight_Bar",
     "type": "weight_reps"
+  },
+  {
+    "id": "builtin:yoga",
+    "name": "Yoga",
+    "equipment": "Bodyweight",
+    "muscles": ["Full body"],
+    "secondaryMuscles": [],
+    "type": "duration"
   },
   {
     "id": "builtin:yoke-walk",
