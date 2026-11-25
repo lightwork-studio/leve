@@ -326,6 +326,50 @@ it("tries a fresh token once before asking to sign in again, and resumes after",
   expect(session.status.prompt).toBeNull();
 });
 
+it("tries a refused sign-in again on return to the app, keeping the question up until it works", async () => {
+  const store = await phone();
+  tokens.delete("alice-token");
+  const { session, events } = start(store, "alice");
+  await until(() => session.status.prompt !== null);
+  expect(session.status.prompt).toEqual({ kind: "sign_in" });
+  const asked = events.statuses.length;
+
+  // Still refused: the question stays, without going away in between.
+  const sent = requests.length;
+  session.setForeground(true);
+  await until(() => requests.length > sent);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(events.statuses.slice(asked).every((status) => status.prompt !== null)).toBe(true);
+
+  tokens.set("alice-token", "alice");
+  session.setForeground(true);
+  await until(() => session.status.prompt === null);
+  expect(session.status.lastSynced).not.toBeNull();
+  expect(
+    events.statuses.slice(asked).find((status) => status.prompt === null)?.lastSynced,
+  ).not.toBeNull();
+});
+
+it("doesn't count a fresh-token retry that never reached the server", async () => {
+  const store = await phone();
+  let fresh = 0;
+  // Like Clerk: a cached token until a fresh one is asked for, which is then cached.
+  let cached = "expired";
+  const { session } = start(store, "alice", {
+    token: async (wantsFresh) => {
+      if (!wantsFresh) return cached;
+      fresh += 1;
+      // The first fresh token can't be had (no connection); the next one works.
+      if (fresh === 1) throw new Error("no connection");
+      cached = "alice-token";
+      return cached;
+    },
+  });
+  await until(() => session.status.lastSynced !== null || session.status.prompt !== null);
+  expect(session.status.prompt).toBeNull();
+  expect(fresh).toBe(2);
+});
+
 it("asks for an update when the server no longer syncs with this version", async () => {
   const store = await phone();
   tooOld = true;

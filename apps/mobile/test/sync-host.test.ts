@@ -184,6 +184,10 @@ it("runs a session for the signed-in account and shows nothing while all is well
   await render();
   expect(session().options).toMatchObject({ account: "user_1", server: "https://sync.test" });
   expect(await session().options.token(false)).toBe("token-user_1");
+  // Signed in but no token to be had: offline, not a sign-in problem.
+  clerk.noToken = true;
+  await expect(session().options.token(false)).rejects.toThrow();
+  clerk.noToken = false;
   await report({ lastSynced: Date.now() });
   expect(screen()).toBe("");
 
@@ -206,6 +210,15 @@ it("asks to combine, and answers with the person's choice", async () => {
   expect(screen()).toContain("A copy is saved.");
   await tap("Delete and replace");
   expect(session().calls).toContain("replace");
+});
+
+it("lets the combine question wait, sending and deleting nothing", async () => {
+  await render();
+  await report({ prompt: { kind: "combine" } });
+  await tap("Not now");
+  expect(screen()).toBe("");
+  expect(session().calls).not.toContain("combine");
+  expect(session().calls).not.toContain("replace");
 });
 
 it("warns before another account's unsynced changes are deleted", async () => {

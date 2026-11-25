@@ -120,6 +120,8 @@ export class SyncSession {
   #failures = 0;
   #freshToken = false;
   #retriedSignIn = false;
+  /** Trying a refused sign-in again in the background, with its question still showing. */
+  #checkingSignIn = false;
   #join = false;
   #status: SyncStatus;
 
@@ -134,7 +136,13 @@ export class SyncSession {
       if (this.#stopped) throw new TransportError("this sync session has ended");
       const fresh = this.#freshToken;
       this.#freshToken = false;
-      const token = await options.token(fresh);
+      let token: string | null;
+      try {
+        token = await options.token(fresh);
+      } catch (error) {
+        // Most often no connection to the sign-in service: nothing was sent.
+        throw new TransportError(`no session token: ${(error as Error)?.message ?? error}`);
+      }
       if (this.#stopped) throw new TransportError("this sync session has ended");
       return token ? { authorization: `Bearer ${token}` } : {};
     };
@@ -179,9 +187,14 @@ export class SyncSession {
   setForeground(active: boolean): void {
     this.#foreground = active;
     if (active) {
-      // A sign-in the server refused may work again (say after a server fix): try once more.
+      // A sign-in the server refused may work again (say after a server fix): try once more,
+      // keeping the question up unless it works.
       if (this.#status.prompt?.kind === "sign_in") {
-        this.retry();
+        this.#checkingSignIn = true;
+        this.#retriedSignIn = true;
+        this.#freshToken = true;
+        this.#due = true;
+        this.#wake?.();
         return;
       }
       this.#failures = 0;
@@ -290,7 +303,7 @@ export class SyncSession {
 
   async #run(): Promise<void> {
     while (!this.#stopped) {
-      if (this.#status.prompt || (!this.#due && !this.#foreground)) {
+      if ((this.#status.prompt && !this.#checkingSignIn) || (!this.#due && !this.#foreground)) {
         await this.#sleep(null);
         continue;
       }
@@ -354,12 +367,19 @@ export class SyncSession {
   }
 
   #handle(outcome: SyncOutcome): number | null {
+    if (this.#stopped) return null;
+    this.#checkingSignIn = false;
+    // The fresh-token retry counts only once the server has answered it.
+    if (outcome.state !== "signed_out") this.#retriedSignIn = false;
     switch (outcome.state) {
       case "synced":
         this.#failures = 0;
-        this.#retriedSignIn = false;
         this.#join = false;
-        this.#setStatus({ lastSynced: this.#now(), failingSince: null });
+        this.#setStatus({
+          lastSynced: this.#now(),
+          failingSince: null,
+          ...(this.#status.prompt?.kind === "sign_in" ? { prompt: null } : {}),
+        });
         if (outcome.pulled > 0) this.#options.onPulled();
         return null;
       case "offline": {

@@ -29,6 +29,8 @@ import { SyncSession, type SyncStatus, unsyncedChanges } from "./sync-session.ts
 
 /** How long sync may fail before the app says that changes aren't syncing. */
 export const STALE_AFTER_MS = 24 * 60 * 60_000;
+/** How often the time of the last sync is saved, so the note survives a restart. */
+const SAVE_SYNCED_MS = 5 * 60_000;
 
 const IDLE: SyncStatus = { prompt: null, lastSynced: null, failingSince: null };
 
@@ -56,8 +58,10 @@ function Sync() {
   const { isLoaded, isSignedIn, userId, getToken, signOut } = useAuth();
   const { store, version, change, reset, exportData } = useAppData();
   const [status, setStatus] = useState<SyncStatus>(IDLE);
-  /** "Not now" on the account question: hidden until the app starts again; sync stays paused. */
-  const [switchLater, setSwitchLater] = useState(false);
+  /** "Not now" on a question: hidden until the app starts again; sync stays paused meanwhile. */
+  const [later, setLater] = useState(false);
+  /** When the last sync was saved: every wait for changes ends in one, every 25 s or so. */
+  const lastWritten = useRef(0);
   const session = useRef<SyncSession | null>(null);
   // The session outlives renders: it reaches these through refs, and restarts only for another
   // account or store.
@@ -86,7 +90,10 @@ function Sync() {
       onPulled: () => latest.current.change(() => undefined),
       onStatus: (next) => {
         setStatus(next);
-        if (next.lastSynced !== null) writeLastSynced(next.lastSynced);
+        if (next.lastSynced !== null && next.lastSynced - lastWritten.current > SAVE_SYNCED_MS) {
+          lastWritten.current = next.lastSynced;
+          writeLastSynced(next.lastSynced);
+        }
       },
       startOver: () => {
         writeLastSynced(null);
@@ -119,17 +126,18 @@ function Sync() {
 
   const prompt = status.prompt;
   if (prompt?.kind === "update") return <UpdatePrompt />;
-  if (prompt?.kind === "combine") {
+  if (prompt?.kind === "combine" && !later) {
     return (
       <CombinePrompt
         workouts={workoutCount(store)}
         onCombine={() => session.current?.combine()}
         onReplace={() => session.current?.replaceLocalData()}
+        onLater={() => setLater(true)}
         exportData={exportData}
       />
     );
   }
-  if (prompt?.kind === "switch" && !switchLater) {
+  if (prompt?.kind === "switch" && !later) {
     return (
       <SwitchPrompt
         reason={prompt.reason}
@@ -145,7 +153,7 @@ function Sync() {
             throw error;
           }
         }}
-        onLater={() => setSwitchLater(true)}
+        onLater={() => setLater(true)}
         exportData={exportData}
       />
     );
@@ -205,11 +213,13 @@ function CombinePrompt({
   workouts,
   onCombine,
   onReplace,
+  onLater,
   exportData,
 }: {
   workouts: number;
   onCombine: () => void;
   onReplace: () => void;
+  onLater: () => void;
   exportData: () => Promise<void>;
 }) {
   const styles = useStyles(sheet);
@@ -254,11 +264,14 @@ function CombinePrompt({
       eyebrow="Your account already has data"
       confirm={{ label: "Add to my account", onPress: onCombine }}
       footer={
-        <Button
-          rank="text"
-          label="Replace with my account's data"
-          onPress={() => setReplacing(true)}
-        />
+        <View style={styles.actions}>
+          <Button
+            rank="text"
+            label="Replace with my account's data"
+            onPress={() => setReplacing(true)}
+          />
+          <Button rank="text" label="Not now" onPress={onLater} />
+        </View>
       }
     >
       <Body
