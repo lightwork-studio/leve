@@ -1,15 +1,13 @@
 import type { DeviceStore } from "@leve/storage";
-import { useState } from "react";
 import { useAppData } from "../data/app-data.tsx";
 import { addExerciseNote, commentsByNote } from "../data/exercise-notes.ts";
 import type { ExerciseNote, NoteComment } from "../model/types.ts";
 import type { ExerciseCardNotes as CardNotes } from "../model/workout-notes.ts";
 import { type NoteLine, NoteLines } from "./note-lines.tsx";
-import { NoteSheet } from "./note-sheet.tsx";
 
 /**
  * An exercise's notes on its card, always shown: pinned ones, the ones from last time, then
- * today's, and a field to write one. A note opens in its sheet.
+ * today's, and a field to write one. Each note is edited, pinned and answered where it is.
  */
 export function ExerciseCardNotes({
   exerciseId,
@@ -32,88 +30,57 @@ export function ExerciseCardNotes({
   /** A new note is always pinned, as on the exercise's own screen. */
   pinnedOnly?: boolean;
   variant?: "inset" | "card";
-  /** In the running workout, where a write needn't refresh history. */
+  /** In the running workout, where adding a note needn't refresh history. */
   live?: boolean;
   onInteract?: () => void;
 }) {
   const { store, change } = useAppData();
-  const [open, setOpen] = useState<string | null>(null);
-  const count = !notes
-    ? 0
-    : "pinned" in notes
-      ? notes.pinned.length + notes.lastTime.length + notes.today.length
-      : notes.length;
-  // Read only when there is a note to show: a card without notes, or one that opens before the
-  // workout's notes are read, lists no comments.
-  const comments =
-    count > 0 ? commentsByNote(store, "exercise_note") : new Map<string, NoteComment[]>();
-  const line = (note: ExerciseNote, label?: string): NoteLine => ({
-    id: note.id,
-    text: note.text,
-    pinned: note.pinned,
-    agent: note.agent,
-    comments: comments.get(note.id) ?? [],
-    ...(label ? { label } : {}),
-  });
   const all = !notes
     ? []
     : "pinned" in notes
       ? [...notes.pinned, ...notes.lastTime, ...notes.today]
       : notes;
-  /** The workout the opened note was written in, or null for one written outside a workout. */
-  const noteWorkout = (id: string) => all.find((note) => note.id === id)?.workoutId ?? null;
-  const lines: NoteLine[] = !notes
-    ? []
-    : "pinned" in notes
-      ? [
-          ...notes.pinned.map((note) => line(note)),
-          ...notes.lastTime.map((note) => line(note, "Last time")),
-          ...notes.today.map((note) => line(note)),
-        ]
-      : notes.map((note) => line(note));
+  // Read only when there is a note to show: a card without notes, or one that opens before the
+  // workout's notes are read, lists no comments.
+  const comments =
+    all.length > 0 ? commentsByNote(store, "exercise_note") : new Map<string, NoteComment[]>();
+  const lastTime = new Set(notes && "pinned" in notes ? notes.lastTime.map((note) => note.id) : []);
+  const lines: NoteLine[] = all.map((note) => ({
+    id: note.id,
+    text: note.text,
+    pinned: note.pinned,
+    createdAt: note.createdAt,
+    agent: note.agent,
+    comments: comments.get(note.id) ?? [],
+    ...(lastTime.has(note.id) ? { label: "Last time" } : {}),
+    pinTo: exerciseName,
+    pinnedHint: `Shows on every ${exerciseName}`,
+    unpinnedHint: `Shows next time you do ${exerciseName}`,
+  }));
   return (
-    <>
-      <NoteLines
-        variant={variant}
-        notes={lines}
-        onOpen={(note) => {
-          onInteract?.();
-          setOpen(note.id);
-        }}
-        {...(add
-          ? {
-              add: {
-                label: `Note for ${exerciseName}`,
-                pinTo: exerciseName,
-                pinnedHint: `Shows on every ${exerciseName}`,
-                alwaysPinned: pinnedOnly,
-                unpinnedHint: `Shows next time you do ${exerciseName}`,
-                onSave: (text: string, pinned: boolean) => {
-                  onInteract?.();
-                  const write = (db: DeviceStore) =>
-                    addExerciseNote(db, { exerciseId, workoutId, text, pinned });
-                  if (live) change(write, "active-workout");
-                  else change(write);
-                },
+    <NoteLines
+      kind="exercise_note"
+      variant={variant}
+      notes={lines}
+      {...(onInteract ? { onInteract } : {})}
+      {...(add
+        ? {
+            add: {
+              label: `Note for ${exerciseName}`,
+              pinTo: exerciseName,
+              pinnedHint: `Shows on every ${exerciseName}`,
+              alwaysPinned: pinnedOnly,
+              unpinnedHint: `Shows next time you do ${exerciseName}`,
+              onSave: (text: string, pinned: boolean) => {
+                onInteract?.();
+                const write = (db: DeviceStore) =>
+                  addExerciseNote(db, { exerciseId, workoutId, text, pinned });
+                if (live) change(write, "active-workout");
+                else change(write);
               },
-            }
-          : {})}
-      />
-      {open && (
-        <NoteSheet
-          kind="exercise_note"
-          noteId={open}
-          eyebrow={exerciseName}
-          pinTo={exerciseName}
-          pinnedHint={`Shows on every ${exerciseName} until you delete it`}
-          unpinnedHint={
-            noteWorkout(open) === null
-              ? `Shows next time you do ${exerciseName}`
-              : `Shows next time you do ${exerciseName}, then stays with the workout it was written in`
+            },
           }
-          onClose={() => setOpen(null)}
-        />
-      )}
-    </>
+        : {})}
+    />
   );
 }

@@ -287,9 +287,9 @@ describe("rest above the keypad", () => {
     expect(ui.has("Done typing")).toBe(true);
   });
 
-  it("shows one compact timer inside the native note sheet while its keyboard is visible", async () => {
+  it("keeps the dock's one rest timer while a note is edited in place", async () => {
     const { workout } = benchWorkout();
-    addExerciseNote(store, {
+    const noteId = addExerciseNote(store, {
       exerciseId: EXERCISES.bench.id,
       workoutId: workout,
       text: "Slow",
@@ -297,18 +297,25 @@ describe("rest above the keypad", () => {
     });
     const ui = await mount();
     await ui.press("Log set 1");
-    // Today's note opens in its own sheet.
+    const timers = () => ui.root.findAllByType(RestSlab);
+    expect(timers()).toHaveLength(1);
+    // Today's note is edited where it is, with no sheet of its own over the workout.
     await ui.press("Slow");
-    const sheet = ui.root.find(
-      (n) => String(n.type) === "Modal" && n.props["aria-label"] === "Note",
-    );
-    await act(() => ui.control("Note").props.onChangeText("Pause"));
-    expect(sheet.findAllByType(RestSlab)).toHaveLength(0);
+    expect(ui.root.findAll((n) => String(n.type) === "Modal")).toHaveLength(0);
+    await act(() => ui.control("Edit note").props.onChangeText("Pause"));
+    // The keyboard brings no second timer: the dock's full one stays as it was.
     await act(() => keyboardEvents.get("keyboardDidShow")?.());
-    expect(sheet.findByType(RestSlab).props.onTime).toBeUndefined();
+    expect(timers()).toHaveLength(1);
+    expect(timers()[0]?.props.onTime).toBeTypeOf("function");
     await act(() => keyboardEvents.get("keyboardDidHide")?.());
-    expect(sheet.findAllByType(RestSlab)).toHaveLength(0);
-    expect(ui.control("Note").props.value).toBe("Pause");
+    expect(timers()).toHaveLength(1);
+    expect(ui.control("Edit note").props.value).toBe("Pause");
+    await ui.press("Done");
+    expect(ui.has("Edit note")).toBe(false);
+    expect(store.get("exercise_note", noteId)?.content).toMatchObject({
+      text: "Pause",
+      pinned: false,
+    });
   });
 
   it("shows completion briefly and keeps an unfinished entry open across expiry", async () => {
