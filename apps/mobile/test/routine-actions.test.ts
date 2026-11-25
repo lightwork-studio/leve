@@ -396,3 +396,27 @@ it.each(["1.0", "2.0"] as const)(
     }
   },
 );
+
+it("adds a routine in no folder after the routines whose folder is gone", async () => {
+  const store = await openDeviceStore({
+    engine: createSqlJsEngine(SQL),
+    path: "/unfiled-add.db",
+    appVersion: "test",
+  });
+  const settings = readSettings(store);
+  store.put("routine_folder", "kept", { title: "Kept", position: 1 });
+  const loose = createRoutine(store, "Loose", null, plan, settings);
+  const orphan = createRoutine(store, "Orphan", "kept", plan, settings);
+  // Filed far down its folder, which is then deleted: it joins the routines in no folder.
+  const orphaned = store.get("routine", orphan)?.content;
+  store.put("routine", orphan, { ...orphaned, position: 9 });
+  store.delete("routine_folder", "kept");
+  const added = createRoutine(store, "Added", null, plan, settings);
+  expect(store.get("routine", loose)?.content?.position).toBe(1);
+  expect(store.get("routine", added)?.content?.position).toBe(10);
+  // A folder's own count starts again from 1.
+  store.put("routine_folder", "new", { title: "New", position: 2 });
+  const first = createRoutine(store, "First", "new", plan, settings);
+  expect(store.get("routine", first)?.content?.position).toBe(1);
+  store.close();
+});
