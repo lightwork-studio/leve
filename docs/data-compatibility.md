@@ -259,9 +259,9 @@ know, a workout deleted here that is still to upload, or work below something de
 account that is still on its way there and back) waits until it can. Letting go of something the
 account deleted first shows everything this phone holds below it. Keeping a deletion made here is
 offered only when the account holds nothing below it, after showing the account's version. Work
-recorded entirely offline is flagged on the start screen. A conflicted record is not resubmitted automatically. An `invalid`
-answer is handled the same way, unless the user already edited the record again, in which case the
-newer version is sent. The kept version is the newest local one. The user can:
+recorded entirely offline is flagged on the start screen. A conflicted record is not resubmitted
+automatically. An `invalid` answer is handled the same way, unless the user already edited the
+record again, in which case the newer version is sent. The kept version is the newest local one. The user can:
 
 - **Keep mine:** resubmit the local version based on the server's current revision. It can be
   rejected again if the record changed once more.
