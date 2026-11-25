@@ -29,6 +29,7 @@ function frame(): ActivityFrame {
       interactive: true,
       canLog: true,
       finish: false,
+      appearance: "system",
     },
   };
 }
