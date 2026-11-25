@@ -130,10 +130,11 @@ jobs:
           # Every other release on main must already be part of this one. Otherwise this run could
           # put older code on the Worker than a release that already deployed, so it fails, and the
           # app isn't published either.
-          releases="$(git tag --list 'v*' --merged origin/main |
+          # Full ref names, so a tag named like a branch (`origin/main`) can't stand in for it.
+          releases="$(git tag --list 'v*' --merged refs/remotes/origin/main |
             grep -E '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' || true)"
           for other in $releases; do
-            if ! git merge-base --is-ancestor "$other^{commit}" "$TAG_COMMIT"; then
+            if ! git merge-base --is-ancestor "refs/tags/$other^{commit}" "$TAG_COMMIT"; then
               echo "::error::$other isn't part of $RELEASE_TAG, so deploying $RELEASE_TAG could move the production sync Worker back. Release a newer main commit instead."
               exit 1
             fi

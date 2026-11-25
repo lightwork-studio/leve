@@ -41,15 +41,17 @@ version. Each deploy job skips with a warning while its GitHub environment (`syn
 `sync-production`) has no `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
 
 The production deploy runs only when App Store releases are enabled (`LEVE_APP_STORE_ENABLED`),
-and the App Store publish waits for it, so a release never reaches users before its server. Only
-a store build deploys it, and only when every other `vX.Y.Z` release on `main` is already part of
-the tagged commit. Otherwise the run fails and the app isn't published, so CI never moves
-production back to older code. OTA fixes don't change the server; a server fix ships with a new
-release tag.
+and once `sync-production` holds credentials, the App Store publish waits for it, so a release
+never reaches users before its server. Without them the deploy is skipped and the app still
+publishes. Only a store build deploys it, and only when every other `vX.Y.Z` release on `main` is
+already part of the tagged commit. Otherwise the run fails and the app isn't published, so CI
+never moves production back to an older release. OTA fixes don't change the server; a server fix
+ships with a new release tag.
 
 A rollback of the development Worker lasts until the next `main` commit deploys over it. A
 rollback of the production Worker lasts until a newer release deploys, or until the newest
-release's App Store run is re-run. To keep either one off, delete its `CLERK_JWT_KEY` instead.
+release's App Store run is re-run; re-running it also queues another store build unless the
+`app-store` approval is rejected. To keep either one off, delete its `CLERK_JWT_KEY` instead.
 
 ### Setting up CI deploys
 
@@ -92,7 +94,9 @@ npx wrangler@4.158.0 secret put ADMIN_TOKEN    # any long random value, for the 
 
 For production, use the production Cloudflare account's credentials, add `--env=production` to
 each `secret put`, and use the production Clerk instance's issuer and key. Deploy only a `main`
-commit whose `check` passed, and never one older than what production already runs.
+commit whose `check` passed, and never one older than what production already runs. CI only knows
+release tags: after deploying an untagged commit to production by hand, tag a release at or after
+it before the next one, or CI could deploy older code over it.
 
 ## Load tests
 
