@@ -49,6 +49,15 @@ jobs:
           EXPO_PUBLIC_BUILD_LABEL: Branch preview
           EXPO_PUBLIC_COMMIT: ${{ steps.resolve.outputs.commit }}
         run: pnpm --filter @leve/mobile export:web
+      # GitHub artifacts leave out dot directories and Pages leaves out node_modules, so an asset
+      # under either would be missing from the preview (the app's SQLite would fail to load).
+      - name: Check every asset reaches the preview
+        run: |
+          skipped="$(find apps/mobile/dist -mindepth 1 \( -name '.*' -o -name node_modules \) -print -quit)"
+          if [ -n "$skipped" ]; then
+            echo "The preview would leave out ${skipped#apps/mobile/dist/}" >&2
+            exit 1
+          fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: branch-preview
