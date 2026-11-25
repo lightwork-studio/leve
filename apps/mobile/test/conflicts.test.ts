@@ -558,3 +558,93 @@ it("shows the account's sets when a deletion is kept over an edit made there", a
     value: "140 kg × 5",
   });
 });
+
+it("never offers only deleting sets whose deleted parent can't be copied here", async () => {
+  const { a, b } = await twoPhones((store) => {
+    store.put("workout", "w1", workout("Push"));
+    store.put("workout_exercise", "e1", entry("w1"));
+    store.put("workout_set", "s1", set(80, 8));
+  });
+  b.store.put("workout", "w1", workout("Push B"));
+  refuse = new Set(["workout:w1"]);
+  await b.sync();
+  refuse = new Set();
+  a.store.delete("workout", "w1");
+  await a.sync();
+  b.store.put("workout_set", "s1", set(85, 8));
+  await b.sync();
+  // Whatever is asked, keeping this phone's set must stay possible.
+  for (const item of conflicts(b.store)) {
+    const lines = [...item.phone.lines, ...item.account.lines].map((line) => line.value);
+    if (lines.some((value) => value.includes("85 kg"))) expect(item.phone.choosable).toBe(true);
+  }
+  expect(b.store.get("workout_set", "s1")?.content).toMatchObject({ weightKg: 85 });
+});
+
+it("applies a choice to all of its records or none of them", async () => {
+  const exercise = (position: number) => ({ ...entry("w1"), position });
+  const { a, b } = await twoPhones((store) => {
+    store.put("workout", "w1", workout("Push"));
+    store.put("workout_exercise", "e1", exercise(1));
+    store.put("workout_set", "s1", set(80, 8));
+    store.put("workout_exercise", "e2", exercise(2));
+    store.put("workout_set", "s2", { ...set(60, 8), workoutExerciseId: "e2" });
+  });
+  b.store.put("workout_exercise", "e2", { ...exercise(2), restSeconds: 120 });
+  refuse = new Set(["workout_exercise:e2"]);
+  await b.sync();
+  refuse = new Set();
+  a.store.delete("workout_exercise", "e1");
+  a.store.delete("workout_exercise", "e2");
+  await a.sync();
+  b.store.put("workout_set", "s1", set(85, 8));
+  b.store.put("workout_set", "s2", { ...set(65, 8), workoutExerciseId: "e2" });
+  await b.sync();
+  const copiesBefore = b.store.list("workout_exercise").length;
+  for (const item of conflicts(b.store)) {
+    if (!item.phone.choosable) continue;
+    settleConflict(b.store, item, "phone");
+  }
+  // Nothing was copied halfway: s2 still waits with its exercise, as edited here.
+  expect(b.store.get("workout_set", "s2")?.content).toMatchObject({ weightKg: 65 });
+  expect(b.store.list("workout_exercise").length).toBeGreaterThanOrEqual(copiesBefore);
+});
+
+it("doesn't wait for a set that can't upload until its deleted workout is settled", async () => {
+  const { a, b } = await twoPhones((store) => {
+    store.put("workout", "w1", workout("Pull Day"));
+    store.put("workout_exercise", "e1", entry("w1"));
+    store.put("workout_set", "s1", set(60, 10));
+  });
+  a.store.delete("workout", "w1");
+  await a.sync();
+  b.store.put("workout_set", "s1", set(65, 10));
+  await b.sync();
+  // A new exercise and a set under it, logged after the deletion arrived.
+  b.store.put("workout_exercise", "e2", { ...entry("w1"), position: 2 });
+  await b.sync();
+  b.store.put("workout_set", "s20", { ...set(70, 8), workoutExerciseId: "e2" });
+  await b.sync();
+  await b.sync();
+  const [conflict] = conflicts(b.store);
+  expect(conflict?.key).toBe("workout:w1");
+  expect(conflict!.phone.lines).toContainEqual({ label: "Holds", value: "2 exercises · 2 sets" });
+});
+
+it("settles a set deleted in both places on its own", async () => {
+  const { a, b } = await twoPhones((store) => {
+    store.put("workout", "w1", workout("Push"));
+    store.put("workout_exercise", "e1", entry("w1"));
+    store.put("workout_set", "s1", set(80, 8));
+    store.put("workout_set", "s2", { ...set(80, 8), position: 2 });
+  });
+  a.store.delete("workout_set", "s2");
+  await a.sync();
+  b.store.put("workout_set", "s2", { ...set(90, 8), position: 2 });
+  await b.sync();
+  b.store.delete("workout_set", "s2");
+  const all = conflicts(b.store);
+  expect(all).toHaveLength(1);
+  settleConflict(b.store, all[0]!, "account");
+  expect(b.store.problems()).toEqual([]);
+});

@@ -28,8 +28,13 @@ export function ConflictPrompt({ items }: { items: Conflict[] }) {
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset only when what's shown changes
   useEffect(() => {
     setPicked(null);
-    setProblem(null);
   }, [shown]);
+  // Why a choice was refused stays until the next conflict, so it's seen with the fresh view.
+  const key = current?.key;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset only for another conflict
+  useEffect(() => {
+    setProblem(null);
+  }, [key]);
   if (!current) return null;
 
   const keep = () => {
@@ -40,9 +45,10 @@ export function ConflictPrompt({ items }: { items: Conflict[] }) {
       setSettled((count) => count + 1);
     } catch (error) {
       haptic.warning();
-      // Look again before choosing: nothing stays picked.
+      // Look again before choosing: nothing stays picked, and the latest versions are shown.
       setPicked(null);
       setProblem((error as Error).message);
+      change(() => undefined);
     }
   };
   const confirm = picked ? current[picked].confirm : "Choose a version";

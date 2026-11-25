@@ -164,7 +164,11 @@ function groupKey(store: DeviceStore, row: DeviceRecord): string | null {
   // A refused change is decided on its own: undoing it shouldn't take valid changes beside it.
   // Split on the status, not on whether it can be settled: one that can't stays out on its own
   // instead of holding back the rest of its workout.
-  return base && row.status === "invalid" ? `${base}|${row.kind}:${row.id}` : base;
+  if (!base) {
+    // Deleted on both sides, nothing left to place it by: agreed on by itself.
+    return recordCase(row) === "gone_both" ? `${row.kind}:${row.id}` : null;
+  }
+  return row.status === "invalid" ? `${base}|${row.kind}:${row.id}` : base;
 }
 
 function baseKey(store: DeviceStore, row: DeviceRecord): string | null {
@@ -205,9 +209,46 @@ function localBelow(store: DeviceStore, kind: string, id: string): DeviceRecord[
   return below;
 }
 
+/** Whether unsynced work below a record, outside `shown`, is still on its way to the account. */
+function uploadingBelow(store: DeviceStore, kind: string, id: string, shown: Set<string>): boolean {
+  for (const { kind: child } of store.contract.childKinds(kind)) {
+    for (const row of store.list(child, { parentId: id })) {
+      const waiting =
+        !shown.has(`${row.kind}:${row.id}`) &&
+        (row.inFlight || row.status === "pending" || row.status === "partial");
+      if (waiting) return true;
+      // Below something the account never had, nothing can upload until it is settled.
+      if (row.server && uploadingBelow(store, child, row.id, shown)) return true;
+    }
+  }
+  return false;
+}
+
+/** The nearest record above `row` that the account deleted and this phone changed, if any. */
+function deletedAncestor(store: DeviceStore, row: DeviceRecord): DeviceRecord | null {
+  let current: DeviceRecord | null = row;
+  for (let depth = 0; current && depth < 8; depth++) {
+    const content = current.content ?? accountContent(current) ?? current.server?.content;
+    const parent = content ? store.contract.parentOf(current.kind, content) : null;
+    if (!parent) return null;
+    current = store.get(parent.kind, parent.id);
+    if (current && deletedThere(current)) return current;
+  }
+  return null;
+}
+
 /** Records the account deleted but this phone changed: letting them go drops what's below. */
 const deletedThere = (row: DeviceRecord) =>
   recordCase(row) === "gone_there" && row.problem?.reason !== "parent_deleted";
+
+/** Whether keeping this phone's side is possible for `row` within the records shown. */
+function phonePlanOk(store: DeviceStore, row: DeviceRecord, shown: Set<string>): boolean {
+  const plan = resolutionFor(row, "phone");
+  if (plan !== "with_parent") return plan !== null;
+  // Kept by copying the deleted record above it: that record has to be here, being copied.
+  const ancestor = deletedAncestor(store, row);
+  return !!ancestor && shown.has(`${ancestor.kind}:${ancestor.id}`);
+}
 
 /** Every conflict that can be settled now, oldest first. */
 export function conflicts(store: DeviceStore): Conflict[] {
@@ -226,23 +267,23 @@ export function conflicts(store: DeviceStore): Conflict[] {
     // Work below something deleted in the account that hasn't come back as part of this conflict
     // yet (still to upload, or on its way) would go with it unseen: wait until it has.
     const shown = new Set(records.map((row) => `${row.kind}:${row.id}`));
+    // Only work that can still get there counts: below a parent the account never had, it can't
+    // upload at all, so it is counted under "Holds" instead of waited for.
     const unsettled = records
       .filter(deletedThere)
-      .flatMap((row) => localBelow(store, row.kind, row.id))
-      .some(
-        (row) =>
-          !shown.has(`${row.kind}:${row.id}`) &&
-          (row.inFlight || row.status === "pending" || row.status === "partial"),
-      );
+      .some((row) => uploadingBelow(store, row.kind, row.id, shown));
     if (unsettled) continue;
-    // What goes along with a copied ancestor needs that ancestor here, being copied.
-    const copiesAncestor = records.some(
-      (row) => recordCase(row) === "gone_there" && resolutionFor(row, "phone") !== "with_parent",
-    );
-    const phoneOk = records.every((row) => {
-      const resolution = resolutionFor(row, "phone");
-      return resolution === "with_parent" ? copiesAncestor : resolution !== null;
-    });
+    // Deleted on both sides at the top: everything below goes with it whichever side is kept.
+    const bothDeleted = recordCase(records[0] as DeviceRecord) === "gone_both";
+    const phoneOk = bothDeleted || records.every((row) => phonePlanOk(store, row, shown));
+    // Something kept only by copying what's above it, while that isn't here to copy: neither
+    // side could be chosen without losing it, so it waits with the screen it belongs to.
+    if (
+      !bothDeleted &&
+      !phoneOk &&
+      records.some((row) => resolutionFor(row, "phone") === "with_parent")
+    )
+      continue;
     result.push(describe(store, key, records, phoneOk));
   }
   return result;
@@ -260,11 +301,20 @@ export function settleConflict(store: DeviceStore, shown: Conflict, side: Side):
   if (!current || !jsonEqual(current, shown))
     throw Error("This changed in the meantime. Have a look at the latest versions.");
   if (!current[side].choosable) throw Error("That version can't be kept.");
+  // Deleted on both sides at the top: both choices mean the account's deletion.
+  const kept = recordCase(current.records[0] as DeviceRecord) === "gone_both" ? "account" : side;
+  // Check every record before writing any, so a choice is never applied halfway.
+  const listed = new Set(current.records.map((row) => `${row.kind}:${row.id}`));
+  for (const row of current.records) {
+    const ok =
+      kept === "account" ? resolutionFor(row, "account") !== null : phonePlanOk(store, row, listed);
+    if (!ok) throw Error("That version can't be kept.");
+  }
   for (const shownRow of current.records) {
     // Settling a parent can settle what's below it (a copy takes its children along).
     const row = store.get(shownRow.kind, shownRow.id);
     if (!row?.problem) continue;
-    const choice = resolutionFor(row, side);
+    const choice = resolutionFor(row, kept);
     // Still here after its ancestor was copied: the copy didn't take it along.
     if (!choice || choice === "with_parent") throw Error("That version can't be kept.");
     store.resolve(
@@ -397,8 +447,13 @@ function setValue(store: DeviceStore, values: JsonObject): string {
   const parts: string[] = [];
   if (typeof values.weightKg === "number")
     parts.push(`${weightInput(values.weightKg, unit)} ${unit}`);
-  if (typeof values.reps === "number")
-    parts.push(parts.length ? `× ${values.reps}` : `${values.reps} reps`);
+  const reps =
+    typeof values.repRangeMin === "number" && typeof values.repRangeMax === "number"
+      ? `${values.repRangeMin}–${values.repRangeMax}`
+      : typeof values.reps === "number"
+        ? String(values.reps)
+        : null;
+  if (reps !== null) parts.push(parts.length ? `× ${reps}` : `${reps} reps`);
   if (typeof values.durationSeconds === "number") parts.push(durationLabel(values.durationSeconds));
   if (typeof values.distanceMeters === "number") parts.push(`${values.distanceMeters} m`);
   if (typeof values.count === "number") parts.push(String(values.count));
@@ -413,9 +468,11 @@ function setValue(store: DeviceStore, values: JsonObject): string {
 /** A routine exercise's plan: "3 sets · 85 kg × 8". */
 function plannedExercise(store: DeviceStore, exercise: JsonObject): string {
   const sets = Array.isArray(exercise.sets) ? (exercise.sets as JsonObject[]) : [];
-  const values = [...new Set(sets.map((set) => setValue(store, set)))];
+  const values = sets.map((set) => setValue(store, set));
+  // Set by set when they differ from one another, so their order shows too.
+  const shown = new Set(values).size === 1 ? [values[0] as string] : values;
   const count = sets.length === 1 ? "1 set" : `${sets.length} sets`;
-  return values.length ? `${count} · ${values.join(", ")}` : count;
+  return values.length ? `${count} · ${shown.join(", ")}` : count;
 }
 
 /** The exercises of a routine that differ, exercise by exercise. */
@@ -618,6 +675,15 @@ function describe(
         .filter(([n]) => n > 0)
         .map(([n, noun]) => `${n} ${noun}${n === 1 ? "" : "s"}`);
       if (said.length) phone.push({ label: "Holds", value: said.join(" · ") });
+      // A refused change below it is never asked about on its own: show it here, since letting
+      // this go drops it too.
+      const listed = new Set(records.map((item) => `${item.kind}:${item.id}`));
+      for (const item of below) {
+        if (item.status !== "invalid" || listed.has(`${item.kind}:${item.id}`) || !item.content)
+          continue;
+        for (const line of sideLines(store, item, item.content, null, ""))
+          phone.push({ label: line.label, value: `${line.value} (not saved)` });
+      }
     }
   }
   const base = key.split("|")[0] as string;
@@ -660,7 +726,7 @@ function describe(
   const ownerCase = recordCase(owner);
   const ownerGoneThere = ownerCase === "gone_there";
   const ownerGoneHere = ownerCase === "gone_here";
-  const goneBoth = records.every((row) => recordCase(row) === "gone_both");
+  const goneBoth = ownerCase === "gone_both";
   const rejected = records.some((row) => recordCase(row) === "rejected");
   // Named after the topmost record that clashes, not the group: an exercise deleted in the
   // account leaves its workout in place either way.

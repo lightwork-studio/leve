@@ -251,8 +251,10 @@ exercise; the settings. It shows only what differs on each side, chooses nothing
 can't be put off, except that it waits while a workout is in progress. One choice settles every
 record of that conflict. A conflict that can't be settled yet (a sync still running, a server
 restore, fields this server or app doesn't know, or work below something deleted in the account
-that hasn't been uploaded and come back yet) waits until it can; one the popup can't settle at all
-(some cases after a server restore) stays with the screen it belongs to. Letting go of something
+that is still on its way there and back) waits until it can. One the popup can't settle at all
+(some cases after a server restore, or a record kept only by copying a deleted record above it
+that isn't part of the same conflict) stays with the screen it belongs to. A choice is checked for
+every record before any is applied. Letting go of something
 the account deleted first shows everything this phone holds below it, and keeping a deletion over
 a change made elsewhere first shows what the account's version holds. Work recorded entirely offline
 is flagged on the start screen. A conflicted record is not resubmitted automatically. An `invalid`
