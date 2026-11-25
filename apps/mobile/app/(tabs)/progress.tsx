@@ -301,47 +301,49 @@ export default function ProgressScreen() {
         </Group>
       )}
 
-      <Group label="Main lifts" aside="Latest sessions" style={styles.group}>
-        {lifts.map((lift, i) => {
-          const { history, metric } = lift;
-          const [figure] = metricParts(metric, lift.latest, unit, settings);
-          const [step, stepUnit] = metricParts(metric, Math.abs(lift.change), unit, settings);
-          const latest = history.sessions[0];
-          return (
-            <Link
-              key={history.exerciseId}
-              href={{ pathname: "/exercise/[id]", params: { id: history.exerciseId } }}
-              asChild
-            >
-              <Tap
-                accessibilityRole="link"
-                accessibilityLabel={`${history.name}: latest ${metricLabel(metric, lift.latest, unit, settings)}, ${lift.change >= 0 ? "up" : "down"} ${metricLabel(metric, Math.abs(lift.change), unit, settings)}`}
-                scaleTo={0.98}
-                style={StyleSheet.flatten([styles.row, i > 0 && styles.divider])}
+      {lifts.length > 0 && (
+        <Group label="Main lifts" aside="Latest sessions" style={styles.group}>
+          {lifts.map((lift, i) => {
+            const { history, metric } = lift;
+            const [figure] = metricParts(metric, lift.latest, unit, settings);
+            const [step, stepUnit] = metricParts(metric, Math.abs(lift.change), unit, settings);
+            const latest = history.sessions[0];
+            return (
+              <Link
+                key={history.exerciseId}
+                href={{ pathname: "/exercise/[id]", params: { id: history.exerciseId } }}
+                asChild
               >
-                <View style={styles.rowMain}>
-                  <Text style={styles.rowTitle} numberOfLines={1}>
-                    {history.name}
-                  </Text>
-                  <Text style={styles.rowDetail} numberOfLines={1}>
-                    {latest ? shortDay(latest.time) : ""} · {history.sessions.length}{" "}
-                    {history.sessions.length === 1 ? "session" : "sessions"}
-                  </Text>
-                </View>
-                <Sparkline values={lift.values} />
-                <View style={styles.liftValue}>
-                  <Text style={styles.rowNumber}>{figure}</Text>
-                  <Text style={styles.rowDetail}>
-                    {lift.change >= 0 ? "+" : "−"}
-                    {step}
-                    {stepUnit ? ` ${stepUnit}` : ""}
-                  </Text>
-                </View>
-              </Tap>
-            </Link>
-          );
-        })}
-      </Group>
+                <Tap
+                  accessibilityRole="link"
+                  accessibilityLabel={`${history.name}: latest ${metricLabel(metric, lift.latest, unit, settings)}, ${lift.change >= 0 ? "up" : "down"} ${metricLabel(metric, Math.abs(lift.change), unit, settings)}`}
+                  scaleTo={0.98}
+                  style={StyleSheet.flatten([styles.row, i > 0 && styles.divider])}
+                >
+                  <View style={styles.rowMain}>
+                    <Text style={styles.rowTitle} numberOfLines={1}>
+                      {history.name}
+                    </Text>
+                    <Text style={styles.rowDetail} numberOfLines={1}>
+                      {latest ? shortDay(latest.time) : ""} · {history.sessions.length}{" "}
+                      {history.sessions.length === 1 ? "session" : "sessions"}
+                    </Text>
+                  </View>
+                  <Sparkline values={lift.values} />
+                  <View style={styles.liftValue}>
+                    <Text style={styles.rowNumber}>{figure}</Text>
+                    <Text style={styles.rowDetail}>
+                      {lift.change >= 0 ? "+" : "−"}
+                      {step}
+                      {stepUnit ? ` ${stepUnit}` : ""}
+                    </Text>
+                  </View>
+                </Tap>
+              </Link>
+            );
+          })}
+        </Group>
+      )}
 
       <Group label="More" style={styles.group}>
         <MoreCard
