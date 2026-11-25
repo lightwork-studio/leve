@@ -117,7 +117,6 @@ export function seedSyntheticData(store: DeviceStore, now: Date = new Date()): v
   ROUTINES.forEach((routine, index) => {
     store.put("routine", routine.id, {
       title: routine.title,
-      notes: "",
       folderId: routine.folder,
       position: index + 1,
       exercises: routine.plan.map((plan, e) => ({
@@ -127,7 +126,6 @@ export function seedSyntheticData(store: DeviceStore, now: Date = new Date()): v
         exerciseType: plan.exercise.type,
         supersetId: null,
         restSeconds: plan.exercise.type === "duration" ? 30 : 120,
-        notes: [],
         useRepRange: plan.exercise.type !== "duration",
         sets: Array.from({ length: plan.sets }, (_, s) =>
           targetSet(`${routine.id}-e${e + 1}-s${s + 1}`, plan),
@@ -230,7 +228,6 @@ function logWorkout(
         position: e + 1,
         supersetId: null,
         restSeconds: 120,
-        notes: [],
         doubleDumbbellVolume: false,
       },
     ]);
@@ -266,7 +263,6 @@ function logWorkout(
   });
   store.put("workout", id, {
     title: routine.title,
-    description: "",
     startedAt: iso(start),
     endedAt: iso(clock + 2 * 60 * 1000),
     routineId: routine.id,

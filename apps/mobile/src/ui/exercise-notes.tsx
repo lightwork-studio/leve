@@ -2,8 +2,8 @@ import { LIMITS } from "@leve/core";
 import { useRef, useState } from "react";
 import { StyleSheet, Text, TextInput, View } from "react-native";
 import { useAppData } from "../data/app-data.tsx";
-import { addExerciseNote } from "../data/workout-actions.ts";
-import type { WithId, WorkoutEntry } from "../model/types.ts";
+import { addExerciseNote } from "../data/exercise-notes.ts";
+import type { ExerciseNote, WithId, WorkoutEntry } from "../model/types.ts";
 import { font, radius, space, type } from "../theme.ts";
 import { ChevronIcon, NoteIcon } from "./icons.tsx";
 import { Tap } from "./tap.tsx";
@@ -13,11 +13,14 @@ const NOTE_ICON = 15;
 
 export function ExerciseNotes({
   entry,
+  notes,
   expanded,
   editor,
   onInteract,
 }: {
   entry: WithId<WorkoutEntry>;
+  /** The exercise's notes this card shows, in order. */
+  notes: readonly ExerciseNote[];
   expanded: boolean;
   editor?: { draft: string | null; setDraft: (value: string | null) => void };
   onInteract?: () => void;
@@ -29,13 +32,18 @@ export function ExerciseNotes({
   const draft = editor?.draft ?? null;
   const [error, setError] = useState("");
   const saved = useRef(false);
-  const notes = entry.content.notes ?? [];
   const name = entry.content.exerciseName;
   const save = () => {
     if (!editor || draft === null || saved.current) return;
     try {
       change(
-        (store) => addExerciseNote(store, entry.content.workoutId, entry.id, draft),
+        (store) =>
+          addExerciseNote(store, {
+            exerciseId: entry.content.exerciseId,
+            workoutId: entry.content.workoutId,
+            text: draft,
+            pinned: false,
+          }),
         "active-workout",
       );
       saved.current = true;

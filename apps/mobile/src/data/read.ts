@@ -20,6 +20,7 @@ import type {
 } from "../model/types.ts";
 import { bestSet, loggedExercises } from "../model/workout-done.ts";
 import { carriedWorkoutNotes, journalSessionNumbers } from "../model/workout-notes.ts";
+import { commentsByNote } from "./exercise-notes.ts";
 import { builtInExercise, builtInTargets } from "./exercises.ts";
 import { withoutHeldSet } from "./set-removal.ts";
 import { trainReviews } from "./train-review.ts";
@@ -89,7 +90,7 @@ export function workoutDetailProblems(store: DeviceStore, workoutId: string) {
     );
 }
 
-/** Notes need workout headers only, including sessions without notes which may have received a reply. */
+/** A workout's own notes, the earlier notes that come back in it, and the comments on all of them. */
 export function workoutJournalData(
   store: DeviceStore,
   workoutId: string,
@@ -104,19 +105,22 @@ export function workoutJournalData(
     "workout_note",
   )) {
     const notes = notesByWorkout.get(content.workoutId) ?? [];
-    notes.push({ ...content, id, reply: content.reply ?? null });
+    notes.push({ ...content, id, agent: content.agent ?? null });
     notesByWorkout.set(content.workoutId, notes);
   }
   const notes = notesByWorkout.get(workoutId) ?? [];
   const hasOtherNotes = notesByWorkout.size > (notes.length ? 1 : 0);
   const workouts =
     hasOtherNotes || numberMatchingSessions ? records<Workout>(store, "workout") : [];
-  const carried = hasOtherNotes ? carriedWorkoutNotes(workouts, workout, notesByWorkout) : [];
+  const comments = commentsByNote(store, "workout_note");
+  const carried = hasOtherNotes
+    ? carriedWorkoutNotes(workouts, workout, notesByWorkout, comments)
+    : [];
   const sessionNumbers = numberMatchingSessions ? journalSessionNumbers(workouts) : undefined;
   const rejected = store.problems().filter((item) => item.kind === "workout_note");
   const problems = rejected.filter((item) => reviewWorkoutId(item) === workoutId);
   const rejectedIds = new Set(rejected.map((item) => item.id));
-  return { workout, notes, carried, problems, rejectedIds, sessionNumbers };
+  return { workout, notes, carried, comments, problems, rejectedIds, sessionNumbers };
 }
 
 /** Older sets can omit the timestamp. Screens use null for an unfinished set. */

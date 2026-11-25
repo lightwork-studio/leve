@@ -59,7 +59,6 @@ export interface ExerciseSession {
   workoutId: string;
   workoutTitle: string;
   exerciseType: string;
-  notes: string[];
   startedAt: string;
   time: number;
   /** Every set as logged, in order (for the history list). */
@@ -193,15 +192,9 @@ export function buildProgress(trees: WorkoutTree[], options: ProgressOptions): P
     };
     // This workout's sessions by exercise, so two entries of one exercise make one session. Each
     // entry's sets are measured with their own entry (dumbbell weight can count differently).
-    const here = new Map<
-      string,
-      { entry: WorkoutEntry; notes: string[]; sets: WithId<WorkoutSet>[]; part: Part }
-    >();
+    const here = new Map<string, { entry: WorkoutEntry; sets: WithId<WorkoutSet>[]; part: Part }>();
     for (const { entry, sets } of inPositionOrder(entries, (e) => e.entry.content.position)) {
-      const notes = (entry.content.notes ?? [])
-        .map((note) => note.text)
-        .filter((text) => text.trim());
-      if (!sets.length && !notes.length) continue;
+      if (!sets.length) continue;
       const id = entry.content.exerciseId;
       const own = inPositionOrder(sets, (s) => s.content.position);
       const part = sessionBest(
@@ -215,12 +208,11 @@ export function buildProgress(trees: WorkoutTree[], options: ProgressOptions): P
       );
       const group = here.get(id);
       if (group) {
-        group.notes.push(...notes);
         group.sets = [...group.sets, ...own];
         group.part = combine(group.part, part);
-      } else here.set(id, { entry: entry.content, notes, sets: own, part });
+      } else here.set(id, { entry: entry.content, sets: own, part });
     }
-    for (const [exerciseId, { entry, notes, sets, part }] of here) {
+    for (const [exerciseId, { entry, sets, part }] of here) {
       point.volumeKg += part.best.volumeKg ?? 0;
       point.reps += part.best.reps ?? 0;
       point.sets += part.counted;
@@ -247,7 +239,6 @@ export function buildProgress(trees: WorkoutTree[], options: ProgressOptions): P
         workoutId: workout.id,
         workoutTitle: workout.content.title,
         exerciseType: entry.exerciseType,
-        notes,
         startedAt: workout.content.startedAt,
         time,
         sets,

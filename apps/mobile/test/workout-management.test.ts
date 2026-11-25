@@ -18,6 +18,7 @@ import FinishScreen from "../app/workout/finish.tsx";
 import { workoutFrame } from "../src/activity/frame.ts";
 import { type WorkoutContent, workoutSession } from "../src/activity/session.ts";
 import { pickerLibrary } from "../src/data/custom-exercises.ts";
+import { addExerciseNote, workoutExerciseNotes } from "../src/data/exercise-notes.ts";
 import { type BuiltInExercise, EXERCISES } from "../src/data/exercises.ts";
 import { newId } from "../src/data/ids.ts";
 import {
@@ -35,7 +36,6 @@ import { saveSettings } from "../src/data/settings-actions.ts";
 import { saveShowTargets } from "../src/data/show-targets.ts";
 import {
   addExercise,
-  addExerciseNote,
   addHistoricalExercises,
   addHistoricalSet,
   addSet,
@@ -495,9 +495,14 @@ it("keeps a note draft focused while its sheet adjusts and skips the same workou
   expect(document.activeElement).toBe(input);
   expect(input.value).toBe("Hold at the top");
   await press("Save exercise note");
-  expect(readWorkoutTree(store, id)?.entries[0]?.entry.content.notes?.[0]?.text).toBe(
-    "Hold at the top",
-  );
+  expect(store.list("exercise_note").map((note) => note.content)).toEqual([
+    expect.objectContaining({
+      exerciseId: EXERCISES.bench.id,
+      workoutId: id,
+      pinned: false,
+      text: "Hold at the top",
+    }),
+  ]);
 });
 
 it("allows tab navigation to the rest controls without advancing the edited set field", async () => {
@@ -689,7 +694,7 @@ it("requires a fresh confirmation after cancelling and deletes only the selected
   const [first] = store.list("workout_set", { parentId: entry });
   if (!first) throw new Error("Missing first set");
   logSet(store, first.id, { weightKg: 20, reps: 8 });
-  finishWorkout(store, id, { title: "Selected session", description: "", countForRoutine: false });
+  finishWorkout(store, id, { title: "Selected session", countForRoutine: false });
   const selected = readWorkoutTree(store, id)?.workout;
   if (!selected) throw new Error("Missing saved session");
   const other = beginWorkout(store);
@@ -720,7 +725,6 @@ it("requires a fresh confirmation after cancelling and deletes only the selected
 it("lets the lifter correct an invalid duration and save it from workout history", async () => {
   store.put("workout", "evening", {
     title: "Evening",
-    description: "",
     routineId: null,
     startedAt: "2021-01-02T23:55:00.000Z",
     endedAt: "2021-01-03T01:05:20.000Z",
@@ -805,7 +809,6 @@ it("logs the corrected stopwatch value after minimising, even with another durat
   logSet(store, prior.setId, { durationSeconds: 62 });
   finishWorkout(store, prior.workoutId, {
     title: "Earlier",
-    description: "",
     countForRoutine: false,
   });
   const current = addPlank();
@@ -841,7 +844,7 @@ it("opens a saved duration as a clock time and stores a clock-formatted correcti
   const [planned] = store.list("workout_set", { parentId: entry });
   if (!planned) throw new Error("Missing plank set");
   logSet(store, planned.id, { durationSeconds: 75.5 });
-  finishWorkout(store, id, { title: "Mobility", description: "", countForRoutine: false });
+  finishWorkout(store, id, { title: "Mobility", countForRoutine: false });
   const set = readWorkoutTree(store, id)?.entries[0]?.sets[0];
   if (!set) throw new Error("Missing saved plank");
   const open = () =>
@@ -1163,12 +1166,12 @@ it("keeps the moved exercise’s control and unfinished set together through rep
   expect(store.list("workout_set", { parentId: first })[0]?.content?.completedAt).toBeNull();
 });
 
-it("saves notes during a workout and protects a newer note when the editor is stale", async () => {
+it("saves a running workout's name and protects a newer name when the editor is stale", async () => {
   const id = beginWorkout(store);
   const render = () => act(() => root.render(h(ActiveWorkoutScreen)));
   const edit = async (value: string) => {
-    const input = host.querySelector<HTMLInputElement>('input[aria-label="Workout description"]');
-    if (!input) throw Error("Missing workout notes");
+    const input = host.querySelector<HTMLInputElement>('input[aria-label="Workout name"]');
+    if (!input) throw Error("Missing workout name");
     await act(() => {
       input.value = value;
       input.dispatchEvent(new Event("input", { bubbles: true }));
@@ -1179,28 +1182,29 @@ it("saves notes during a workout and protects a newer note when the editor is st
     if (!row?.content) throw Error("Missing workout");
     store.put("workout", id, { ...row.content, ...patch });
   };
+  const startedAt = new Date(Date.now() - 60_000).toISOString();
   await render();
   await press("Edit workout details");
   expect(host.querySelector('input[aria-label="Workout duration"]')).toBeNull();
-  await edit("Try a longer rest");
+  await edit("Leg day");
   await press("Cancel");
-  expect(store.get("workout", id)?.content?.description).toBe("");
+  expect(store.get("workout", id)?.content?.title).toBe("");
   await press("Edit workout details");
-  await edit("Try a longer rest");
-  changeStored({ title: "Evening session" });
+  await edit("Leg day");
+  changeStored({ startedAt });
   await press("Save changes");
   expect(store.get("workout", id)?.content).toMatchObject({
-    title: "Evening session",
-    description: "Try a longer rest",
+    title: "Leg day",
+    startedAt,
     endedAt: null,
   });
   await render();
   await press("Edit workout details");
   await edit("My draft");
-  changeStored({ description: "Updated on another device" });
+  changeStored({ title: "Updated on another device" });
   await press("Save changes");
   expect(host.textContent).toContain("Workout details changed");
-  expect(store.get("workout", id)?.content?.description).toBe("Updated on another device");
+  expect(store.get("workout", id)?.content?.title).toBe("Updated on another device");
 });
 
 it.each(["startedAt", "endedAt"] as const)(
@@ -1208,7 +1212,6 @@ it.each(["startedAt", "endedAt"] as const)(
   async (field) => {
     const schedule = {
       title: "Evening",
-      description: "",
       routineId: null,
       startedAt: "2021-01-02T18:00:00.000Z",
       endedAt: "2021-01-02T19:00:00.000Z",
@@ -1264,9 +1267,9 @@ it("shows the records before saving, then saves the workout and opens History at
   expect(
     host.querySelector<HTMLButtonElement>('button[aria-label="Back to the workout"]')?.disabled,
   ).toBe(true);
-  expect(
-    host.querySelector('input[aria-label="Workout description"]')?.closest("[inert]"),
-  ).toBeInstanceOf(HTMLElement);
+  expect(host.querySelector('input[aria-label="Workout note"]')?.closest("[inert]")).toBeInstanceOf(
+    HTMLElement,
+  );
   expect(store.get("workout", id)?.content?.endedAt).toBeNull();
   expect(navigateRoute).not.toHaveBeenCalled();
   await act(feedback.release);
@@ -1396,30 +1399,64 @@ it("discards the workout from Finish only once the action sheet is confirmed", a
   expect(store.activeWorkout()).toBeNull();
 });
 
-it("keeps a Finish note draft open if another device changes the same note while typing", async () => {
+it("keeps a Finish note draft open if another device renames the workout while typing", async () => {
   const id = beginWorkout(store);
   const entry = addExercise(store, id, EXERCISES.plank, 30);
   const set = store.list("workout_set", { parentId: entry })[0];
   if (!set) throw Error("Missing set");
   logSet(store, set.id, { durationSeconds: 30 });
   await act(() => root.render(h(FinishScreen)));
-  const field = host.querySelector<HTMLInputElement>('input[aria-label="Workout description"]');
-  if (!field) throw Error("Missing Finish notes field");
-  await act(() => {
-    field.value = "Local draft";
-    field.dispatchEvent(new Event("input", { bubbles: true }));
-  });
+  const type = async (label: string, value: string) => {
+    const input = host.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`);
+    if (!input) throw Error(`Missing ${label}`);
+    await act(() => {
+      input.value = value;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    return input;
+  };
+  await type("Workout name", "Core");
+  const field = await type("Workout note", "Local draft");
   const row = store.get("workout", id);
   if (!row?.content) throw Error("Missing workout");
-  store.put("workout", id, { ...row.content, description: "New note on another device" });
+  store.put("workout", id, { ...row.content, title: "Renamed on another device" });
   await act(() => root.render(h(FinishScreen)));
   await press("Save workout");
   expect(host.textContent).toContain("Workout details changed");
   expect(field.value).toBe("Local draft");
   expect(store.get("workout", id)?.content).toMatchObject({
-    description: "New note on another device",
+    title: "Renamed on another device",
     endedAt: null,
   });
+  expect(store.list("workout_note")).toEqual([]);
+});
+
+it("saves the Finish note as an unpinned note on the workout", async () => {
+  const id = beginWorkout(store);
+  const entry = addExercise(store, id, EXERCISES.plank, 30);
+  const set = store.list("workout_set", { parentId: entry })[0];
+  if (!set) throw Error("Missing set");
+  logSet(store, set.id, { durationSeconds: 30 });
+  await act(() => root.render(h(FinishScreen)));
+  const field = host.querySelector<HTMLInputElement>('input[aria-label="Workout note"]');
+  if (!field) throw Error("Missing Finish notes field");
+  await act(() => {
+    field.value = "  Felt strong  ";
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await press("Save workout");
+  await act(feedback.release);
+  const endedAt = store.get("workout", id)?.content?.endedAt;
+  expect(endedAt).toEqual(expect.any(String));
+  expect(store.list("workout_note").map((note) => note.content)).toEqual([
+    {
+      workoutId: id,
+      pinned: false,
+      text: "Felt strong",
+      createdAt: expect.any(String),
+      agent: null,
+    },
+  ]);
 });
 
 it("cancels rest when undoing its set and keeps rest when undoing an earlier set", async () => {
@@ -2059,7 +2096,6 @@ it("omits the planned effort caption and logs effort only when entered", async (
     title: "Effort targets",
     folderId: null,
     position: 1,
-    notes: "",
     exercises: plan.map((entry) => ({
       ...entry,
       restSeconds: 0,
@@ -2102,7 +2138,6 @@ it("keeps the original effort scale and numbers in a running workout and in hist
       },
     ],
     readSettings(store),
-    "",
     "rir",
   );
   const originalId = beginWorkout(store, routineId);
@@ -2184,7 +2219,6 @@ it("shows planned effort in the dock and can record actual effort with captions 
       },
     ],
     readSettings(store),
-    "",
     "rpe",
   );
   const workout = beginWorkout(store, routine);
@@ -2233,7 +2267,6 @@ it("records RPE 6 or less on the pad that 6− opens, in half steps from 1 to 10
       },
     ],
     readSettings(store),
-    "",
     "rpe",
   );
   saveSettings(store, { trackRepsInReserve: true });
@@ -2288,7 +2321,6 @@ it("shows a legacy RPE target beside the actual RIR without reinterpreting eithe
       },
     ],
     readSettings(store),
-    "",
     "rpe",
   );
   const workout = beginWorkout(store, routine);
@@ -2400,9 +2432,26 @@ it("shows a factual top-of-range cue only after the original working sets all qu
   expect(host.textContent).not.toContain("Last time · Top of range");
 });
 
-it("shows a routine exercise cue and saves an additional note only on that workout entry", async () => {
-  const cue = { id: "cue", text: "Pause on the chest", createdAt: "2026-03-04T08:00:00.000Z" };
-  const setup = { ...cue, id: "setup", text: "Plant both feet" };
+it("shows an exercise's pinned notes and saves an additional note on that exercise only", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+  vi.setSystemTime(new Date("2026-03-04T09:00:00.000Z"));
+  const pinned = (id: string, text: string, createdAt: string) => {
+    const content = {
+      exerciseId: EXERCISES.bench.id,
+      workoutId: null,
+      pinned: true,
+      text,
+      createdAt,
+      agent: null,
+    };
+    store.put("exercise_note", id, content);
+    return { id, ...content };
+  };
+  const cue = pinned("cue", "Pause on the chest", "2026-03-04T08:00:00.000Z");
+  const setup = pinned("setup", "Plant both feet", "2026-03-04T08:01:00.000Z");
   const plan = writePlan(
     [{ id: "planned", exercise: EXERCISES.bench, sets: [{ id: "s", values: { reps: "8" } }] }],
     readSettings(store),
@@ -2412,19 +2461,19 @@ it("shows a routine exercise cue and saves an additional note only on that worko
     effortScale: null,
     position: 1,
     folderId: null,
-    notes: "",
-    exercises: plan.map((e) => ({ ...e, notes: [cue, setup] })),
+    exercises: plan,
   };
   store.put("routine", "template", template);
   const workout = beginWorkout(store, "template");
   const entry = store.list("workout_exercise", { parentId: workout })[0];
   if (!entry?.content) throw Error("Missing planned exercise");
-  const other = addExercise(store, workout, EXERCISES.bench, 0);
+  addExercise(store, workout, EXERCISES.squat, 0);
   const render = () => act(() => root.render(h(ActiveWorkoutScreen)));
   await render();
+  expect(host.querySelector('button[aria-label^="Exercise notes for Squat"]')).toBeNull();
   const disclosure = host.querySelector('button[aria-label="Exercise notes for Bench Press, 2"]');
   const panel = disclosure?.parentElement;
-  if (!panel) throw Error("Missing cue disclosure");
+  if (!panel) throw Error("Missing note disclosure");
   expect(panel.textContent).toContain("Pause on the chest");
   expect(panel.textContent).not.toContain("Plant both feet");
   await press("Exercise notes for Bench Press, 2");
@@ -2439,7 +2488,7 @@ it("shows a routine exercise cue and saves an additional note only on that worko
     ),
   ].find((button) => button !== disclosure);
   const card = sheetDisclosure?.parentElement;
-  if (!sheetDisclosure || !card || card === panel) throw Error("Missing sheet cue disclosure");
+  if (!sheetDisclosure || !card || card === panel) throw Error("Missing sheet note disclosure");
   expect(card.textContent).not.toContain("Plant both feet");
   await act(() => sheetDisclosure.click());
   expect(sheetDisclosure.getAttribute("aria-expanded")).toBe("true");
@@ -2461,34 +2510,52 @@ it("shows a routine exercise cue and saves an additional note only on that worko
   expect(
     host.querySelector<HTMLInputElement>('input[aria-label="Note for Bench Press"]')?.value,
   ).toBe("  Narrower grip  ");
-  const addedElsewhere = { ...cue, id: "parallel", text: "Move the hooks" };
-  store.put("workout_exercise", entry.id, {
-    ...entry.content,
-    notes: [cue, setup, addedElsewhere],
-  });
+  vi.setSystemTime(new Date("2026-03-04T09:10:00.000Z"));
+  // Written on another device while the draft was open.
+  const addedElsewhere = {
+    exerciseId: EXERCISES.bench.id,
+    workoutId: workout,
+    pinned: false,
+    text: "Move the hooks",
+    createdAt: "2026-03-04T09:05:00.000Z",
+    agent: null,
+  };
+  store.put("exercise_note", "parallel", addedElsewhere);
   await press("Save exercise note");
   await render();
-  const notes = readWorkoutTree(store, workout)?.entries[0]?.entry.content.notes;
-  expect(notes).toEqual([
-    cue,
-    setup,
-    addedElsewhere,
-    { id: expect.any(String), createdAt: expect.any(String), text: "Narrower grip" },
-  ]);
-  expect(store.get("workout_exercise", other)?.content?.notes).toEqual([]);
+  expect(
+    host.querySelector('button[aria-label="Exercise notes for Bench Press, 4"]'),
+  ).not.toBeNull();
+  const added = {
+    id: expect.any(String),
+    exerciseId: EXERCISES.bench.id,
+    workoutId: workout,
+    pinned: false,
+    text: "Narrower grip",
+    createdAt: "2026-03-04T09:10:00.000Z",
+    agent: null,
+  };
+  const notes = () =>
+    store
+      .list("exercise_note")
+      .sort((a, b) => String(a.content?.createdAt).localeCompare(String(b.content?.createdAt)))
+      .map(({ id, content }) => ({ id, ...content }));
+  expect(notes()).toEqual([cue, setup, { id: "parallel", ...addedElsewhere }, added]);
   expect(store.get("routine", "template")?.content).toEqual(template);
   const first = store.list("workout_set", { parentId: entry.id })[0];
   if (!first) throw Error("Missing set");
   logSet(store, first.id, { weightKg: 60, reps: 8 });
+  vi.setSystemTime(new Date("2026-03-04T10:00:00.000Z"));
   finishWorkout(store, workout, { countForRoutine: false });
-  expect(progressData(store).index.byExercise.get(EXERCISES.bench.id)?.sessions[0]?.notes).toEqual([
-    "Pause on the chest",
-    "Plant both feet",
-    "Move the hooks",
-    "Narrower grip",
-  ]);
+  vi.setSystemTime(new Date("2026-03-05T09:00:00.000Z"));
   const next = beginWorkout(store, "template");
-  expect(readWorkoutTree(store, next)?.entries[0]?.entry.content.notes).toEqual([cue, setup]);
+  // The pinned notes come back every time, and the other two once, in the next workout.
+  expect(workoutExerciseNotes(store, next).get(EXERCISES.bench.id)).toEqual({
+    pinned: [cue, setup],
+    lastTime: [added, { id: "parallel", ...addedElsewhere }],
+    today: [],
+  });
+  expect(notes()).toHaveLength(4);
 });
 
 it("adds a missed set from a finished workout without changing its timeline or any other logged set", async () => {
@@ -2521,7 +2588,7 @@ it("adds a missed set from a finished workout without changing its timeline or a
   const open = () => act(() => root.render(h(WorkoutDetailScreen)));
   await open();
   expect(host.querySelector('[aria-label="Add set to Bench Press"]')).toBeNull();
-  finishWorkout(store, detailId, { title: "Earlier", description: "", countForRoutine: true });
+  finishWorkout(store, detailId, { title: "Earlier", countForRoutine: true });
   vi.setSystemTime(new Date("2023-06-05T16:00:00Z"));
   removeWorkoutSet(store, hold.id);
   const saved = store.get("workout", detailId);
@@ -2692,7 +2759,7 @@ it("records zero reps in reserve before completion, then clears it without chang
   logSet(store, first.id, { reps: 8, weightKg: 60 });
   await showWorkout();
   expect(reserveCell()).toBe("0");
-  finishWorkout(store, id, { title: "Bench", description: "", countForRoutine: false });
+  finishWorkout(store, id, { title: "Bench", countForRoutine: false });
   const before = store.get("workout_set", first.id)?.content;
   await open();
   await enter("");
@@ -2960,7 +3027,7 @@ it.each(["running", "history"] as const)(
     if (!set) throw Error("Missing bench set");
     logSet(store, set.id, { weightKg: 15, reps: 8, planSlot: { exercise: 0, set: 0 } });
     if (screen === "history")
-      finishWorkout(store, detailId, { title: "Bench", description: "", countForRoutine: false });
+      finishWorkout(store, detailId, { title: "Bench", countForRoutine: false });
     const outgoing = store.prepareSubmissions("1.0");
     store.applyPushResults(
       outgoing.map(({ submission }, i) => ({
@@ -3114,7 +3181,7 @@ function acknowledgedBenchPair() {
   if (!first) throw Error("Missing bench set");
   const second = addSet(store, entry);
   for (const id of [first.id, second]) logSet(store, id, { reps: 6, weightKg: 45 });
-  finishWorkout(store, detailId, { title: "Morning", description: "", countForRoutine: false });
+  finishWorkout(store, detailId, { title: "Morning", countForRoutine: false });
   const another = beginWorkout(store);
   const uploads = store.prepareSubmissions("1.0");
   store.applyPushResults(
@@ -3455,36 +3522,56 @@ it("identifies a custom exercise with no earlier sessions from the workout entry
 });
 
 it("keeps each exercise's saved notes readable on the finished workout", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+  vi.setSystemTime(new Date("2026-03-04T09:00:00.000Z"));
+  // Pinned on the exercise screen, outside any workout: not one written in this one.
+  addExerciseNote(store, {
+    exerciseId: EXERCISES.bench.id,
+    workoutId: null,
+    text: "Keep the elbows tucked",
+    pinned: true,
+  });
   detailId = beginWorkout(store);
   const first = addExercise(store, detailId, EXERCISES.bench, 0);
-  const second = addExercise(store, detailId, EXERCISES.bench, 0);
+  const second = addExercise(store, detailId, EXERCISES.squat, 0);
   const third = addExercise(store, detailId, EXERCISES.plank, 0);
   for (const entry of [first, second, third]) {
     const set = store.list("workout_set", { parentId: entry })[0];
     if (!set) throw Error("Missing workout set");
     logSet(store, set.id, entry === third ? { durationSeconds: 45 } : { weightKg: 40, reps: 8 });
   }
-  addExerciseNote(store, detailId, first, "Use the narrow grip");
-  addExerciseNote(store, detailId, first, "Paused on the last rep");
-  addExerciseNote(store, detailId, second, "Wide grip");
+  const write = (exercise: BuiltInExercise, text: string, at: string) => {
+    vi.setSystemTime(new Date(at));
+    addExerciseNote(store, { exerciseId: exercise.id, workoutId: detailId, text, pinned: false });
+  };
+  write(EXERCISES.bench, "Use the narrow grip", "2026-03-04T09:10:00.000Z");
+  write(EXERCISES.bench, "Paused on the last rep", "2026-03-04T09:20:00.000Z");
+  write(EXERCISES.squat, "Wide stance", "2026-03-04T09:30:00.000Z");
+  vi.setSystemTime(new Date("2026-03-04T10:00:00.000Z"));
   finishWorkout(store, detailId, { countForRoutine: false });
   await act(() => root.render(h(WorkoutDetailScreen)));
-  const cards = [...host.querySelectorAll("[data-destination]")]
-    .filter((link) => link.textContent === "Bench PressTrend ›")
-    .map((heading) => heading.parentElement);
-  expect(cards).toHaveLength(2);
-  expect(cards[0]?.textContent).toContain("Use the narrow grip");
-  expect(cards[0]?.textContent).not.toContain("Wide grip");
-  expect(cards[1]?.textContent).toContain("Wide grip");
-  expect(cards[1]?.textContent).not.toContain("Use the narrow grip");
+  const card = (name: string) =>
+    [...host.querySelectorAll("[data-destination]")].find(
+      (link) => link.textContent === `${name}Trend ›`,
+    )?.parentElement;
+  const bench = card("Bench Press");
+  const squat = card("Squat");
+  if (!bench || !squat) throw Error("Missing exercise cards");
+  expect(bench.textContent).toContain("Use the narrow grip");
+  expect(bench.textContent).not.toContain("Wide stance");
+  expect(squat.textContent).toContain("Wide stance");
+  expect(squat.textContent).not.toContain("Use the narrow grip");
   expect(host.textContent).not.toContain("Paused on the last rep");
+  expect(host.textContent).not.toContain("Keep the elbows tucked");
   await press("Exercise notes for Bench Press, 2");
-  expect(cards[0]?.textContent).toContain("Paused on the last rep");
-  expect(cards[1]?.textContent).not.toContain("Paused on the last rep");
+  expect(bench.textContent).toContain("Paused on the last rep");
+  expect(squat.textContent).not.toContain("Paused on the last rep");
+  expect(host.textContent).not.toContain("Keep the elbows tucked");
   expect(
-    host
-      .querySelector('[aria-label="Exercise notes for Bench Press, 1"]')
-      ?.getAttribute("aria-expanded"),
+    host.querySelector('[aria-label="Exercise notes for Squat, 1"]')?.getAttribute("aria-expanded"),
   ).toBe("false");
   expect(host.querySelector('[aria-label*="Exercise notes for Plank"]')).toBeNull();
   expect(host.textContent).not.toContain("Add exercise note");
@@ -3640,7 +3727,6 @@ it("shows each superset on the live and completed cards independently of its tem
     exerciseId: EXERCISES.bench.id,
     exerciseName: `Press ${i + 1}`,
     exerciseType: "weight_reps",
-    notes: [],
     supersetId,
     restSeconds: 60,
     useRepRange: false,
@@ -3661,7 +3747,6 @@ it("shows each superset on the live and completed cards independently of its tem
   }));
   const template = {
     title: "Paired presses",
-    notes: "",
     folderId: null,
     position: 0,
     exercises: plan,
@@ -3698,7 +3783,6 @@ it("shows each superset on the live and completed cards independently of its tem
   );
   finishWorkout(store, detailId, {
     title: "Paired presses",
-    description: "",
     countForRoutine: false,
   });
   await act(() => root.render(h(WorkoutDetailScreen)));
@@ -3779,7 +3863,7 @@ describe("the logging dock and the number pad", () => {
     for (let i = 1; i < sets; i++) addSet(store, entry);
     for (const set of store.list("workout_set", { parentId: entry }))
       logSet(store, set.id, { weightKg: 80, reps: 8 });
-    finishWorkout(store, past, { title: "Earlier", description: "", countForRoutine: false });
+    finishWorkout(store, past, { title: "Earlier", countForRoutine: false });
   };
   const sets = (entry: string) =>
     store
@@ -4308,13 +4392,21 @@ describe("the minimised workout", () => {
     const workout = beginWorkout(store);
     const row = store.get("workout", workout);
     if (!row?.content) throw Error("Missing workout");
-    store.put("workout", workout, {
-      ...row.content,
-      title: "Training",
-      description: "PRIVATE DESCRIPTION",
+    store.put("workout", workout, { ...row.content, title: "Training" });
+    store.put("workout_note", "private", {
+      workoutId: workout,
+      pinned: false,
+      text: "PRIVATE WORKOUT NOTE",
+      createdAt: String(row.content.startedAt),
+      agent: null,
     });
     const bench = addExercise(store, workout, EXERCISES.bench, 60);
-    addExerciseNote(store, workout, bench, "PRIVATE NOTE");
+    addExerciseNote(store, {
+      exerciseId: EXERCISES.bench.id,
+      workoutId: workout,
+      text: "PRIVATE NOTE",
+      pinned: true,
+    });
     const set = store.list("workout_set", { parentId: bench })[0];
     if (!set) throw Error("Missing set");
     updateSet(store, set.id, { weightKg: 50, reps: 8 });
@@ -4398,7 +4490,7 @@ describe("the minimised workout", () => {
     const before = addExercise(store, past, EXERCISES.bench, 0);
     for (const set of store.list("workout_set", { parentId: before }))
       logSet(store, set.id, { weightKg: 80, reps: 8 });
-    finishWorkout(store, past, { title: "Earlier", description: "", countForRoutine: false });
+    finishWorkout(store, past, { title: "Earlier", countForRoutine: false });
     const workout = beginWorkout(store);
     const bench = addExercise(store, workout, EXERCISES.bench, 60);
     addSet(store, bench);

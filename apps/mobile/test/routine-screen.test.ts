@@ -158,13 +158,6 @@ const alertText = (root: Root) =>
     .flatMap((alert) => alert.findAllByType(Text).flatMap((text) => text.children))
     .filter((part) => typeof part === "string")
     .join(" ");
-/** Opens the routine's notes, which are written in a sheet. */
-const openNotes = (root: Root) =>
-  act(() =>
-    root
-      .find((n) => n.props.accessibilityLabel?.startsWith("Notes, ") && n.props.onPress)
-      .props.onPress(),
-  );
 /** Removes an exercise from its menu, confirming in the action sheet. */
 const removeExercise = async (root: Root, exercise: string) => {
   await menuItem(root, exercise, "Remove from routine");
@@ -228,14 +221,6 @@ it("selects the last folder in the scrollable form and saves the chosen exercise
     await act(() =>
       root.findByProps({ accessibilityLabel: "Routine name" }).props.onChangeText("Friday"),
     );
-    // Notes open in a sheet from their row.
-    await act(() => root.findByProps({ accessibilityLabel: "Notes, none" }).props.onPress());
-    await act(() =>
-      root
-        .findByProps({ accessibilityLabel: "Routine notes" })
-        .props.onChangeText("Bring straps.\nUse rack two."),
-    );
-    expect(root.findAllByProps({ accessibilityLabel: "Notes, Bring straps." })).not.toHaveLength(0);
     await pressText("Add exercise");
     const picker = root.find((n) => typeof n.props.onPickMany === "function");
     expect(picker.props.selectionLimit).toBe(50);
@@ -314,18 +299,10 @@ it("selects the last folder in the scrollable form and saves the chosen exercise
     expect(
       root.findAllByProps({ accessibilityLabel: "Bench Press rest, 1:15. Change it" }),
     ).toHaveLength(1);
-    await menuItem(root, "Bench Press", "Cues");
-    await pressText("Add cue");
-    await act(() =>
-      root
-        .findByProps({ accessibilityLabel: "Bench Press cue 1" })
-        .props.onChangeText("  Lower with control  "),
-    );
     await pressText("Save routine");
     expect(store.list("routine").map((r) => r.content)).toMatchObject([
       {
         title: "Friday",
-        notes: "Bring straps.\nUse rack two.",
         folderId: "f20",
         exercises: [
           {
@@ -344,9 +321,6 @@ it("selects the last folder in the scrollable form and saves the chosen exercise
     expect(liveData(store)?.initialPlan?.exercises[0]?.sets[0]?.rpe).toBe(7.5);
     const work = store.list("workout_exercise", { parentId: workoutId })[0];
     if (!work) throw Error("Missing workout exercise");
-    expect(work.content?.notes).toEqual([
-      { id: expect.any(String), createdAt: expect.any(String), text: "Lower with control" },
-    ]);
     expect(work.content?.restSeconds).toBe(75);
     expect(store.list("workout_set", { parentId: work.id })[0]?.content?.type).toBe("warmup");
     setExerciseRest(store, workoutId, work.id, "0");
@@ -417,7 +391,6 @@ const entry = {
   exerciseId: "retired-id",
   exerciseName: "Old press",
   exerciseType: "weight_reps",
-  notes: [{ id: "cue", text: "Pause", createdAt: "2026-11-01T00:00:00.000Z" }],
   supersetId: 3,
   restSeconds: 77,
   useRepRange: true,
@@ -426,7 +399,6 @@ const entry = {
 const routine = {
   title: "Monday",
   folderId: null,
-  notes: "Cue",
   position: 6,
   exercises: [entry],
   effortScale: null,
@@ -454,8 +426,6 @@ it("opens a routine that arrives after its link and keeps edits through later up
     store.put("routine", "routine", incoming);
     await refresh();
     expect(field("Routine name").props.value).toBe("Monday");
-    await openNotes(root);
-    expect(field("Routine notes").props.value).toBe("Cue");
     expect(field("Old press set 1 Min reps").props.value).toBe("7");
     const folder = root.find((n) => n.type === ("MenuRow" as never) && n.props.label === "Folder");
     expect(folder.props.value).toBe("Strength");
@@ -472,62 +442,14 @@ it("opens a routine that arrives after its link and keeps edits through later up
     store.delete("routine", "routine");
     await refresh();
     expect(root.findAllByProps({ accessibilityLabel: "Routine name" })).toHaveLength(0);
-    store.put("routine", "routine", { ...incoming, notes: "Use rack two" });
+    store.put("routine", "routine", { ...incoming, position: 7 });
     await refresh();
     expect(field("Routine name").props.value).toBe("Heavy day");
     await tapText(root, "Save routine");
     expect(store.get("routine", "routine")?.content).toEqual({
       ...incoming,
       title: "Heavy day",
-      notes: "Use rack two",
-    });
-  } finally {
-    await act(() => rendered?.unmount());
-    store.close();
-    vi.unstubAllGlobals();
-  }
-});
-
-it("clears saved routine notes and retains the draft if another edit arrived", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  store = await openDeviceStore({
-    engine: createSqlJsEngine(await initSqlJs()),
-    path: "/routine-notes",
-    appVersion: "test",
-  });
-  let rendered: ReactTestRenderer | undefined;
-  try {
-    store.put("routine", "routine", routine);
-    await act(() => {
-      rendered = create(createElement(RoutineDetails));
-    });
-    if (!rendered) throw Error("Missing editor");
-    let root = rendered.root;
-    const notes = () => root.findByProps({ accessibilityLabel: "Routine notes" });
-    const save = () => tapText(root, "Save routine");
-    await openNotes(root);
-    expect(notes().props.value).toBe("Cue");
-    await act(() => notes().props.onChangeText(""));
-    store.put("routine", "routine", { ...routine, notes: "Updated elsewhere" });
-    await save();
-    expect(alertText(root)).toMatch(/notes changed/i);
-    expect(store.get("routine", "routine")?.content?.notes).toBe("Updated elsewhere");
-    expect(notes().props.value).toBe("");
-    await act(() => rendered?.update(createElement(RoutineDetails, { key: "reopen" })));
-    root = rendered.root;
-    await openNotes(root);
-    expect(notes().props.value).toBe("Updated elsewhere");
-    await act(() => notes().props.onChangeText(""));
-    store.put("routine", "routine", {
-      ...routine,
-      title: "Newer title",
-      notes: "Updated elsewhere",
-    });
-    await save();
-    expect(store.get("routine", "routine")?.content).toEqual({
-      ...routine,
-      title: "Newer title",
-      notes: "",
+      position: 7,
     });
   } finally {
     await act(() => rendered?.unmount());
@@ -870,117 +792,6 @@ it("keeps stored targets when a blank stored set gets a typed value", async () =
   }
 });
 
-it("edits template cues for the next workout and leaves the current workout's cues intact", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  store = await openDeviceStore({
-    engine: createSqlJsEngine(await initSqlJs()),
-    path: "/routine-cues",
-    appVersion: "test",
-  });
-  let rendered: ReactTestRenderer | undefined;
-  try {
-    const remove = { id: "obsolete", text: "Old cue", createdAt: "2026-11-01T00:00:00.000Z" };
-    store.put("routine", "routine", {
-      ...routine,
-      exercises: [{ ...entry, notes: [...entry.notes, remove] }],
-    });
-    const workout = beginWorkout(store, "routine");
-    await act(() => {
-      rendered = create(createElement(RoutineDetails));
-    });
-    if (!rendered) throw Error("Missing routine editor");
-    const root = rendered.root;
-    const tap = (label: string) =>
-      act(() => root.findByProps({ accessibilityLabel: label }).props.onPress());
-    const type = (label: string, value: string) =>
-      act(() => root.findByProps({ accessibilityLabel: label }).props.onChangeText(value));
-    const press = (label: string) => tapText(root, label);
-    await menuItem(root, "Old press", "Cues");
-    await type("Old press cue 1", "Pause for two seconds");
-    await tap("Remove Old press cue 2");
-    await press("Add cue");
-    await press("Save routine");
-    expect(alertText(root)).toMatch(/cue/i);
-    expect(store.get("routine", "routine")?.content?.exercises).toMatchObject([
-      { notes: [...entry.notes, remove] },
-    ]);
-    await type("Old press cue 2", "Even grip");
-    await press("Save routine");
-    const first = store.list("workout_exercise", { parentId: workout })[0];
-    if (!first) throw Error("Missing running exercise");
-    expect(first.content?.notes).toEqual([...entry.notes, remove]);
-    const set = store.list("workout_set", { parentId: first.id })[0];
-    if (!set) throw Error("Missing workout set");
-    logSet(store, set.id, { weightKg: 40, reps: 8 });
-    finishWorkout(store, workout, { countForRoutine: false });
-    const next = beginWorkout(store, "routine");
-    expect(store.list("workout_exercise", { parentId: next })[0]?.content?.notes).toEqual([
-      { ...entry.notes[0], text: "Pause for two seconds" },
-      { id: expect.any(String), createdAt: expect.any(String), text: "Even grip" },
-    ]);
-    expect(store.get("workout_exercise", first.id)?.content?.notes).toEqual([
-      ...entry.notes,
-      remove,
-    ]);
-  } finally {
-    await act(() => rendered?.unmount());
-    store.close();
-    vi.unstubAllGlobals();
-  }
-});
-
-it("keeps separate imported cue rows with the same ID and preserves untouched text", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  store = await openDeviceStore({
-    engine: createSqlJsEngine(await initSqlJs()),
-    path: "/imported-cues",
-    appVersion: "test",
-  });
-  let rendered: ReactTestRenderer | undefined;
-  try {
-    const notes = [
-      { id: "a", text: "Remove me" },
-      { id: "b", text: "  " },
-      { id: "b", text: "Grip" },
-      { id: "c", text: "  Breathe  " },
-    ].map((note) => ({ ...note, createdAt: "2026-11-01T00:00:00.000Z" }));
-    store.put("routine", "routine", { ...routine, exercises: [{ ...entry, notes }] });
-    await act(() => {
-      rendered = create(createElement(RoutineDetails));
-    });
-    if (!rendered) throw Error("Missing routine");
-    const root = rendered.root;
-    const tap = (label: string) =>
-      act(() => root.findByProps({ accessibilityLabel: label }).props.onPress());
-    await menuItem(root, "Old press", "Cues");
-    await tap("Remove Old press cue 1");
-    const fields = () =>
-      root
-        .findAllByType(TextInput)
-        .filter((n) => n.props.accessibilityLabel?.startsWith("Old press cue "));
-    expect(fields().map((n) => n.props.value)).toEqual(["  ", "Grip", "  Breathe  "]);
-    const save = () => tapText(root, "Save routine");
-    expect(fields()).toHaveLength(3);
-    await act(() =>
-      root.findByProps({ accessibilityLabel: "Old press cue 2" }).props.onChangeText("  "),
-    );
-    await save();
-    expect(store.get("routine", "routine")?.content?.exercises).toMatchObject([{ notes }]);
-    expect(alertText(root)).toMatch(/cue/i);
-    await act(() =>
-      root.findByProps({ accessibilityLabel: "Old press cue 2" }).props.onChangeText("Even grip"),
-    );
-    await tapText(root, "Save routine");
-    expect(store.get("routine", "routine")?.content?.exercises).toMatchObject([
-      { notes: [notes[1], { ...notes[2], text: "Even grip" }, notes[3]] },
-    ]);
-  } finally {
-    await act(() => rendered?.unmount());
-    store.close();
-    vi.unstubAllGlobals();
-  }
-});
-
 it.each(["empty", "conflict", "saved"])(
   "edits the stored plan through detail: %s",
   async (scenario) => {
@@ -1055,7 +866,7 @@ it.each(["empty", "conflict", "saved"])(
       await toggleReorder(rendered);
       const latest = {
         ...routine,
-        notes: "New cue",
+        position: 7,
         exercises: scenario === "conflict" ? [{ ...entry, restSeconds: 121 }] : [entry],
       };
       store.put("routine", "routine", latest);
@@ -1190,7 +1001,7 @@ it.each([
       expect(live.tree.workout.id).toBe(a);
       expect(targetValue(routineTarget(live.initialPlan, set.content), "reps")).toBe(original);
       logSet(store, set.id, { reps: 6, weightKg: 40 });
-      finishWorkout(store, a, { title: "Session A", description: "", countForRoutine: true });
+      finishWorkout(store, a, { title: "Session A", countForRoutine: true });
       const history = workoutDetail(store, a);
       expect(history?.tree.entries[0]?.sets[0]?.content).toMatchObject({ reps: 6, weightKg: 40 });
       expect(history?.tree.workout.content.initialPlan?.exercises[0]?.sets[0]).toMatchObject({
@@ -1285,9 +1096,6 @@ it("saves a named copy of the edited routine while leaving its original and runn
     const press = (label: string) => tapText(root, label);
     const enter = (label: string, value: string) =>
       act(() => root.findByProps({ accessibilityLabel: label }).props.onChangeText(value));
-    await openNotes(root);
-    expect(root.findByProps({ accessibilityLabel: "Routine notes" }).props.value).toBe("Cue");
-    await enter("Routine notes", "Travel setup");
     const folder = root.find((n) => n.type === ("MenuRow" as never) && n.props.label === "Folder");
     expect(folder.props.value).toBe("Strength");
     await act(() =>
@@ -1327,7 +1135,6 @@ it("saves a named copy of the edited routine while leaving its original and runn
       ...source,
       effortScale: "rpe",
       title: "Friday strength",
-      notes: "Travel setup",
       folderId: "travel",
       position: 1,
       exercises: [{ ...entry, sets: [{ ...target, repRangeMin: 8 }, entry.sets[1]] }],
@@ -1426,7 +1233,7 @@ it("starts an editable new routine from the logged sets of a completed workout",
     logSet(store, addSet(store, bench), { weightKg: 47, reps: 8, rpe: 8 });
     finishWorkout(store, sourceWorkout, {
       title: "Park session",
-      description: "Personal session note",
+      note: { text: "Personal session note", pinned: false },
       countForRoutine: false,
     });
     const original = store.get("workout_set", set.id)?.content;
@@ -1488,13 +1295,11 @@ it("starts an editable new routine from the logged sets of a completed workout",
     const created = store.list("routine")[0];
     expect(created?.content).toMatchObject({
       title: "Carry practice",
-      notes: "",
       exercises: [
         {
           exerciseId: carry.id,
           exerciseName: carry.name,
           restSeconds: 45,
-          notes: [],
           sets: [{ type: "drop", weightKg: 22, distanceMeters: 40.345 }],
         },
         {
@@ -1560,7 +1365,6 @@ it("opens the workout-to-routine draft when its source becomes eligible on the s
     expect(alertText(rendered.root)).toMatch(/completed workout/i);
     finishWorkout(store, sourceWorkout, {
       title: "Friday strength",
-      description: "",
       countForRoutine: false,
     });
     await refresh();
@@ -1618,7 +1422,6 @@ it("reorders by drag or by action, superset partners together, without changing 
       "Rep range",
       "Superset with Old press",
       "Reorder exercises",
-      "Cues",
       "Remove from routine",
     ]);
     await menuItem(root, "Row", "Reorder exercises");
@@ -1852,7 +1655,7 @@ it("compares two phones' routine targets and syncs the chosen local version", as
     await b.sync();
     const setTarget = (weightKg: number) => ({
       ...routine,
-      notes: weightKg === 50 ? "" : "None",
+      title: weightKg === 50 ? "Monday" : "None",
       exercises: [{ ...entry, sets: [{ ...target, weightKg }] }],
     });
     store.put("routine", "routine", setTarget(50));
@@ -1889,7 +1692,8 @@ it("compares two phones' routine targets and syncs the chosen local version", as
     const text = () => root.findAllByType(Text).map((n) => n.children.join(""));
     expect(text()).toEqual(
       expect.arrayContaining([
-        'This device · ""',
+        "Name",
+        'This device · "Monday"',
         'Server · "None"',
         "Exercise 1 · Set 1 · Load (kg)",
         "This device · 50",

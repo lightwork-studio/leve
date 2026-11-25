@@ -18,7 +18,6 @@ function tree(day: number, entries: EntrySpec[], routineId: string | null = null
       id: workoutId,
       content: {
         title: `Day ${day}`,
-        description: "",
         startedAt: new Date(start).toISOString(),
         endedAt: new Date(start + 3_600_000).toISOString(),
         routineId,

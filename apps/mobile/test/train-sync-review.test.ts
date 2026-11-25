@@ -80,7 +80,6 @@ const tapText = (root: Root, label: string) =>
 const plan = (title: string) => ({
   title,
   folderId: "f",
-  notes: "",
   position: 1,
   exercises: [],
   effortScale: null,

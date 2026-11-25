@@ -10,6 +10,7 @@
     "features": [
       "body_measurements",
       "custom_exercises",
+      "exercise_notes",
       "reps_in_reserve",
       "routines",
       "rpe",
@@ -63,6 +64,34 @@
       {
         "op": "put",
         "submissionId": "submission-3",
+        "kind": "exercise_note",
+        "id": "exercise-note-1",
+        "baseRevision": null,
+        "content": {
+          "agent": null,
+          "createdAt": "2026-11-10T18:30:00.000Z",
+          "exerciseId": "bench-press-barbell",
+          "pinned": true,
+          "text": "Seat on 3, bench at 30°",
+          "workoutId": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a01"
+        }
+      },
+      {
+        "op": "put",
+        "submissionId": "submission-4",
+        "kind": "exercise_note_comment",
+        "id": "exercise-note-comment-1",
+        "baseRevision": null,
+        "content": {
+          "agent": "Coach",
+          "createdAt": "2026-11-10T18:30:00.000Z",
+          "noteId": "exercise-note-1",
+          "text": "Try seat 4 for a longer press"
+        }
+      },
+      {
+        "op": "put",
+        "submissionId": "submission-5",
         "kind": "routine",
         "id": "routine-1",
         "baseRevision": null,
@@ -76,7 +105,6 @@
               "exerciseType": "weight_reps",
               "supersetId": null,
               "restSeconds": 120,
-              "notes": [],
               "useRepRange": true,
               "sets": [
                 {
@@ -96,14 +124,13 @@
             }
           ],
           "folderId": null,
-          "notes": "",
           "position": 1,
           "title": "Upper A"
         }
       },
       {
         "op": "put",
-        "submissionId": "submission-4",
+        "submissionId": "submission-6",
         "kind": "routine_folder",
         "id": "folder-1",
         "baseRevision": null,
@@ -114,7 +141,7 @@
       },
       {
         "op": "put",
-        "submissionId": "submission-5",
+        "submissionId": "submission-7",
         "kind": "settings",
         "id": "settings",
         "baseRevision": null,
@@ -134,12 +161,11 @@
       },
       {
         "op": "put",
-        "submissionId": "submission-6",
+        "submissionId": "submission-8",
         "kind": "workout",
         "id": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a01",
         "baseRevision": null,
         "content": {
-          "description": "",
           "endedAt": null,
           "initialPlan": {
             "title": "Push day",
@@ -153,7 +179,7 @@
       },
       {
         "op": "put",
-        "submissionId": "submission-7",
+        "submissionId": "submission-9",
         "kind": "workout_exercise",
         "id": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a02",
         "baseRevision": null,
@@ -162,13 +188,6 @@
           "exerciseId": "bench-press-barbell",
           "exerciseName": "Bench Press (Barbell)",
           "exerciseType": "weight_reps",
-          "notes": [
-            {
-              "id": "note-1",
-              "text": "Pause at the bottom",
-              "createdAt": "2026-11-10T18:30:00.000Z"
-            }
-          ],
           "position": 1,
           "restSeconds": 120,
           "supersetId": null,
@@ -177,21 +196,34 @@
       },
       {
         "op": "put",
-        "submissionId": "submission-8",
+        "submissionId": "submission-10",
         "kind": "workout_note",
         "id": "note-1",
         "baseRevision": null,
         "content": {
+          "agent": null,
           "createdAt": "2026-11-10T18:30:00.000Z",
-          "kind": "sticky",
-          "reply": null,
-          "text": "Adjust the bench",
+          "pinned": true,
+          "text": "Deload week: two sets per exercise",
           "workoutId": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a01"
         }
       },
       {
         "op": "put",
-        "submissionId": "submission-9",
+        "submissionId": "submission-11",
+        "kind": "workout_note_comment",
+        "id": "note-comment-1",
+        "baseRevision": null,
+        "content": {
+          "agent": "Coach",
+          "createdAt": "2026-11-10T18:30:00.000Z",
+          "noteId": "note-1",
+          "text": "Back to three sets next week"
+        }
+      },
+      {
+        "op": "put",
+        "submissionId": "submission-12",
         "kind": "workout_rest",
         "id": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a01",
         "baseRevision": null,
@@ -202,7 +234,7 @@
       },
       {
         "op": "put",
-        "submissionId": "submission-10",
+        "submissionId": "submission-13",
         "kind": "workout_set",
         "id": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a03",
         "baseRevision": null,
@@ -226,7 +258,7 @@
         "submissionId": "submission-update",
         "kind": "workout_set",
         "id": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a03",
-        "baseRevision": 10,
+        "baseRevision": 13,
         "content": {
           "completedAt": "2026-11-10T18:30:00.000Z",
           "count": null,
@@ -247,12 +279,12 @@
         "submissionId": "submission-delete",
         "kind": "workout_exercise",
         "id": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a02",
-        "baseRevision": 7,
+        "baseRevision": 9,
         "descendants": [
           {
             "kind": "workout_set",
             "id": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a03",
-            "revision": 11
+            "revision": 14
           }
         ]
       }
@@ -313,13 +345,28 @@
       },
       {
         "status": "accepted",
-        "submissionId": "submission-update",
+        "submissionId": "submission-11",
         "revision": 11
       },
       {
         "status": "accepted",
-        "submissionId": "submission-delete",
+        "submissionId": "submission-12",
+        "revision": 12
+      },
+      {
+        "status": "accepted",
+        "submissionId": "submission-13",
         "revision": 13
+      },
+      {
+        "status": "accepted",
+        "submissionId": "submission-update",
+        "revision": 14
+      },
+      {
+        "status": "accepted",
+        "submissionId": "submission-delete",
+        "revision": 16
       }
     ]
   },
@@ -334,7 +381,6 @@
         "id": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a01",
         "baseRevision": 3,
         "content": {
-          "description": "",
           "endedAt": null,
           "initialPlan": {
             "title": "Push day",
@@ -402,7 +448,6 @@
           "id": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a01",
           "revision": 12,
           "content": {
-            "description": "",
             "endedAt": null,
             "initialPlan": {
               "title": "Push day",
@@ -475,9 +520,35 @@
       },
       {
         "state": "live",
+        "kind": "exercise_note",
+        "id": "exercise-note-1",
+        "revision": 3,
+        "content": {
+          "agent": null,
+          "createdAt": "2026-11-10T18:30:00.000Z",
+          "exerciseId": "bench-press-barbell",
+          "pinned": true,
+          "text": "Seat on 3, bench at 30°",
+          "workoutId": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a01"
+        }
+      },
+      {
+        "state": "live",
+        "kind": "exercise_note_comment",
+        "id": "exercise-note-comment-1",
+        "revision": 4,
+        "content": {
+          "agent": "Coach",
+          "createdAt": "2026-11-10T18:30:00.000Z",
+          "noteId": "exercise-note-1",
+          "text": "Try seat 4 for a longer press"
+        }
+      },
+      {
+        "state": "live",
         "kind": "routine",
         "id": "routine-1",
-        "revision": 3,
+        "revision": 5,
         "content": {
           "effortScale": "rir",
           "exercises": [
@@ -488,7 +559,6 @@
               "exerciseType": "weight_reps",
               "supersetId": null,
               "restSeconds": 120,
-              "notes": [],
               "useRepRange": true,
               "sets": [
                 {
@@ -508,7 +578,6 @@
             }
           ],
           "folderId": null,
-          "notes": "",
           "position": 1,
           "title": "Upper A"
         }
@@ -517,7 +586,7 @@
         "state": "live",
         "kind": "routine_folder",
         "id": "folder-1",
-        "revision": 4,
+        "revision": 6,
         "content": {
           "position": 1,
           "title": "Strength"
@@ -527,7 +596,7 @@
         "state": "live",
         "kind": "settings",
         "id": "settings",
-        "revision": 5,
+        "revision": 7,
         "content": {
           "autoUpdateRoutineValues": true,
           "countWarmups": true,
@@ -546,9 +615,8 @@
         "state": "live",
         "kind": "workout",
         "id": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a01",
-        "revision": 6,
+        "revision": 8,
         "content": {
-          "description": "",
           "endedAt": null,
           "initialPlan": {
             "title": "Push day",
@@ -564,19 +632,12 @@
         "state": "live",
         "kind": "workout_exercise",
         "id": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a02",
-        "revision": 7,
+        "revision": 9,
         "content": {
           "doubleDumbbellVolume": false,
           "exerciseId": "bench-press-barbell",
           "exerciseName": "Bench Press (Barbell)",
           "exerciseType": "weight_reps",
-          "notes": [
-            {
-              "id": "note-1",
-              "text": "Pause at the bottom",
-              "createdAt": "2026-11-10T18:30:00.000Z"
-            }
-          ],
           "position": 1,
           "restSeconds": 120,
           "supersetId": null,
@@ -587,20 +648,32 @@
         "state": "live",
         "kind": "workout_note",
         "id": "note-1",
-        "revision": 8,
+        "revision": 10,
         "content": {
+          "agent": null,
           "createdAt": "2026-11-10T18:30:00.000Z",
-          "kind": "sticky",
-          "reply": null,
-          "text": "Adjust the bench",
+          "pinned": true,
+          "text": "Deload week: two sets per exercise",
           "workoutId": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a01"
+        }
+      },
+      {
+        "state": "live",
+        "kind": "workout_note_comment",
+        "id": "note-comment-1",
+        "revision": 11,
+        "content": {
+          "agent": "Coach",
+          "createdAt": "2026-11-10T18:30:00.000Z",
+          "noteId": "note-1",
+          "text": "Back to three sets next week"
         }
       },
       {
         "state": "live",
         "kind": "workout_rest",
         "id": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a01",
-        "revision": 9,
+        "revision": 12,
         "content": {
           "seconds": 75,
           "workoutId": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a01"
@@ -610,7 +683,7 @@
         "state": "live",
         "kind": "workout_set",
         "id": "0b5c3f1e-6f1a-4c39-9a51-2f5e8d7c1a03",
-        "revision": 10,
+        "revision": 13,
         "content": {
           "completedAt": "2026-11-10T18:30:00.000Z",
           "count": null,

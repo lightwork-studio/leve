@@ -36,6 +36,7 @@ const EXPECTED_FEATURES: Record<string, string[]> = {
   "1.0": [
     "body_measurements",
     "custom_exercises",
+    "exercise_notes",
     "reps_in_reserve",
     "routines",
     "rpe",
@@ -163,7 +164,6 @@ describe.each(cases)("server $server × archived peer $peer", (matrixCase) => {
       W,
       workout("Legs", {
         endedAt: ENDED,
-        description: "Heavy",
         initialPlan: { title: "Legs", effortScale: "rpe", exercises: [] },
       }),
     ],
@@ -174,7 +174,6 @@ describe.each(cases)("server $server × archived peer $peer", (matrixCase) => {
         position: -1e15,
         supersetId: 0,
         restSeconds: 0,
-        notes: [{ id: "n1", text: "", createdAt: ENDED }],
       }),
     ],
     ["workout_set", S1, set(E, { weightKg: 0, reps: 0, rpe: null, completedAt: null })],
@@ -214,7 +213,6 @@ describe.each(cases)("server $server × archived peer $peer", (matrixCase) => {
       {
         title: "Upper A",
         effortScale: "rir",
-        notes: "",
         folderId: "f-1",
         position: 1,
         exercises: [
@@ -225,7 +223,6 @@ describe.each(cases)("server $server × archived peer $peer", (matrixCase) => {
             exerciseType: "weight_reps",
             supersetId: null,
             restSeconds: 120,
-            notes: [],
             useRepRange: false,
             sets: [
               {
@@ -676,12 +673,22 @@ it("round-trips the consolidated workout fields and records on a fresh 1.0 accou
   const writer = await world.phone("writer", opts);
   const reader = await world.phone("reader", opts);
   const plan = { title: "Strength", exercises: [] };
-  const note = {
-    workoutId: "w",
-    kind: "sticky",
-    text: "Check grip",
+  const note = { workoutId: "w", pinned: true, text: "Check grip", createdAt: ENDED, agent: null };
+  const reply = { noteId: "n", text: "Keep the same setup", createdAt: ENDED, agent: "Coach" };
+  // Written in no workout, so deleting one never takes it along.
+  const exerciseNote = {
+    exerciseId: "squat",
+    workoutId: null,
+    pinned: true,
+    text: "Belt on the top set",
     createdAt: ENDED,
-    reply: { text: "Keep the same setup", createdAt: ENDED },
+    agent: null,
+  };
+  const exerciseReply = {
+    noteId: "x",
+    text: "And for the back-off",
+    createdAt: ENDED,
+    agent: null,
   };
   writer.store.put("workout", "w", workout("Squats", { initialPlan: plan }));
   writer.store.put("workout_exercise", "e", entry("w", "Squat"));
@@ -691,9 +698,12 @@ it("round-trips the consolidated workout fields and records on a fresh 1.0 accou
     set("e", { repsInReserve: 0, planSlot: { exercise: 0, set: 0 } }),
   );
   writer.store.put("workout_note", "n", note);
+  writer.store.put("workout_note_comment", "c", reply);
+  writer.store.put("exercise_note", "x", exerciseNote);
+  writer.store.put("exercise_note_comment", "xc", exerciseReply);
   writer.store.put("workout_rest", "w", { workoutId: "w", seconds: 0 });
 
-  expect(await writer.sync()).toMatchObject({ state: "synced", pushed: 5 });
+  expect(await writer.sync()).toMatchObject({ state: "synced", pushed: 8 });
   expectSynced(await reader.sync());
   await reader.restart();
 
@@ -707,5 +717,8 @@ it("round-trips the consolidated workout fields and records on a fresh 1.0 accou
     planSlot: { exercise: 0, set: 0 },
   });
   expect(reader.store.get("workout_note", "n")?.content).toEqual(note);
+  expect(reader.store.get("workout_note_comment", "c")?.content).toEqual(reply);
+  expect(reader.store.get("exercise_note", "x")?.content).toEqual(exerciseNote);
+  expect(reader.store.get("exercise_note_comment", "xc")?.content).toEqual(exerciseReply);
   expect(reader.store.get("workout_rest", "w")?.content).toEqual({ workoutId: "w", seconds: 0 });
 });

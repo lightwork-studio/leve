@@ -82,7 +82,7 @@ it("compares a routine workout with the routine's previous session", {
   const [entry] = store.list("workout_exercise", { parentId: free });
   const [set] = store.list("workout_set", { parentId: entry?.id as string });
   logSet(store, set?.id as string, { weightKg: 100, reps: 5 });
-  finishWorkout(store, free, { title: "", description: "", countForRoutine: true });
+  finishWorkout(store, free, { title: "", countForRoutine: true });
   expect(lastTime(store, free)).toBeNull();
   const open = beginWorkout(store, "seed-routine-push");
   // Started now, its previous session is the latest finished one.
@@ -118,7 +118,7 @@ it("keeps live sets out of history and progress until finish, then reflects save
   expect(sharedProgress(store, edited.historyVersion)).toBe(initial);
   expect(recorded()).toEqual([]);
   const finished = applyAppChange(store, (s) =>
-    finishWorkout(s, workout, { title: "Bench", description: "", countForRoutine: false }),
+    finishWorkout(s, workout, { title: "Bench", countForRoutine: false }),
   );
   const saved = sharedProgress(store, finished.historyVersion);
   expect(saved.index.exercises).toHaveLength(1);
@@ -163,7 +163,7 @@ it("tracks logged sets live and in history, and credits primary and secondary se
       abdominals: 1,
     });
     expect(progressData(store).index.exercises).toHaveLength(0);
-    finishWorkout(store, id, { title: "Push", description: "", countForRoutine: true });
+    finishWorkout(store, id, { title: "Push", countForRoutine: true });
     expect(workoutDetail(store, id)?.muscleSets).toEqual({
       chest: 1,
       shoulders: 0.5,

@@ -13,7 +13,7 @@ export function workoutNoteReadOnlyReason(store: DeviceStore): string | null {
   return null;
 }
 
-/** Release a reminder without editing its source text or linked reply. */
+/** Stop a pinned note from coming back, without touching its text or comments. */
 export function unpinWorkoutNote(store: DeviceStore, workoutId: string, noteId: string) {
   const reason = workoutNoteReadOnlyReason(store);
   if (reason) throw Error(reason);
@@ -33,14 +33,29 @@ export function unpinWorkoutNote(store: DeviceStore, workoutId: string, noteId: 
     note.status === "invalid"
   )
     throw Error("Review the sync issue in the source workout before unpinning this note.");
-  if (note.content.kind === "sticky")
-    store.put("workout_note", noteId, { ...note.content, kind: "session" });
+  if (note.content.pinned === true)
+    store.put("workout_note", noteId, { ...note.content, pinned: false });
+}
+
+/**
+ * Whether notes on this workout can be pinned: pinned notes come back in later workouts of its
+ * routine, so a workout without one has nowhere for them to go.
+ */
+export function canPinWorkoutNotes(workout: { routineId?: unknown }) {
+  return typeof workout.routineId === "string";
 }
 
 export interface NoteDraft {
   text: string;
-  kind: WorkoutNote["kind"];
-  reply: string;
+  pinned: boolean;
+}
+
+/** The note text as it will be saved, or an error for one that can't be. */
+export function checkedNoteText(text: string) {
+  const trimmed = text.trim();
+  if (!trimmed) throw Error("Enter a note.");
+  if (trimmed.length > LIMITS.noteLength) throw Error("The note is too long.");
+  return trimmed;
 }
 
 /** Apply one note edit to the latest local workout. Other notes may have changed since opening. */
@@ -62,29 +77,26 @@ export function writeWorkoutNote(
     (current?.workoutId !== workoutId ||
       !current ||
       current.text !== original.text ||
-      current.kind !== original.kind ||
-      current.createdAt !== original.createdAt ||
-      current.reply?.text !== original.reply?.text ||
-      current.reply?.createdAt !== original.reply?.createdAt)
+      current.pinned !== original.pinned ||
+      current.createdAt !== original.createdAt)
   ) {
     throw Error("This note changed. Reopen it to see the latest version.");
   }
   if (currentRow?.status === "conflict")
     throw Error("Review the sync issue before editing this note.");
+  if (original && (current?.agent ?? null) !== null && draft && draft.text !== original.text)
+    throw Error("Only the agent that wrote this note can change its text.");
+  if (draft?.pinned && !current?.pinned && !canPinWorkoutNotes(row.content))
+    throw Error("Only notes on a routine workout can be pinned.");
   if (!draft && !original) return;
   if (draft) {
-    const text = draft.text.trim();
-    const answer = draft.reply.trim();
-    if (!text) throw Error("Enter a note.");
-    if (text.length > LIMITS.noteLength || answer.length > LIMITS.noteLength)
-      throw Error("The note or reply is too long.");
-    const now = new Date().toISOString();
+    const text = checkedNoteText(draft.text);
     const note = {
       workoutId,
-      createdAt: current?.createdAt ?? now,
+      createdAt: current?.createdAt ?? new Date().toISOString(),
       text,
-      kind: draft.kind,
-      reply: answer ? { text: answer, createdAt: current?.reply?.createdAt ?? now } : null,
+      pinned: draft.pinned,
+      agent: current?.agent ?? null,
     };
     store.put("workout_note", original?.id ?? newId(), note);
   } else if (original) {

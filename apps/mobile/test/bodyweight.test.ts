@@ -55,7 +55,6 @@ it("appends offline, preserves earlier workout volumes and retries the same uplo
     const startedAt = `2026-11-12T${hour}:00:00.000Z`;
     store.put("workout", hour, {
       title: "Pull-ups",
-      description: "",
       routineId: null,
       startedAt,
       endedAt: startedAt,
@@ -64,7 +63,6 @@ it("appends offline, preserves earlier workout volumes and retries the same uplo
       workoutId: hour,
       exerciseId: "builtin:pull-up",
       exerciseName: "Pull-up",
-      notes: [],
       exerciseType: "bodyweight_reps",
       position: 0,
       supersetId: null,

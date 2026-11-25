@@ -8,6 +8,7 @@ import { pickerLibrary } from "./custom-exercises.ts";
 import type { BuiltInExercise } from "./exercises.ts";
 import { newId } from "./ids.ts";
 import { parseRestSeconds } from "./settings-actions.ts";
+import { checkedNoteText, workoutNoteReadOnlyReason } from "./workout-notes.ts";
 
 // Changes to a workout in progress. Every change is stored at once, so a restart shows the workout
 // exactly as it was; the screens call these through `change()` so they render again.
@@ -399,32 +400,6 @@ function activeEntry(store: DeviceStore, workoutId: string, entryId: string) {
   return entry;
 }
 
-/** Add to this session’s entry, retaining cues already on the template or appended after the editor opened. */
-export function addExerciseNote(
-  store: DeviceStore,
-  workoutId: string,
-  entryId: string,
-  text: string,
-) {
-  const entry = activeEntry(store, workoutId, entryId);
-  const row = store.get("workout_exercise", entryId);
-  if (row?.problem || row?.fromRestore || row?.status === "conflict")
-    throw new WorkoutActionError("Resolve the sync issue on this exercise before adding a note.");
-  const trimmed = text.trim();
-  if (!trimmed || trimmed.length > LIMITS.noteLength)
-    throw new WorkoutActionError(`Enter a note of 1–${LIMITS.noteLength} characters.`);
-  const notes = entry.notes ?? [];
-  if (notes.length >= 100) throw new WorkoutActionError("This exercise already has 100 notes.");
-  store.put(
-    "workout_exercise",
-    entryId,
-    asJson({
-      ...entry,
-      notes: [...notes, { id: newId(), text: trimmed, createdAt: new Date().toISOString() }],
-    }),
-  );
-}
-
 /** Set the timer for subsequent sets of this exercise in the running workout. */
 export function setExerciseRest(
   store: DeviceStore,
@@ -524,11 +499,13 @@ export function durationEnd(startedAt: string, seconds: number, now = Date.now()
 export function finishWorkout(
   store: DeviceStore,
   workoutId: string,
-  details: Partial<Pick<Workout, "title" | "description">> & {
+  details: Partial<Pick<Workout, "title">> & {
     countForRoutine: boolean;
     durationSeconds?: number;
+    /** A note on the whole workout, written on the finish screen; blank adds none. */
+    note?: { text: string; pinned: boolean };
   },
-  original?: Partial<Pick<Workout, "title" | "description" | "startedAt" | "endedAt">>,
+  original?: Partial<Pick<Workout, "title" | "startedAt" | "endedAt">>,
 ): void {
   const workout = content<Workout>(store, "workout", workoutId);
   if (workout.endedAt) throw new WorkoutActionError("This workout has already finished.");
@@ -555,8 +532,7 @@ export function finishWorkout(
     }
     // A shared entry can gain a corrected or entirely new set after Finish, even while offline.
     // Keep the entry and delete each skipped set against its own revision.
-    const hasNotes = Array.isArray(entry.content?.notes) && entry.content.notes.length > 0;
-    if (empty && !hasNotes && store.isLocalOnlyTree("workout_exercise", entry.id)) {
+    if (empty && store.isLocalOnlyTree("workout_exercise", entry.id)) {
       removals.push({ kind: "workout_exercise", id: entry.id });
     } else {
       for (const set of unlogged) removals.push({ kind: "workout_set", id: set.id });
@@ -570,12 +546,38 @@ export function finishWorkout(
     title:
       (details.title?.trim().slice(0, LIMITS.titleLength) ?? workout.title) ||
       autoTitle(workout.startedAt),
-    description:
-      details.description?.trim().slice(0, LIMITS.descriptionLength) ?? workout.description,
     routineId: details.countForRoutine ? workout.routineId : null,
     endedAt,
   };
-  store.putAndDelete([{ kind: "workout", id: workoutId, content: asJson(finished) }], removals);
+  const writes = [{ kind: "workout", id: workoutId, content: asJson(finished) }];
+  // Not counted for its routine, the workout has no later workouts for its pinned notes.
+  if (finished.routineId === null)
+    for (const note of store.list("workout_note", { parentId: workoutId }))
+      if (note.content?.pinned === true)
+        writes.push({
+          kind: "workout_note",
+          id: note.id,
+          content: { ...note.content, pinned: false },
+        });
+  const noteText = details.note?.text.trim();
+  if (noteText) {
+    const reason = workoutNoteReadOnlyReason(store);
+    if (reason) throw new WorkoutActionError(reason);
+    writes.push({
+      kind: "workout_note",
+      id: newId(),
+      content: {
+        workoutId,
+        // Only a workout counted for its routine has later workouts for a pin to show in.
+        pinned: !!details.note?.pinned && finished.routineId !== null,
+        text: checkedNoteText(noteText),
+        // Written now, which is after the workout started even when its duration was set to zero.
+        createdAt: new Date(Math.max(Date.now(), Date.parse(workout.startedAt) + 1)).toISOString(),
+        agent: null,
+      },
+    });
+  }
+  store.putAndDelete(writes, removals);
 }
 
 /** Deletes the workout and everything in it. */
@@ -600,7 +602,7 @@ export function checkActiveDiscard(store: DeviceStore, workoutId: string) {
     throw new WorkoutActionError("The active workout changed. Review it before discarding.");
 }
 
-type WorkoutDetailsPatch = Partial<Pick<Workout, "title" | "description">> & {
+type WorkoutDetailsPatch = Partial<Pick<Workout, "title">> & {
   durationSeconds?: number;
 };
 
@@ -609,7 +611,7 @@ function checkWorkoutDraft(
   original: Partial<Workout>,
   patch: WorkoutDetailsPatch,
 ) {
-  const changed = (["title", "description"] as const).some(
+  const changed = (["title"] as const).some(
     (field) => patch[field] !== undefined && workout[field] !== original[field],
   );
   if (
@@ -648,7 +650,7 @@ export function updateRunningWorkoutDetails(
   store: DeviceStore,
   workoutId: string,
   original: Workout,
-  patch: Partial<Pick<Workout, "title" | "description">>,
+  patch: Partial<Pick<Workout, "title">>,
   rest?: WorkoutRestEdit,
 ) {
   const workout = content<Workout>(store, "workout", workoutId);
@@ -700,7 +702,6 @@ export function updateRunningWorkoutDetails(
       content: asJson({
         ...workout,
         title: patch.title?.trim() ?? workout.title,
-        description: patch.description?.trim() ?? workout.description,
       }),
     });
   if (records.length) store.putMany(records);
@@ -729,7 +730,6 @@ export function updateWorkoutDetails(
       ...workout,
       title,
       endedAt,
-      description: patch.description?.trim() ?? workout.description,
     }),
   );
 }

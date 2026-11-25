@@ -73,7 +73,6 @@ it("never seeds over a workout logged without ever opening Settings", async () =
   const store = await open();
   store.put("workout", "real", {
     title: "Real session",
-    description: "",
     startedAt: NOW.toISOString(),
     endedAt: NOW.toISOString(),
     routineId: null,

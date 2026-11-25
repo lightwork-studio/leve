@@ -28,6 +28,7 @@ import {
 import Animated, { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppData } from "../../src/data/app-data.tsx";
+import { workoutExerciseNotes } from "../../src/data/exercise-notes.ts";
 import { useLive, usePastWorkouts } from "../../src/data/queries.ts";
 import { workoutJournalData } from "../../src/data/read.ts";
 import { restProgress, restTimer, useRest } from "../../src/data/rest-timer.ts";
@@ -93,6 +94,7 @@ import {
 import { supersetMemberships } from "../../src/model/supersets.ts";
 import type { WorkoutPlan } from "../../src/model/types.ts";
 import { countsTowardTotals } from "../../src/model/volume.ts";
+import type { ExerciseCardNotes } from "../../src/model/workout-notes.ts";
 import { font, gutter, numeral, radius, space, type } from "../../src/theme.ts";
 import { DestructiveButton } from "../../src/ui/action-sheet.tsx";
 import { BottomSheet } from "../../src/ui/bottom-sheet.tsx";
@@ -356,7 +358,14 @@ export default function ActiveWorkoutScreen() {
   const needsReview =
     !!journal &&
     (journal.problems.length > 0 || carried.some(({ note }) => journal.rejectedIds.has(note.id)));
-  const coachReplies = carried.filter((item) => item.showReply).length;
+  const coachReplies = carried.filter(({ note }) =>
+    journal?.comments.get(note.id)?.some((comment) => comment.agent !== null),
+  ).length;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: notes change with the store version.
+  const exerciseNotes = useMemo(
+    () => (settled && workoutId ? workoutExerciseNotes(store, workoutId) : null),
+    [store, workoutId, version, settled],
+  );
   const rest = useRest(store, workoutId, version);
   useRestEnd(rest);
 
@@ -1613,6 +1622,7 @@ export default function ActiveWorkoutScreen() {
                       }}
                     >
                       <EntryCard
+                        notes={exerciseNotes?.get(entry.entry.content.exerciseId)}
                         actionProblem={problem}
                         headingRef={(node) => {
                           if (node) headings.current.set(entry.entry.id, node);
@@ -1985,6 +1995,7 @@ function Subline({ startedAt, sets, effort }: { startedAt: string; sets: string;
 }
 
 function EntryCard({
+  notes,
   actionProblem,
   headingRef,
   rowRef,
@@ -2036,6 +2047,7 @@ function EntryCard({
   onTimer,
   onSyncResolved,
 }: {
+  notes: ExerciseCardNotes | undefined;
   actionProblem: string | null;
   headingRef: RefCallback<ComponentRef<typeof View>>;
   rowRef: (setId: string, node: ComponentRef<typeof View> | null) => void;
@@ -2129,6 +2141,7 @@ function EntryCard({
   const done = entry.sets.filter((s) => s.content.completedAt !== null).length;
   const numbers = setNumbers(entry.sets);
   const name = entry.entry.content.exerciseName;
+  const shownNotes = notes ? [...notes.pinned, ...notes.lastTime, ...notes.today] : [];
   const restSeconds = entry.entry.content.restSeconds;
   const [showDistanceError, setShowDistanceError] = useState(false);
   const invalidDistance = entry.sets.some(({ id, content, needsSyncReview }) => {
@@ -2248,6 +2261,7 @@ function EntryCard({
               />
               <ExerciseNotes
                 entry={entry.entry}
+                notes={shownNotes}
                 expanded
                 editor={{ draft: noteDraft, setDraft: setNoteDraft }}
                 onInteract={onInteract}
@@ -2270,7 +2284,12 @@ function EntryCard({
             </View>
           </BottomSheet>
         )}
-        <ExerciseNotes entry={entry.entry} expanded={expanded} onInteract={onInteract} />
+        <ExerciseNotes
+          entry={entry.entry}
+          notes={shownNotes}
+          expanded={expanded}
+          onInteract={onInteract}
+        />
         {expanded && (
           <View style={styles.sets}>
             <View style={styles.headRow}>

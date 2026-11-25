@@ -56,7 +56,6 @@ export function routineFromWorkout(
       exerciseType,
       restSeconds: entry.restSeconds,
       supersetId: entry.supersetId,
-      notes: [],
       useRepRange: false,
       sets: logged.map(({ content: set }) => ({
         id: newId(),

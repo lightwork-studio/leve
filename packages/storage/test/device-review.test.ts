@@ -9,7 +9,7 @@ import { openPhone } from "./helpers.ts";
 afterAll(removeTempDirs);
 
 const T = "2026-11-10T08:00:00.000Z";
-const workout = { title: "Push", description: "", startedAt: T, endedAt: null, routineId: null };
+const workout = { title: "Push", startedAt: T, endedAt: null, routineId: null };
 const workoutRow = { ...workout, perceivedEffort: null };
 const entry = (workoutId: string): JsonObject => ({
   workoutId,
@@ -19,7 +19,6 @@ const entry = (workoutId: string): JsonObject => ({
   position: 1,
   supersetId: null,
   restSeconds: 120,
-  notes: [],
   doubleDumbbellVolume: false,
 });
 const set = (workoutExerciseId: string, position: number, reps = 5): JsonObject => ({
@@ -1294,11 +1293,39 @@ describe("deleting an invalid record", () => {
 });
 
 describe("preparing uploads", () => {
-  const long = (title: string) => ({ ...workout, title, description: "d".repeat(1000) });
+  // A routine of five sets: a little over 1000 bytes.
+  const long = (title: string) => ({
+    title,
+    folderId: null,
+    position: 1,
+    exercises: [
+      {
+        id: "x",
+        exerciseId: "bench",
+        exerciseName: "Bench",
+        exerciseType: "weight_reps",
+        supersetId: null,
+        restSeconds: 90,
+        useRepRange: false,
+        sets: Array.from({ length: 5 }, (_, i) => ({
+          id: `s${i}`,
+          type: "normal",
+          weightKg: 60,
+          reps: 8,
+          repRangeMin: null,
+          repRangeMax: null,
+          distanceMeters: null,
+          durationSeconds: null,
+          count: null,
+          rpe: null,
+        })),
+      },
+    ],
+  });
 
   it("stops adding submissions once the batch reaches its size limit, but sends at least one", async () => {
     const { store } = await openPhone();
-    for (const id of ["w-1", "w-2", "w-3"]) store.put("workout", id, long(id));
+    for (const id of ["w-1", "w-2", "w-3"]) store.put("routine", id, long(id));
     expect(store.prepareSubmissions("1.0", 100, 1).map((o) => o.submission.id)).toEqual(["w-1"]);
     // The submission in flight already fills the batch: nothing new is added.
     expect(store.prepareSubmissions("1.0", 100, 1).map((o) => o.submission.id)).toEqual(["w-1"]);
