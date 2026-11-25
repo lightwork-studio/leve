@@ -45,8 +45,9 @@ export function TrainSyncReview({ record }: { record: DeviceRecord }) {
     }
   };
   const title = describe(record.content ?? remote, routine ? "Routine" : "Folder");
-  // A restored server brought it back, rather than an edit on another device.
-  const restored = record.problem?.reason === "restored";
+  // A server restore set this up, rather than an edit on another device: this device may only
+  // have offered its copy again, without changing it.
+  const restored = record.problem?.reason === "restored" || record.fromRestore;
   const reordered =
     kase === "both_changed" && String(record.content?.position) !== String(remote?.position);
   const heading = {
@@ -59,10 +60,14 @@ export function TrainSyncReview({ record }: { record: DeviceRecord }) {
     ? "Save your version as a new routine"
     : "Save its name as a new, empty folder";
   const explanation = {
-    restore: restored
-      ? `You deleted “${title}” here, but the restored server still has it. Restore it to see it, then delete it again if you still want to.`
-      : `You deleted “${title}” here, but it changed on another device first. Restore it to see the changes, then delete it again if you still want to.`,
-    deleted_elsewhere: `“${title}” was deleted on another device while it had changes here. ${saveNew}, or let it go.`,
+    restore: !record.server
+      ? `You deleted “${title}” here, and the server was then restored without it. Restore the copy from before to see it, then delete it again if you still want to.`
+      : restored
+        ? `You deleted “${title}” here, but the restored server still has it. Restore it to see it, then delete it again if you still want to.`
+        : `You deleted “${title}” here, but it changed on another device first. Restore it to see the changes, then delete it again if you still want to.`,
+    deleted_elsewhere: restored
+      ? `“${title}” is deleted on the restored server. ${saveNew}, or let it go.`
+      : `“${title}” was deleted on another device while it had changes here. ${saveNew}, or let it go.`,
     missing_on_server: `The restored server has no copy of “${title}” as this device has it. ${saveNew}, or ${record.keptContent ? "use the previous server copy" : "let it go"}.`,
     both_changed: "This folder changed here and on another device.",
   }[kase];
@@ -75,7 +80,11 @@ export function TrainSyncReview({ record }: { record: DeviceRecord }) {
         </Text>
         <Text style={styles.text}>{explanation}</Text>
         {!routine && (kase === "deleted_elsewhere" || kase === "missing_on_server") && (
-          <Text style={styles.text}>Its routines stay, under Not in a folder.</Text>
+          <Text style={styles.text}>
+            {record.keptContent
+              ? "Using the previous copy brings the folder back with its routines."
+              : "Its routines stay, under Not in a folder."}
+          </Text>
         )}
       </View>
       <View style={styles.compare}>
@@ -125,16 +134,24 @@ export function TrainSyncReview({ record }: { record: DeviceRecord }) {
               <DestructiveButton
                 capture
                 label={kase === "deleted_elsewhere" ? "Accept deletion" : "Discard routine"}
-                message={`“${title}” will be deleted here too, with the changes made on this device. Workouts you logged from it stay in History.`}
+                message={`“${title}” will be deleted here too${restored ? "" : ", with the changes made on this device"}. Workouts you logged from it stay in History.`}
                 action="Delete routine"
                 keep="Keep it for now"
                 onConfirm={() => decide("keep_theirs")}
               />
-            ) : (
+            ) : kase === "deleted_elsewhere" ? (
               <Button
                 rank="primary"
-                label={kase === "deleted_elsewhere" ? "Accept deletion" : "Discard folder"}
+                label="Accept deletion"
                 onPress={() => decide("keep_theirs")}
+              />
+            ) : (
+              <DestructiveButton
+                capture
+                label="Discard folder"
+                message={`“${title}” will be removed from this device. Its routines stay, under Not in a folder.`}
+                keep="Keep it for now"
+                onConfirm={() => decide("keep_theirs")}
               />
             )}
           </>

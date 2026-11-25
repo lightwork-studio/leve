@@ -203,3 +203,25 @@ it("refuses a folder review choice once the folder changed since it was shown", 
     await act(() => rendered.unmount());
   });
 });
+
+it("deletes a routine deleted elsewhere once its deletion is confirmed", {
+  timeout: 60000,
+}, async () => {
+  await twoPhones(async (a, b) => {
+    b.store.put("routine", "r", plan("Friday heavy"));
+    deleteRoutine(a.store, "r", a.store.get("routine", "r")?.content ?? {});
+    await a.sync();
+    await b.sync();
+    const rendered = await render(b);
+    const root = rendered.root;
+    await tapText(root, "Accept deletion");
+    const sheet = root.findByType("ActionSheet" as never);
+    expect(sheet.props.action).toBe("Delete routine");
+    await act(() => sheet.props.onConfirm());
+    expect(b.store.problems()).toEqual([]);
+    expect(b.store.list("routine").filter((row) => !row.deleted)).toEqual([]);
+    await b.sync();
+    expect(b.store.prepareSubmissions("1.0")).toEqual([]);
+    await act(() => rendered.unmount());
+  });
+});
