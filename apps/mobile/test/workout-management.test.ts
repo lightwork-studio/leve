@@ -3443,22 +3443,15 @@ it("keeps the workout menu beside Review while the details have a sync issue", a
   });
 });
 
-it("returns a directly opened workout to the calendar or its source exercise", async () => {
+it("returns a directly opened workout to History or its source exercise", async () => {
   detailId = "missing-workout";
   canGoBack.mockReturnValue(false);
   const open = () => act(() => root.render(h(WorkoutDetailScreen)));
-  detailReturn = { back: "Calendar" };
-  await open();
-  await press("Calendar");
-  expect(replaceRoute).toHaveBeenLastCalledWith("/history/calendar");
-
+  // A link saved while the calendar screen existed opens on History now.
   detailReturn = { back: "Calendar", from: "progress" };
   await open();
-  await press("Calendar");
-  expect(replaceRoute).toHaveBeenLastCalledWith({
-    pathname: "/history/calendar",
-    params: { from: "progress" },
-  });
+  await press("History");
+  expect(replaceRoute).toHaveBeenLastCalledWith("/history");
 
   detailReturn = { back: "Calendar", fromExercise: "my-calendar-exercise" };
   await open();

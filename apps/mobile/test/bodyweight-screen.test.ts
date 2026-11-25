@@ -202,7 +202,7 @@ it("discards a draft and lets the user correct and save a weight in pounds", asy
   }
 });
 
-it("opens the calendar from the Progress comparison with Progress as its return screen", async () => {
+it("opens History from the Progress training-days comparison", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   store = await openDeviceStore({
     engine: createSqlJsEngine(await initSqlJs()),
@@ -228,10 +228,8 @@ it("opens the calendar from the Progress comparison with Progress as its return 
       screen = create(createElement(ProgressScreen));
     });
     if (!screen) throw new Error("Progress did not open");
-    const link = screen.root
-      .findAllByType(Link)
-      .find((item) => item.props.href.pathname === "/history/calendar");
-    expect(link?.props.href.params).toEqual({ from: "progress" });
+    const link = screen.root.findAllByType(Link).find((item) => item.props.href === "/history");
+    expect(link).toBeDefined();
     // Expo Router's asChild slot merges styles into the web anchor as an object.
     const cardStyle = link?.findByProps({ accessibilityRole: "link" }).props.style;
     expect({ ...cardStyle }).toMatchObject({
@@ -246,7 +244,7 @@ it("opens the calendar from the Progress comparison with Progress as its return 
     expect(cellText).toEqual(["Trained", "1", " days", "1 before"]);
     expect(Object.keys(cardStyle).some((key) => /^\d+$/.test(key))).toBe(false);
     expect(link?.findByProps({ accessibilityRole: "link" }).props.accessibilityLabel).toBe(
-      "Workout calendar. Training days: 1 in the last 28 days, 1 in the previous 28 days.",
+      "Workout history. Training days: 1 in the last 28 days, 1 in the previous 28 days.",
     );
   } finally {
     await act(() => screen?.unmount());
