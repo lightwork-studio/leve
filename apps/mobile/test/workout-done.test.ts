@@ -22,7 +22,6 @@ const workout = (entries: { name: string; type?: string; sets: SetSpec[] }[]): W
     id: "w",
     content: {
       title: "Push",
-      description: "",
       startedAt: "2026-11-12T17:00:00.000Z",
       endedAt: "2026-11-12T18:00:00.000Z",
       routineId: null,

@@ -163,6 +163,115 @@
         "usesBodyweight": "Volume includes the lifter's bodyweight"
       }
     },
+    "exercise_note": {
+      "content": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "nullable",
+            "of": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 60
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "minLength": 24,
+            "maxLength": 24,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+            "format": "utc-date-time"
+          },
+          "exerciseId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          },
+          "workoutId": {
+            "type": "nullable",
+            "of": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9._:-]+$"
+            }
+          }
+        },
+        "required": [
+          "agent",
+          "createdAt",
+          "exerciseId",
+          "pinned",
+          "text",
+          "workoutId"
+        ]
+      },
+      "meanings": {
+        "agent": "Name of the agent that wrote the note; null when the lifter wrote it",
+        "createdAt": "Time the note was written in UTC",
+        "exerciseId": "Built-in or custom exercise the note is about; a soft reference",
+        "pinned": "Pinned notes show on the exercise in every workout until deleted; other notes show on it in the next workout that includes the exercise",
+        "text": "The note",
+        "workoutId": "The workout in which the note was written; a soft reference, null when written outside a workout. Deleting the workout keeps the note"
+      }
+    },
+    "exercise_note_comment": {
+      "content": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "nullable",
+            "of": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 60
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "minLength": 24,
+            "maxLength": 24,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+            "format": "utc-date-time"
+          },
+          "noteId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          }
+        },
+        "required": [
+          "agent",
+          "createdAt",
+          "noteId",
+          "text"
+        ]
+      },
+      "parent": {
+        "kind": "exercise_note",
+        "field": "noteId"
+      },
+      "meanings": {
+        "agent": "Name of the agent that wrote the comment; null when the lifter wrote it",
+        "createdAt": "Time the comment was written in UTC; a comment newer than the note's last showing brings the note back once",
+        "noteId": "The exercise note this comment answers",
+        "text": "The comment"
+      }
+    },
     "routine": {
       "content": {
         "type": "object",
@@ -212,38 +321,6 @@
                   "minLength": 1,
                   "maxLength": 64,
                   "pattern": "^[A-Za-z0-9._:-]+$"
-                },
-                "notes": {
-                  "type": "array",
-                  "of": {
-                    "type": "object",
-                    "properties": {
-                      "createdAt": {
-                        "type": "string",
-                        "minLength": 24,
-                        "maxLength": 24,
-                        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-                        "format": "utc-date-time"
-                      },
-                      "id": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 64,
-                        "pattern": "^[A-Za-z0-9._:-]+$"
-                      },
-                      "text": {
-                        "type": "string",
-                        "minLength": 0,
-                        "maxLength": 10000
-                      }
-                    },
-                    "required": [
-                      "createdAt",
-                      "id",
-                      "text"
-                    ]
-                  },
-                  "maxItems": 100
                 },
                 "restSeconds": {
                   "type": "number",
@@ -404,7 +481,6 @@
                 "exerciseName",
                 "exerciseType",
                 "id",
-                "notes",
                 "restSeconds",
                 "sets",
                 "supersetId",
@@ -422,11 +498,6 @@
               "pattern": "^[A-Za-z0-9._:-]+$"
             }
           },
-          "notes": {
-            "type": "string",
-            "minLength": 0,
-            "maxLength": 2000
-          },
           "position": {
             "type": "number",
             "integer": false,
@@ -443,7 +514,6 @@
           "effortScale",
           "exercises",
           "folderId",
-          "notes",
           "position",
           "title"
         ]
@@ -452,7 +522,6 @@
         "effortScale": "Effort scale for this routine's targets and workouts started from it; absent or null for older routines",
         "exercises": "The routine's exercises in order, each with target sets (weights in kilograms, distances in metres, durations in seconds, rep ranges as min/max, and optional RPE or reps in reserve)",
         "folderId": "The folder holding the routine; null when unfiled or the folder is gone",
-        "notes": "Free-text notes on the routine",
         "position": "Order within its folder; lower first, ties ordered by id",
         "title": "Routine name"
       }
@@ -583,11 +652,6 @@
       "content": {
         "type": "object",
         "properties": {
-          "description": {
-            "type": "string",
-            "minLength": 0,
-            "maxLength": 2000
-          },
           "endedAt": {
             "type": "nullable",
             "of": {
@@ -834,7 +898,6 @@
           }
         },
         "required": [
-          "description",
           "endedAt",
           "initialPlan",
           "routineId",
@@ -843,7 +906,6 @@
         ]
       },
       "meanings": {
-        "description": "Free-text notes about the whole workout",
         "endedAt": "startedAt plus the active duration; null while the workout is in progress",
         "initialPlan": "Routine title, effort scale, and ordered exercise and set targets captured at start; null when unknown or unplanned",
         "routineId": "The routine the workout was started from, if any; a soft reference",
@@ -883,38 +945,6 @@
               "steps_duration"
             ]
           },
-          "notes": {
-            "type": "array",
-            "of": {
-              "type": "object",
-              "properties": {
-                "createdAt": {
-                  "type": "string",
-                  "minLength": 24,
-                  "maxLength": 24,
-                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-                  "format": "utc-date-time"
-                },
-                "id": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 64,
-                  "pattern": "^[A-Za-z0-9._:-]+$"
-                },
-                "text": {
-                  "type": "string",
-                  "minLength": 0,
-                  "maxLength": 10000
-                }
-              },
-              "required": [
-                "createdAt",
-                "id",
-                "text"
-              ]
-            },
-            "maxItems": 100
-          },
           "position": {
             "type": "number",
             "integer": false,
@@ -948,7 +978,6 @@
           "exerciseId",
           "exerciseName",
           "exerciseType",
-          "notes",
           "position",
           "restSeconds",
           "supersetId",
@@ -964,7 +993,6 @@
         "exerciseId": "Built-in or custom exercise id; a soft reference",
         "exerciseName": "The exercise's name when logged, shown if the exercise no longer exists",
         "exerciseType": "How sets of this exercise are measured; decides which set values are used",
-        "notes": "Notes on this entry, each with its own id and creation time",
         "position": "Order within the workout; lower first, ties ordered by id",
         "restSeconds": "Rest timer after a set in seconds; 0 means off",
         "supersetId": "Entries of one workout sharing this number form a superset; null if none",
@@ -975,6 +1003,14 @@
       "content": {
         "type": "object",
         "properties": {
+          "agent": {
+            "type": "nullable",
+            "of": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 60
+            }
+          },
           "createdAt": {
             "type": "string",
             "minLength": 24,
@@ -982,36 +1018,8 @@
             "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
             "format": "utc-date-time"
           },
-          "kind": {
-            "type": "enum",
-            "values": [
-              "session",
-              "sticky"
-            ]
-          },
-          "reply": {
-            "type": "nullable",
-            "of": {
-              "type": "object",
-              "properties": {
-                "createdAt": {
-                  "type": "string",
-                  "minLength": 24,
-                  "maxLength": 24,
-                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-                  "format": "utc-date-time"
-                },
-                "text": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 10000
-                }
-              },
-              "required": [
-                "createdAt",
-                "text"
-              ]
-            }
+          "pinned": {
+            "type": "boolean"
           },
           "text": {
             "type": "string",
@@ -1026,9 +1034,9 @@
           }
         },
         "required": [
+          "agent",
           "createdAt",
-          "kind",
-          "reply",
+          "pinned",
           "text",
           "workoutId"
         ]
@@ -1038,11 +1046,60 @@
         "field": "workoutId"
       },
       "meanings": {
+        "agent": "Name of the agent that wrote the note; null when the lifter wrote it",
         "createdAt": "Time the note was written in UTC",
-        "kind": "Session notes belong to one workout; sticky notes also appear in later workouts",
-        "reply": "Optional coach reply and time it was supplied, shown in the first eligible later workout",
-        "text": "The lifter’s note",
+        "pinned": "Pinned notes show in every later workout of the same routine until deleted or unpinned; other notes show in the next workout of that routine (the next workout of any kind for a workout without a routine). Only a note on a workout with a routine can be pinned",
+        "text": "The note",
         "workoutId": "The workout in which this note was written"
+      }
+    },
+    "workout_note_comment": {
+      "content": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "nullable",
+            "of": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 60
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "minLength": 24,
+            "maxLength": 24,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+            "format": "utc-date-time"
+          },
+          "noteId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          }
+        },
+        "required": [
+          "agent",
+          "createdAt",
+          "noteId",
+          "text"
+        ]
+      },
+      "parent": {
+        "kind": "workout_note",
+        "field": "noteId"
+      },
+      "meanings": {
+        "agent": "Name of the agent that wrote the comment; null when the lifter wrote it",
+        "createdAt": "Time the comment was written in UTC; a comment newer than the note's last showing brings the note back once",
+        "noteId": "The workout note this comment answers",
+        "text": "The comment"
       }
     },
     "workout_rest": {
@@ -1259,6 +1316,7 @@
   "features": [
     "body_measurements",
     "custom_exercises",
+    "exercise_notes",
     "reps_in_reserve",
     "routines",
     "rpe",
@@ -1316,12 +1374,15 @@
                     "values": [
                       "body_measurement",
                       "custom_exercise",
+                      "exercise_note",
+                      "exercise_note_comment",
                       "routine",
                       "routine_folder",
                       "settings",
                       "workout",
                       "workout_exercise",
                       "workout_note",
+                      "workout_note_comment",
                       "workout_rest",
                       "workout_set"
                     ]
@@ -1374,12 +1435,15 @@
                           "values": [
                             "body_measurement",
                             "custom_exercise",
+                            "exercise_note",
+                            "exercise_note_comment",
                             "routine",
                             "routine_folder",
                             "settings",
                             "workout",
                             "workout_exercise",
                             "workout_note",
+                            "workout_note_comment",
                             "workout_rest",
                             "workout_set"
                           ]
@@ -1410,12 +1474,15 @@
                     "values": [
                       "body_measurement",
                       "custom_exercise",
+                      "exercise_note",
+                      "exercise_note_comment",
                       "routine",
                       "routine_folder",
                       "settings",
                       "workout",
                       "workout_exercise",
                       "workout_note",
+                      "workout_note_comment",
                       "workout_rest",
                       "workout_set"
                     ]
@@ -1519,12 +1586,15 @@
                               "values": [
                                 "body_measurement",
                                 "custom_exercise",
+                                "exercise_note",
+                                "exercise_note_comment",
                                 "routine",
                                 "routine_folder",
                                 "settings",
                                 "workout",
                                 "workout_exercise",
                                 "workout_note",
+                                "workout_note_comment",
                                 "workout_rest",
                                 "workout_set"
                               ]
@@ -1562,12 +1632,15 @@
                               "values": [
                                 "body_measurement",
                                 "custom_exercise",
+                                "exercise_note",
+                                "exercise_note_comment",
                                 "routine",
                                 "routine_folder",
                                 "settings",
                                 "workout",
                                 "workout_exercise",
                                 "workout_note",
+                                "workout_note_comment",
                                 "workout_rest",
                                 "workout_set"
                               ]
@@ -1604,12 +1677,15 @@
                               "values": [
                                 "body_measurement",
                                 "custom_exercise",
+                                "exercise_note",
+                                "exercise_note_comment",
                                 "routine",
                                 "routine_folder",
                                 "settings",
                                 "workout",
                                 "workout_exercise",
                                 "workout_note",
+                                "workout_note_comment",
                                 "workout_rest",
                                 "workout_set"
                               ]
@@ -1798,12 +1874,15 @@
                     "values": [
                       "body_measurement",
                       "custom_exercise",
+                      "exercise_note",
+                      "exercise_note_comment",
                       "routine",
                       "routine_folder",
                       "settings",
                       "workout",
                       "workout_exercise",
                       "workout_note",
+                      "workout_note_comment",
                       "workout_rest",
                       "workout_set"
                     ]
@@ -1841,12 +1920,15 @@
                     "values": [
                       "body_measurement",
                       "custom_exercise",
+                      "exercise_note",
+                      "exercise_note_comment",
                       "routine",
                       "routine_folder",
                       "settings",
                       "workout",
                       "workout_exercise",
                       "workout_note",
+                      "workout_note_comment",
                       "workout_rest",
                       "workout_set"
                     ]
@@ -1883,12 +1965,15 @@
                     "values": [
                       "body_measurement",
                       "custom_exercise",
+                      "exercise_note",
+                      "exercise_note_comment",
                       "routine",
                       "routine_folder",
                       "settings",
                       "workout",
                       "workout_exercise",
                       "workout_note",
+                      "workout_note_comment",
                       "workout_rest",
                       "workout_set"
                     ]

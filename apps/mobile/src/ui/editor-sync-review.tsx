@@ -36,7 +36,6 @@ function blocked(store: DeviceStore, record: DeviceRecord) {
 const labels: Record<string, string> = {
   title: "Name",
   folderId: "Folder ID",
-  notes: "Notes",
   position: "Order",
   takenAt: "Recorded at",
   bodyweightKg: "Bodyweight (kg)",

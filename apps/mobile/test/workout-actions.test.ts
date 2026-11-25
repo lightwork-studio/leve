@@ -2,6 +2,7 @@ import { openDeviceStore, verifyDeviceRecords } from "@leve/storage";
 import { createSqlJsEngine } from "@leve/storage/sqljs";
 import initSqlJs from "sql.js";
 import { expect, it, vi } from "vitest";
+import { addExerciseNote, editExerciseNote, notesWrittenIn } from "../src/data/exercise-notes.ts";
 import { EXERCISES } from "../src/data/exercises.ts";
 import { newId } from "../src/data/ids.ts";
 import {
@@ -16,7 +17,6 @@ import { createRoutine } from "../src/data/routine-actions.ts";
 import { seedSyntheticData } from "../src/data/seed.ts";
 import {
   addExercise,
-  addExerciseNote,
   addSelectedExercises,
   addSet,
   beginRoutineWorkout,
@@ -91,13 +91,23 @@ it("runs one workout from a routine through to the end", { timeout: 60_000 }, as
 
   finishWorkout(store, id, {
     title: " Push day ",
-    description: " Felt good ",
+    note: { text: " Felt good ", pinned: true },
     countForRoutine: false,
   });
   expect(store.activeWorkout()).toBeNull();
   const done = store.get("workout", id)?.content as Record<string, unknown>;
-  expect(done).toMatchObject({ description: "Felt good", routineId: null, title: "Push day" });
+  expect(done).toMatchObject({ routineId: null, title: "Push day" });
   expect(done.endedAt).not.toBeNull();
+  // Not counted for its routine, the note has no later workouts to be pinned in. (The seeded
+  // push days have notes of their own.)
+  expect(
+    store
+      .list("workout_note")
+      .filter((note) => note.content?.workoutId === id)
+      .map((note) => note.content),
+  ).toEqual([
+    { workoutId: id, pinned: false, text: "Felt good", createdAt: expect.any(String), agent: null },
+  ]);
   // Only what was logged stays: the bench press with its one logged set.
   const entries = store.list("workout_exercise", { parentId: id });
   expect(entries.map((e) => e.content?.exerciseName)).toEqual(["Bench Press"]);
@@ -112,7 +122,7 @@ it("names an untitled workout and discards one completely", { timeout: 60_000 },
   const [squat] = store.list("workout_exercise", { parentId: id });
   const [first] = store.list("workout_set", { parentId: squat?.id as string });
   logSet(store, first?.id as string, { weightKg: 100, reps: 5 });
-  finishWorkout(store, id, { title: "", description: "", countForRoutine: true });
+  finishWorkout(store, id, { title: "", countForRoutine: true });
   expect(String(store.get("workout", id)?.content?.title)).toMatch(/workout$/);
 
   const other = beginWorkout(store);
@@ -217,16 +227,16 @@ it("refuses to finish with nothing logged and changes nothing", { timeout: 60_00
   const store = await open();
   const id = beginWorkout(store, "seed-routine-push");
   const before = liveData(store)?.tree.entries.length;
-  expect(() =>
-    finishWorkout(store, id, { title: "", description: "", countForRoutine: true }),
-  ).toThrow(/Log at least one set/);
+  expect(() => finishWorkout(store, id, { title: "", countForRoutine: true })).toThrow(
+    /Log at least one set/,
+  );
   expect(store.activeWorkout()?.id).toBe(id);
   expect(liveData(store)?.tree.entries.length).toBe(before);
 
   // An over-long name is cut to the limit rather than refused at the last step.
   const [first] = liveData(store)?.tree.entries[0]?.sets ?? [];
   logSet(store, first?.id as string, { weightKg: 80, reps: 8 });
-  finishWorkout(store, id, { title: "x".repeat(150), description: "", countForRoutine: true });
+  finishWorkout(store, id, { title: "x".repeat(150), countForRoutine: true });
   expect(String(store.get("workout", id)?.content?.title)).toHaveLength(100);
   store.close();
 });
@@ -239,7 +249,7 @@ it("corrects a saved working set and preserves its completion time and untouched
   const first = liveData(store)?.tree.entries[0]?.sets[0];
   if (!first) throw new Error("missing initial set");
   logSet(store, first.id, { weightKg: 92.5, reps: 8 });
-  finishWorkout(store, id, { title: "Push", description: "", countForRoutine: true });
+  finishWorkout(store, id, { title: "Push", countForRoutine: true });
   const before = store.get("workout_set", first.id)?.content;
   updateSet(store, first.id, { type: "warmup", reps: 6 });
   expect(store.get("workout_set", first.id)?.content).toEqual({
@@ -272,7 +282,11 @@ it("removes an accidental set and corrects a saved session without losing its ti
   const benchSet = store.list("workout_set", { parentId: bench })[0];
   if (!benchSet) throw new Error("Missing bench set");
   logSet(store, benchSet.id, { weightKg: 20, reps: 8 });
-  finishWorkout(store, id, { title: "Core", description: "After running", countForRoutine: false });
+  finishWorkout(store, id, {
+    title: "Core",
+    note: { text: "After running", pinned: false },
+    countForRoutine: false,
+  });
   const ended = store.get("workout", id)?.content?.endedAt;
   updateWorkoutDetails(store, id, { title: "Short core session" });
   removeWorkoutSet(store, accidental);
@@ -288,14 +302,15 @@ it("removes an accidental set and corrects a saved session without losing its ti
     recordedSeconds: 45,
   });
   expect(store.get("workout", id)?.content).toMatchObject({
-    description: "After running",
+    title: "Short core session",
     endedAt: ended,
   });
-  updateWorkoutDetails(store, id, { description: "" });
-  expect(store.get("workout", id)?.content).toMatchObject({
-    title: "Short core session",
-    description: "",
-  });
+  expect(
+    store
+      .list("workout_note")
+      .filter((note) => !note.id.startsWith("seed-"))
+      .map((note) => [note.content?.workoutId, note.content?.text]),
+  ).toEqual([[id, "After running"]]);
   expect(() => removeWorkoutSet(store, first.id)).toThrow(/only logged set/);
   expect(store.get("workout_set", first.id)?.content?.durationSeconds).toBe(45);
   expect(() => updateWorkoutDetails(store, id, { title: "  " })).toThrow(/name/);
@@ -366,7 +381,6 @@ it("corrects elapsed duration without changing recorded set time or the start da
   try {
     store.put("workout", "old", {
       title: "Evening",
-      description: "",
       routineId: null,
       startedAt: "2021-01-02T23:55:00.000Z",
       endedAt: "2021-01-03T07:00:00.000Z",
@@ -405,25 +419,26 @@ it("refuses stale finish notes before removing unfinished sets and preserves unt
     const unfinished = addSet(store, entry);
     const row = store.get("workout", workout)?.content;
     if (!row) throw Error("Missing workout");
-    store.put("workout", workout, {
-      ...row,
-      title: " New title ",
-      description: "    First line\nSecond line\n",
-    });
+    store.put("workout", workout, { ...row, title: " New title " });
     expect(() =>
       finishWorkout(
         store,
         workout,
-        { description: "Old draft", countForRoutine: true },
-        { description: "" },
+        {
+          title: "Old draft",
+          note: { text: "Draft note", pinned: false },
+          countForRoutine: true,
+        },
+        { title: "" },
       ),
     ).toThrow(/changed/);
     expect(store.activeWorkout()?.id).toBe(workout);
     expect(store.list("workout_set", { parentId: entry }).map((r) => r.id)).toContain(unfinished);
+    expect(store.list("workout_note")).toEqual([]);
     finishWorkout(store, workout, { countForRoutine: true });
     expect(store.get("workout", workout)?.content).toMatchObject({
       title: " New title ",
-      description: "    First line\nSecond line\n",
+      startedAt: row.startedAt,
     });
     expect(store.list("workout_set", { parentId: entry }).map((r) => r.id)).toEqual([set.id]);
   } finally {
@@ -540,36 +555,51 @@ it("rejects a changed exercise or a finished workout before adding any part of a
   }
 });
 
-it("reopens session exercise notes offline and refuses to append after the session ends", async () => {
+it("reopens session exercise notes offline and refuses one for a workout that's gone", async () => {
   const engine = createSqlJsEngine(SQL);
   const reopen = () => openDeviceStore({ engine, path: "/exercise-notes", appVersion: "test" });
   let store = await reopen();
   try {
     const workout = beginWorkout(store);
     const entry = addExercise(store, workout, EXERCISES.plank, 15);
-    expect(() => addExerciseNote(store, workout, entry, "   ")).toThrow(/note/);
-    addExerciseNote(store, workout, entry, "Set elbows one notch lower");
+    const draft = (text: string) =>
+      addExerciseNote(store, {
+        exerciseId: EXERCISES.plank.id,
+        workoutId: workout,
+        text,
+        pinned: false,
+      });
+    expect(() => draft("   ")).toThrow(/note/);
+    expect(store.list("exercise_note")).toEqual([]);
+    const note = draft(" Set elbows one notch lower ");
     store.close();
     store = await reopen();
-    const stored = store.get("workout_exercise", entry)?.content;
-    expect(stored?.notes).toEqual([
-      { id: expect.any(String), text: "Set elbows one notch lower", createdAt: expect.any(String) },
-    ]);
+    const stored = store.get("exercise_note", note)?.content;
+    expect(stored).toEqual({
+      exerciseId: EXERCISES.plank.id,
+      workoutId: workout,
+      pinned: false,
+      text: "Set elbows one notch lower",
+      createdAt: expect.any(String),
+      agent: null,
+    });
     expect(
-      store.prepareSubmissions("1.0").find((s) => s.submission.id === entry)?.submission,
-    ).toMatchObject({ kind: "workout_exercise", content: { notes: stored?.notes } });
+      store.prepareSubmissions("1.0").find((s) => s.submission.id === note)?.submission,
+    ).toMatchObject({ kind: "exercise_note", content: stored });
     const set = store.list("workout_set", { parentId: entry })[0];
     if (!set) throw Error("Missing plank set");
     logSet(store, set.id, { durationSeconds: 30 });
-    finishWorkout(store, workout, { countForRoutine: false });
-    expect(() => addExerciseNote(store, workout, entry, "Stale draft")).toThrow(/no longer/);
-    expect(store.get("workout_exercise", entry)?.content).toEqual(stored);
+    discardWorkout(store, workout);
+    expect(() => draft("Stale draft")).toThrow(/no longer/);
+    expect(store.list("exercise_note").map((row) => row.content?.text)).not.toContain(
+      "Stale draft",
+    );
   } finally {
     store.close();
   }
 });
 
-it("keeps a rejected workout exercise intact when a note draft tries to save", async () => {
+it("keeps rejected records intact when a note draft tries to save", async () => {
   const store = await openDeviceStore({
     engine: createSqlJsEngine(SQL),
     path: "/rejected-exercise",
@@ -593,8 +623,29 @@ it("keeps a rejected workout exercise intact when a note draft tries to save", a
     const rejected = store.get("workout_exercise", entry);
     expect(rejected?.status).toBe("invalid");
     expect(rejected?.problem).toBeTruthy();
-    expect(() => addExerciseNote(store, workout, entry, "Hold")).toThrow(/sync issue/);
+    // The note is a record of its own: saving it leaves the rejected exercise as it was.
+    const note = addExerciseNote(store, {
+      exerciseId: EXERCISES.plank.id,
+      workoutId: workout,
+      text: "Hold",
+      pinned: false,
+    });
     expect(store.get("workout_exercise", entry)).toEqual(rejected);
+    // A rejected note refuses an edit and keeps its text.
+    const upload = store.prepareSubmissions("1.0").find(({ submission }) => submission.id === note);
+    if (!upload) throw Error("Missing note submission");
+    store.applyPushResults([
+      {
+        submissionId: upload.submission.submissionId,
+        status: "invalid",
+        code: "invalid_content",
+        message: "Rejected note",
+      },
+    ]);
+    const rejectedNote = store.get("exercise_note", note);
+    expect(rejectedNote?.status).toBe("invalid");
+    expect(() => editExerciseNote(store, note, "Hold longer")).toThrow(/sync issue/);
+    expect(store.get("exercise_note", note)).toEqual(rejectedNote);
   } finally {
     store.close();
   }
@@ -728,19 +779,27 @@ it("keeps a skipped exercise's saved note in history and the outbox after finish
     const [set] = store.list("workout_set", { parentId: bench });
     if (!set) throw Error("Missing bench set");
     logSet(store, set.id, { weightKg: 20, reps: 5 });
-    addExerciseNote(store, workout, skipped, "No mat available");
+    const note = addExerciseNote(store, {
+      exerciseId: EXERCISES.plank.id,
+      workoutId: workout,
+      text: "No mat available",
+      pinned: false,
+    });
     finishWorkout(store, workout, { countForRoutine: false });
     store.close();
     store = await reopen();
-    const history = readWorkoutTree(store, workout);
-    expect(history?.entries.find(({ entry }) => entry.id === skipped)).toMatchObject({
-      entry: { content: { notes: [{ text: "No mat available" }] } },
-      sets: [],
-    });
+    // The skipped exercise had no sets and is gone, but its note belongs to the exercise.
+    expect(store.get("workout_exercise", skipped)).toBeNull();
+    expect(notesWrittenIn(store, workout).get(EXERCISES.plank.id)).toEqual([
+      expect.objectContaining({ id: note, text: "No mat available", workoutId: workout }),
+    ]);
     expect(
-      store.prepareSubmissions("1.0").find(({ submission }) => submission.id === skipped)
-        ?.submission,
-    ).toMatchObject({ op: "put", content: { notes: [{ text: "No mat available" }] } });
+      store.prepareSubmissions("1.0").find(({ submission }) => submission.id === note)?.submission,
+    ).toMatchObject({
+      op: "put",
+      kind: "exercise_note",
+      content: { exerciseId: EXERCISES.plank.id, workoutId: workout, text: "No mat available" },
+    });
   } finally {
     store.close();
   }

@@ -40,16 +40,21 @@ rows are never an implicit network contract, and a storage-only change needs no 
 
 Sync works on individual records. Each record has a kind, an id and content:
 
-| Kind               | Content                                                                        |
-| ------------------ | ------------------------------------------------------------------------------ |
-| `workout`          | Workout details: title, description, times, routine link, in progress/finished |
-| `workout_exercise` | One exercise entry in a workout: exercise, name and type, order, notes, rest   |
-| `workout_set`      | One set of an exercise entry: order, type, values, completion                  |
-| `routine`          | A whole routine including its exercises and target sets                        |
-| `routine_folder`   | A folder of routines                                                           |
-| `custom_exercise`  | An exercise the user created                                                   |
-| `body_measurement` | One body measurement                                                           |
-| `settings`         | Account settings (a single record)                                             |
+| Kind                    | Content                                                                   |
+| ----------------------- | ------------------------------------------------------------------------- |
+| `workout`               | Workout details: title, times, routine link, in progress/finished         |
+| `workout_exercise`      | One exercise entry in a workout: exercise, name and type, order, rest     |
+| `workout_set`           | One set of an exercise entry: order, type, values, completion             |
+| `workout_rest`          | A workout's own rest timer default                                        |
+| `workout_note`          | A note on a workout: text, pinned or not, who wrote it                    |
+| `workout_note_comment`  | A comment on a workout note, by the lifter or an agent                    |
+| `exercise_note`         | A note on an exercise: text, pinned or not, the workout it was written in |
+| `exercise_note_comment` | A comment on an exercise note, by the lifter or an agent                  |
+| `routine`               | A whole routine including its exercises and target sets                   |
+| `routine_folder`        | A folder of routines                                                      |
+| `custom_exercise`       | An exercise the user created                                              |
+| `body_measurement`      | One body measurement                                                      |
+| `settings`              | Account settings (a single record)                                        |
 
 - Sets, workout details and whole routines are the units of conflict. Editing set 2 never conflicts
   with an edit of set 3 or of the workout title. Device-only preferences never sync.
@@ -64,11 +69,19 @@ Sync works on individual records. Each record has a kind, an id and content:
 - References are soft. A workout whose routine or exercise no longer exists still shows, using the
   name and type stored on its exercise entry. Custom exercises are archived, never deleted. Built-in
   exercise ids are permanent. Deleting a routine folder leaves its routines unfiled.
-- A child names its parent. Deleting a workout or exercise entry
-  deletes its children on the server in the same transaction.
+- A child names its parent. Deleting a record deletes its children (a workout's entries, sets,
+  rest and notes; a note's comments) on the server in the same transaction.
 - `settings` can be changed but never deleted.
 
-Each workout note is an independent child of its workout. The optional workout
+Each workout note is an independent child of its workout, and each comment a child of its note.
+An exercise note names its exercise and, softly, the workout it was written in: it is not that
+workout's child, so a pinned note outlives the workout. A note or comment carries the name of the
+agent that wrote it, or null when the lifter wrote it; agents don't change the lifter's text.
+Comments are records of their own so the lifter and an agent can add them at once without a
+conflict. A pinned note comes back until it is deleted or unpinned; only notes on a workout
+counted for a routine can be pinned. Any other note comes back once, in the next
+workout of its routine (workout notes) or the next workout with its exercise (exercise notes), and
+once more after each later comment. The optional workout
 rest preference uses the workout ID as its record ID. Updating its seconds to null clears the
 preference. Deleting its workout creates a tombstone for the live rest preference in the same
 transaction. A restored server accepts a separate rest tombstone only when the same-ID workout
@@ -135,7 +148,7 @@ requires updating both peers and checking how existing preview data is read.
 - **Breaking changes to a shipped contract** make a new major release. These include removing or
   retyping a field, making a field required, changing units or meaning, widening a set of choices or
   a limit, changing the shape of items nested inside a record (such as a routine's exercises and
-  target sets, or notes), and adding a record kind below an existing kind (an older app couldn't
+  target sets), and adding a record kind below an existing kind (an older app couldn't
   list it when deleting the parent). A new detail of a nested item can be represented as an optional
   top-level field for a minor release.
 - Limits that apply to every release: a record's content is at most 200,000 bytes of UTF-8 JSON; a

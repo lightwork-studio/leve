@@ -27,7 +27,6 @@ function Version({
   label,
   content,
   fallback,
-  showReplyTime,
   showCreatedAt,
   headerDifferences = [],
   owner,
@@ -38,7 +37,6 @@ function Version({
   label: string;
   content: JsonObject | null;
   fallback: string;
-  showReplyTime: boolean;
   showCreatedAt: boolean;
   headerDifferences?: string[];
   owner?: string;
@@ -77,12 +75,9 @@ function Version({
       {note && showCreatedAt && <Text style={styles.text}>Note recorded {note.createdAt}</Text>}
       {note && (
         <Text style={styles.text}>
-          {note.kind === "sticky" ? "Pinned note" : "Session note"} ·{" "}
-          {note.reply ? `Coach reply: ${note.reply.text}` : "No coach reply"}
+          {note.pinned ? "Pinned note" : "Note"}
+          {note.agent ? ` · by ${note.agent}` : ""}
         </Text>
-      )}
-      {note?.reply && showReplyTime && (
-        <Text style={styles.text}>Reply recorded {note.reply.createdAt}</Text>
       )}
       {entry && (
         <>
@@ -96,11 +91,6 @@ function Version({
           <Text style={styles.text}>
             Count both dumbbells: {entry.doubleDumbbellVolume ? "Yes" : "No"}
           </Text>
-          {entry.notes.map((note) => (
-            <Text key={note.id} style={styles.text}>
-              {note.text}
-            </Text>
-          ))}
         </>
       )}
     </View>
@@ -189,18 +179,6 @@ export function WorkoutSyncReview({
       setError((e as Error).message);
     }
   };
-  const localNote =
-    record.kind === "workout_note"
-      ? (record.content as RecordContent<"workout_note"> | null)
-      : null;
-  const serverNote =
-    record.kind === "workout_note"
-      ? ((record.server?.content ?? record.keptContent) as RecordContent<"workout_note"> | null)
-      : null;
-  const showReplyTime =
-    !!localNote?.reply &&
-    !!serverNote?.reply &&
-    localNote.reply.createdAt !== serverNote.reply.createdAt;
   const headerDifferences =
     record.kind === "workout" && (!record.content || record.server?.state === "deleted")
       ? ["startedAt"]
@@ -252,7 +230,6 @@ export function WorkoutSyncReview({
         <Version
           headerDifferences={headerDifferences}
           kind={record.kind}
-          showReplyTime={showReplyTime}
           owner={ownerLabel(localOwner)}
           showCreatedAt={showCreatedAt}
           label="This device"
@@ -262,7 +239,6 @@ export function WorkoutSyncReview({
         <Version
           headerDifferences={headerDifferences}
           kind={record.kind}
-          showReplyTime={showReplyTime}
           owner={ownerLabel(remoteOwner)}
           showCreatedAt={showCreatedAt}
           label={restoreWorkout && !record.server ? "Previous server copy" : "Server"}
@@ -334,7 +310,7 @@ export function WorkoutSyncReview({
                 Choosing a version also chooses its workout
                 {record.kind === "workout_exercise"
                   ? " for this exercise and its sets."
-                  : " for this note and reply."}
+                  : " for this note."}
               </Text>
             )}
             {sets && sets.length > 0 && (

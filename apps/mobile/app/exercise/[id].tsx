@@ -4,6 +4,7 @@ import { memo, useMemo, useState } from "react";
 import { FlatList, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppData } from "../../src/data/app-data.tsx";
+import { exerciseNotesByExercise } from "../../src/data/exercise-notes.ts";
 import { builtInExercise } from "../../src/data/exercises.ts";
 import { useProgress } from "../../src/data/queries.ts";
 import {
@@ -27,6 +28,7 @@ import { numeral, radius, space, type } from "../../src/theme.ts";
 import { BackLink } from "../../src/ui/back-link.tsx";
 import { Segmented } from "../../src/ui/chart-controls.tsx";
 import { useRolling } from "../../src/ui/count-up.tsx";
+import { ExerciseCardNotes } from "../../src/ui/exercise-card-notes.tsx";
 import {
   chartName,
   chartValue,
@@ -143,6 +145,10 @@ export default function ExerciseScreen() {
   }, [index, id]);
 
   const name = history?.name ?? exercise?.name ?? entryName ?? "Exercise";
+  // Oldest first, as an exercise's card lists them.
+  const pinnedNotes = (exerciseNotesByExercise(store).get(id) ?? [])
+    .filter((note) => note.pinned)
+    .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt) || a.id.localeCompare(b.id));
   const sessions = history?.sessions ?? NO_SESSIONS;
   const shown = all ? sessions : sessions.slice(0, SESSIONS_SHOWN);
   const headlineMetric = history
@@ -182,6 +188,17 @@ export default function ExerciseScreen() {
         ) : (
           <Text style={styles.subtitle}>No workouts with this exercise.</Text>
         )}
+      </View>
+      <View style={styles.group}>
+        <Text style={styles.pinnedLabel}>Pinned notes</Text>
+        <ExerciseCardNotes
+          exerciseId={id}
+          exerciseName={name}
+          workoutId={null}
+          notes={pinnedNotes}
+          pinnedOnly
+          variant="card"
+        />
       </View>
       <Group label="Muscles" aside="This exercise" style={styles.group}>
         <ExerciseMuscles targets={muscleTargets(id)} />
@@ -559,7 +576,6 @@ const SessionRow = memo(function SessionRow({
               </Text>
             ))}
           </Text>
-          {session.notes.length > 0 && <Text style={styles.note}>{session.notes.join("\n")}</Text>}
         </View>
         {figure !== "" && metric && (
           <View style={styles.sessionValue}>
@@ -621,6 +637,7 @@ const sheet = themedStyles((c) => ({
   title: { ...type.title, color: c.fg },
   subtitle: { ...type.meta, color: c.fg3 },
   group: { marginHorizontal: 0, marginBottom: 22 },
+  pinnedLabel: { ...type.label, color: c.fg3, marginBottom: 8, paddingHorizontal: 4 },
   pills: { gap: 6, paddingBottom: 14 },
   pill: {
     height: 36,

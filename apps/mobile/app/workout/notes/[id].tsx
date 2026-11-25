@@ -6,12 +6,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppData } from "../../../src/data/app-data.tsx";
 import { workoutJournalData } from "../../../src/data/read.ts";
 import {
+  canPinWorkoutNotes,
   type NoteDraft,
   unpinWorkoutNote,
   workoutNoteReadOnlyReason,
   writeWorkoutNote,
 } from "../../../src/data/workout-notes.ts";
-import type { WorkoutNote } from "../../../src/model/types.ts";
+import type { NoteComment, WorkoutNote } from "../../../src/model/types.ts";
 import { gutter, space, type } from "../../../src/theme.ts";
 import { ActionSheet, DestructiveButton, useConfirmation } from "../../../src/ui/action-sheet.tsx";
 import { BackLink } from "../../../src/ui/back-link.tsx";
@@ -60,18 +61,14 @@ export default function WorkoutNotesScreen() {
     openEditor.current = next;
     setEditing(next);
   };
-  const [draft, setDraft] = useState<NoteDraft>({ text: "", kind: "session", reply: "" });
+  const [draft, setDraft] = useState<NoteDraft>({ text: "", pinned: false });
   const [listError, setListError] = useState<{ workoutId: string; message: string } | null>(null);
   const [error, setError] = useState("");
   const [deleting, setDeleting] = useState<WorkoutNote | null>(null);
   const readOnlyReason = workoutNoteReadOnlyReason(store);
   const writable = readOnlyReason === null;
   const edit = (original: WorkoutNote | null) => {
-    setDraft({
-      text: original?.text ?? "",
-      kind: original?.kind ?? "session",
-      reply: original?.reply?.text ?? "",
-    });
+    setDraft({ text: original?.text ?? "", pinned: original?.pinned ?? false });
     setError("");
     showEditor({ workoutId: id, original });
   };
@@ -160,46 +157,44 @@ export default function WorkoutNotesScreen() {
           )}
           {data.carried.length > 0 && (
             <Group label="From earlier sessions">
-              {data.carried.map(
-                ({ workoutId, workoutTitle, workoutStartedAt, note, showReply }, i) => {
-                  const rejected = data.rejectedIds.has(note.id);
-                  const items: MenuItem[] = [
-                    ...(writable && note.kind === "sticky" && !rejected
-                      ? [{ label: "Unpin note", onPress: () => unpin(workoutId, note.id) }]
-                      : []),
-                    {
-                      label: "Open source workout’s notes",
-                      onPress: () =>
-                        router.push({ pathname: "/workout/notes/[id]", params: { id: workoutId } }),
-                    },
-                  ];
-                  return (
-                    <View
-                      key={`${workoutId}/${note.id}`}
-                      style={[styles.note, i > 0 && styles.divider]}
-                    >
-                      <View style={styles.noteText}>
-                        <Text style={styles.tag}>
-                          {showReply ? "Coach reply" : "Pinned note"} ·{" "}
-                          {sessionLabel(
-                            workoutTitle,
-                            workoutStartedAt,
-                            data.sessionNumbers?.get(workoutId),
-                          )}
-                        </Text>
-                        <Text style={styles.text}>{note.text}</Text>
-                        {showReply && <Text style={styles.reply}>{note.reply?.text}</Text>}
-                        {rejected && (
-                          <Text accessibilityRole="alert" style={styles.warning}>
-                            Sync issue · review this note in its source workout.
-                          </Text>
+              {data.carried.map(({ workoutId, workoutTitle, workoutStartedAt, note }, i) => {
+                const rejected = data.rejectedIds.has(note.id);
+                const items: MenuItem[] = [
+                  ...(writable && note.pinned && !rejected
+                    ? [{ label: "Unpin note", onPress: () => unpin(workoutId, note.id) }]
+                    : []),
+                  {
+                    label: "Open source workout’s notes",
+                    onPress: () =>
+                      router.push({ pathname: "/workout/notes/[id]", params: { id: workoutId } }),
+                  },
+                ];
+                return (
+                  <View
+                    key={`${workoutId}/${note.id}`}
+                    style={[styles.note, i > 0 && styles.divider]}
+                  >
+                    <View style={styles.noteText}>
+                      <Text style={styles.tag}>
+                        {note.pinned ? "Pinned note" : "Last time"} ·{" "}
+                        {sessionLabel(
+                          workoutTitle,
+                          workoutStartedAt,
+                          data.sessionNumbers?.get(workoutId),
                         )}
-                      </View>
-                      <MoreButton small label="Note options" items={items} />
+                      </Text>
+                      <Text style={styles.text}>{note.text}</Text>
+                      <Comments comments={data.comments.get(note.id)} />
+                      {rejected && (
+                        <Text accessibilityRole="alert" style={styles.warning}>
+                          Sync issue · review this note in its source workout.
+                        </Text>
+                      )}
                     </View>
-                  );
-                },
-              )}
+                    <MoreButton small label="Note options" items={items} />
+                  </View>
+                );
+              })}
             </Group>
           )}
           {data.problems.map((record) => {
@@ -220,15 +215,11 @@ export default function WorkoutNotesScreen() {
                 <View key={note.id} style={[styles.note, i > 0 && styles.divider]}>
                   <View style={styles.noteText}>
                     <Text style={styles.tag}>
-                      {note.kind === "sticky" ? "Pinned note" : "Session note"}
+                      {note.pinned ? "Pinned note" : "Note"}
+                      {note.agent ? ` · ${note.agent}` : ""}
                     </Text>
                     <Text style={styles.text}>{note.text}</Text>
-                    {note.reply && (
-                      <>
-                        <Text style={styles.tag}>Coach reply</Text>
-                        <Text style={styles.reply}>{note.reply.text}</Text>
-                      </>
-                    )}
+                    <Comments comments={data.comments.get(note.id)} />
                   </View>
                   {writable && (
                     <MoreButton
@@ -280,7 +271,7 @@ export default function WorkoutNotesScreen() {
               {writable && editing.original && (
                 <DestructiveButton
                   label="Delete note"
-                  message="This note and its coach reply will be deleted."
+                  message="This note and its comments will be deleted."
                   keep="Keep it"
                   busyLabel="Deleting…"
                   onConfirm={() => save(null)}
@@ -298,24 +289,18 @@ export default function WorkoutNotesScreen() {
               onChangeText={(text) => setDraft({ ...draft, text })}
             />
           </View>
-          <Group style={styles.formGroup}>
-            <ToggleRow
-              label="Pin for future workouts"
-              hint="Shown again each time you train"
-              disabled={!writable}
-              on={draft.kind === "sticky"}
-              onChange={(on) => setDraft({ ...draft, kind: on ? "sticky" : "session" })}
-            />
-          </Group>
+          {(draft.pinned || canPinWorkoutNotes(data.workout.content)) && (
+            <Group style={styles.formGroup}>
+              <ToggleRow
+                label="Pin for future workouts"
+                hint="Shown again each time you train this routine"
+                disabled={!writable}
+                on={draft.pinned}
+                onChange={(on) => setDraft({ ...draft, pinned: on })}
+              />
+            </Group>
+          )}
           <View style={styles.form}>
-            <TextArea
-              label="Coach reply"
-              hint="For the next workout. Optional."
-              editable={writable}
-              maxLength={LIMITS.noteLength}
-              value={draft.reply}
-              onChangeText={(reply) => setDraft({ ...draft, reply })}
-            />
             {readOnlyReason && (
               <Text accessibilityRole="alert" style={styles.session}>
                 {readOnlyReason}
@@ -328,7 +313,7 @@ export default function WorkoutNotesScreen() {
 
       {removal.asking && deleting && (
         <ActionSheet
-          message="This note and its coach reply will be deleted."
+          message="This note and its comments will be deleted."
           action="Delete note"
           keep="Keep it"
           busy={removal.busy}
@@ -342,6 +327,18 @@ export default function WorkoutNotesScreen() {
       )}
     </ScrollView>
   );
+}
+
+/** A note's comments, oldest first, each with who wrote it. */
+function Comments({ comments }: { comments: readonly NoteComment[] | undefined }) {
+  const styles = useStyles(sheet);
+  if (!comments?.length) return null;
+  return comments.map((comment) => (
+    <View key={comment.id}>
+      <Text style={styles.tag}>{comment.agent ?? "You"}</Text>
+      <Text style={styles.reply}>{comment.text}</Text>
+    </View>
+  ));
 }
 
 const sheet = themedStyles((c) => ({

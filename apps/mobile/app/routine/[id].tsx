@@ -144,7 +144,6 @@ function RoutineEditor({
     exercises: (initial.exercises ?? []) as StoredPlan,
     effortScale: savedScale,
     title: String(initial.title ?? ""),
-    notes: String(initial.notes ?? ""),
     folderId: typeof initial.folderId === "string" ? initial.folderId : null,
   };
   const [settings] = useState(() => readSettings(store));
@@ -152,7 +151,6 @@ function RoutineEditor({
   const openedScale = routineEffortScale(opened);
   const [effortScale, setEffortScale] = useState(openedScale);
   const [title, setTitle] = useState(opened.title);
-  const [notes, setNotes] = useState(opened.notes);
   const [folderId, setFolderId] = useState(opened.folderId);
   const [reordering, setReordering] = useState(false);
   const [reorderGripHeld, setReorderGripHeld] = useState(false);
@@ -184,7 +182,7 @@ function RoutineEditor({
           db,
           id,
           opened,
-          { title, folderId: filed, notes, effortScale: scale },
+          { title, folderId: filed, effortScale: scale },
           { opened: opened.exercises, next: exercises },
         );
       });
@@ -203,7 +201,7 @@ function RoutineEditor({
         // A folder deleted since the routine was filed in it leaves the copy in none, as it shows.
         const target = folderId === null ? null : db.get("routine_folder", folderId);
         const filed = target?.content && !target.deleted ? folderId : null;
-        createRoutine(db, copyName, filed, plan, settings, notes, effortScale);
+        createRoutine(db, copyName, filed, plan, settings, effortScale);
       });
     } catch (cause) {
       savingCopy.current = false;
@@ -252,8 +250,6 @@ function RoutineEditor({
           folders={folders}
           folderId={folderId}
           setFolderId={setFolderId}
-          notes={notes}
-          setNotes={setNotes}
         />
       )}
       <RoutinePlanEditor

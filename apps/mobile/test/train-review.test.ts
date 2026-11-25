@@ -13,7 +13,6 @@ import {
 const plan = (title: string, folderId: string | null, position: number) => ({
   title,
   folderId,
-  notes: "",
   position,
   exercises: [],
   effortScale: null,

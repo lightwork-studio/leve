@@ -30,14 +30,33 @@ export const SAMPLE_CONTENT: Record<string, JsonObject> = {
   workout_rest: { workoutId: WORKOUT, seconds: 75 },
   workout_note: {
     workoutId: WORKOUT,
-    kind: "sticky",
-    text: "Adjust the bench",
+    pinned: true,
+    text: "Deload week: two sets per exercise",
     createdAt: T,
-    reply: null,
+    agent: null,
+  },
+  workout_note_comment: {
+    noteId: "note-1",
+    text: "Back to three sets next week",
+    createdAt: T,
+    agent: "Coach",
+  },
+  exercise_note: {
+    exerciseId: "bench-press-barbell",
+    workoutId: WORKOUT,
+    pinned: true,
+    text: "Seat on 3, bench at 30°",
+    createdAt: T,
+    agent: null,
+  },
+  exercise_note_comment: {
+    noteId: "exercise-note-1",
+    text: "Try seat 4 for a longer press",
+    createdAt: T,
+    agent: "Coach",
   },
   workout: {
     title: "Push day",
-    description: "",
     startedAt: T,
     endedAt: null,
     routineId: null,
@@ -51,7 +70,6 @@ export const SAMPLE_CONTENT: Record<string, JsonObject> = {
     position: 1,
     supersetId: null,
     restSeconds: 120,
-    notes: [{ id: "note-1", text: "Pause at the bottom", createdAt: T }],
     doubleDumbbellVolume: false,
   },
   workout_set: {
@@ -68,7 +86,6 @@ export const SAMPLE_CONTENT: Record<string, JsonObject> = {
   },
   routine: {
     title: "Upper A",
-    notes: "",
     folderId: null,
     position: 1,
     effortScale: "rir",
@@ -80,7 +97,6 @@ export const SAMPLE_CONTENT: Record<string, JsonObject> = {
         exerciseType: "weight_reps",
         supersetId: null,
         restSeconds: 120,
-        notes: [],
         useRepRange: true,
         sets: [
           {
@@ -127,6 +143,9 @@ export const SAMPLE_CONTENT: Record<string, JsonObject> = {
 
 const SAMPLE_IDS: Record<string, string> = {
   workout_note: "note-1",
+  workout_note_comment: "note-comment-1",
+  exercise_note: "exercise-note-1",
+  exercise_note_comment: "exercise-note-comment-1",
   workout_rest: WORKOUT,
   workout: WORKOUT,
   workout_exercise: ENTRY,

@@ -79,7 +79,6 @@ function tree(
       id: workoutId,
       content: {
         title,
-        description: "",
         startedAt: new Date(start).toISOString(),
         endedAt: minutes === null ? null : new Date(start + minutes * 60_000).toISOString(),
         routineId: null,
@@ -907,32 +906,6 @@ describe("weighted bodyweight exercises", () => {
       ["mostReps", 10],
     ]);
   });
-});
-
-it("keeps exercise notes with their session in entry order", () => {
-  const workout = tree(
-    NOW,
-    30,
-    ["press", "row", "press"].map((exerciseId, i) => ({
-      exerciseId,
-      sets: i === 2 ? [{ reps: 8 }] : [],
-    })),
-  );
-  for (const [i, { entry }] of workout.entries.entries()) {
-    entry.content.notes = [
-      {
-        id: "n",
-        text: ["Slow descent", "Wide grip", "Neutral grip"][i] ?? "",
-        createdAt: new Date(NOW).toISOString(),
-      },
-    ];
-  }
-  workout.entries.reverse();
-  const older = tree(NOW - 86400000, 30, [{ exerciseId: "press", sets: [{ reps: 6 }] }]);
-  const { byExercise } = buildProgress([older, workout], options());
-  expect(byExercise.get("row")?.sessions[0]?.notes).toEqual(["Wide grip"]);
-  const sessions = byExercise.get("press")?.sessions;
-  expect(sessions?.map((s) => s.notes)).toEqual([["Slow descent", "Neutral grip"], []]);
 });
 
 it("reads each set with the recorded measures and units", () => {

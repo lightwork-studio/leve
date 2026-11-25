@@ -11,20 +11,11 @@ import { parseRestSeconds } from "./settings-actions.ts";
 export type StoredPlan = RecordContent<"routine">["exercises"];
 type StoredEntry = StoredPlan[number];
 
-export const MAX_EXERCISE_CUES = 100;
-
-export interface PlannedCue {
-  key: string;
-  note: StoredEntry["notes"][number];
-  originalText?: string;
-}
-
 export interface PlannedExercise {
   id: string;
   exercise: BuiltInExercise;
   original?: StoredEntry;
   supersetId?: number | null;
-  cues?: PlannedCue[];
   restSecondsText?: string;
   useRepRange?: boolean;
   sets: {
@@ -42,7 +33,6 @@ export function createRoutine(
   folderId: string | null,
   plan: readonly PlannedExercise[],
   settings: Settings,
-  notes = "",
   effortScale = plannedEffortScale(plan),
 ): string {
   const title = name.trim();
@@ -57,7 +47,7 @@ export function createRoutine(
   const exercises = writePlan(plan, settings, effortScale);
   const position = nextRoutinePosition(store, folderId);
   const id = newId();
-  store.put("routine", id, { title, folderId, position, notes, exercises, effortScale });
+  store.put("routine", id, { title, folderId, position, exercises, effortScale });
   return id;
 }
 
@@ -89,11 +79,6 @@ export function openPlan(exercises: StoredPlan): PlannedExercise[] {
     id: `opened-${index}`,
     original,
     supersetId: original.supersetId,
-    cues: original.notes.map((note, index) => ({
-      key: `opened-${index}`,
-      note,
-      originalText: note.text,
-    })),
     exercise: { id: original.exerciseId, name: original.exerciseName, type: original.exerciseType },
     sets: original.sets.map((set, i) => ({ id: `opened-${i}`, original: set, values: {} })),
   }));
@@ -162,17 +147,6 @@ export function writePlan(
         ? (original?.restSeconds ?? settings.defaultRestSeconds)
         : parseRestSeconds(restSecondsText);
     if (restSeconds === null) throw new Error(`Enter 0–3600 seconds of rest for ${exercise.name}.`);
-    if (entry.cues && entry.cues.length > MAX_EXERCISE_CUES)
-      throw new Error(`Use at most ${MAX_EXERCISE_CUES} cues for ${exercise.name}.`);
-    const notes = entry.cues?.map(({ note, originalText }) => {
-      if (note.text === originalText) return note;
-      const text = note.text.trim();
-      if (!text || text.length > LIMITS.noteLength)
-        throw new Error(
-          `Enter a cue of 1–${LIMITS.noteLength} characters for ${exercise.name}, or remove it.`,
-        );
-      return { ...note, text };
-    });
     const distanceUnit =
       exercise.type === "distance_duration" ? settings.distanceUnit : settings.shortDistanceUnit;
     return {
@@ -181,11 +155,9 @@ export function writePlan(
         exerciseId: exercise.id,
         exerciseName: exercise.name,
         exerciseType: exercise.type,
-        notes: [],
       }),
       supersetId:
         entry.supersetId === undefined ? (original?.supersetId ?? null) : entry.supersetId,
-      ...(notes && { notes }),
       restSeconds,
       useRepRange,
       sets: sets.map(

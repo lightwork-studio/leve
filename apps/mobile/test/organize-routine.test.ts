@@ -9,7 +9,7 @@ import { seedSyntheticData } from "../src/data/seed.ts";
 import { beginWorkout } from "../src/data/workout-actions.ts";
 
 const SQL = await initSqlJs();
-it("moves and renames the same routine while retaining its plan, history and concurrent note edit", {
+it("moves and renames the same routine while retaining its history and concurrent plan edit", {
   timeout: 60000,
 }, async () => {
   const engine = createSqlJsEngine(SQL);
@@ -25,15 +25,17 @@ it("moves and renames the same routine while retaining its plan, history and con
     .map((w) => w.id);
   expect(history.length).toBeGreaterThan(0);
   const opened = { title: String(original.title), folderId: "seed-folder-ppl" };
-  store.put("routine", id, { ...original, notes: "Keep this cue" });
+  // Another editor drops the last exercise after this one opened.
+  const edited = (original.exercises as unknown[]).slice(0, -1);
+  expect(edited.length).toBeGreaterThan(0);
+  store.put("routine", id, { ...original, exercises: edited });
   organizeRoutine(store, id, opened, { title: "  Push A ", folderId: "seed-folder-mobility" });
   store.close();
   store = await open();
   expect(store.get("routine", id)?.content).toMatchObject({
     title: "Push A",
     folderId: "seed-folder-mobility",
-    notes: "Keep this cue",
-    exercises: original.exercises,
+    exercises: edited,
   });
   expect(
     store
@@ -61,7 +63,7 @@ it("retains the sync warning and rejected draft when a rename is attempted", asy
   const open = () => openDeviceStore({ engine, path: "/rejected-routine", appVersion: "test" });
   let store = await open();
   const opened = { title: "Home", folderId: null };
-  store.put("routine", "r", { ...opened, notes: "", position: 1, exercises: [] });
+  store.put("routine", "r", { ...opened, position: 1, exercises: [] });
   const [pending] = store.prepareSubmissions("1.0");
   if (!pending) throw new Error("Expected a pending routine");
   store.applyPushResults([
@@ -84,37 +86,6 @@ it("retains the sync warning and rejected draft when a rename is attempted", asy
   store.close();
 });
 
-it("keeps an already synced note clear out of the outbox when a stale editor saves", async () => {
-  const world = new World();
-  try {
-    const server = world.server({ releases: ["1.0"] });
-    const account = { server: "s", account: "athlete", transport: server.transport("athlete") };
-    const a = await world.phone("a", account);
-    const b = await world.phone("b", account);
-    const opened = { title: "Friday", folderId: null, notes: "Bring straps" };
-    const cleared = { ...opened, notes: "" };
-    a.store.put("routine", "r", { ...opened, exercises: [], position: 0 });
-    await a.sync();
-    await b.sync();
-    organizeRoutine(b.store, "r", opened, cleared);
-    await b.sync();
-    await a.sync();
-    expect(a.store.get("routine", "r")?.content?.notes).toBe("");
-    organizeRoutine(a.store, "r", opened, cleared);
-    expect(a.store.get("routine", "r")?.status).toBe("synced");
-    expect(a.store.prepareSubmissions("1.0")).toEqual([]);
-    organizeRoutine(b.store, "r", cleared, { ...cleared, title: "Saturday" });
-    await b.sync();
-    await a.sync();
-    expect(a.store.get("routine", "r")).toMatchObject({
-      status: "synced",
-      content: { title: "Saturday", notes: "" },
-    });
-  } finally {
-    await world.dispose();
-  }
-});
-
 it("deletes a synced routine on every phone and keeps the workouts started from it", {
   timeout: 60000,
 }, async () => {
@@ -127,7 +98,6 @@ it("deletes a synced routine on every phone and keeps the workouts started from 
     const routine = {
       title: "Friday",
       folderId: null,
-      notes: "",
       exercises: [],
       position: 0,
       effortScale: null,
@@ -163,7 +133,7 @@ it("refuses to delete a routine that changed since it was opened, or has a sync 
     const account = { server: "s", account: "athlete", transport: server.transport("athlete") };
     const a = await world.phone("a", account);
     const b = await world.phone("b", account);
-    const opened = { title: "Friday", folderId: null, notes: "", exercises: [], position: 0 };
+    const opened = { title: "Friday", folderId: null, exercises: [], position: 0 };
     a.store.put("routine", "r", opened);
     await a.sync();
     await b.sync();
@@ -178,9 +148,9 @@ it("refuses to delete a routine that changed since it was opened, or has a sync 
 
     // A conflicting edit is settled by review first, even against the version A opened.
     const theirs = { ...opened, title: "Friday heavy" };
-    b.store.put("routine", "r", { ...theirs, notes: "Belt" });
+    b.store.put("routine", "r", { ...theirs, position: 3 });
     await b.sync();
-    a.store.put("routine", "r", { ...theirs, notes: "Straps" });
+    a.store.put("routine", "r", { ...theirs, position: 4 });
     await a.sync();
     const conflicted = a.store.get("routine", "r");
     expect(conflicted?.problem).not.toBeNull();
@@ -200,7 +170,6 @@ it("puts a routine moved to no folder after the routines whose folder is gone", 
   const routine = (title: string, folderId: string | null, position: number) => ({
     title,
     folderId,
-    notes: "",
     position,
     exercises: [],
     effortScale: null,

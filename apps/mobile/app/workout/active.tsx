@@ -28,8 +28,10 @@ import {
 import Animated, { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppData } from "../../src/data/app-data.tsx";
+import { workoutExerciseNotes, workoutsByExercise } from "../../src/data/exercise-notes.ts";
+import { hasUnread, useSeenComments } from "../../src/data/note-seen.ts";
 import { useLive, usePastWorkouts } from "../../src/data/queries.ts";
-import { workoutJournalData } from "../../src/data/read.ts";
+import { refreshedJournal, workoutJournalData } from "../../src/data/read.ts";
 import { restProgress, restTimer, useRest } from "../../src/data/rest-timer.ts";
 import {
   deleteHeldSet,
@@ -93,13 +95,14 @@ import {
 import { supersetMemberships } from "../../src/model/supersets.ts";
 import type { WorkoutPlan } from "../../src/model/types.ts";
 import { countsTowardTotals } from "../../src/model/volume.ts";
+import type { ExerciseCardNotes as CardNotes } from "../../src/model/workout-notes.ts";
 import { font, gutter, numeral, radius, space, type } from "../../src/theme.ts";
 import { DestructiveButton } from "../../src/ui/action-sheet.tsx";
 import { BottomSheet } from "../../src/ui/bottom-sheet.tsx";
 import { CommitButton } from "../../src/ui/commit-button.tsx";
 import { Enter, StillOnOpen } from "../../src/ui/enter.tsx";
+import { ExerciseCardNotes } from "../../src/ui/exercise-card-notes.tsx";
 import { ExerciseMoveButtons } from "../../src/ui/exercise-move-buttons.tsx";
-import { ExerciseNotes } from "../../src/ui/exercise-notes.tsx";
 import { ExercisePicker } from "../../src/ui/exercise-picker.tsx";
 import { lastFocusMove, moveFocus } from "../../src/ui/focus.ts";
 import { distanceSuffix, durationLabel, workoutEffort } from "../../src/ui/format.ts";
@@ -174,6 +177,7 @@ import { clock, useTicker } from "../../src/ui/use-ticker.ts";
 import { type SetDrafts, useWorkoutInputs } from "../../src/ui/use-workout-inputs.ts";
 import { useWorkoutSelection } from "../../src/ui/use-workout-selection.ts";
 import { WorkoutDetailsEditor } from "../../src/ui/workout-details-editor.tsx";
+import { WorkoutNotesPanel } from "../../src/ui/workout-notes-panel.tsx";
 
 type Unit = "kg" | "lbs";
 type Opened = NonNullable<Parameters<typeof updateSet>[3]>;
@@ -348,15 +352,40 @@ export default function ActiveWorkoutScreen() {
       : null;
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: set edits leave prior journals unchanged.
-  const journal = useMemo(
+  const journalHistory = useMemo(
     () => (settled && workoutId ? workoutJournalData(store, workoutId) : null),
     [store, workoutId, historyVersion, settled],
+  );
+  // This workout's own notes and comments are written with the running workout's version.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: read again for every change.
+  const journal = useMemo(
+    () => (journalHistory ? refreshedJournal(store, journalHistory) : null),
+    [store, journalHistory, version],
   );
   const carried = journal?.carried ?? [];
   const needsReview =
     !!journal &&
     (journal.problems.length > 0 || carried.some(({ note }) => journal.rejectedIds.has(note.id)));
-  const coachReplies = carried.filter((item) => item.showReply).length;
+  const seenComments = useSeenComments();
+  const [notesOpen, setNotesOpen] = useState(false);
+  const notesUnread =
+    !!journal &&
+    [...carried.map(({ note }) => note), ...journal.notes].some((note) =>
+      hasUnread(journal.comments.get(note.id), seenComments),
+    );
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only finished workouts change it.
+  const exerciseHistory = useMemo(
+    () => (settled ? workoutsByExercise(store) : null),
+    [store, historyVersion, settled],
+  );
+  // biome-ignore lint/correctness/useExhaustiveDependencies: notes change with the store version.
+  const exerciseNotes = useMemo(
+    () =>
+      settled && workoutId && exerciseHistory
+        ? workoutExerciseNotes(store, workoutId, exerciseHistory)
+        : null,
+    [store, workoutId, version, settled, exerciseHistory],
+  );
   const rest = useRest(store, workoutId, version);
   useRestEnd(rest);
 
@@ -1582,18 +1611,23 @@ export default function ActiveWorkoutScreen() {
                   <WorkoutMuscleSummary amounts={data.muscleSets} sets={countedSets} />
                   <WorkoutNotesTile
                     count={carried.length + (journal?.notes.length ?? 0)}
-                    coachReplies={coachReplies}
+                    unread={notesUnread}
                     needsReview={needsReview}
+                    open={notesOpen}
                     onPress={() => {
-                      if (gateLeaving()) return;
-                      setRestFor(null);
-                      router.push({
-                        pathname: "/workout/notes/[id]",
-                        params: { id: tree.workout.id },
-                      });
+                      if (needsReview) {
+                        // A note with a sync issue is reviewed on the notes screen.
+                        if (gateLeaving()) return;
+                        setRestFor(null);
+                        router.push({
+                          pathname: "/workout/notes/[id]",
+                          params: { id: tree.workout.id },
+                        });
+                      } else setNotesOpen(!notesOpen);
                     }}
                   />
                 </View>
+                {notesOpen && journal && <WorkoutNotesPanel journal={journal} live />}
                 {problem && (
                   <Enter leaves>
                     <Text accessibilityRole="alert" style={styles.problem}>
@@ -1613,6 +1647,7 @@ export default function ActiveWorkoutScreen() {
                       }}
                     >
                       <EntryCard
+                        notes={exerciseNotes?.get(entry.entry.content.exerciseId)}
                         actionProblem={problem}
                         headingRef={(node) => {
                           if (node) headings.current.set(entry.entry.id, node);
@@ -1985,6 +2020,7 @@ function Subline({ startedAt, sets, effort }: { startedAt: string; sets: string;
 }
 
 function EntryCard({
+  notes,
   actionProblem,
   headingRef,
   rowRef,
@@ -2036,6 +2072,7 @@ function EntryCard({
   onTimer,
   onSyncResolved,
 }: {
+  notes: CardNotes | undefined;
   actionProblem: string | null;
   headingRef: RefCallback<ComponentRef<typeof View>>;
   rowRef: (setId: string, node: ComponentRef<typeof View> | null) => void;
@@ -2107,7 +2144,6 @@ function EntryCard({
   };
   const [expanded, setExpanded] = useState(true);
   const [managing, setManaging] = useState(false);
-  const [noteDraft, setNoteDraft] = useState<string | null>(null);
   const [dismissing, setDismissing] = useState(false);
   const sheetScroll = useRef<ComponentRef<typeof ScrollView>>(null);
   const afterDismiss = useRef<() => void>(undefined);
@@ -2246,12 +2282,6 @@ function EntryCard({
                   return onMove(direction);
                 }}
               />
-              <ExerciseNotes
-                entry={entry.entry}
-                expanded
-                editor={{ draft: noteDraft, setDraft: setNoteDraft }}
-                onInteract={onInteract}
-              />
               <DestructiveButton
                 label="Remove exercise"
                 message={`${name} and its sets will be removed from this workout.`}
@@ -2270,7 +2300,14 @@ function EntryCard({
             </View>
           </BottomSheet>
         )}
-        <ExerciseNotes entry={entry.entry} expanded={expanded} onInteract={onInteract} />
+        <ExerciseCardNotes
+          exerciseId={entry.entry.content.exerciseId}
+          exerciseName={name}
+          workoutId={entry.entry.content.workoutId}
+          notes={notes}
+          live
+          onInteract={onInteract}
+        />
         {expanded && (
           <View style={styles.sets}>
             <View style={styles.headRow}>

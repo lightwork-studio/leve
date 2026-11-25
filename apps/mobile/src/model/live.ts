@@ -38,7 +38,6 @@ export function startWorkout(options: {
     id: newId(),
     content: {
       title: routine?.content.title ?? "",
-      description: "",
       startedAt: new Date(now).toISOString(),
       endedAt: null,
       routineId: routine?.id ?? null,
@@ -46,18 +45,16 @@ export function startWorkout(options: {
         ? {
             title: routine.content.title,
             effortScale: routineEffortScale(routine.content),
-            exercises: routine.content.exercises.map(
-              ({ id: _id, notes: _notes, sets, ...exercise }) => ({
-                ...exercise,
-                supersetId: exercise.supersetId ?? null,
-                sets: sets.map(({ id: _id, ...target }) => ({
-                  ...target,
-                  rpe: target.rpe ?? null,
-                  distanceMeters: target.distanceMeters ?? null,
-                  count: target.count ?? null,
-                })),
-              }),
-            ),
+            exercises: routine.content.exercises.map(({ id: _id, sets, ...exercise }) => ({
+              ...exercise,
+              supersetId: exercise.supersetId ?? null,
+              sets: sets.map(({ id: _id, ...target }) => ({
+                ...target,
+                rpe: target.rpe ?? null,
+                distanceMeters: target.distanceMeters ?? null,
+                count: target.count ?? null,
+              })),
+            })),
           }
         : null,
     },
@@ -74,7 +71,6 @@ export function startWorkout(options: {
         exerciseType: exercise.exerciseType,
         position: e + 1,
         supersetId: exercise.supersetId ?? null,
-        notes: exercise.notes ?? [],
         restSeconds: exercise.restSeconds,
         doubleDumbbellVolume: false,
       },
@@ -97,7 +93,7 @@ export function startWorkout(options: {
 
 /** The record content to store for a new or changed entry (the contract's full shape). */
 export function entryContent(entry: WorkoutEntry): JsonObject {
-  return { ...entry, notes: entry.notes ?? [] } as unknown as JsonObject;
+  return { ...entry } as unknown as JsonObject;
 }
 
 /** Added sets and older workouts have no known original target. */

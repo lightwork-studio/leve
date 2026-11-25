@@ -64,7 +64,6 @@ function RoutineForm({
   const { change } = useAppData();
   const draft = source && "plan" in source ? source : null;
   const [name, setName] = useState(draft?.name ?? "");
-  const [notes, setNotes] = useState("");
   const [folder, setFolder] = useState<string | null>(() =>
     inFolder && groups.some((group) => group.folder?.id === inFolder) ? inFolder : null,
   );
@@ -95,7 +94,7 @@ function RoutineForm({
         // A folder deleted while the form was open leaves the routine in none, as the form shows.
         const target = folder === null ? null : store.get("routine_folder", folder);
         const filed = target?.content && !target.deleted ? folder : null;
-        createRoutine(store, name, filed, plan, settings, notes, effortScale);
+        createRoutine(store, name, filed, plan, settings, effortScale);
       });
     } catch (error) {
       saving.current = false;
@@ -149,8 +148,6 @@ function RoutineForm({
               folders={folders}
               folderId={folder}
               setFolderId={setFolder}
-              notes={notes}
-              setNotes={setNotes}
               autoFocus={focusName}
             />
           )}

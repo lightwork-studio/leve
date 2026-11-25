@@ -19,7 +19,7 @@ import { DestructiveButton } from "./action-sheet.tsx";
 import { BottomSheet } from "./bottom-sheet.tsx";
 import { Button } from "./buttons.tsx";
 import { DurationField, parseWorkoutDuration } from "./duration-editor.tsx";
-import { FieldError, TextArea, TextField } from "./field.tsx";
+import { FieldError, TextField } from "./field.tsx";
 import { durationLabel } from "./format.ts";
 import { CheckIcon } from "./icons.tsx";
 import { SetSyncReview } from "./set-sync-review.tsx";
@@ -65,7 +65,7 @@ export function WorkoutDetailsEditor(props: EditorProps) {
   const restReadOnly = active ? workoutRestReadOnlyReason(store) : null;
   const restRecord = store.get("workout_rest", workout.id);
   const canEditRest = active && !restReadOnly && restRecord?.status !== "conflict";
-  const [draft, setDraft] = useState<Partial<Pick<Workout, "title" | "description">>>({});
+  const [draft, setDraft] = useState<Partial<Pick<Workout, "title">>>({});
   const [duration, setDuration] = useState<string>();
   const elapsed = original.endedAt
     ? (Date.parse(original.endedAt) - Date.parse(original.startedAt)) / 1000
@@ -226,14 +226,6 @@ export function WorkoutDetailsEditor(props: EditorProps) {
             )}
           </View>
         )}
-        <TextArea
-          label="Description"
-          spokenLabel="Workout description"
-          maxLength={LIMITS.descriptionLength}
-          placeholder="How did it go?"
-          value={draft.description ?? original.description}
-          onChangeText={(description) => setDraft((d) => ({ ...d, description }))}
-        />
       </View>
     </BottomSheet>
   );

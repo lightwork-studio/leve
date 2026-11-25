@@ -71,7 +71,8 @@ export default function FinishScreen() {
   const [draft, setDraft] = useState<{
     id: string;
     title?: TextDraft;
-    description?: TextDraft;
+    /** A note on the whole workout, saved with it as a workout note. */
+    note?: TextDraft;
     /**
      * How long the workout lasted, when the lifter set it (otherwise it ends on saving), and the
      * start it was counted from: saving is refused if the start changed since.
@@ -80,6 +81,7 @@ export default function FinishScreen() {
   }>();
   const [editingTime, setEditingTime] = useState(false);
   const [countForRoutine, setCountForRoutine] = useState(true);
+  const [pinNote, setPinNote] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [refusals, setRefusals] = useState(0);
@@ -110,16 +112,15 @@ export default function FinishScreen() {
     );
   }
   const { tree, summary, settings, initialPlan } = data;
+  const routineTitle = initialPlan?.title || tree.workout.content.title || "routine";
   const edits = draft?.id === tree.workout.id ? draft : undefined;
   const title = edits?.title?.value ?? tree.workout.content.title;
-  const notes = edits?.description?.value ?? tree.workout.content.description;
-  const edit = (field: "title" | "description", value: string) =>
+  const notes = edits?.note?.value ?? "";
+  const edit = (field: "title" | "note", value: string) =>
     setDraft((current) => {
       const same = current?.id === tree.workout.id ? current : { id: tree.workout.id };
-      return {
-        ...same,
-        [field]: { original: same[field]?.original ?? tree.workout.content[field], value },
-      };
+      const original = field === "title" ? tree.workout.content.title : "";
+      return { ...same, [field]: { original: same[field]?.original ?? original, value } };
     });
   const effort = workoutEffort(summary, settings.weightUnit);
   const progress = setProgress(tree);
@@ -153,13 +154,12 @@ export default function FinishScreen() {
           tree.workout.id,
           {
             ...(edits?.title && { title: edits.title.value }),
-            ...(edits?.description && { description: edits.description.value }),
+            ...(edits?.note && { note: { text: edits.note.value, pinned: counting && pinNote } }),
             ...(edits?.duration && { durationSeconds: edits.duration.seconds }),
             countForRoutine,
           },
           {
             ...(edits?.title && { title: edits.title.original }),
-            ...(edits?.description && { description: edits.description.original }),
             ...(edits?.duration && { startedAt: edits.duration.from, endedAt: null }),
           },
         ),
@@ -302,18 +302,36 @@ export default function FinishScreen() {
             </Group>
           )}
 
-          <Group label="Notes">
+          <Group
+            label="Notes"
+            footnote={
+              counting && pinNote
+                ? `Saved as a workout note. Shows in every ${routineTitle} until you delete it.`
+                : counting
+                  ? `Saved as a workout note. Shows in the next ${routineTitle}, then stays with this one.`
+                  : "Saved as a workout note. Shows in your next workout, then stays with this one."
+            }
+          >
             <TextInput
-              accessibilityLabel="Workout description"
-              maxLength={LIMITS.descriptionLength}
+              accessibilityLabel="Workout note"
+              maxLength={LIMITS.noteLength}
               value={notes}
               editable={!saving}
-              onChangeText={(value) => edit("description", value)}
+              onChangeText={(value) => edit("note", value)}
               multiline
               placeholder="How did it go?"
               placeholderTextColor={c.fg3}
               style={styles.notes}
             />
+            {counting && (
+              <ToggleRow
+                divider
+                label={`Pin to ${routineTitle}`}
+                disabled={saving}
+                on={pinNote}
+                onChange={setPinNote}
+              />
+            )}
           </Group>
         </ScrollView>
 

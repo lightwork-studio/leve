@@ -90,7 +90,7 @@ vi.mock("../src/data/app-data.tsx", () => ({
   }),
 }));
 
-it("records a pinned note and linked reply, then opens the next workout with both and a later one with just the pin", async () => {
+it("records a pinned note, shows its comments read-only, and brings it back in every later workout of its routine", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-11-01T10:15:00Z"));
@@ -116,8 +116,7 @@ it("records a pinned note and linked reply, then opens the next workout with bot
       const day = i + 1;
       store.put("workout", workoutId, {
         title: "Strength",
-        description: "",
-        routineId: null,
+        routineId: "strength",
         startedAt: `2026-11-0${day}T10:00:00.000Z`,
         endedAt: `2026-11-0${day}T11:00:00.000Z`,
       });
@@ -147,13 +146,12 @@ it("records a pinned note and linked reply, then opens the next workout with bot
     expect(store.list("workout_note", { parentId: "first" })).toHaveLength(0);
     await press("Add note");
     await enter("Note", "Check grip");
-    await enter("Coach reply", "Keep thumbs around the bar");
+    expect(root.findAllByProps({ accessibilityLabel: "Coach reply" })).toEqual([]);
     store.bindAccount("server", "lifter");
     store.setNegotiated("1.2", []);
     version++;
     root = await open("first");
     expect(root.findByProps({ accessibilityLabel: "Note" }).props.editable).toBe(false);
-    expect(root.findByProps({ accessibilityLabel: "Coach reply" }).props.editable).toBe(false);
     expect(root.findByProps({ accessibilityLabel: "Pin for future workouts" }).props.disabled).toBe(
       true,
     );
@@ -176,6 +174,24 @@ it("records a pinned note and linked reply, then opens the next workout with bot
     expect(store.list("workout_note", { parentId: "first" })).toHaveLength(1);
     const labels = () => root.findAllByType(Text).map((n) => n.children.join(""));
     expect(labels()).toContain("Pinned note");
+    const [saved] = store.list("workout_note", { parentId: "first" });
+    if (!saved) throw Error("Missing saved note");
+    expect(saved.content).toEqual({
+      workoutId: "first",
+      pinned: true,
+      text: "Check grip",
+      createdAt: "2026-11-01T10:15:00.000Z",
+      agent: null,
+    });
+    store.put("workout_note_comment", "coach", {
+      noteId: saved.id,
+      text: "Keep thumbs around the bar",
+      createdAt: "2026-11-01T11:30:00.000Z",
+      agent: "Coach",
+    });
+    version++;
+    root = await open("first");
+    expect(labels()).toEqual(expect.arrayContaining(["Coach", "Keep thumbs around the bar"]));
     root = await open("second");
     expect(labels()).toContain("Check grip");
     expect(labels()).toContain("Keep thumbs around the bar");
@@ -184,7 +200,7 @@ it("records a pinned note and linked reply, then opens the next workout with bot
       return `Strength · ${dayLabel(startedAt)} · ${timeLabel(startedAt)}`;
     };
     expect(labels()).toContain(sessionLabel(2));
-    expect(labels()).toContain(`Coach reply · ${sessionLabel(1)}`);
+    expect(labels()).toContain(`Pinned note · ${sessionLabel(1)}`);
     await press("Open source workout’s notes");
     expect(router.push).toHaveBeenLastCalledWith({
       pathname: "/workout/notes/[id]",
@@ -195,31 +211,43 @@ it("records a pinned note and linked reply, then opens the next workout with bot
     await press("Edit note");
     expect(labels()).toContain(sessionLabel(1));
     root = await open("third");
+    // Pinned, it comes back in every later workout of its routine, with its comments.
     expect(labels()).toContain("Check grip");
-    expect(labels()).not.toContain("Keep thumbs around the bar");
+    expect(labels()).toContain(`Pinned note · ${sessionLabel(1)}`);
+    expect(labels()).toContain("Keep thumbs around the bar");
 
     const original = store.list("workout_note", { parentId: "first" })[0];
     if (!original?.content) throw Error("Missing source note");
     root = await open("second");
-    // A newer reply has arrived since this card rendered. Unpin only changes its kind.
-    const updated = {
-      ...original.content,
-      text: "  Check grip  ",
-      reply: { text: "  Use a neutral grip  ", createdAt: "2026-11-01T11:30:00.000Z" },
-    };
+    // A newer edit and comment have arrived since this card rendered. Unpin only changes the pin.
+    const updated = { ...original.content, text: "  Check grip  " };
     store.put("workout_note", original.id, updated);
+    store.put("workout_note_comment", "later", {
+      noteId: original.id,
+      text: "  Use a neutral grip  ",
+      createdAt: "2026-11-01T12:00:00.000Z",
+      agent: "Coach",
+    });
     await press("Unpin note");
     root = await open("second");
     expect(store.get("workout_note", original.id)?.content).toEqual({
       ...updated,
-      kind: "session",
+      pinned: false,
     });
+    expect(
+      store
+        .list("workout_note_comment")
+        .map((row) => row.id)
+        .sort(),
+    ).toEqual(["coach", "later"]);
     expect(labels()).toContain("  Use a neutral grip  ");
+    expect(labels()).toContain(`Last time · ${sessionLabel(1)}`);
     expect(labels()).not.toContain("Unpin note");
     root = await open("third");
     expect(labels()).not.toContain("  Check grip  ");
     root = await open("first");
-    expect(labels()).toContain("Session note");
+    expect(labels()).toContain("Note");
+    expect(labels()).not.toContain("Pinned note");
     expect(labels()).toContain("  Check grip  ");
 
     await press("Add note");
@@ -272,8 +300,8 @@ it("keeps same-minute source sessions distinct in their carried cards and source
         workoutId: source,
         createdAt: "2026-11-01T10:10:00.000Z",
         text: "Check grip",
-        kind: "sticky",
-        reply: null,
+        pinned: true,
+        agent: null,
       });
     }
     store.put(
@@ -341,8 +369,8 @@ it("keeps a newly rejected source note intact when its carried card is unpinned"
       workoutId: "source",
       createdAt: "2026-11-02T09:30:00.000Z",
       text: "Set the bench",
-      kind: "sticky",
-      reply: null,
+      pinned: true,
+      agent: null,
     });
     await act(() => {
       screen = create(createElement(WorkoutNotesScreen));
@@ -376,8 +404,8 @@ it("keeps a newly rejected source note intact when its carried card is unpinned"
 });
 
 it.each([false, true])(
-  "reviews both devices’ note, reply and rest versions (same reply text: %s)",
-  async (sameReply) => {
+  "reviews both devices’ note and rest versions (same note text: %s)",
+  async (sameText) => {
     const world = new World();
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     let screen: ReactTestRenderer | undefined;
@@ -397,10 +425,10 @@ it.each([false, true])(
       a.store.put("workout", "next", workout("Next", { startedAt: "2026-10-02T08:00:00.000Z" }));
       const note = {
         workoutId: "first",
-        kind: "sticky",
+        pinned: true,
         text: "Seat height",
         createdAt: "2026-10-01T08:10:00.000Z",
-        reply: null,
+        agent: null,
       };
       a.store.put("workout_note", "seat", note);
       a.store.put("workout_rest", "first", { workoutId: "first", seconds: 45 });
@@ -408,15 +436,13 @@ it.each([false, true])(
       await b.sync();
       for (const [phone, text, seconds] of [
         [a, "Use seat 3", 90],
-        [b, sameReply ? "Use seat 3" : "Try seat 4", 30],
+        [b, sameText ? "Use seat 3" : "Try seat 4", 30],
       ] as const) {
+        // With the same text, this device unpinned the note instead.
         phone.store.put("workout_note", "seat", {
           ...note,
-          reply: {
-            text,
-            createdAt:
-              phone === b && sameReply ? "2026-10-02T10:00:00.000Z" : "2026-10-01T10:00:00.000Z",
-          },
+          text,
+          pinned: !(phone === b && sameText),
         });
         phone.store.put("workout_rest", "first", { workoutId: "first", seconds });
         await phone.sync();
@@ -450,24 +476,18 @@ it.each([false, true])(
       expect(labels()).toEqual(
         expect.arrayContaining([
           "Review note",
-          sameReply
-            ? "Pinned note · Coach reply: Use seat 3"
-            : "Pinned note · Coach reply: Try seat 4",
-          "Pinned note · Coach reply: Use seat 3",
+          sameText ? "Use seat 3" : "Try seat 4",
+          "Use seat 3",
+          "Pinned note",
         ]),
       );
-      if (sameReply)
-        expect(labels()).toEqual(
-          expect.arrayContaining([
-            "Reply recorded 2026-10-01T10:00:00.000Z",
-            "Reply recorded 2026-10-02T10:00:00.000Z",
-          ]),
-        );
+      if (sameText) expect(labels()).toContain("Note");
+      else expect(labels()).not.toContain("Note");
       await press("Use server version");
       await b.sync();
       expect(store.get("workout_note", "seat")).toMatchObject({
         status: "synced",
-        content: { reply: { text: "Use seat 3" } },
+        content: { text: "Use seat 3", pinned: true },
       });
       expect(() => resolveWorkoutRecord(store, "first", shown, "keep_mine")).toThrow(/changed/);
       const saved = readWorkoutTree(store, "first")?.workout;
@@ -520,10 +540,16 @@ it.each(["save", "delete"])(
       await a.sync();
       b.store.put("workout_note", "n", {
         workoutId: id,
-        kind: "sticky",
+        pinned: true,
         text: "Seat four",
         createdAt: "2026-11-01T10:00:00.000Z",
-        reply: { text: "Keep it there", createdAt: "2026-11-01T10:30:00.000Z" },
+        agent: null,
+      });
+      b.store.put("workout_note_comment", "c", {
+        noteId: "n",
+        text: "Keep it there",
+        createdAt: "2026-11-01T10:30:00.000Z",
+        agent: null,
       });
       b.store.put("workout_rest", id, { workoutId: id, seconds: 45 });
       b.store.put("workout_set", "s", set("e", { reps: 10 }));
@@ -555,11 +581,15 @@ it.each(["save", "delete"])(
         await b.restart();
         const tree = readWorkoutTree(b.store, copy.id);
         expect(tree?.entries[0]?.sets[0]?.content.reps).toBe(10);
-        expect(b.store.list("workout_note", { parentId: copy.id })[0]?.content).toMatchObject({
-          workoutId: copy.id,
-          text: "Seat four",
-          reply: { text: "Keep it there" },
-        });
+        const notes = b.store.list("workout_note", { parentId: copy.id });
+        expect(notes.map((row) => row.content)).toEqual([
+          expect.objectContaining({ workoutId: copy.id, pinned: true, text: "Seat four" }),
+        ]);
+        const noteCopy = notes[0];
+        if (!noteCopy) throw Error("Missing recovered note");
+        expect(
+          b.store.list("workout_note_comment", { parentId: noteCopy.id }).map((row) => row.content),
+        ).toEqual([expect.objectContaining({ noteId: noteCopy.id, text: "Keep it there" })]);
         expect((await server.row("alice", "workout_rest", copy.id))?.content?.seconds).toBe(45);
       } else {
         await press("Accept workout deletion");
@@ -573,6 +603,7 @@ it.each(["save", "delete"])(
         await press("Delete workout and its local changes");
         await b.sync();
         expect(b.store.list("workout_note")).toHaveLength(0);
+        expect(b.store.list("workout_note_comment")).toHaveLength(0);
         expect(b.store.list("workout")).toHaveLength(0);
       }
       expect(b.store.hasUnsyncedWork()).toBe(false);
@@ -757,10 +788,10 @@ it("compares both source workouts and creation times before resolving a moved no
     a.store.put("workout", "fri", workout("Friday"));
     const text = {
       workoutId: "mon",
-      kind: "session",
+      pinned: false,
       text: "Seat three",
       createdAt: "2026-11-10T10:00:00.000Z",
-      reply: null,
+      agent: null,
     };
     a.store.put("workout_note", "n", text);
     await a.sync();
@@ -862,7 +893,6 @@ it("deletes a note from its menu only once the action sheet is confirmed", async
     id = "only";
     store.put("workout", id, {
       title: "Strength",
-      description: "",
       routineId: null,
       startedAt: "2026-11-01T10:00:00.000Z",
       endedAt: "2026-11-01T11:00:00.000Z",
@@ -871,8 +901,8 @@ it("deletes a note from its menu only once the action sheet is confirmed", async
       workoutId: id,
       createdAt: "2026-11-01T10:10:00.000Z",
       text: "Knees felt good",
-      kind: "session",
-      reply: null,
+      pinned: false,
+      agent: null,
     });
     await act(() => {
       screen = create(createElement(WorkoutNotesScreen));
@@ -887,10 +917,10 @@ it("deletes a note from its menu only once the action sheet is confirmed", async
         button?.props.onPress();
       });
     await pressLast("Delete note");
-    expect(texts()).toContain("This note and its coach reply will be deleted.");
+    expect(texts()).toContain("This note and its comments will be deleted.");
     await pressLast("Keep it");
     expect(store.list("workout_note", { parentId: id })).toHaveLength(1);
-    expect(texts()).not.toContain("This note and its coach reply will be deleted.");
+    expect(texts()).not.toContain("This note and its comments will be deleted.");
     await pressLast("Delete note");
     // The last "Delete note" is the confirming choice in the action sheet.
     await pressLast("Delete note");

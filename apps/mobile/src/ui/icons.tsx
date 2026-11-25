@@ -268,3 +268,17 @@ export const InfoIcon = (props: IconProps) => (
     <Path d="M12 11v5.5M12 7.6v.2" />
   </Svg>
 );
+
+/** A pinned note: a push pin. */
+export const PinIcon = (props: IconProps) => (
+  <Svg {...frame(props)}>
+    <Path d="M9 3.5h6M10 3.5V9l-3.2 3.6h10.4L14 9V3.5M12 12.6v7.9" />
+  </Svg>
+);
+
+/** A comment: a speech bubble. */
+export const CommentIcon = (props: IconProps) => (
+  <Svg {...frame(props)}>
+    <Path d="M4.5 5.5h15v10h-8.5l-4 3.5v-3.5h-2.5z" />
+  </Svg>
+);

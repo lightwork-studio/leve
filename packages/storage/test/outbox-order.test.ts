@@ -14,7 +14,6 @@ afterAll(removeTempDirs);
 const T = "2026-11-10T08:00:00.000Z";
 const workout: JsonObject = {
   title: "Push",
-  description: "",
   startedAt: T,
   endedAt: T,
   routineId: null,
@@ -27,7 +26,6 @@ const entry: JsonObject = {
   position: 1,
   supersetId: null,
   restSeconds: 120,
-  notes: [],
   doubleDumbbellVolume: false,
 };
 const set: JsonObject = {

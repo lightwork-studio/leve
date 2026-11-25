@@ -10,6 +10,17 @@ import {
 
 const { kinds, features } = LEVE_CONTRACT_DEFINITION;
 
+/** A kind that every profile before the last stands in for a server without. */
+function inLastProfile<K extends { fields: Record<string, object> }>(kind: K) {
+  return {
+    ...kind,
+    since: "2.0" as const,
+    fields: Object.fromEntries(
+      Object.entries(kind.fields).map(([key, field]) => [key, { ...field, since: "2.0" as const }]),
+    ),
+  };
+}
+
 /** Test profiles for the old development rollout's feature boundaries. */
 const definition = {
   releases: ["1.0", "1.1", "1.2", "2.0"],
@@ -37,16 +48,10 @@ const definition = {
         repsInReserve: { ...kinds.workout_set.fields.repsInReserve, since: "1.2" },
       },
     },
-    workout_note: {
-      ...kinds.workout_note,
-      since: "2.0",
-      fields: Object.fromEntries(
-        Object.entries(kinds.workout_note.fields).map(([key, field]) => [
-          key,
-          { ...field, since: "2.0" as const },
-        ]),
-      ),
-    },
+    workout_note: inLastProfile(kinds.workout_note),
+    workout_note_comment: inLastProfile(kinds.workout_note_comment),
+    exercise_note: inLastProfile(kinds.exercise_note),
+    exercise_note_comment: inLastProfile(kinds.exercise_note_comment),
     workout_rest: {
       ...kinds.workout_rest,
       since: "2.0",
@@ -69,6 +74,7 @@ const definition = {
     ...features,
     reps_in_reserve: { ...features.reps_in_reserve, since: "1.2" },
     workout_journal: { ...features.workout_journal, since: "2.0" },
+    exercise_notes: { ...features.exercise_notes, since: "2.0" },
     workout_rest: { ...features.workout_rest, since: "2.0" },
     track_reps_in_reserve: { ...features.track_reps_in_reserve, since: "2.0" },
   },

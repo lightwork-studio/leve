@@ -80,7 +80,7 @@ describe("contract definitions", () => {
   it("refuses a feature whose fields are newer than the feature", () => {
     const broken = {
       ...base,
-      features: { effort: { since: "1.0", description: "", fields: [["workout", "effort"]] } },
+      features: { effort: { since: "1.0", fields: [["workout", "effort"]] } },
     } as unknown as ContractDefinition;
     expect(() => createContract(broken)).toThrow(/missing in 1.0/);
   });
@@ -153,7 +153,6 @@ describe("Leve's contract", () => {
   it("normalizes missing optional fields to null", () => {
     const normalized = leveContract.normalize("workout", {
       title: "A",
-      description: "",
       startedAt: "2026-11-10T10:00:00.000Z",
     });
     expect(normalized).toMatchObject({ endedAt: null, routineId: null });
@@ -162,21 +161,34 @@ describe("Leve's contract", () => {
 });
 
 describe("record size", () => {
-  const note = (text: string, index: number) => ({
-    id: `n${index}`,
-    text,
-    createdAt: "2026-11-10T10:00:00.000Z",
+  const set = (index: number) => ({
+    id: `s${index}`,
+    type: "normal",
+    weightKg: 60,
+    reps: 8,
+    repRangeMin: null,
+    repRangeMax: null,
+    distanceMeters: null,
+    durationSeconds: null,
+    count: null,
+    rpe: null,
+    repsInReserve: null,
   });
-  const entry = (notes: unknown[]) => ({
-    workoutId: "w1",
-    exerciseId: "bench",
-    exerciseName: "Bench",
-    exerciseType: "weight_reps",
+  const routine = (exercises: number) => ({
+    title: "Big",
+    folderId: null,
     position: 1,
-    supersetId: null,
-    restSeconds: 90,
-    notes,
-    doubleDumbbellVolume: false,
+    effortScale: null,
+    exercises: Array.from({ length: exercises }, (_, i) => ({
+      id: `x${i}`,
+      exerciseId: "bench",
+      exerciseName: "Bench",
+      exerciseType: "weight_reps",
+      supersetId: null,
+      restSeconds: 90,
+      useRepRange: false,
+      sets: Array.from({ length: 150 }, (_, j) => set(j)),
+    })),
   });
 
   it("counts UTF-8 bytes of the JSON text", () => {
@@ -185,19 +197,18 @@ describe("record size", () => {
   });
 
   it("rejects a record over the limit even when every field is within its own limit", () => {
-    // 100 notes of 10,000 two-byte characters: each note is valid, the record is ~2 MB.
-    const huge = entry(Array.from({ length: 100 }, (_, i) => note("é".repeat(10_000), i)));
+    // 50 exercises of 150 sets: within the routine limits, the record is ~1.4 MB.
+    const huge = routine(50);
     expect(jsonBytes(huge)).toBeGreaterThan(MAX_RECORD_BYTES);
     const message = `record larger than ${MAX_RECORD_BYTES} bytes`;
-    expect(leveContract.decode("workout_exercise", huge, "1.0")).toContainEqual({
+    expect(leveContract.decode("routine", huge, "1.0")).toContainEqual({
       path: "$",
       message,
     });
-    expect(leveContract.validateContent("workout_exercise", huge)).toContainEqual({
+    expect(leveContract.validateContent("routine", huge)).toContainEqual({
       path: "$",
       message,
     });
-    const fits = entry(Array.from({ length: 9 }, (_, i) => note("é".repeat(10_000), i)));
-    expect(leveContract.decode("workout_exercise", fits, "1.0")).toEqual([]);
+    expect(leveContract.decode("routine", routine(7), "1.0")).toEqual([]);
   });
 });

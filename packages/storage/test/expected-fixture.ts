@@ -12,7 +12,6 @@ const noSetMetrics = { distanceMeters: null, durationSeconds: null, count: null 
 
 const workoutDone = {
   title: "Push day",
-  description: "Bench focus",
   startedAt: "2026-11-09T17:00:00.000Z",
   endedAt: "2026-11-09T18:05:30.000Z",
   routineId: "r-1",
@@ -37,7 +36,6 @@ const landmine = {
 };
 
 const workoutLive = {
-  description: "",
   startedAt: "2026-11-10T08:12:00.000Z",
   endedAt: null,
   routineId: null,
@@ -139,7 +137,6 @@ export const EXPECTED_FIXTURE: FixtureMeaning = {
         state: "live",
         content: {
           title: "Push A",
-          notes: "Heavy week",
           folderId: null,
           position: 1,
           exercises: [
@@ -150,7 +147,6 @@ export const EXPECTED_FIXTURE: FixtureMeaning = {
               exerciseType: "weight_reps",
               supersetId: null,
               restSeconds: 120,
-              notes: [],
               useRepRange: true,
               sets: [
                 {
@@ -182,7 +178,6 @@ export const EXPECTED_FIXTURE: FixtureMeaning = {
               exerciseType: "duration",
               supersetId: null,
               restSeconds: 60,
-              notes: [],
               useRepRange: false,
               sets: [
                 {
@@ -315,7 +310,6 @@ export const EXPECTED_FIXTURE: FixtureMeaning = {
           position: 1,
           supersetId: null,
           restSeconds: 120,
-          notes: [{ id: "n-1", text: "Elbows tucked", createdAt: "2026-11-09T17:02:00.000Z" }],
           doubleDumbbellVolume: false,
         },
       },
@@ -343,7 +337,6 @@ export const EXPECTED_FIXTURE: FixtureMeaning = {
           position: 1,
           supersetId: null,
           restSeconds: 180,
-          notes: [],
           doubleDumbbellVolume: false,
         },
         baseRevision: null,
@@ -371,7 +364,6 @@ export const EXPECTED_FIXTURE: FixtureMeaning = {
           position: 2,
           supersetId: 1,
           restSeconds: 90,
-          notes: [],
           doubleDumbbellVolume: true,
         },
       },
@@ -528,7 +520,7 @@ export const EXPECTED_FIXTURE: FixtureMeaning = {
       release: "1.0",
       wireContent:
         '{"doubleDumbbellVolume":false,"exerciseId":"barbell-squat","exerciseName":"Squat",' +
-        '"exerciseType":"weight_reps","notes":[],"position":1,"restSeconds":180,' +
+        '"exerciseType":"weight_reps","position":1,"restSeconds":180,' +
         '"supersetId":null,"workoutId":"w-live"}',
       descendants: null,
       omitted: "[]",
@@ -574,7 +566,7 @@ export const EXPECTED_FIXTURE: FixtureMeaning = {
       localSeq: 1,
       release: "1.0",
       wireContent:
-        '{"description":"","endedAt":null,"routineId":null,' +
+        '{"endedAt":null,"routineId":null,' +
         '"startedAt":"2026-11-10T08:12:00.000Z","title":"Leg day"}',
       descendants: null,
       omitted: "[]",

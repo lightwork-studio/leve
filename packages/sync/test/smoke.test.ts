@@ -47,7 +47,7 @@ describe("smoke", () => {
   it("records offline, survives restart, syncs, rejects a stale edit and resolves it", async () => {
     const { openPhone, client, service, storage } = await setup();
     let phone = await openPhone();
-    phone.put("workout", "w1", { title: "Push", description: "", startedAt: T, endedAt: null });
+    phone.put("workout", "w1", { title: "Push", startedAt: T, endedAt: null });
     phone.put("workout_exercise", "e1", {
       workoutId: "w1",
       exerciseId: "bench",
@@ -55,7 +55,6 @@ describe("smoke", () => {
       exerciseType: "weight_reps",
       position: 1,
       restSeconds: 90,
-      notes: [],
       doubleDumbbellVolume: false,
     });
     phone.put("workout_set", "s1", {
@@ -85,7 +84,7 @@ describe("smoke", () => {
     // The phone edits the same set from the old revision.
     const before = phone.get("workout_set", "s1");
     phone.put("workout_set", "s1", { ...before?.content, reps: 7 });
-    phone.put("workout", "w1", { title: "Push A", description: "", startedAt: T, endedAt: null });
+    phone.put("workout", "w1", { title: "Push A", startedAt: T, endedAt: null });
     const outcome = await client(phone).sync();
     expect(outcome.state).toBe("synced");
     expect(phone.get("workout_set", "s1")).toMatchObject({

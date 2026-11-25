@@ -12,7 +12,6 @@ export const T = "2026-11-10T08:00:00.000Z";
 
 export const workout = {
   title: "Push day",
-  description: "",
   startedAt: "2026-11-10T07:00:00.000Z",
   endedAt: null,
   routineId: null,
@@ -25,7 +24,6 @@ export const benchEntry = {
   position: 1,
   supersetId: null,
   restSeconds: 120,
-  notes: [],
   doubleDumbbellVolume: false,
 };
 export const set = (position: number, weightKg: number | null, reps: number) => ({
@@ -66,7 +64,6 @@ export async function seedAccount(
     tx.writeLive("body_measurement", "bm-1", measurement);
     tx.writeLive("routine", "r-1", {
       title: "Old",
-      notes: "",
       folderId: null,
       position: 1,
       exercises: [],

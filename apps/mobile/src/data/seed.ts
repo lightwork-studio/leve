@@ -117,7 +117,6 @@ export function seedSyntheticData(store: DeviceStore, now: Date = new Date()): v
   ROUTINES.forEach((routine, index) => {
     store.put("routine", routine.id, {
       title: routine.title,
-      notes: "",
       folderId: routine.folder,
       position: index + 1,
       exercises: routine.plan.map((plan, e) => ({
@@ -127,7 +126,6 @@ export function seedSyntheticData(store: DeviceStore, now: Date = new Date()): v
         exerciseType: plan.exercise.type,
         supersetId: null,
         restSeconds: plan.exercise.type === "duration" ? 30 : 120,
-        notes: [],
         useRepRange: plan.exercise.type !== "duration",
         sets: Array.from({ length: plan.sets }, (_, s) =>
           targetSet(`${routine.id}-e${e + 1}-s${s + 1}`, plan),
@@ -147,6 +145,7 @@ export function seedSyntheticData(store: DeviceStore, now: Date = new Date()): v
     return date.getTime();
   };
   let session = 0;
+  const pushDays: { id: string; start: number }[] = [];
   for (let week = WEEKS - 1; week >= 0; week--) {
     const progress = WEEKS - 1 - week;
     const plan: [Seeded, number, number][] = [
@@ -162,8 +161,10 @@ export function seedSyntheticData(store: DeviceStore, now: Date = new Date()): v
       if (start + workoutMinutes(routine) * 60_000 > now.getTime()) continue;
       session += 1;
       logWorkout(store, `seed-workout-${session}`, routine, start, progress);
+      if (routine === push) pushDays.push({ id: `seed-workout-${session}`, start });
     }
   }
+  seedNotes(store, pushDays, now.getTime());
 
   for (let week = WEEKS; week >= 0; week--) {
     const takenAt = at(week, 0, 7);
@@ -191,6 +192,76 @@ export function seedSyntheticData(store: DeviceStore, now: Date = new Date()): v
 }
 
 type Seeded = (typeof ROUTINES)[number];
+
+/**
+ * Notes on the push day, so the next one shows each kind: pinned setup notes on two exercises and
+ * on the workout, and notes from last time with a coach's reply.
+ */
+function seedNotes(store: DeviceStore, pushDays: { id: string; start: number }[], now: number) {
+  const first = pushDays[0];
+  const last = pushDays.at(-1);
+  if (!first || !last) return;
+  const during = (day: { start: number }, minutes: number) => iso(day.start + minutes * 60_000);
+  // The reply came the next morning, or a minute ago if that is later than now. A logged push day
+  // ended before now, and every note is written within its first 40 minutes.
+  const replied = iso(Math.min(last.start + 15 * 60 * 60_000, now - 60_000));
+  const exerciseNote = (
+    id: string,
+    exerciseId: string,
+    day: typeof first,
+    text: string,
+    pinned: boolean,
+  ) =>
+    store.put("exercise_note", id, {
+      exerciseId,
+      workoutId: day.id,
+      pinned,
+      text,
+      createdAt: during(day, 20),
+      agent: null,
+    });
+  exerciseNote(
+    "seed-note-grip",
+    X.bench.id,
+    first,
+    "Grip just outside the rings, feet tucked",
+    true,
+  );
+  exerciseNote("seed-note-incline", X.incline.id, first, "Bench at 30°, seat on 3", true);
+  exerciseNote(
+    "seed-note-slow",
+    X.bench.id,
+    last,
+    "Last rep of set 3 was slow off the chest",
+    false,
+  );
+  store.put("exercise_note_comment", "seed-comment-slow", {
+    noteId: "seed-note-slow",
+    text: "Keep 92.5 kg and aim for 8, 7, 7 again. Add weight when all three sets hit 8.",
+    createdAt: replied,
+    agent: "Coach",
+  });
+  store.put("workout_note", "seed-note-warmup", {
+    workoutId: first.id,
+    pinned: true,
+    text: "Band pull-aparts before the first press",
+    createdAt: during(first, 5),
+    agent: null,
+  });
+  store.put("workout_note", "seed-note-sleep", {
+    workoutId: last.id,
+    pinned: false,
+    text: "Slept 5 hours, felt flat. Waited ten minutes for the rack.",
+    createdAt: during(last, 40),
+    agent: null,
+  });
+  store.put("workout_note_comment", "seed-comment-sleep", {
+    noteId: "seed-note-sleep",
+    text: "Sleep was under 6 hours twice this week. Start with your top set while you're fresh.",
+    createdAt: replied,
+    agent: "Coach",
+  });
+}
 
 const WEEKS = 12;
 
@@ -230,7 +301,6 @@ function logWorkout(
         position: e + 1,
         supersetId: null,
         restSeconds: 120,
-        notes: [],
         doubleDumbbellVolume: false,
       },
     ]);
@@ -266,7 +336,6 @@ function logWorkout(
   });
   store.put("workout", id, {
     title: routine.title,
-    description: "",
     startedAt: iso(start),
     endedAt: iso(clock + 2 * 60 * 1000),
     routineId: routine.id,

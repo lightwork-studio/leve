@@ -9,12 +9,7 @@ import {
 import { type Dispatch, type SetStateAction, useEffect, useRef, useState } from "react";
 import { Text, TextInput, View } from "react-native";
 import { newId } from "../data/ids.ts";
-import {
-  changePlanEffort,
-  MAX_EXERCISE_CUES,
-  type PlannedCue,
-  type PlannedExercise,
-} from "../data/routine-actions.ts";
+import { changePlanEffort, type PlannedExercise } from "../data/routine-actions.ts";
 import { parseRestSeconds } from "../data/settings-actions.ts";
 import { effortLabel, effortValue } from "../model/effort.ts";
 import { dropPlace, moveBlock, orderBlocks, shiftExercise } from "../model/plan-order.ts";
@@ -22,24 +17,15 @@ import { leaveSuperset, pairWithPrevious, supersetLabels } from "../model/supers
 import type { Settings } from "../model/types.ts";
 import { font, numeral, radius, space, type } from "../theme.ts";
 import { ActionSheet } from "./action-sheet.tsx";
-import { BottomSheet } from "./bottom-sheet.tsx";
 import { Button } from "./buttons.tsx";
 import { ChoiceRow, MenuRow } from "./choice-row.tsx";
 import { Dialog } from "./dialog.tsx";
 import { DragBlock } from "./drag-block.tsx";
 import { ExercisePicker } from "./exercise-picker.tsx";
-import { TextArea, TitleField } from "./field.tsx";
+import { TitleField } from "./field.tsx";
 import { announce } from "./focus.ts";
 import { haptic } from "./haptics.ts";
-import {
-  CheckIcon,
-  ChevronIcon,
-  GripIcon,
-  InfoIcon,
-  LinkIcon,
-  PlusIcon,
-  TimerIcon,
-} from "./icons.tsx";
+import { CheckIcon, GripIcon, LinkIcon, PlusIcon, TimerIcon } from "./icons.tsx";
 import { RestDialog } from "./live/rest-dialog.tsx";
 import { ModeTile } from "./mode-tile.tsx";
 import { MoreButton } from "./popover-menu.tsx";
@@ -89,18 +75,13 @@ export function planSummary(plan: readonly PlannedExercise[]): string {
   return `${plan.length} ${plan.length === 1 ? "exercise" : "exercises"} · ${sets} ${sets === 1 ? "set" : "sets"}`;
 }
 
-/**
- * A routine's name typed onto the page, then a card with its folder and its notes (shown when the
- * routine starts), which open a menu and a sheet.
- */
+/** A routine's name typed onto the page, then a card with its folder, which opens a menu. */
 export function RoutineDetailsFields({
   title,
   setTitle,
   folders,
   folderId,
   setFolderId,
-  notes,
-  setNotes,
   autoFocus = false,
 }: {
   title: string;
@@ -108,17 +89,12 @@ export function RoutineDetailsFields({
   folders: readonly { id: string; title: string }[];
   folderId: string | null;
   setFolderId: (id: string | null) => void;
-  notes: string;
-  setNotes: (notes: string) => void;
   /** Focuses the name when the fields appear, so the keyboard opens to type it. */
   autoFocus?: boolean;
 }) {
   const styles = useStyles(sheet);
-  const c = useColors();
-  const [editingNotes, setEditingNotes] = useState(false);
   // A routine whose folder is gone is not in a folder, as Train shows it.
   const current = folders.find((folder) => folder.id === folderId);
-  const firstLine = notes.trim().split("\n")[0] ?? "";
   return (
     <>
       <TitleField
@@ -150,52 +126,7 @@ export function RoutineDetailsFields({
             })),
           }}
         />
-        <Tap
-          accessibilityRole="button"
-          accessibilityLabel={`Notes, ${firstLine || "none"}`}
-          accessibilityHint="Shown when you start this routine"
-          onPress={() => setEditingNotes(true)}
-          scaleTo={0.98}
-          style={[styles.detailRow, styles.setDivider]}
-        >
-          <View style={styles.names}>
-            <Text style={styles.detailLabel}>Notes</Text>
-            <Text style={styles.detailHint}>Shown when you start this routine</Text>
-          </View>
-          <Text style={styles.detailValue} numberOfLines={1}>
-            {firstLine || "Add"}
-          </Text>
-          <ChevronIcon color={c.fg3} size={16} strokeWidth={2} />
-        </Tap>
       </View>
-      {editingNotes && (
-        <BottomSheet
-          title="Routine notes"
-          eyebrow="Shown when you start this routine"
-          close="x"
-          closeLabel="Done"
-          onClose={() => setEditingNotes(false)}
-          footer={
-            <Button
-              rank="primary"
-              label="Done"
-              icon={<CheckIcon color={c.bg} size={16} strokeWidth={2.4} />}
-              onPress={() => setEditingNotes(false)}
-            />
-          }
-        >
-          <View style={styles.sheetBody}>
-            <TextArea
-              accessibilityLabel="Routine notes"
-              placeholder="Warm-up, setup, anything to remember"
-              maxLength={LIMITS.descriptionLength}
-              count={`${notes.length} / ${LIMITS.descriptionLength}`}
-              value={notes}
-              onChangeText={setNotes}
-            />
-          </View>
-        </BottomSheet>
-      )}
     </>
   );
 }
@@ -412,9 +343,7 @@ function ExerciseBlock({
   const repBased = isRepBased(entry.exercise.type);
   const useRepRange = usesRange(entry);
   const rest = restOf(entry, settings);
-  const cues = entry.cues ?? [];
   const [settingRest, setSettingRest] = useState(false);
-  const [editingCues, setEditingCues] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [typing, setTyping] = useState<string | null>(null);
   const distanceUnit =
@@ -574,12 +503,6 @@ function ExerciseBlock({
                   },
                 ]
               : []),
-            {
-              label: "Cues",
-              ...(cues.length ? { value: String(cues.length) } : {}),
-              icon: (color: string) => <InfoIcon color={color} size={18} />,
-              onPress: () => setEditingCues(true),
-            },
             { label: "Remove from routine", destructive: true, onPress: () => setRemoving(true) },
           ]}
         />
@@ -749,14 +672,6 @@ function ExerciseBlock({
           }}
         />
       )}
-      {editingCues && (
-        <CuesSheet
-          name={name}
-          cues={cues}
-          update={(update) => edit((e) => ({ ...e, cues: update(e.cues ?? []) }))}
-          onClose={() => setEditingCues(false)}
-        />
-      )}
       {removing && (
         <ActionSheet
           message={`${name} and its ${setCount} will be removed from this routine. Past workouts keep it.`}
@@ -810,80 +725,6 @@ function PlanCell({
       }}
       style={[styles.cell, narrow && styles.cellNarrow, focused && styles.cellOn]}
     />
-  );
-}
-
-/** An exercise's cues for the next workouts, each a few lines, in a sheet. */
-function CuesSheet({
-  name,
-  cues,
-  update,
-  onClose,
-}: {
-  name: string;
-  cues: PlannedCue[];
-  update: (update: (cues: PlannedCue[]) => PlannedCue[]) => void;
-  onClose: () => void;
-}) {
-  const styles = useStyles(sheet);
-  const c = useColors();
-  return (
-    <BottomSheet
-      title="Cues"
-      eyebrow={name}
-      close="x"
-      closeLabel="Done"
-      onClose={onClose}
-      footer={
-        <Button
-          rank="primary"
-          label="Done"
-          icon={<CheckIcon color={c.bg} size={16} strokeWidth={2.4} />}
-          onPress={onClose}
-        />
-      }
-    >
-      <View style={styles.sheetBody}>
-        {cues.length === 0 ? (
-          <Text style={styles.sheetNote}>Cues show with this exercise when you log it.</Text>
-        ) : null}
-        {cues.map(({ key, note }, i) => (
-          <View key={key} style={styles.cue}>
-            <TextArea
-              label={`Cue ${i + 1}`}
-              accessibilityLabel={`${name} cue ${i + 1}`}
-              placeholder="Pause on the chest"
-              maxLength={LIMITS.noteLength}
-              value={note.text}
-              onChangeText={(text) =>
-                update((items) =>
-                  items.map((cue) =>
-                    cue.key === key ? { ...cue, note: { ...cue.note, text } } : cue,
-                  ),
-                )
-              }
-            />
-            <Button
-              rank="destructive"
-              label="Remove cue"
-              accessibilityLabel={`Remove ${name} cue ${i + 1}`}
-              onPress={() => update((items) => items.filter((cue) => cue.key !== key))}
-              style={styles.cueRemove}
-            />
-          </View>
-        ))}
-        {cues.length < MAX_EXERCISE_CUES && (
-          <Button
-            label="Add cue"
-            icon={<PlusIcon color={c.fg} size={16} strokeWidth={2} />}
-            onPress={() => {
-              const note = { id: newId(), text: "", createdAt: new Date().toISOString() };
-              update((items) => [...items, { key: note.id, note }]);
-            }}
-          />
-        )}
-      </View>
-    </BottomSheet>
   );
 }
 
