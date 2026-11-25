@@ -388,14 +388,31 @@ it("edits routines in edit mode: a tap opens one, its grip reorders the folder, 
       [false, -80],
       [false, 0],
     ]);
+    // No line rides above the lifted row, and Routine 2, now at the top, drops its line too.
+    const lines = () =>
+      blocks()
+        .slice(0, 4)
+        .map((block) => {
+          const row = block.find((n) => n.type === View && typeof n.props.onLayout === "function");
+          const style = Object.assign({}, ...[row.props.style].flat(3).filter(Boolean));
+          if (!style.borderTopWidth) return "none";
+          return style.borderTopColor === "transparent" ? "hidden" : "line";
+        });
+    expect(lines()).toEqual(["none", "hidden", "line", "line"]);
     const store = { name: "store" };
     await act(() => blocks()[0]?.props.onEnd(170));
     expect(scrolls()).toBe(true);
     expect(blocks()[0]?.props).toMatchObject({ lifted: false, offset: 0 });
+    expect(lines()).toEqual(["none", "line", "line", "line"]);
     expect(change).toHaveBeenCalledTimes(1);
     change.mock.calls[0]?.[0](store);
     expect(moveRoutine.mock.calls).toEqual([[store, "0", seen, 2]]);
     expect(announce).toHaveBeenLastCalledWith("Routine 1 moved to position 3 of 20");
+
+    // A row lifted from further down floats without its own line; the first row keeps its place.
+    await act(() => blocks()[2]?.props.onMove(-170));
+    expect(lines()).toEqual(["none", "line", "hidden", "line"]);
+    await act(() => blocks()[2]?.props.onEnd(undefined));
 
     // A short drag, or one cancelled, moves nothing.
     await act(() => blocks()[1]?.props.onGrab());

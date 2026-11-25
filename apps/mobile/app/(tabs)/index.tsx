@@ -573,6 +573,10 @@ const OpenGroup = memo(function OpenGroup({
     if (place < drag.from && index >= place && index < drag.from) return moved;
     return 0;
   };
+  // The lifted row floats without the line above it, and when the first row is carried down, the
+  // row that takes its place at the top drops its line too, as in the routine editor.
+  const lineHidden = (index: number) =>
+    drag !== null && (index === drag.from || (drag.from === 0 && place !== 0 && index === 1));
   const endDrag = (routine: RoutineCard, from: number, dy?: number) => {
     onGripHeld(false);
     setDrag(null);
@@ -621,6 +625,7 @@ const OpenGroup = memo(function OpenGroup({
                 <EditRoutineRow
                   routine={routine}
                   first={i === 0}
+                  lineHidden={lineHidden(i)}
                   grip={grip(`Drag to reorder ${routine.title}`)}
                   onLayout={(height) => {
                     heights.current[i] = height;
@@ -840,6 +845,7 @@ const RoutineRow = memo(function RoutineRow({
 function EditRoutineRow({
   routine,
   first,
+  lineHidden,
   grip,
   onLayout,
   onShift,
@@ -848,6 +854,8 @@ function EditRoutineRow({
 }: {
   routine: RoutineCard;
   first: boolean;
+  /** Keeps the line's room but draws none, so rows don't shift by its width mid-drag. */
+  lineHidden: boolean;
   grip: ReactNode;
   onLayout: (height: number) => void;
   onShift: (direction: -1 | 1) => void;
@@ -859,7 +867,12 @@ function EditRoutineRow({
   const { spoken } = routineText(routine);
   return (
     <View
-      style={[styles.routine, styles.routineEditing, !first && styles.divider]}
+      style={[
+        styles.routine,
+        styles.routineEditing,
+        !first && styles.divider,
+        lineHidden && styles.dividerHidden,
+      ]}
       onLayout={({ nativeEvent }) => onLayout(nativeEvent.layout.height)}
     >
       {grip}
@@ -900,6 +913,7 @@ const sheet = themedStyles((c) => ({
   },
   cardEditing: { overflow: "visible" },
   divider: { borderTopWidth: 1, borderTopColor: c.line },
+  dividerHidden: { borderTopColor: "transparent" },
   // As in the routine editor's reorder mode: what dragging does, in a dashed box.
   banner: {
     paddingVertical: 11,
