@@ -6,15 +6,8 @@ import {
   type SetMetric,
   type SetType,
 } from "@leve/core";
-import {
-  type Dispatch,
-  type ReactNode,
-  type SetStateAction,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
-import { PanResponder, Platform, Text, TextInput, View } from "react-native";
+import { type Dispatch, type SetStateAction, useEffect, useRef, useState } from "react";
+import { Text, TextInput, View } from "react-native";
 import { newId } from "../data/ids.ts";
 import { changePlanEffort, type PlannedExercise } from "../data/routine-actions.ts";
 import { parseRestSeconds } from "../data/settings-actions.ts";
@@ -22,17 +15,19 @@ import { effortLabel, effortValue } from "../model/effort.ts";
 import { dropPlace, moveBlock, orderBlocks, shiftExercise } from "../model/plan-order.ts";
 import { leaveSuperset, pairWithPrevious, supersetLabels } from "../model/supersets.ts";
 import type { Settings } from "../model/types.ts";
-import { font, numeral, radius, space, touch, type } from "../theme.ts";
+import { font, numeral, radius, space, type } from "../theme.ts";
 import { ActionSheet } from "./action-sheet.tsx";
 import { Button } from "./buttons.tsx";
 import { ChoiceRow, MenuRow } from "./choice-row.tsx";
 import { Dialog } from "./dialog.tsx";
+import { DragBlock } from "./drag-block.tsx";
 import { ExercisePicker } from "./exercise-picker.tsx";
 import { TitleField } from "./field.tsx";
 import { announce } from "./focus.ts";
 import { haptic } from "./haptics.ts";
-import { CheckIcon, GripIcon, LinkIcon, PlusIcon, TimerIcon } from "./icons.tsx";
+import { GripIcon, LinkIcon, PlusIcon, TimerIcon } from "./icons.tsx";
 import { RestDialog } from "./live/rest-dialog.tsx";
+import { ModeTile } from "./mode-tile.tsx";
 import { MoreButton } from "./popover-menu.tsx";
 import { SetMetricInput } from "./set-metric-input.tsx";
 import { SetTypeChoices, setTypeNames } from "./set-type-choices.tsx";
@@ -43,7 +38,6 @@ import { clock } from "./use-ticker.ts";
 
 /** A row of the reorder list, in points: every row is one line, so every row is this tall. */
 const ROW = 64;
-const DRAG_SLOP = 8;
 
 const twoDigits = (n: number) => String(n).padStart(2, "0");
 const restOf = (entry: PlannedExercise, settings: Settings) =>
@@ -150,27 +144,16 @@ export function ReorderTile({
   onToggle: () => void;
   disabled?: boolean;
 }) {
-  const styles = useStyles(sheet);
-  const c = useColors();
   return (
-    <Tap
-      accessibilityRole="button"
-      accessibilityLabel={reordering ? "Done reordering" : "Reorder exercises"}
-      accessibilityState={{ disabled }}
+    <ModeTile
+      on={reordering}
+      label="Reorder"
+      accessibilityLabel="Reorder exercises"
+      doneAccessibilityLabel="Done reordering"
+      icon={(color) => <GripIcon color={color} size={16} />}
+      onToggle={onToggle}
       disabled={disabled}
-      onPress={onToggle}
-      scaleTo={0.95}
-      style={[styles.tile, reordering && styles.tileBone, disabled && styles.off]}
-    >
-      {reordering ? (
-        <CheckIcon color={c.bg} size={16} strokeWidth={2.4} />
-      ) : (
-        <GripIcon color={c.fg2} size={16} />
-      )}
-      <Text style={[styles.tileText, reordering && styles.tileTextBone]}>
-        {reordering ? "Done" : "Reorder"}
-      </Text>
-    </Tap>
+    />
   );
 }
 
@@ -879,76 +862,8 @@ function ReorderList({
   );
 }
 
-/** A block of rows that follows the finger while one of its grips is held. */
-function DragBlock({
-  lifted,
-  offset,
-  onGrab,
-  onMove,
-  onEnd,
-  children,
-}: {
-  lifted: boolean;
-  offset: number;
-  onGrab: () => void;
-  onMove: (dy: number) => void;
-  onEnd: (dy?: number) => void;
-  children: (grip: (label: string) => ReactNode) => ReactNode;
-}) {
-  const styles = useStyles(sheet);
-  const c = useColors();
-  // The latest callbacks, for the gesture made once.
-  const handlers = useRef({ onGrab, onMove, onEnd });
-  handlers.current = { onGrab, onMove, onEnd };
-  const [pan] = useState(() => {
-    let dragging = false;
-    const end = (dy?: number) => {
-      const distance = dragging ? dy : undefined;
-      dragging = false;
-      handlers.current.onEnd(distance);
-    };
-    return PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onPanResponderTerminationRequest: () => false,
-      // Start fires once the grip has acquired the responder, even on a scrolling page.
-      onPanResponderStart: () => {
-        // On web the grip's touch action handles the swipe and keeps the scrollbar in place.
-        if (Platform.OS !== "web") handlers.current.onGrab();
-      },
-      onPanResponderMove: (_, { dx, dy }) => {
-        if (!dragging) {
-          if (Math.abs(dy) < DRAG_SLOP || Math.abs(dy) <= Math.abs(dx)) return;
-          dragging = true;
-          haptic.tap();
-        }
-        handlers.current.onMove(dy);
-      },
-      onPanResponderRelease: (_, { dy }) => end(dy),
-      onPanResponderTerminate: () => end(),
-    });
-  });
-  return (
-    <View
-      style={[lifted && styles.lifted, offset !== 0 && { transform: [{ translateY: offset }] }]}
-    >
-      {children((label) => (
-        <View
-          {...pan.panHandlers}
-          accessibilityLabel={label}
-          importantForAccessibility="no"
-          accessibilityElementsHidden
-          style={styles.grip}
-        >
-          <GripIcon color={c.fg3} size={20} />
-        </View>
-      ))}
-    </View>
-  );
-}
-
 const sheet = themedStyles((c) => ({
   flex: { flex: 1 },
-  off: { opacity: 0.35 },
   titleField: { paddingHorizontal: 4 },
   card: {
     backgroundColor: c.s1,
@@ -973,20 +888,6 @@ const sheet = themedStyles((c) => ({
   sheetNote: { ...type.caption, color: c.fg2 },
   cue: { gap: 2 },
   cueRemove: { alignSelf: "flex-start", paddingHorizontal: 2 },
-  tile: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
-    minHeight: touch,
-    paddingHorizontal: 13,
-    borderRadius: 13,
-    backgroundColor: c.s1,
-    borderWidth: 1,
-    borderColor: c.line,
-  },
-  tileBone: { backgroundColor: c.fg, borderColor: c.fg },
-  tileText: { ...type.action, letterSpacing: 1.26, color: c.fg2 },
-  tileTextBone: { color: c.bg },
   block: {
     backgroundColor: c.s1,
     borderWidth: 1,
@@ -1143,18 +1044,4 @@ const sheet = themedStyles((c) => ({
   reorderSuperset: { boxShadow: `inset 3px 0 0 ${c.fg3}` },
   reorderName: { ...type.rowTitle, fontSize: 15, color: c.fg },
   summary: { ...type.meta, color: c.fg3, marginTop: 4 },
-  lifted: {
-    zIndex: 3,
-    backgroundColor: c.s2,
-    borderRadius: 16,
-    boxShadow: c.shadow,
-  },
-  grip: {
-    width: 48,
-    height: 48,
-    alignItems: "center",
-    justifyContent: "center",
-    // The browser decides whether to scroll before React can update the ScrollView.
-    ...(Platform.OS === "web" && { touchAction: "none" }),
-  },
 }));
