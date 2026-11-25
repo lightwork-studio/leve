@@ -1,0 +1,15 @@
+Leve exercise image terms
+
+Permission is granted to copy, display and redistribute the exercise images for
+local development and testing, and as part of a source fork of Leve or an app
+built from one, provided that you include these terms and the image credit from
+THIRD_PARTY_NOTICES.md. You may resize or crop the images and change their file
+format. You may not otherwise change them. Other uses of the images require
+permission from their rights holders.
+
+The images are renders of a third-party anatomy model, credited in
+THIRD_PARTY_NOTICES.md. These terms grant no rights in that model. You may not
+use the images to extract or reconstruct the model or any part of it.
+
+All other rights in the images are reserved. These terms do not restrict uses
+permitted by applicable law.

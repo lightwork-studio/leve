@@ -9,6 +9,11 @@
   [react-native-body-highlighter 3.2.0](https://github.com/HichamELBSI/react-native-body-highlighter).
   Copyright © 2022 ELABBASSI Hicham. The
   [asset JSON](apps/mobile/src/ui/muscle-paths.json) contains the complete MIT license notice.
+- The [exercise images](apps/mobile/media/exercises/) are renders of
+  "Anatomy male ecorche" by Dmitry Fedorov, used under the
+  [Fab Standard License](https://www.fab.com/eula). The model itself
+  is not part of this repository. The equipment, rig, poses and lighting are Leve's own work. The
+  images use the [Leve exercise image terms](LICENSES/LicenseRef-Leve-Exercise-Images.txt).
 - Leve's wordmark and icon use outlines from
   [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono), distributed under the
   [SIL Open Font License 1.1](https://github.com/JetBrains/JetBrainsMono/blob/master/OFL.txt).

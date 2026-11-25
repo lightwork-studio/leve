@@ -7,6 +7,9 @@
 - [Mozilla Public License 2.0](LICENSES/MPL-2.0.txt) applies to all other original Leve
   code and documentation, including the iOS app, shared packages, and sync client.
 - Third-party material keeps its existing license. See [third-party notices](THIRD_PARTY_NOTICES.md).
+- The exercise images in `apps/mobile/media/exercises/` use the
+  [Leve exercise image terms](LICENSES/LicenseRef-Leve-Exercise-Images.txt). These terms cover the
+  renders, not the third-party model they show.
 - Leve logos, wordmarks, and app icons use the [Leve brand artwork terms](LICENSES/LicenseRef-Leve-Brand.txt)
   and [trademark policy](TRADEMARKS.md).
 
