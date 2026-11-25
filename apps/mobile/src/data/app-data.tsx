@@ -122,6 +122,10 @@ export function AppDataProvider({
     async (sampleData = buildInfo.sampleData): Promise<boolean> => {
       const opened = engine.current;
       if (!opened) return false;
+      // Screens read the store as they render, and one can render before the fresh store opens
+      // (the press that asked for this repaints at once). Take them off the store before closing
+      // it, so none reads a closed one.
+      setState({ status: "loading" });
       try {
         current.current?.close();
         current.current = null;
