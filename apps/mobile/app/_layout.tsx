@@ -7,6 +7,8 @@ import { AccountProvider } from "../src/account/account-provider";
 import { UnavailableWorkoutActivity, WorkoutActivityHost } from "../src/activity/workout-activity";
 import { buildInfo } from "../src/build-info.ts";
 import { AppDataProvider, useAppData } from "../src/data/app-data.tsx";
+// Without an extension, so browsers get the version without sync.
+import { SyncHost } from "../src/sync/sync-host";
 import { gutter, space, type } from "../src/theme.ts";
 import { Button } from "../src/ui/buttons.tsx";
 import { EmptyState } from "../src/ui/empty-state.tsx";
@@ -56,6 +58,7 @@ export default function RootLayout() {
         >
           <WorkoutActivityHost />
           <SaveProblemBanner />
+          <SyncHost />
           <AppStack
             screens={[
               { name: "(tabs)", transition: "push" },

@@ -21,10 +21,17 @@ export type SyncOutcome =
   | { state: "synced"; pushed: number; pulled: number }
   /** No release in common: sync pauses until one side updates. Local work continues. */
   | { state: "update_required"; update: "client" | "server" }
-  /** The server couldn't be reached; everything stays queued. */
+  /** The server couldn't be reached or is briefly unavailable; everything stays queued. */
   | { state: "offline"; error: string }
+  /** The server no longer accepts this sign-in: sign in again. Everything stays queued. */
+  | { state: "signed_out" }
   /** The server answered something this build can't accept; nothing was applied. */
   | { state: "error"; error: string };
+
+/** What the server's account holds, asked before this device connects to it (see `probe`). */
+export type ProbeOutcome =
+  | { state: "ready"; revision: number }
+  | Exclude<SyncOutcome, { state: "synced" }>;
 
 export interface SyncClientOptions {
   store: DeviceStore;
@@ -128,6 +135,22 @@ export class SyncClient {
     });
   }
 
+  /**
+   * Asks the server how much the account holds (its highest revision; 0 for an empty account),
+   * without connecting this device to it: nothing on the device changes. The app uses it to ask
+   * before local data joins an account that already has data.
+   */
+  probe(): Promise<ProbeOutcome> {
+    return this.#exclusive(async () => {
+      try {
+        const { hello } = await this.#greet();
+        return { state: "ready", revision: hello.revision } as const;
+      } catch (error) {
+        return this.#outcome(error) as ProbeOutcome;
+      }
+    });
+  }
+
   async #connect(): Promise<ReleaseId> {
     this.store.bindAccount(this.#options.server, this.#options.account);
     return this.#hello();
@@ -178,6 +201,11 @@ export class SyncClient {
           error: `unreadable error from ${path} (${response.status})`,
         });
       }
+      // Neither says anything about this request: the sign-in, or the server for a while.
+      const { code, message } = this.#error(response.body);
+      if (code === "unauthorized") throw new Stop({ state: "signed_out" });
+      if (code === "unavailable")
+        throw new Stop({ state: "offline", error: `unavailable: ${message}` });
     }
     return response;
   }
@@ -186,7 +214,8 @@ export class SyncClient {
     return (body as ErrorResponse).error;
   }
 
-  async #hello(): Promise<ReleaseId> {
+  /** Sends hello and checks the answer, without changing the device. */
+  async #greet(): Promise<{ release: ReleaseId; hello: HelloResponse }> {
     const response = await this.#call("/sync/hello", {
       releases: [...this.releases],
       app: this.#options.app,
@@ -206,7 +235,11 @@ export class SyncClient {
         error: "the server chose a release this app doesn't speak",
       });
     }
-    const release = hello.release as ReleaseId;
+    return { release: hello.release as ReleaseId, hello };
+  }
+
+  async #hello(): Promise<ReleaseId> {
+    const { release, hello } = await this.#greet();
     const before = this.store.syncState();
     const otherHistory = before.lineage !== null && before.lineage !== hello.lineage;
     if (!otherHistory && before.lineage !== null && hello.revision < before.cursor) {

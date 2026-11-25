@@ -92,3 +92,11 @@ it("never seeds over a store that has been set up, whatever the build", async ()
   expect(firstStart(store, false, NOW)).toBe(false);
   expect(summary(store)).toEqual(["settings:1"]);
 });
+
+it("never seeds a phone tied to an account, even an empty one", async () => {
+  // The sample data would sync into the account without asking.
+  const store = await open();
+  store.bindAccount("https://sync.test", "user_1");
+  expect(firstStart(store, true, NOW)).toBe(false);
+  expect(summary(store)).toEqual([]);
+});

@@ -11,7 +11,9 @@ and needs the maintainer's explicit approval of the final diff.
 
 - **Keep every logged workout.** Workouts, corrections and pending changes are saved on the phone
   first. Restarting the app restores an unfinished workout as in progress. A server failure, a
-  rejected upload or a failed upgrade never erases local work.
+  rejected upload or a failed upgrade never erases local work. Sync deletes unsynced local work
+  only when the person confirms it, after being told what would be lost and offered a copy (see
+  [Accounts](#accounts-local-mode-backups-and-import)).
 - **Three ways to run.** Local mode needs no account and offers every tracking feature of the
   installed app. Managed and self-hosted sync use the same server code. What a server supports
   decides which synced features are available on that connection.
@@ -360,9 +362,18 @@ join the frozen paths; until then the version 1 layouts may still change.
 
 - The app works fully without a server. MCP needs a server.
 - Connecting a device whose local data was recorded independently to a non-empty account asks once
-  whether to combine them; declining keeps the local data on the device, unsynced, and never wipes
-  it. Connecting uploads local records through ordinary submissions. Switching
-  servers works the same way; servers never coordinate with each other.
+  whether to add that data to the account or replace it with the account's data. Replacing deletes
+  the local data after confirmation and an offer to export it first. Nothing is uploaded or deleted
+  until the person answers. Connecting an empty device, or connecting to an empty account, doesn't
+  ask. Connecting uploads local records through ordinary submissions.
+- A device's data belongs to the account and server it first synced with. When a different account
+  signs in, or the app is pointed at another server, a device whose data has all synced drops its
+  copy (the old account still has it) and starts from the new account, but never while a workout
+  is in progress. A device with unsynced work (pending edits or kept conflicts) says how many
+  changes would be lost, offers an export, and deletes them only once the person confirms. The
+  person can instead sign the new account out and keep them for the old one, or decide later;
+  nothing syncs meanwhile. Signing out never deletes local data; with unsynced work it first says
+  the changes wait for the same account. Servers never coordinate with each other.
 - Sync state (cursor, receipts, pending submissions) belongs to one account on one server and is never
   reused for another.
 - Local mode offers a manual export and import of a complete backup file. The file is a copy of the

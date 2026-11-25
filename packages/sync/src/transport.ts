@@ -6,7 +6,19 @@ export interface TransportResponse {
   body: unknown;
   writtenRevisions?: string;
 }
-export type Transport = (path: string, body: unknown) => Promise<TransportResponse>;
+/** `signal` gives a request up: it then rejects with a TransportError. */
+export type Transport = (
+  path: string,
+  body: unknown,
+  options?: { signal?: AbortSignal },
+) => Promise<TransportResponse>;
+/**
+ * Headers sent with every request: fixed, or worked out for each request, for a sign-in token that
+ * only lives a minute.
+ */
+export type RequestHeaders =
+  | Record<string, string>
+  | (() => Record<string, string> | Promise<Record<string, string>>);
 export const WRITTEN_REVISIONS_HEADER = "leve-written-revisions";
 
 export class TransportError extends Error {
@@ -24,14 +36,24 @@ const MS_PER_BYTE = 1 / 8;
  */
 export function httpTransport(
   baseUrl: string,
-  headers: Record<string, string> = {},
+  headers: RequestHeaders = {},
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Transport {
   const base = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-  return async (path, body) => {
+  return async (path, body, options = {}) => {
+    let sent: Record<string, string>;
+    try {
+      sent = typeof headers === "function" ? await headers() : headers;
+    } catch (error) {
+      // Getting a token usually fails for want of a connection; nothing was sent.
+      throw new TransportError(`couldn't prepare the request: ${(error as Error).message}`);
+    }
     const text = JSON.stringify(body);
     // A plain controller and timer: AbortSignal.timeout isn't available on every platform.
     const controller = new AbortController();
+    const giveUp = () => controller.abort();
+    if (options.signal?.aborted) throw new TransportError("request given up");
+    options.signal?.addEventListener("abort", giveUp);
     const timer = setTimeout(
       () => controller.abort(),
       timeoutMs + Math.ceil(text.length * MS_PER_BYTE),
@@ -42,13 +64,17 @@ export function httpTransport(
       try {
         response = await fetch(new URL(path.replace(/^\/+/, ""), base), {
           method: "POST",
-          headers: { "content-type": "application/json", ...headers },
+          headers: { "content-type": "application/json", ...sent },
           body: text,
           signal: controller.signal,
         });
       } catch (error) {
         throw new TransportError(
-          controller.signal.aborted ? "request timed out" : (error as Error).message,
+          options.signal?.aborted
+            ? "request given up"
+            : controller.signal.aborted
+              ? "request timed out"
+              : (error as Error).message,
         );
       }
       try {
@@ -62,6 +88,7 @@ export function httpTransport(
       }
     } finally {
       clearTimeout(timer);
+      options.signal?.removeEventListener("abort", giveUp);
     }
     const writtenRevisions = response.headers.get(WRITTEN_REVISIONS_HEADER);
     return {

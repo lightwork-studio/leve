@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import { buildInfo } from "../build-info.ts";
+import { syncConfigured } from "../sync/sync-server.ts";
 import { exportStoredRecovery, type OpenedEngine, openEngine } from "./engine";
 import { newId } from "./ids.ts";
 import { PREVIEW_STORAGE } from "./preview-storage.ts";
@@ -33,6 +34,8 @@ export interface AppData {
   reset(sampleData?: boolean): Promise<boolean>;
   /** Why changes can't be saved right now, if they can't. */
   saveProblem: string | null;
+  /** Copies this device's database files to a place the person picks, before data is replaced. */
+  exportData(): Promise<void>;
 }
 
 type State =
@@ -50,8 +53,9 @@ async function openStore(opened: OpenedEngine, sampleData: boolean): Promise<Dev
     randomId: newId,
   });
   // A development preview's first start gets synthetic data, and a reset brings it back.
-  // TestFlight builds start empty, unless a reset asked for the synthetic data.
-  if (wantsSampleData(store, sampleData)) seedSyntheticData(store);
+  // TestFlight builds start empty, unless a reset asked for the synthetic data. Builds that sync
+  // never get it: it would go up to the signed-in account.
+  if (!syncConfigured() && wantsSampleData(store, sampleData)) seedSyntheticData(store);
   await opened.flush();
   return store;
 }
@@ -152,6 +156,7 @@ export function AppDataProvider({
             change,
             reset: startOver,
             saveProblem,
+            exportData: () => (engine.current?.exportRecovery ?? exportStoredRecovery)(),
           }
         : null,
     [state, change, startOver, saveProblem],

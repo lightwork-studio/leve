@@ -25,7 +25,7 @@ import { themedStyles, useColors, useStyles } from "./themed.ts";
  * no title bar. A small caps line says what it is for and ✕ leaves; then the value itself, large,
  * and one full-width bone confirm. It sits high on the screen, clear of the keyboard. Tapping the
  * scrim, ✕, Escape and Android's back button all close it, and nothing behind it can be reached
- * while it is open.
+ * while it is open. Without `onClose` it can't be closed (no ✕): only its own buttons answer it.
  */
 export function Dialog({
   eyebrow,
@@ -41,7 +41,7 @@ export function Dialog({
   eyebrow: string;
   /** What a screen reader calls the dialog, when the eyebrow doesn't say it. */
   label?: string;
-  onClose: () => void;
+  onClose?: () => void;
   /** What a screen reader calls ✕. */
   closeLabel?: string;
   /** A small control between the eyebrow and ✕. */
@@ -57,17 +57,24 @@ export function Dialog({
   const insets = useSafeAreaInsets();
   const name = label ?? eyebrow;
   return (
-    <Modal transparent animationType="fade" onRequestClose={onClose} aria-label={name}>
+    <Modal
+      transparent
+      animationType="fade"
+      onRequestClose={onClose ?? (() => {})}
+      aria-label={name}
+    >
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={[styles.overlay, { paddingTop: insets.top + 40 }]}
       >
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Close"
-          onPress={onClose}
-          style={StyleSheet.absoluteFill}
-        />
+        {onClose ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Close"
+            onPress={onClose}
+            style={StyleSheet.absoluteFill}
+          />
+        ) : null}
         <Enter
           distance={10}
           role="dialog"
@@ -81,15 +88,17 @@ export function Dialog({
               {eyebrow}
             </Text>
             {aside}
-            <Tap
-              accessibilityRole="button"
-              accessibilityLabel={closeLabel}
-              onPress={onClose}
-              scaleTo={0.92}
-              style={styles.close}
-            >
-              <CloseIcon color={c.fg2} size={16} />
-            </Tap>
+            {onClose ? (
+              <Tap
+                accessibilityRole="button"
+                accessibilityLabel={closeLabel}
+                onPress={onClose}
+                scaleTo={0.92}
+                style={styles.close}
+              >
+                <CloseIcon color={c.fg2} size={16} />
+              </Tap>
+            ) : null}
           </View>
           {children}
           {confirm ? (

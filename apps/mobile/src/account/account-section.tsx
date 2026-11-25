@@ -1,41 +1,37 @@
-import { isClerkAPIResponseError, useAuth, useUser } from "@clerk/expo";
-import { useSignInWithApple } from "@clerk/expo/apple";
+import { useAuth, useUser } from "@clerk/expo";
 import {
   AppleAuthenticationButton,
   AppleAuthenticationButtonStyle,
   AppleAuthenticationButtonType,
 } from "expo-apple-authentication";
 import { useRef, useState } from "react";
-import { Platform, View } from "react-native";
-import { radius, space } from "../theme.ts";
+import { Platform, Text, View } from "react-native";
+import { useAppData } from "../data/app-data.tsx";
+import { syncEnabled } from "../sync/sync-config.ts";
+import { setSignInReminder } from "../sync/sync-preferences.ts";
+import { unsyncedChanges } from "../sync/sync-session.ts";
+import { radius, space, type } from "../theme.ts";
 import { ActionRow, SettingRow } from "../ui/choice-row.tsx";
+import { Dialog } from "../ui/dialog.tsx";
 import { announce } from "../ui/focus.ts";
 import { Group } from "../ui/group.tsx";
 import { haptic } from "../ui/haptics.ts";
 import { themedStyles, useAppearance, useStyles } from "../ui/themed.ts";
+import { signInProblem, useAppleSignIn } from "./apple-sign-in.ts";
 import { clerkPublishableKey } from "./clerk-key.ts";
+
+export { signInProblem };
 
 const SIGNED_OUT_NOTE =
   "For now, signing in only sets up your account, and your workouts stay on this phone. Once syncing arrives, they back up to it and follow you to a new phone. Everything works without an account.";
 const SIGNED_IN_NOTE =
   "Your workouts are still only on this phone. Once syncing arrives, they back up to this account. Signing out keeps everything here.";
+/** In builds that sync. */
+const SYNC_SIGNED_OUT_NOTE =
+  "Sign in to back up your workouts and have them on every phone you sign in on. Everything works without an account.";
+const SYNC_SIGNED_IN_NOTE =
+  "Your workouts sync with this account. Signing out keeps everything on this phone.";
 const SIGN_OUT_FAILED = "Signing out didn't work. Check the connection and try again.";
-/** Clerk wanted more than Apple gave it, so no account was made. */
-const INCOMPLETE =
-  "Leve couldn't finish setting up the account. Nothing was changed; try again later.";
-
-/** A problem whose message is already meant for people. */
-class AccountProblem extends Error {}
-
-/** What to tell someone when signing in didn't work. */
-export function signInProblem(error: unknown): string {
-  if (error instanceof AccountProblem) return error.message;
-  if (isClerkAPIResponseError(error)) {
-    const first = error.errors[0];
-    return first?.longMessage ?? first?.message ?? "Sign-in didn't work. Try again.";
-  }
-  return "Sign-in didn't work. Check the connection and try again.";
-}
 
 /** The account in Settings: Sign in with Apple, or who is signed in and a way to sign out. */
 export function AccountSection() {
@@ -49,9 +45,13 @@ function Account() {
   const appearance = useAppearance();
   const { isLoaded, isSignedIn, signOut } = useAuth();
   const { user } = useUser();
-  const { startAppleAuthenticationFlow } = useSignInWithApple();
+  const { store } = useAppData();
+  const appleSignIn = useAppleSignIn();
+  const syncing = syncEnabled();
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Changes that would wait for this account, asked about before signing out. */
+  const [unsynced, setUnsynced] = useState<number | null>(null);
   const working = useRef(false);
 
   const run = async (work: () => Promise<void>, failed: (error: unknown) => string) => {
@@ -74,15 +74,27 @@ function Account() {
 
   const signIn = () =>
     run(async () => {
-      const { createdSessionId, setActive, signUp } = await startAppleAuthenticationFlow();
-      if (!createdSessionId || !setActive) {
-        if (signUp?.status === "missing_requirements") throw new AccountProblem(INCOMPLETE);
-        // Otherwise the sheet was dismissed: nothing to report.
-        return;
-      }
-      await setActive({ session: createdSessionId });
+      // A dismissed sheet has nothing to report.
+      if (!(await appleSignIn())) return;
+      setSignInReminder("");
       haptic.success();
     }, signInProblem);
+
+  const signOutNow = () =>
+    run(
+      async () => {
+        // Signed out on purpose: don't ask to sign in again. Set first, so the question can't
+        // flash up between signing out and this.
+        setSignInReminder("off");
+        try {
+          await signOut();
+        } catch (error) {
+          setSignInReminder("");
+          throw error;
+        }
+      },
+      () => SIGN_OUT_FAILED,
+    );
 
   if (!isLoaded) {
     // Only for a moment: offline, Clerk starts from what it saved last time.
@@ -96,7 +108,7 @@ function Account() {
   if (isSignedIn) {
     const email = user?.primaryEmailAddress?.emailAddress;
     return (
-      <Group label="Account" footnote={problem ?? SIGNED_IN_NOTE}>
+      <Group label="Account" footnote={problem ?? (syncing ? SYNC_SIGNED_IN_NOTE : SIGNED_IN_NOTE)}>
         <SettingRow label="Signed in with Apple" {...(email ? { hint: email } : {})}>
           {null}
         </SettingRow>
@@ -104,19 +116,35 @@ function Account() {
           label={busy ? "Signing out…" : "Sign out"}
           divider
           accessibilityHint="Your workouts stay on this phone"
-          onPress={() =>
-            run(
-              () => signOut(),
-              () => SIGN_OUT_FAILED,
-            )
-          }
+          onPress={() => {
+            const waiting = syncing ? unsyncedChanges(store) : 0;
+            if (waiting > 0) setUnsynced(waiting);
+            else void signOutNow();
+          }}
         />
+        {unsynced !== null ? (
+          <Dialog
+            eyebrow="Sign out"
+            onClose={() => setUnsynced(null)}
+            confirm={{
+              label: "Sign out",
+              onPress: () => {
+                setUnsynced(null);
+                void signOutNow();
+              },
+            }}
+          >
+            <Text style={styles.warning}>
+              {`${unsynced === 1 ? "1 change hasn't" : `${unsynced} changes haven't`} synced yet. ${unsynced === 1 ? "It stays" : "They stay"} on this phone and ${unsynced === 1 ? "syncs" : "sync"} when you sign in again with this account. Signing in with a different account asks what to do with ${unsynced === 1 ? "it" : "them"} first.`}
+            </Text>
+          </Dialog>
+        ) : null}
       </Group>
     );
   }
 
   return (
-    <Group label="Account" footnote={problem ?? SIGNED_OUT_NOTE}>
+    <Group label="Account" footnote={problem ?? (syncing ? SYNC_SIGNED_OUT_NOTE : SIGNED_OUT_NOTE)}>
       <View
         style={[styles.signIn, busy && styles.waiting]}
         pointerEvents={busy ? "none" : "auto"}
@@ -138,7 +166,8 @@ function Account() {
   );
 }
 
-const sheet = themedStyles(() => ({
+const sheet = themedStyles((c) => ({
+  warning: { ...type.body, fontSize: 15, lineHeight: 22, color: c.fg2, marginTop: space.sm },
   signIn: { padding: space.md },
   appleButton: { height: 44, width: "100%" },
   waiting: { opacity: 0.5 },

@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AccountProvider } from "../src/account/account-provider.tsx";
 import { AccountSection, signInProblem } from "../src/account/account-section.tsx";
+import { signInReminderDue } from "../src/sync/sync-preferences.ts";
 import { ClerkAPIResponseError, clerk } from "./support/clerk-expo.ts";
 import { files } from "./support/expo-file-system.ts";
 
@@ -27,6 +28,13 @@ vi.mock("../src/account/clerk-key.ts", () => ({
     return key.value;
   },
 }));
+const syncing = vi.hoisted(() => ({ on: false, unsynced: 0 }));
+vi.mock("../src/sync/sync-config.ts", () => ({
+  syncEnabled: () => syncing.on,
+  syncServerUrl: "",
+}));
+vi.mock("../src/data/app-data.tsx", () => ({ useAppData: () => ({ store: {} }) }));
+vi.mock("../src/sync/sync-session.ts", () => ({ unsyncedChanges: () => syncing.unsynced }));
 vi.mock("../src/ui/haptics.ts", () => ({
   haptic: { tap: () => {}, select: () => {}, warning: () => {}, success: () => {} },
 }));
@@ -43,7 +51,21 @@ vi.mock("react-native-reanimated", () => ({
   useReducedMotion: () => false,
   interpolateColor: () => "#000",
 }));
-vi.mock("react-native-svg", () => ({ default: "svg", Path: "path" }));
+vi.mock("react-native-svg", () => ({
+  default: "svg",
+  Path: "path",
+  Circle: "circle",
+  Line: "line",
+  Polyline: "polyline",
+  Rect: "rect",
+}));
+vi.mock("react-native-safe-area-context", () => ({
+  useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
+}));
+vi.mock("../src/ui/enter.tsx", () => ({
+  Enter: ({ children, ...props }: { children?: ReactNode; role?: string }) =>
+    h("div", { role: props.role }, children),
+}));
 vi.mock("../src/ui/motion.ts", () => ({
   emphasised: undefined,
   pressScale: 1,
@@ -59,6 +81,8 @@ beforeEach(() => {
   clerk.reset();
   platform.OS = "ios";
   key.value = "pk_test_x";
+  syncing.on = false;
+  syncing.unsynced = 0;
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -111,6 +135,43 @@ it("signs in with Apple, then shows who is signed in and signs out again", async
   expect(clerk.calls.at(-1)).toBe("signOut");
   expect(text()).toContain("Sign in with Apple");
   expect(text()).not.toContain("Signed in with Apple");
+});
+
+it("in a build that syncs, warns before signing out with unsynced changes", async () => {
+  syncing.on = true;
+  await render();
+  expect(text()).toContain("Sign in to back up your workouts");
+  await tap("Sign in with Apple");
+  expect(text()).toContain("Your workouts sync with this account.");
+  expect(signInReminderDue(Date.now())).toBe(true);
+
+  syncing.unsynced = 2;
+  await tap("Sign out");
+  expect(clerk.calls.at(-1)).not.toBe("signOut");
+  // The dialog is a modal, drawn outside the section.
+  const dialog = () => document.querySelector<HTMLElement>("[role=dialog]");
+  expect(dialog()?.textContent).toContain("2 changes haven't synced yet.");
+  expect(dialog()?.textContent).toContain(
+    "Signing in with a different account asks what to do with them first.",
+  );
+  await act(async () => {
+    [...(dialog()?.querySelectorAll<HTMLElement>("[role=button]") ?? [])]
+      .find((element) => element.textContent?.includes("Sign out"))
+      ?.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  await render();
+  expect(clerk.calls.at(-1)).toBe("signOut");
+  expect(dialog()).toBeNull();
+  // Signed out on purpose: the app won't ask to sign in again.
+  expect(signInReminderDue(Date.now())).toBe(false);
+
+  // Nothing waiting: signing out doesn't ask.
+  syncing.unsynced = 0;
+  await tap("Sign in with Apple");
+  await tap("Sign out");
+  expect(clerk.calls.at(-1)).toBe("signOut");
+  expect(dialog()).toBeNull();
 });
 
 it("stays quietly signed out when the Apple sheet is dismissed", async () => {
