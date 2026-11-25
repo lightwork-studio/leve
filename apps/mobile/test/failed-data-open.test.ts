@@ -243,3 +243,59 @@ it("starts a build that starts empty again with the synthetic data only when ask
     vi.unstubAllGlobals();
   }
 });
+
+it("loads no synthetic data when deleting what is on the device fails", async () => {
+  build.sampleData = false;
+  const files = new Map<string, Uint8Array>();
+  const engine = createSqlJsEngine(await initSqlJs(), { files });
+  vi.mocked(openEngine).mockImplementation(async () => ({
+    engine,
+    paths: () => [...files.keys()],
+    flush: async () => {},
+    onSaveProblem: () => {},
+    exportRecovery: async () => {},
+  }));
+  const failed = vi.fn(() => null);
+  const capture = vi.fn<(data: AppData) => void>();
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const seeding = vi.spyOn(seed, "seedSyntheticData");
+  let screen: ReactTestRenderer | undefined;
+  try {
+    await act(async () => {
+      screen = create(
+        jsx(AppDataProvider, { loading: null, failed, children: jsx(Ready, { capture }) }),
+      );
+    });
+    const data = capture.mock.lastCall?.[0];
+    if (!data) throw Error("The device data did not open");
+    data.store.put("body_measurement", "logged", {
+      takenAt: "2026-11-20T08:00:00.000Z",
+      bodyweightKg: 81,
+      fatPercent: null,
+    });
+    const remove = vi.spyOn(engine, "remove").mockImplementation(() => {
+      throw Error("The file is in use");
+    });
+    await act(async () => {
+      expect(await data.reset(true)).toBe(false);
+    });
+    expect(failed).toHaveBeenCalledWith("The file is in use", expect.any(Function));
+    expect(seeding).not.toHaveBeenCalled();
+    remove.mockRestore();
+    // What was logged is still there to open or export.
+    const kept = createSqlJsEngine(await initSqlJs(), { files }).open(
+      "/leve-preview-protocol-1/device.db",
+      { readOnly: true },
+    );
+    try {
+      expect(kept.get("SELECT COUNT(*) AS n FROM records WHERE id = 'logged'")).toEqual({ n: 1 });
+    } finally {
+      kept.close();
+    }
+  } finally {
+    await act(() => screen?.unmount());
+    seeding.mockRestore();
+    build.sampleData = true;
+    vi.unstubAllGlobals();
+  }
+});
