@@ -1,5 +1,9 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
+  // Two Workers. The top level is development (`leve-sync`): Clerk's development instance, used by
+  // Leve Dev and TestFlight preview builds, deployed from every main commit whose check passed.
+  // `production` (`leve-sync-prod`) uses Clerk's production instance and serves App Store builds;
+  // it deploys from verified release tags. Each Worker keeps its own secrets and accounts.
   "name": "leve-sync",
   "main": "src/worker.ts",
   "compatibility_date": "2026-11-01",
@@ -16,5 +20,17 @@
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["AccountObject"] },
     { "tag": "v2", "new_sqlite_classes": ["RestoreMarker"] }
-  ]
+  ],
+  "env": {
+    "production": {
+      "name": "leve-sync-prod",
+      // Bindings aren't inherited by an environment, so they are repeated here.
+      "durable_objects": {
+        "bindings": [
+          { "name": "ACCOUNTS", "class_name": "AccountObject" },
+          { "name": "RESTORES", "class_name": "RestoreMarker" }
+        ]
+      }
+    }
+  }
 }

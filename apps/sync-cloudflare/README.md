@@ -19,10 +19,31 @@ A valid key from the wrong instance, an issuer with a trailing `/`, or a token v
 
 **Turning it off:** `npx wrangler@4.158.0 secret delete CLERK_JWT_KEY` stops all sync (503), and
 `secret delete ADMIN_TOKEN` closes the admin endpoints. `npx wrangler@4.158.0 rollback` returns to
-an earlier version of `leve-sync`; never deploy a build from before Clerk sign-in, which let the
-client name its account. Each version keeps the secrets it was deployed with, so rolling back
-past a `secret delete` brings the deleted secret back. Clerk can rotate the instance key: then put
-the new PEM in `CLERK_JWT_KEY`.
+an earlier version; never deploy a build from before Clerk sign-in, which let the client name its
+account. Each version keeps the secrets it was deployed with, so rolling back past a
+`secret delete` brings the deleted secret back. Clerk can rotate the instance key: then put the
+new PEM in `CLERK_JWT_KEY`. Add `--env=production` to any of these commands to act on the
+production Worker.
+
+## Workers
+
+| Worker           | Clerk instance | Used by                          | Deployed by CI                                    |
+| ---------------- | -------------- | -------------------------------- | ------------------------------------------------- |
+| `leve-sync`      | development    | Leve Dev and TestFlight previews | each `main` commit whose `check` passed (Release) |
+| `leve-sync-prod` | production     | App Store builds                 | each verified release tag (App Store workflow)    |
+
+Both run the same code from `wrangler.jsonc`, but each keeps its own secrets and accounts:
+nothing is shared between them. The development Worker is the place to try a server change with
+the preview app before a release tag carries it to production.
+
+A CI deploy publishes code only. Secrets are set by hand (below) and carried into every new
+version. Each deploy job skips with a warning while its GitHub environment (`sync-development`,
+`sync-production`) has no `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. The production
+deploy runs only when App Store releases are enabled (`LEVE_APP_STORE_ENABLED`), and the App Store
+publish waits for it, so a release never reaches users before its server.
+
+A rollback of the development Worker lasts until the next `main` commit deploys over it; to keep
+it off, delete `CLERK_JWT_KEY` instead.
 
 ## Layout
 
@@ -37,15 +58,20 @@ the new PEM in `CLERK_JWT_KEY`.
 - `load/` drives the real phone storage and sync client against a deployed Worker and logs what
   each request cost.
 
-## Deploy
+## Deploy by hand
+
+CI normally deploys. To deploy or set up a Worker yourself, from `apps/sync-cloudflare`:
 
 ```sh
 export CLOUDFLARE_ACCOUNT_ID=… CLOUDFLARE_API_TOKEN=…   # token from the "Edit Cloudflare Workers" template
-pnpm --filter @leve/sync-cloudflare deploy
+pnpm run deploy:dev                                # or deploy:prod
 npx wrangler@4.158.0 secret put CLERK_ISSUER   # Frontend API URL, e.g. https://x.clerk.accounts.dev (no trailing /)
 npx wrangler@4.158.0 secret put CLERK_JWT_KEY  # API keys → JWT public key → PEM
 npx wrangler@4.158.0 secret put ADMIN_TOKEN    # any long random value, for the operator
 ```
+
+For production, add `--env=production` to each `secret put` and use the production Clerk
+instance's issuer and key. Deploy only a `main` commit whose `check` passed.
 
 ## Load tests
 
