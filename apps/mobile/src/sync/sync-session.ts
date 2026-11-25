@@ -267,8 +267,9 @@ export class SyncSession {
   #interruptible(inner: Transport): Transport {
     return (path, body, options) => {
       if (!(body as { waitMs?: number } | null)?.waitMs) return inner(path, body, options);
-      // An edit made while connecting for this wait: send it instead of waiting.
-      if (this.#due || this.#stopped) {
+      // An edit made while connecting for this wait: send it instead of waiting. Nor wait once the
+      // app has gone to the back.
+      if (this.#due || this.#stopped || !this.#foreground) {
         this.#interrupted = true;
         return Promise.reject(new TransportError("stopped waiting"));
       }
@@ -347,6 +348,9 @@ export class SyncSession {
         // Stopped meanwhile (another account signed in): don't tie this phone to this one.
         if (this.#stopped) return null;
         if (probe.state !== "ready") return this.#handle(probe);
+        // The server answered: a fresh-token retry that got here has done its job.
+        this.#retriedSignIn = false;
+        this.#checkingSignIn = false;
         if (probe.revision > 0) {
           this.#ask({ kind: "combine" });
           return null;

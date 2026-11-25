@@ -374,6 +374,27 @@ it("still asks before combining after a refused sign-in starts working again", a
   expect(await serverFolders("alice")).toEqual(["f-other"]);
 });
 
+it("tries a fresh token again after a combine answer, if the cached one lapsed meanwhile", async () => {
+  await otherPhone("alice", "f-other");
+  const store = await phone();
+  folder(store, "f-phone", "On the phone");
+  let cached = "expired";
+  const { session } = start(store, "alice", {
+    token: async (fresh) => {
+      if (fresh) cached = "alice-token";
+      return cached;
+    },
+  });
+  await until(() => session.status.prompt !== null);
+  expect(session.status.prompt).toEqual({ kind: "combine" });
+  // Answered a while later, when the cached token has lapsed.
+  cached = "expired";
+  session.combine();
+  await until(() => session.status.prompt !== null || session.status.lastSynced !== null);
+  expect(session.status.prompt).toBeNull();
+  expect(await serverFolders("alice")).toEqual(["f-other", "f-phone"]);
+});
+
 it("doesn't count a fresh-token retry that never reached the server", async () => {
   const store = await phone();
   let fresh = 0;
