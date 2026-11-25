@@ -41,12 +41,15 @@ version. Each deploy job skips with a warning while its GitHub environment (`syn
 `sync-production`) has no `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
 
 The production deploy runs only when App Store releases are enabled (`LEVE_APP_STORE_ENABLED`),
-and the App Store publish waits for it, so a release never reaches users before its server. It
-deploys only a store build of the newest release tag on `main`, so production never moves back to
-older code. OTA fixes don't change the server; a server fix ships with a new release tag.
+and the App Store publish waits for it, so a release never reaches users before its server. Only
+a store build deploys it, and only when every other `vX.Y.Z` release on `main` is already part of
+the tagged commit. Otherwise the run fails and the app isn't published, so CI never moves
+production back to older code. OTA fixes don't change the server; a server fix ships with a new
+release tag.
 
-A rollback of the development Worker lasts until the next `main` commit deploys over it; to keep
-it off, delete `CLERK_JWT_KEY` instead.
+A rollback of the development Worker lasts until the next `main` commit deploys over it. A
+rollback of the production Worker lasts until a newer release deploys, or until the newest
+release's App Store run is re-run. To keep either one off, delete its `CLERK_JWT_KEY` instead.
 
 ### Setting up CI deploys
 
@@ -54,10 +57,11 @@ it off, delete `CLERK_JWT_KEY` instead.
    Worker in its account, so a development token in the same account could also deploy over,
    roll back or delete `leve-sync-prod`. With two accounts, each environment's token reaches only
    its own Worker.
-2. **Create both GitHub environments before adding secrets.** Restrict both to the `main` branch.
-   Give `sync-production` the same protection as `app-store`: a separate required reviewer and no
-   administrator bypass. Keep Cloudflare secrets out of repository-level secrets, which every
-   environment would inherit.
+2. **Protect both GitHub environments before adding secrets.** A workflow run creates a missing
+   environment without any protection, so check them even if they already exist. Restrict both to
+   the `main` branch. Give `sync-production` the same protection as `app-store`: a separate
+   required reviewer and no administrator bypass. Keep Cloudflare secrets out of repository-level
+   secrets, which every environment would inherit.
 3. **Set a Worker's secrets before its environment's credentials.** Deploy and set the secrets by
    hand once (below); until then the Worker answers 503.
 
