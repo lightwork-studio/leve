@@ -122,8 +122,8 @@ export function RoutineDetailsFields({
   const styles = useStyles(sheet);
   const c = useColors();
   const [editingNotes, setEditingNotes] = useState(false);
-  const missing = folderId !== null && !folders.some((folder) => folder.id === folderId);
-  const current = folders.find((folder) => folder.id === folderId)?.title;
+  // A routine whose folder is gone is not in a folder, as Train shows it.
+  const current = folders.find((folder) => folder.id === folderId);
   const firstLine = notes.trim().split("\n")[0] ?? "";
   return (
     <>
@@ -139,10 +139,7 @@ export function RoutineDetailsFields({
       <View style={styles.card}>
         <MenuRow
           label="Folder"
-          {...(missing
-            ? { hint: "The previous folder is unavailable. Choose one or leave it unfiled." }
-            : {})}
-          value={missing ? "Unavailable" : (current ?? "Not in a folder")}
+          value={current?.title ?? "Not in a folder"}
           menu={{
             title: "Folder",
             items: [
@@ -150,8 +147,12 @@ export function RoutineDetailsFields({
               ...folders.map((folder) => ({ id: folder.id, title: folder.title })),
             ].map((folder) => ({
               label: folder.title,
-              checked: folder.id === folderId,
-              onPress: () => setFolderId(folder.id),
+              checked: folder.id === (current?.id ?? null),
+              // Choosing the folder it already shows in leaves it as it is: a routine whose folder
+              // is gone stays filed as it was unless it is moved somewhere else.
+              onPress: () => {
+                if (folder.id !== (current?.id ?? null)) setFolderId(folder.id);
+              },
             })),
           }}
         />

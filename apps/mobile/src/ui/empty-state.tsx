@@ -5,7 +5,8 @@ import { themedStyles, useStyles } from "./themed.ts";
 
 /**
  * Nothing to show yet: a card with a small caps label, one line saying what is missing, a quiet
- * sentence on what to do, and at most one secondary action (pass a `Button`).
+ * sentence on what to do, and at most one secondary action (pass a `Button`), with at most a
+ * quieter text one under it.
  */
 export function EmptyState({
   label,

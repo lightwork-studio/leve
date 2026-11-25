@@ -4,7 +4,11 @@ import { Platform, type ScrollView, Text, View } from "react-native";
 import { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppData } from "../../src/data/app-data.tsx";
-import { finishFolderCreation, finishFolderRename } from "../../src/data/folder-actions.ts";
+import {
+  deleteFolder,
+  finishFolderCreation,
+  finishFolderRename,
+} from "../../src/data/folder-actions.ts";
 import { useLive, useTrain } from "../../src/data/queries.ts";
 import { restTimer } from "../../src/data/rest-timer.ts";
 import { beginWorkout } from "../../src/data/workout-actions.ts";
@@ -23,6 +27,8 @@ import type { Settings } from "../../src/model/types.ts";
 import { numeral, radius, space, touch, type } from "../../src/theme.ts";
 import { ActionSheet } from "../../src/ui/action-sheet.tsx";
 import { afterFeedback } from "../../src/ui/after-feedback.ts";
+import { Button } from "../../src/ui/buttons.tsx";
+import { EmptyState } from "../../src/ui/empty-state.tsx";
 import { Enter } from "../../src/ui/enter.tsx";
 import { dayLabel, minutesLabel, readoutWeight } from "../../src/ui/format.ts";
 import { haptic } from "../../src/ui/haptics.ts";
@@ -41,6 +47,7 @@ import { HeaderButton, TabScreen } from "../../src/ui/screen.tsx";
 import { StartActions } from "../../src/ui/start-actions.tsx";
 import { Tap } from "../../src/ui/tap.tsx";
 import { themedStyles, useColors, useStyles } from "../../src/ui/themed.ts";
+import { TrainSyncReview } from "../../src/ui/train-sync-review.tsx";
 import { useNow } from "../../src/ui/use-now.ts";
 
 export default function TrainScreen() {
@@ -49,7 +56,7 @@ export default function TrainScreen() {
   const reduced = useReducedMotion();
   const styles = useStyles(sheet);
   const c = useColors();
-  const { week, groups, upNext, active, settings } = useTrain(now);
+  const { week, groups, upNext, active, settings, reviews } = useTrain(now);
   const { change, store } = useAppData();
   // The routine tapped while another workout runs, and that workout as it was then: discarding it
   // is refused if it changed while the sheet was open.
@@ -183,6 +190,10 @@ export default function TrainScreen() {
             </Text>
           </View>
         </View>
+        {/* Routines and folders the server didn't take as this device had them, to settle here. */}
+        {reviews.map((record) => (
+          <TrainSyncReview key={`${record.kind}/${record.id}`} record={record} />
+        ))}
         {pending && switchTitle && (
           <SwitchSheet
             routine={switchTitle}
@@ -209,6 +220,14 @@ export default function TrainScreen() {
             routineCount={groups.find((g) => g.folder?.id === renaming.id)?.routines.length ?? 0}
             onFinish={(name) => {
               finishFolderRename(change, renaming, name);
+              setRenaming(null);
+            }}
+            onDelete={() => {
+              change((store) => deleteFolder(store, renaming));
+              haptic.tap();
+              // Its routines join the ones not in a folder: open that group to show them there.
+              if (groups.some((g) => g.folder?.id === renaming.id && g.routines.length > 0))
+                setOpen((current) => new Set(current).add("unfiled"));
               setRenaming(null);
             }}
           />
@@ -269,11 +288,19 @@ export default function TrainScreen() {
           ),
         )}
         {groups.length === 0 ? (
-          // Nothing to file into yet: a routine can still be added on its own, or a folder first.
-          <View style={styles.card}>
-            <AddRoutineRow folder={null} first />
-            <NewFolderRow onPress={newFolder} />
-          </View>
+          // Nothing yet: adding a routine is the way in. A folder only helps once there are
+          // routines to file, so it is offered quietly underneath.
+          <EmptyState
+            inset={false}
+            title="No routines yet"
+            text="Plan the exercises you repeat, then start them in one tap."
+            action={
+              <View style={styles.emptyActions}>
+                <Button label="Add routine" onPress={() => newRoutine()} />
+                <Button rank="text" label="Or start with a folder" onPress={newFolder} />
+              </View>
+            }
+          />
         ) : (
           groupRuns.at(-1)?.open && (
             <Enter leaves style={styles.card}>
@@ -466,7 +493,7 @@ const OpenGroup = memo(function OpenGroup({
         </Tap>
         {folder && (
           <IconAction
-            label={`Rename ${folder.content.title} folder`}
+            label={`Edit ${folder.content.title} folder`}
             onPress={() => onRename(folder)}
           >
             <EditIcon color={c.fg3} size={15} />
@@ -764,4 +791,5 @@ const sheet = themedStyles((c) => ({
   addRoutineIcon: { width: 20, alignItems: "center" },
   addLabel: { ...type.rowTitle, color: c.fg2 },
   addLabelColor: { color: c.fg2 },
+  emptyActions: { alignItems: "center", gap: space.xs },
 }));

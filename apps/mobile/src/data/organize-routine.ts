@@ -1,8 +1,8 @@
-import { jsonEqual, MAX_POSITION } from "@leve/contract";
+import { type JsonObject, jsonEqual } from "@leve/contract";
 import { type EffortScale, LIMITS } from "@leve/core";
 import type { DeviceStore } from "@leve/storage";
 
-import type { StoredPlan } from "./routine-actions.ts";
+import { nextRoutinePosition, type StoredPlan } from "./routine-actions.ts";
 
 export interface RoutineLocation {
   title: string;
@@ -65,10 +65,23 @@ export function organizeRoutine(
       const target = store.get("routine_folder", draft.folderId);
       if (!target?.content || target.deleted) throw new Error("Choose an available folder.");
     }
-    const siblings = store.list("routine").filter((r) => r.content?.folderId === draft.folderId);
-    const last = siblings.at(-1)?.content?.position;
     next.folderId = draft.folderId;
-    next.position = Math.min(MAX_POSITION, typeof last === "number" ? last + 1 : 1);
+    next.position = nextRoutinePosition(store, draft.folderId);
   }
   if (!jsonEqual(current, next)) store.put("routine", id, next);
+}
+
+/**
+ * Deletes the routine as it was opened. Workouts started from it keep their own copy of what was
+ * done, so History is unchanged; a workout running from it carries on. A version that arrived since
+ * it was opened is refused, so an edit made elsewhere is never deleted unseen.
+ */
+export function deleteRoutine(store: DeviceStore, id: string, opened: JsonObject): void {
+  const record = store.get("routine", id);
+  if (record?.deleted || !record?.content) throw new Error("This routine is no longer available.");
+  if (record.problem) throw new Error("Resolve the sync issue on this routine before deleting it.");
+  if (record.fromRestore) throw new Error("Sync this routine before deleting it.");
+  if (!jsonEqual(record.content, opened))
+    throw new Error("This routine changed. Reopen it to see the latest before deleting it.");
+  store.delete("routine", id);
 }

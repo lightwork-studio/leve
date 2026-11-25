@@ -2,7 +2,12 @@ import { openDeviceStore } from "@leve/storage";
 import { createSqlJsEngine } from "@leve/storage/sqljs";
 import initSqlJs from "sql.js";
 import { expect, it, vi } from "vitest";
-import { finishFolderCreation, finishFolderRename } from "../src/data/folder-actions.ts";
+import { World } from "../../../packages/sync/test/support/harness.ts";
+import {
+  deleteFolder,
+  finishFolderCreation,
+  finishFolderRename,
+} from "../src/data/folder-actions.ts";
 import { trainData } from "../src/data/read.ts";
 
 const SQL = await initSqlJs();
@@ -217,5 +222,145 @@ it("keeps a rejected folder and its sync problem intact when rename is attempted
   expect(() => finishFolderRename((write) => write(store), folder, "Gym")).toThrow(/sync issue/);
   expect(store.get("routine_folder", folder.id)).toEqual(rejected);
   expect(store.prepareSubmissions("1.0")).toEqual([]);
+  store.close();
+});
+
+const plan = (title: string, folderId: string | null, position: number) => ({
+  title,
+  folderId,
+  notes: "",
+  position,
+  exercises: [],
+  effortScale: null,
+});
+
+it("deletes a synced folder, leaving its routines untouched and shown in no folder on every phone", {
+  timeout: 60000,
+}, async () => {
+  const world = new World();
+  try {
+    const server = world.server({ releases: ["1.0"] });
+    const account = { server: "s", account: "athlete", transport: server.transport("athlete") };
+    const a = await world.phone("a", account);
+    const b = await world.phone("b", account);
+    a.store.put("routine_folder", "ppl", { title: "PPL", position: 1 });
+    a.store.put("routine_folder", "mobility", { title: "Mobility", position: 2 });
+    a.store.put("routine", "push", plan("Push", "ppl", 1));
+    a.store.put("routine", "pull", plan("Pull", "ppl", 2));
+    a.store.put("routine", "hips", plan("Hips", "mobility", 1));
+    a.store.put("routine", "loose", plan("Full body", null, 3));
+    await a.sync();
+    await b.sync();
+
+    // While A deletes the folder, B renames a routine in it: both changes land, with no conflict.
+    b.store.put("routine", "push", plan("Push heavy", "ppl", 1));
+    const ppl = { id: "ppl", content: { title: "PPL", position: 1 } };
+    deleteFolder(a.store, ppl);
+    const queued = a.store.prepareSubmissions("1.0").map((item) => item.submission);
+    expect(queued).toEqual([
+      expect.objectContaining({ op: "delete", kind: "routine_folder", id: "ppl" }),
+    ]);
+    // Deleting it again, as a second tap might, queues nothing more.
+    deleteFolder(a.store, ppl);
+    expect(a.store.prepareSubmissions("1.0")).toHaveLength(1);
+    await a.sync();
+    await b.sync();
+    await a.sync();
+    for (const phone of [a, b]) {
+      const groups = trainData(phone.store, 0).groups;
+      expect(
+        groups.map((group) => [
+          group.folder?.content.title ?? null,
+          group.routines.map((r) => r.title),
+        ]),
+      ).toEqual([
+        ["Mobility", ["Hips"]],
+        [null, ["Push heavy", "Pull", "Full body"]],
+      ]);
+      expect(phone.store.get("routine", "pull")?.content).toEqual(plan("Pull", "ppl", 2));
+      expect(phone.store.get("routine", "push")).toMatchObject({
+        status: "synced",
+        content: plan("Push heavy", "ppl", 1),
+      });
+      expect(phone.store.prepareSubmissions("1.0")).toEqual([]);
+    }
+    expect(await server.row("athlete", "routine_folder", "ppl")).toMatchObject({
+      state: "deleted",
+    });
+  } finally {
+    await world.dispose();
+  }
+});
+
+it("refuses to delete a folder while it has a sync conflict", {
+  timeout: 60000,
+}, async () => {
+  const world = new World();
+  try {
+    const server = world.server({ releases: ["1.0"] });
+    const account = { server: "s", account: "athlete", transport: server.transport("athlete") };
+    const a = await world.phone("a", account);
+    const b = await world.phone("b", account);
+    a.store.put("routine_folder", "ppl", { title: "PPL", position: 1 });
+    await a.sync();
+    await b.sync();
+    b.store.put("routine_folder", "ppl", { title: "Split", position: 1 });
+    await b.sync();
+    a.store.put("routine_folder", "ppl", { title: "Strength", position: 1 });
+    await a.sync();
+    expect(a.store.get("routine_folder", "ppl")?.problem).not.toBeNull();
+
+    expect(() =>
+      deleteFolder(a.store, { id: "ppl", content: { title: "Strength", position: 1 } }),
+    ).toThrow(/sync issue on this folder/);
+    expect(a.store.get("routine_folder", "ppl")).toMatchObject({
+      deleted: false,
+      content: { title: "Strength" },
+    });
+  } finally {
+    await world.dispose();
+  }
+});
+
+it("deletes a folder that never synced without sending anything", async () => {
+  const store = await openDeviceStore({
+    engine: createSqlJsEngine(SQL),
+    path: "/local-delete.db",
+    appVersion: "test",
+  });
+  store.put("routine_folder", "new", { title: "New", position: 1 });
+  store.put("routine", "r", plan("Legs", "new", 4));
+  deleteFolder(store, { id: "new", content: { title: "New", position: 1 } });
+  expect(store.get("routine_folder", "new")).toBeNull();
+  expect(store.prepareSubmissions("1.0").map((item) => item.submission)).toEqual([
+    expect.objectContaining({
+      op: "put",
+      kind: "routine",
+      id: "r",
+      content: plan("Legs", "new", 4),
+    }),
+  ]);
+  expect(trainData(store, 0).groups.map((group) => group.folder)).toEqual([null]);
+  store.close();
+});
+
+it("refuses to delete a folder renamed or moved since its dialog opened", async () => {
+  const store = await openDeviceStore({
+    engine: createSqlJsEngine(SQL),
+    path: "/renamed-delete.db",
+    appVersion: "test",
+  });
+  store.put("routine_folder", "f", { title: "Push", position: 1 });
+  const opened = { id: "f", content: { title: "Push", position: 1 } };
+  store.put("routine_folder", "f", { title: "Push heavy", position: 1 });
+  expect(() => deleteFolder(store, opened)).toThrow(/This folder changed/);
+  expect(store.get("routine_folder", "f")).toMatchObject({
+    deleted: false,
+    content: { title: "Push heavy" },
+  });
+  // Moved since it opened, as another phone's reorder would, it is refused too.
+  store.put("routine_folder", "f", { title: "Push", position: 4 });
+  expect(() => deleteFolder(store, opened)).toThrow(/This folder changed/);
+  expect(store.get("routine_folder", "f")?.deleted).toBe(false);
   store.close();
 });

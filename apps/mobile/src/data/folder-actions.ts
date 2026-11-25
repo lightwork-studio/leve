@@ -1,5 +1,6 @@
-import { MAX_POSITION } from "@leve/contract";
+import { jsonEqual, MAX_POSITION } from "@leve/contract";
 import { LIMITS } from "@leve/core";
+import type { DeviceStore } from "@leve/storage";
 import type { Folder, WithId } from "../model/types.ts";
 import type { AppData } from "./app-data.tsx";
 import { newId } from "./ids.ts";
@@ -44,4 +45,19 @@ export function finishFolderRename(
     if (title !== current.content.title)
       store.put("routine_folder", folder.id, { ...current.content, title });
   });
+}
+
+/**
+ * Deletes a folder, as it was named when the dialog opened, and nothing else. A routine's folder is
+ * a soft reference, and a routine whose folder is gone counts as not in a folder everywhere, so its
+ * routines are left untouched: an edit to one of them on another phone syncs without a conflict.
+ */
+export function deleteFolder(store: DeviceStore, folder: WithId<Folder>): void {
+  const current = store.get("routine_folder", folder.id);
+  if (!current?.content || current.deleted) return;
+  if (current.problem) throw new Error("Resolve the sync issue on this folder before deleting it.");
+  if (current.fromRestore) throw new Error("Sync this folder before deleting it.");
+  if (!jsonEqual(current.content, folder.content))
+    throw new Error("This folder changed. Close the dialog and reopen it to delete it.");
+  store.delete("routine_folder", folder.id);
 }
