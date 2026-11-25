@@ -33,6 +33,8 @@ export interface AppData {
   reset(sampleData?: boolean): Promise<boolean>;
   /** Why changes can't be saved right now, if they can't. */
   saveProblem: string | null;
+  /** Copies this device's database files to a place the person picks, before data is replaced. */
+  exportData(): Promise<void>;
 }
 
 type State =
@@ -152,6 +154,7 @@ export function AppDataProvider({
             change,
             reset: startOver,
             saveProblem,
+            exportData: () => (engine.current?.exportRecovery ?? exportStoredRecovery)(),
           }
         : null,
     [state, change, startOver, saveProblem],

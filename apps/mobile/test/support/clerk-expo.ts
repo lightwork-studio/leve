@@ -8,6 +8,7 @@ type Flow = () => Promise<{ createdSessionId: string | null; signUp?: { status: 
 export const clerk = {
   loaded: true,
   signedIn: false,
+  userId: "user_1",
   email: undefined as string | undefined,
   /** What tapping Sign in with Apple does; by default it signs in as someone. */
   appleFlow: (async () => ({ createdSessionId: "sess_1" })) as Flow,
@@ -19,6 +20,7 @@ export const clerk = {
     clerk.providerProps = null;
     clerk.loaded = true;
     clerk.signedIn = false;
+    clerk.userId = "user_1";
     clerk.email = undefined;
     clerk.appleFlow = async () => ({ createdSessionId: "sess_1" });
     clerk.calls = [];
@@ -44,6 +46,9 @@ export function useAuth() {
   return {
     isLoaded: clerk.loaded,
     isSignedIn: clerk.loaded && clerk.signedIn,
+    userId: clerk.loaded && clerk.signedIn ? clerk.userId : null,
+    getToken: async (_options?: { skipCache?: boolean }) =>
+      clerk.signedIn ? `token-${clerk.userId}` : null,
     signOut: async () => {
       clerk.calls.push("signOut");
       if (clerk.signOutFails) throw new TypeError("Network request failed");

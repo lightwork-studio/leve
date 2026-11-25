@@ -204,7 +204,8 @@ export class SyncClient {
       // Neither says anything about this request: the sign-in, or the server for a while.
       const { code, message } = this.#error(response.body);
       if (code === "unauthorized") throw new Stop({ state: "signed_out" });
-      if (code === "unavailable") throw new Stop({ state: "offline", error: `unavailable: ${message}` });
+      if (code === "unavailable")
+        throw new Stop({ state: "offline", error: `unavailable: ${message}` });
     }
     return response;
   }

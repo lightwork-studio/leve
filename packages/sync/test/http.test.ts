@@ -282,7 +282,7 @@ describe("HTTP boundary", () => {
     const phone = await world.phone("phone", {
       account: "alice",
       server: base,
-      transport: httpTransport(base, async () => {
+      transport: httpTransport(base, async (): Promise<Record<string, string>> => {
         asked += 1;
         return token ? { authorization: `Bearer ${token}` } : {};
       }),

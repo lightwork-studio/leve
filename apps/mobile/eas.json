@@ -11,7 +11,8 @@
       "env": {
         "LEVE_APP_VARIANT": "development",
         "EXPO_PUBLIC_BUILD_LABEL": "Leve Dev",
-        "EXPO_PUBLIC_SAMPLE_DATA": "on"
+        "EXPO_PUBLIC_SAMPLE_DATA": "on",
+        "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_test_c3VidGxlLWxhZHliaXJkLTc0ODIuY2xlcmsuYWNjb3VudHMuZGV2JA=="
       }
     },
     "preview": {

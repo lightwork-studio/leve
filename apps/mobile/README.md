@@ -48,6 +48,32 @@ The environment holds `CLOUDFLARE_ACCOUNT_ID` and `LEVE_WEB_PREVIEW_PROJECT` as 
 the token as `LEVE_WEB_PREVIEW_CLOUDFLARE_API_TOKEN`. The repository variables
 `LEVE_RELEASE_REPOSITORY` (this repository) and `LEVE_WEB_PREVIEW_ENABLED` (`true`) turn it on.
 
+## Sync
+
+A build syncs when it has both a sign-in (`EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY`, set in `eas.json`
+for Leve Dev and Leve Preview) and a sync server (`EXPO_PUBLIC_SYNC_URL`). Leve Dev and Leve
+Preview sync with the development Worker (`leve-sync`, see
+[the Worker's README](../sync-cloudflare/README.md)). Set its URL as `EXPO_PUBLIC_SYNC_URL` in the
+EAS `development` and `preview` environments, and in your shell or `.env` for a local build. The
+App Store build has no sync server yet, so it keeps everything on the phone. Browsers never sync.
+
+Sign in with Apple needs the capability on each bundle ID and each bundle ID registered as a native
+app on the Clerk instance; Leve Dev (`app.leve.dev`) needs both before it can sign in.
+
+Syncing runs while the app is open: when it starts, shortly after each change, when it comes back
+to the front, and otherwise waiting on the server for changes from other devices. Being offline and
+brief server failures show nothing. A day without syncing shows a note while changes wait. The app
+asks only when the person has to decide, and never during a workout:
+
+- **Combine:** this phone has data that never synced, and the account already has data. Add it to
+  the account, or replace it with the account's data (after an offer to save a copy).
+- **Another account:** the phone's data belongs to another account. If all of it synced, the app
+  switches without asking. Otherwise it says how many changes would be lost, offers a copy, and
+  deletes them only on confirmation, or signs the new account out to keep them.
+- **Sign in again:** the sign-in ran out. It can wait a day or be ignored; changes stay on the
+  phone until then.
+- **Update Leve:** the server no longer syncs with this version. This one can't be dismissed.
+
 ## TestFlight
 
 The TestFlight preview is for disposable test data. Its storage format may change and preview

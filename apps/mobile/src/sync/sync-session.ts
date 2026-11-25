@@ -1,0 +1,366 @@
+import { MAX_WAIT_MS } from "@leve/contract";
+import type { DeviceStore } from "@leve/storage";
+import {
+  httpTransport,
+  type RequestHeaders,
+  SyncClient,
+  type SyncOutcome,
+  type Transport,
+  TransportError,
+} from "@leve/sync";
+
+/** What the person has to decide or do before syncing can go on. */
+export type SyncPrompt =
+  /** Data on this phone that never synced, and an account that already has data. */
+  | { kind: "combine" }
+  /** This phone's data belongs to another account or server, and some of it hasn't synced. */
+  | { kind: "switch"; unsynced: number }
+  /** The server no longer accepts the sign-in. */
+  | { kind: "sign_in" }
+  /** The server no longer syncs with this version of the app. */
+  | { kind: "update" };
+
+export interface SyncStatus {
+  prompt: SyncPrompt | null;
+  /** When the last sync finished, in milliseconds. */
+  lastSynced: number | null;
+  /** When syncing started failing, if it has failed since the last sync. */
+  failingSince: number | null;
+}
+
+export interface SyncSessionOptions {
+  store: DeviceStore;
+  /** The sync server's URL. The device's sync state is bound to it. */
+  server: string;
+  /** The signed-in account. */
+  account: string;
+  /** Names this build to the server. */
+  app: string;
+  /** A session token for the account, or null without one. `fresh` skips a cached token. */
+  token(fresh: boolean): Promise<string | null>;
+  /** Downloaded changes were applied: screens should read the store again. */
+  onPulled(): void;
+  onStatus(status: SyncStatus): void;
+  /**
+   * Delete this phone's data and open an empty store, which a new session then syncs. This session
+   * stops before it is called.
+   */
+  startOver(): void;
+  lastSynced?: number | null;
+  /** Builds the transport; tests reach an in-process server. */
+  connect?: (server: string, headers: RequestHeaders) => Transport;
+  now?: () => number;
+  log?: (message: string) => void;
+  /** How long to wait in each case; tests shorten them. */
+  timing?: Partial<SyncTiming>;
+}
+
+export interface SyncTiming {
+  /** After failures to reach the server in a row: soon at first, then less often. */
+  offline: readonly number[];
+  /** After an answer this build can't use: a bug, so not every few seconds. */
+  error: number;
+  /** The server is older than this app; it gets updated eventually. */
+  serverUpdate: number;
+  /** Edits close together (logging sets) go up in one sync. */
+  nudge: number;
+  /** How long one wait on the server for changes lasts. */
+  wait: number;
+}
+
+export const SYNC_TIMING: SyncTiming = {
+  offline: [5_000, 15_000, 60_000, 5 * 60_000],
+  error: 15 * 60_000,
+  serverUpdate: 60 * 60_000,
+  nudge: 1_500,
+  wait: MAX_WAIT_MS,
+};
+
+/** Whether the phone holds any data at all. */
+export function hasLocalData(store: DeviceStore): boolean {
+  return !!store.db.get("SELECT 1 FROM records LIMIT 1");
+}
+
+/** How many records have local changes the server hasn't accepted yet. */
+export function unsyncedChanges(store: DeviceStore): number {
+  const { pending, conflict, partial, invalid } = store.summary();
+  const count = pending + conflict + partial + invalid;
+  return count > 0 ? count : store.hasUnsyncedWork() ? 1 : 0;
+}
+
+/**
+ * Keeps one phone in sync with one account while the app runs: it syncs when it starts, shortly
+ * after local edits and when the app comes back to the front, and otherwise waits on the server for
+ * changes made elsewhere. Failures that fix themselves (no connection, a server that is briefly
+ * down) are retried quietly. Anything the person must decide stops it with a prompt.
+ *
+ * Before the phone's data joins an account it checks whose it is: data that never synced and an
+ * account that already has data ask first (combine); data that belongs to another account is
+ * replaced right away when all of it synced, and otherwise only once the person agrees.
+ */
+export class SyncSession {
+  readonly #options: SyncSessionOptions;
+  readonly #client: SyncClient;
+  readonly #now: () => number;
+  readonly #timing: SyncTiming;
+  #stopped = false;
+  #foreground = true;
+  /** A sync (rather than a wait for changes) is due. */
+  #due = true;
+  #wake: (() => void) | null = null;
+  #stopWaiting: (() => void) | null = null;
+  #interrupted = false;
+  #nudge: ReturnType<typeof setTimeout> | null = null;
+  #failures = 0;
+  #freshToken = false;
+  #retriedSignIn = false;
+  #join = false;
+  #status: SyncStatus;
+
+  constructor(options: SyncSessionOptions) {
+    this.#options = options;
+    this.#now = options.now ?? Date.now;
+    this.#timing = { ...SYNC_TIMING, ...options.timing };
+    this.#status = { prompt: null, lastSynced: options.lastSynced ?? null, failingSince: null };
+    const headers = async (): Promise<Record<string, string>> => {
+      const fresh = this.#freshToken;
+      this.#freshToken = false;
+      const token = await options.token(fresh);
+      return token ? { authorization: `Bearer ${token}` } : {};
+    };
+    const connect = options.connect ?? ((server, h) => httpTransport(server, h));
+    this.#client = new SyncClient({
+      store: options.store,
+      transport: this.#interruptible(connect(options.server, headers)),
+      server: options.server,
+      account: options.account,
+      app: options.app,
+    });
+  }
+
+  get status(): SyncStatus {
+    return this.#status;
+  }
+
+  start(): void {
+    void this.#run();
+  }
+
+  stop(): void {
+    this.#stopped = true;
+    if (this.#nudge) clearTimeout(this.#nudge);
+    this.#stopWaiting?.();
+    this.#wake?.();
+  }
+
+  /** Local data changed: sync soon, unless there is nothing to send. */
+  nudge(): void {
+    if (this.#stopped || !this.#options.store.hasUnsyncedWork()) return;
+    if (this.#nudge) clearTimeout(this.#nudge);
+    this.#nudge = setTimeout(() => {
+      this.#nudge = null;
+      this.#due = true;
+      // While retrying after a failure, the retry's own timer decides when.
+      if (this.#failures === 0) this.#interrupt();
+    }, this.#timing.nudge);
+  }
+
+  /** The app came to the front (sync now) or went to the back (send what's left, then rest). */
+  setForeground(active: boolean): void {
+    this.#foreground = active;
+    if (active) {
+      this.#failures = 0;
+      this.#due = true;
+      this.#interrupt();
+    } else {
+      this.#stopWaiting?.();
+      if (this.#options.store.hasUnsyncedWork()) {
+        this.#due = true;
+        this.#wake?.();
+      }
+    }
+  }
+
+  /** The answer to "combine": the phone's data joins the account. */
+  combine(): void {
+    if (this.#status.prompt?.kind !== "combine") return;
+    this.#join = true;
+    this.#resume();
+  }
+
+  /**
+   * The answer to "combine" or "switch": delete this phone's data and take the account's. Ends this
+   * session.
+   */
+  replaceLocalData(): void {
+    const prompt = this.#status.prompt?.kind;
+    if (prompt !== "combine" && prompt !== "switch") return;
+    this.stop();
+    this.#options.startOver();
+  }
+
+  /** Try again after a sign-in prompt, for example once the person signed in again. */
+  retry(): void {
+    if (this.#status.prompt?.kind !== "sign_in") return;
+    this.#retriedSignIn = false;
+    this.#freshToken = true;
+    this.#resume();
+  }
+
+  #resume(): void {
+    this.#failures = 0;
+    this.#due = true;
+    this.#setStatus({ prompt: null });
+    this.#wake?.();
+  }
+
+  #ask(prompt: SyncPrompt): void {
+    this.#setStatus({ prompt });
+  }
+
+  #setStatus(change: Partial<SyncStatus>): void {
+    this.#status = { ...this.#status, ...change };
+    if (!this.#stopped) this.#options.onStatus(this.#status);
+  }
+
+  /** Stops a wait for changes and wakes the loop, so a sync starts now. */
+  #interrupt(): void {
+    this.#stopWaiting?.();
+    this.#wake?.();
+  }
+
+  /**
+   * Lets a wait for changes be given up early (to send an edit, or when the app leaves the front).
+   * The answer to a wait that was given up is dropped unread, so it can't be half applied; the next
+   * download fetches the same changes.
+   */
+  #interruptible(inner: Transport): Transport {
+    return (path, body) => {
+      const request = inner(path, body);
+      if (!(body as { waitMs?: number } | null)?.waitMs) return request;
+      return new Promise((resolve, reject) => {
+        const stop = () => {
+          this.#interrupted = true;
+          reject(new TransportError("stopped waiting"));
+        };
+        this.#stopWaiting = stop;
+        request.then(resolve, reject).finally(() => {
+          if (this.#stopWaiting === stop) this.#stopWaiting = null;
+        });
+      });
+    };
+  }
+
+  #sleep(ms: number | null): Promise<void> {
+    return new Promise<void>((resolve) => {
+      const timer = ms === null ? null : setTimeout(done, ms);
+      const wake = () => done();
+      function done() {
+        if (timer) clearTimeout(timer);
+        resolve();
+      }
+      this.#wake = wake;
+    }).then(() => {
+      this.#wake = null;
+    });
+  }
+
+  async #run(): Promise<void> {
+    while (!this.#stopped) {
+      if (this.#status.prompt || (!this.#due && !this.#foreground)) {
+        await this.#sleep(null);
+        continue;
+      }
+      let delay: number | null;
+      try {
+        if (this.#due) {
+          this.#due = false;
+          delay = await this.#step();
+        } else {
+          // Nothing to send: wait on the server for changes made elsewhere.
+          this.#interrupted = false;
+          const outcome = await this.#client.waitForChanges(this.#timing.wait);
+          if (this.#interrupted && outcome.state === "offline") continue;
+          delay = this.#handle(outcome);
+        }
+      } catch (error) {
+        // Not an answer from the server: the store refused something. Say so and back off.
+        this.#options.log?.(`sync failed: ${(error as Error)?.message ?? String(error)}`);
+        delay = this.#retryAfter(this.#timing.error);
+      }
+      if (this.#stopped) return;
+      if (delay !== null) {
+        await this.#sleep(delay);
+        this.#due = true;
+      }
+    }
+  }
+
+  /** One sync, after checking whose data this phone holds. A delay asks to try again after it. */
+  async #step(): Promise<number | null> {
+    const { store } = this.#options;
+    const state = store.syncState();
+    if (state.account === null) {
+      if (!this.#join && hasLocalData(store)) {
+        const probe = await this.#client.probe();
+        if (probe.state !== "ready") return this.#handle(probe);
+        if (probe.revision > 0) {
+          this.#ask({ kind: "combine" });
+          return null;
+        }
+      }
+    } else if (state.account !== this.#options.account || state.server !== this.#options.server) {
+      const unsynced = unsyncedChanges(store);
+      if (unsynced > 0) {
+        this.#ask({ kind: "switch", unsynced });
+        return null;
+      }
+      // Everything here is on the other account's server already: nothing is lost.
+      this.stop();
+      this.#options.startOver();
+      return null;
+    }
+    return this.#handle(await this.#client.sync());
+  }
+
+  #handle(outcome: SyncOutcome): number | null {
+    switch (outcome.state) {
+      case "synced":
+        this.#failures = 0;
+        this.#retriedSignIn = false;
+        this.#join = false;
+        this.#setStatus({ lastSynced: this.#now(), failingSince: null });
+        if (outcome.pulled > 0) this.#options.onPulled();
+        return null;
+      case "offline": {
+        const steps = this.#timing.offline;
+        return this.#retryAfter(steps[Math.min(this.#failures, steps.length - 1)] as number);
+      }
+      case "signed_out":
+        // A token can lapse between being handed out and checked: try once with a new one.
+        if (!this.#retriedSignIn) {
+          this.#retriedSignIn = true;
+          this.#freshToken = true;
+          return 0;
+        }
+        this.#ask({ kind: "sign_in" });
+        return null;
+      case "update_required":
+        if (outcome.update === "client") {
+          this.#ask({ kind: "update" });
+          return null;
+        }
+        this.#options.log?.("sync paused: the server needs an update");
+        return this.#retryAfter(this.#timing.serverUpdate);
+      case "error":
+        this.#options.log?.(`sync failed: ${outcome.error}`);
+        return this.#retryAfter(this.#timing.error);
+    }
+  }
+
+  #retryAfter(ms: number): number {
+    this.#failures += 1;
+    if (this.#status.failingSince === null) this.#setStatus({ failingSince: this.#now() });
+    return ms;
+  }
+}
