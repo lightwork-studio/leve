@@ -310,6 +310,63 @@ describe("fields, search and notices", () => {
     ).toBe("Push");
   });
 
+  it("rings a focused or refused field with an even border, not a half-point inset shadow", async () => {
+    const render = (error?: string) =>
+      act(() =>
+        root.render(
+          h(TextField, {
+            label: "Description",
+            multiline: true,
+            placeholder: "How did it go?",
+            value: "",
+            onChangeText: () => {},
+            ...(error ? { error } : {}),
+          }),
+        ),
+      );
+    const ring = () => document.querySelector<HTMLElement>('[data-testid="field-ring"]');
+    const sides = (element: HTMLElement) => {
+      const style = getComputedStyle(element);
+      return {
+        widths: [
+          style.borderTopWidth,
+          style.borderRightWidth,
+          style.borderBottomWidth,
+          style.borderLeftWidth,
+        ],
+        colors: new Set([
+          style.borderTopColor,
+          style.borderRightColor,
+          style.borderBottomColor,
+          style.borderLeftColor,
+        ]).size,
+        shadow: style.boxShadow,
+      };
+    };
+
+    await render();
+    expect(ring()).toBeNull();
+
+    const input = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Description"]');
+    if (!input) throw Error("Missing the description field");
+    await act(async () => input.focus());
+    const focused = ring();
+    if (!focused) throw Error("No ring while typing");
+    expect(sides(focused)).toEqual({
+      widths: ["1.5px", "1.5px", "1.5px", "1.5px"],
+      colors: 1,
+      shadow: expect.not.stringContaining("inset"),
+    });
+
+    await act(async () => input.blur());
+    expect(ring()).toBeNull();
+
+    await render("Too long.");
+    const refused = ring();
+    if (!refused) throw Error("No ring on a refused field");
+    expect(sides(refused).widths).toEqual(["1.5px", "1.5px", "1.5px", "1.5px"]);
+  });
+
   it("offers clearing a search only once there is text", async () => {
     const change = vi.fn();
     const render = (value: string) =>

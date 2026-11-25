@@ -160,6 +160,13 @@ export const TextField = forwardRef<ComponentRef<typeof TextInput>, FieldProps>(
           style={[styles.input, mono && styles.mono, multiline && styles.areaInput]}
         />
         {end}
+        {focused || error ? (
+          <View
+            testID="field-ring"
+            pointerEvents="none"
+            style={[styles.ring, { borderColor: error ? c.alert : c.fg }]}
+          />
+        ) : null}
       </Shake>
       <HelperLine
         {...(hint ? { hint } : {})}
@@ -225,8 +232,20 @@ const sheet = themedStyles((c) => ({
     borderWidth: 1,
     borderColor: c.line2,
   },
-  focused: { borderColor: c.fg, boxShadow: `inset 0 0 0 0.5px ${c.fg}` },
-  invalid: { borderColor: c.alert, boxShadow: `inset 0 0 0 0.5px ${c.alert}` },
+  focused: { borderColor: c.fg },
+  invalid: { borderColor: c.alert },
+  // The ring while typing or refused: a real border laid over the box's own, so it stays even
+  // around the corners (a half-point inset shadow drew them brighter than the straight edges) and
+  // nothing inside moves.
+  ring: {
+    position: "absolute",
+    top: -1,
+    left: -1,
+    right: -1,
+    bottom: -1,
+    borderRadius: 15,
+    borderWidth: 1.5,
+  },
   area: { alignItems: "flex-start", minHeight: 92 },
   input: { ...type.body, fontSize: 16, flex: 1, minWidth: 0, color: c.fg, minHeight: 50 },
   mono: { ...font.mono, fontSize: 15, letterSpacing: 0.3 },
