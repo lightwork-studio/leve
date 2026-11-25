@@ -16,6 +16,7 @@ const dark = palettes.dark;
 
 let historyMonths: ReturnType<typeof useHistory>["months"] = [];
 let fixtureRecords = new Map<string, WorkoutRecord[]>();
+let fixtureToday = new Date(2026, 10, 10).getTime();
 
 // The History tab's navigation (its route params, and the stack it sits in), and its list.
 const { navigation, stackEvents, sessionList } = vi.hoisted(() => {
@@ -80,7 +81,7 @@ vi.mock("../src/ui/screen.tsx", () => ({
 }));
 vi.mock("../src/ui/workout-sync-review.tsx", () => ({ WorkoutSyncReview: "WorkoutSyncReview" }));
 vi.mock("../src/ui/tap.tsx", () => ({ Tap: "Tap" }));
-vi.mock("../src/ui/use-now.ts", () => ({ useToday: () => new Date(2026, 10, 10).getTime() }));
+vi.mock("../src/ui/use-now.ts", () => ({ useToday: () => fixtureToday }));
 vi.mock("../src/model/progress.ts", async (load) => ({
   ...(await load<typeof import("../src/model/progress.ts")>()),
   recordsByWorkout: () => fixtureRecords,
@@ -295,6 +296,68 @@ it("keeps the month on screen when an older month arrives in front of it", async
   } finally {
     await act(() => screen.unmount());
     historyMonths = [];
+    vi.unstubAllGlobals();
+  }
+});
+
+it("points the older month's chevron left and the newer month's right", async () => {
+  historyMonths = [monthOf(2026, 9, [session("Legs", [2026, 9, 14, 18])])];
+  const { screen, root, layout } = await mountHistory();
+  try {
+    await layout(362);
+    const direction = (label: string) =>
+      root.findByProps({ accessibilityLabel: label }).findByType("Chevron" as never).props
+        .direction ?? "right";
+    expect(direction("Show older month")).toBe("left");
+    expect(direction("Show newer month")).toBe("right");
+  } finally {
+    await act(() => screen.unmount());
+    historyMonths = [];
+    vi.unstubAllGlobals();
+  }
+});
+
+it("stays on an earlier month across a new month, and falls back to the newest once it has gone", async () => {
+  const october = monthOf(2026, 9, [session("Legs", [2026, 9, 14, 18])]);
+  const november = monthOf(2026, 10, [session("Push", [2026, 10, 3, 18])]);
+  historyMonths = [november, october];
+  const { screen, root, layout } = await mountHistory({
+    createNodeMock: (node) => (node.type === FlatList ? { scrollToOffset: () => {} } : null),
+  });
+  try {
+    await layout(362);
+    const pager = () => root.findByType(FlatList);
+    const keys = () => pager().props.data.map((m: { key: string }) => m.key);
+    const shown = () =>
+      pager().props.data.find(
+        (_: unknown, index: number) =>
+          pager().props.renderItem({ item: pager().props.data[index], index }).props.inert !== true,
+      ).key;
+    await act(() => pager().props.onScroll({ nativeEvent: { contentOffset: { x: 0 } } }));
+    expect(shown()).toBe("2026-10");
+    // December begins while October is on screen: it stays there, with December at the far end.
+    fixtureToday = new Date(2026, 11, 1).getTime();
+    await act(() => screen.update(createElement(HistoryScreen)));
+    expect(keys()).toEqual(["2026-10", "2026-11", "2026-12"]);
+    expect(shown()).toBe("2026-10");
+    expect(pager().props.initialScrollIndex).toBe(0);
+    // Swiping to the newest page and then into another new month follows the newest.
+    await act(() => pager().props.onScroll({ nativeEvent: { contentOffset: { x: 724 } } }));
+    fixtureToday = new Date(2027, 0, 2).getTime();
+    await act(() => screen.update(createElement(HistoryScreen)));
+    expect(shown()).toBe("2027-01");
+    // Back on October, its only workout is deleted: the newest month takes its place.
+    await act(() => pager().props.onScroll({ nativeEvent: { contentOffset: { x: 0 } } }));
+    expect(shown()).toBe("2026-10");
+    historyMonths = [november];
+    await act(() => screen.update(createElement(HistoryScreen)));
+    expect(keys()).toEqual(["2026-11", "2027-01"]);
+    expect(shown()).toBe("2027-01");
+    expect(pager().props.initialScrollIndex).toBe(1);
+  } finally {
+    await act(() => screen.unmount());
+    historyMonths = [];
+    fixtureToday = new Date(2026, 10, 10).getTime();
     vi.unstubAllGlobals();
   }
 });

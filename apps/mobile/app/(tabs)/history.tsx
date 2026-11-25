@@ -305,8 +305,8 @@ function MonthPager({
   const styles = useStyles(sheet);
   const c = useColors();
   const [width, setWidth] = useState(0);
-  // Counted back from the newest month, so the month on screen stays put when older ones arrive.
-  const [back, setBack] = useState(0);
+  // The month on screen by its key, or null for the newest, so it stays put as months come and go.
+  const [shown, setShown] = useState<string | null>(null);
   const list = useRef<FlatList<Month>>(null);
   const [selected, setSelected] = useState<number | null>(null);
   const pages = useMemo(() => monthPages(months, today), [months, today]);
@@ -316,7 +316,10 @@ function MonthPager({
     [pages, today, firstWeekday, recordsIn],
   );
   const last = Math.max(0, pages.length - 1);
-  const current = last - Math.min(back, last);
+  const at = shown === null ? -1 : pages.findIndex((month) => month.key === shown);
+  // A month that has gone, its last workout deleted, gives way to the newest.
+  const current = at < 0 ? last : at;
+  const show = (to: number) => setShown(to >= last ? null : (pages[to]?.key ?? null));
   const selectedDay = odometers[current]?.cells.find((day) => day?.start === selected);
   // The picked date closes once its last session is gone, so one added later doesn't open it.
   if (
@@ -329,7 +332,7 @@ function MonthPager({
   const goTo = (to: number) => {
     if (to < 0 || to > last || !list.current) return;
     list.current.scrollToOffset({ offset: to * width, animated: false });
-    setBack(last - to);
+    show(to);
   };
   const controls = (
     <View style={styles.pagerControls}>
@@ -359,15 +362,13 @@ function MonthPager({
     <View onLayout={({ nativeEvent }) => setWidth(nativeEvent.layout.width)}>
       {width > 0 && (
         <FlatList
-          // Laid out afresh when the width or the number of months changes, opening on the same
-          // month: an older month arriving in front would otherwise shift the one on screen.
-          key={`${width}:${pages.length}`}
+          // Laid out afresh when the width or the months change, opening on the same month: one
+          // arriving in front of it would otherwise shift the month on screen.
+          key={`${width}:${pages.map((month) => month.key).join()}`}
           ref={list}
           initialScrollIndex={current}
           onScroll={({ nativeEvent }) =>
-            setBack(
-              last - Math.max(0, Math.min(last, Math.round(nativeEvent.contentOffset.x / width))),
-            )
+            show(Math.max(0, Math.round(nativeEvent.contentOffset.x / width)))
           }
           scrollEventThrottle={32}
           horizontal
