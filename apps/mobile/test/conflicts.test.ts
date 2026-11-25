@@ -540,3 +540,25 @@ it("waits while a workout deleted here is still to upload, instead of leading to
   b.store.delete("workout", "w1");
   expect(conflicts(b.store)).toEqual([]);
 });
+
+it("keeps a deleted note that holds comments in the account apart from other clashes in its workout", async () => {
+  const { a, b } = await twoPhones((store) => {
+    store.put("workout", "w1", workout("Push Day"));
+    store.put("workout_exercise", "e1", entry("w1"));
+    store.put("workout_set", "s1", set(80, 8));
+    store.put("workout_note", "n1", note("Felt strong"));
+  });
+  a.store.put("workout_note_comment", "c1", comment("Try a pause rep"));
+  a.store.put("workout_set", "s1", set(85, 8));
+  await a.sync();
+  b.store.delete("workout_note", "n1");
+  b.store.put("workout_set", "s1", set(90, 8));
+  await b.sync();
+  const all = conflicts(b.store);
+  const sets = all.find((item) => item.key === "workout:w1")!;
+  // The set clash can still be settled with this phone's version.
+  expect(sets.phone.choosable).toBe(true);
+  settleConflict(b.store, sets, "phone");
+  expect(b.store.get("workout_set", "s1")?.content).toMatchObject({ weightKg: 90 });
+  expect(all.find((item) => item.key.endsWith("|workout_note:n1"))?.phone.choosable).toBe(false);
+});

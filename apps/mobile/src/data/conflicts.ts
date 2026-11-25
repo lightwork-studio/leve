@@ -179,7 +179,12 @@ function groupKey(store: DeviceStore, row: DeviceRecord): string | null {
     // Deleted on both sides, nothing left to place it by: agreed on by itself.
     return recordCase(row) === "gone_both" ? `${row.kind}:${row.id}` : null;
   }
-  return row.status === "invalid" ? `${base}|${row.kind}:${row.id}` : base;
+  // A refused change, or a deletion that can only give way to the account's version, is decided
+  // on its own, so neither takes valid changes beside it along.
+  // (A workout or exercise is reviewed on its screen instead, whole.)
+  const splitDeletion =
+    deletesAccountChildren(store, row) && row.kind !== "workout" && row.kind !== "workout_exercise";
+  return row.status === "invalid" || splitDeletion ? `${base}|${row.kind}:${row.id}` : base;
 }
 
 function baseKey(store: DeviceStore, row: DeviceRecord): string | null {
@@ -840,7 +845,7 @@ function describe(
             why: rejected
               ? "This phone's change couldn't be saved in your account."
               : records.some((row) => deletesAccountChildren(store, row))
-                ? "Your account added or changed things below it. Keep its version to look at them first."
+                ? "It holds things below it in your account. Keep its version to see them, then delete it again if you want."
                 : "This version can't be kept on its own.",
           }),
       confirm: goneBoth

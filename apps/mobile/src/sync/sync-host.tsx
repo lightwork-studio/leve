@@ -225,7 +225,8 @@ function Sync() {
           const path = reviewPath(item.review.target);
           // Already there (History is a tab): it counts as arrived, so leaving asks again.
           setReviewing({ key: item.key, path, arrived: pathname === path });
-          router.push(item.review.target);
+          // Already there: no second copy of the screen.
+          if (pathname !== path) router.push(item.review.target);
         }}
       />
     );
