@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { blankRow, followingRow, nextSetType, resolveRows } from "../src/model/historical-log.ts";
 import {
   autoTitle,
   currentEntryIndex,
@@ -6,6 +7,7 @@ import {
   previousSets,
   restCaption,
   routineTarget,
+  sessionBefore,
   setProgress,
   startWorkout,
 } from "../src/model/live.ts";
@@ -309,6 +311,94 @@ describe("while logging", () => {
       "Evening workout",
       "Night workout",
       "Night workout",
+    ]);
+  });
+});
+
+describe("filling in a finished workout", () => {
+  it("starts from the latest finished session before it, never a later or unfinished one", () => {
+    const history = [
+      tree("older", "2026-11-04T08:00:00.000Z", true, null, [{ weightKg: 30, completedAt: "x" }]),
+      tree("before", "2026-11-11T08:00:00.000Z", true, null, [
+        { weightKg: 45, completedAt: "x", position: 2 },
+        { weightKg: 99, completedAt: null },
+        { type: "warmup", weightKg: 20, completedAt: "x", position: 1 },
+      ]),
+      tree("this", "2026-11-18T08:00:00.000Z", true, null, [{ weightKg: 70, completedAt: "x" }]),
+      tree("later", "2026-11-22T08:00:00.000Z", true, null, [{ weightKg: 90, completedAt: "x" }]),
+      tree("running", "2026-11-17T08:00:00.000Z", false, null, [
+        { weightKg: 80, completedAt: "x" },
+      ]),
+    ];
+    const found = sessionBefore(history, "bench", {
+      before: "2026-11-18T08:00:00.000Z",
+      exceptWorkoutId: "this",
+    });
+    expect(found?.startedAt).toBe("2026-11-11T08:00:00.000Z");
+    expect(found?.sets.map((s) => [s.type, s.weightKg])).toEqual([
+      ["warmup", 20],
+      ["normal", 45],
+    ]);
+    expect(
+      sessionBefore(history, "bench", { before: "2026-11-04T08:00:00.000Z", exceptWorkoutId: "" }),
+    ).toBeNull();
+    expect(
+      sessionBefore(history, "squat", { before: "2026-12-01T00:00:00.000Z", exceptWorkoutId: "" }),
+    ).toBeNull();
+  });
+
+  it("repeats the row above, skips blank rows and names the exercise and set it refuses", () => {
+    const warmup = {
+      id: "a",
+      type: "warmup" as const,
+      draft: { weight: "20", reps: "10" },
+      effort: "",
+    };
+    expect(followingRow([warmup], "b")).toEqual({
+      id: "b",
+      type: "normal",
+      draft: { weight: "20", reps: "10" },
+      effort: "",
+    });
+    expect(followingRow([], "c")).toEqual({ id: "c", type: "normal", draft: {}, effort: "" });
+    expect(nextSetType("failure")).toBe("normal");
+    const options = {
+      exercise: "Bench Press",
+      entryId: "entry",
+      metrics: ["weight", "reps"] as const,
+      unit: "kg" as const,
+      distanceUnit: "m" as const,
+      effortScale: "rir" as const,
+    };
+    const blank = { id: "x", type: "normal" as const, draft: { weight: " " }, effort: "" };
+    expect(blankRow(blank)).toBe(true);
+    expect(resolveRows([blank], options)).toEqual({ error: "Enter a set for Bench Press." });
+    const working = { id: "w", type: "normal" as const, draft: { weight: "60" }, effort: "" };
+    expect(resolveRows([warmup, blank, working], options)).toEqual({
+      error: "Bench Press, set 2: Enter reps to log this set.",
+    });
+    expect(
+      resolveRows([{ ...working, draft: { weight: "60", reps: "5" }, effort: "11" }], options),
+    ).toEqual({
+      error: "Bench Press, set 1: Enter a whole number from 0 to 10 for reps in reserve.",
+    });
+    const resolved = resolveRows(
+      [warmup, blank, { ...working, draft: { weight: "60", reps: "5" }, effort: "2" }],
+      options,
+    );
+    expect(
+      "sets" in resolved &&
+        resolved.sets.map(({ id, content }) => [
+          id,
+          content.workoutExerciseId,
+          content.type,
+          content.weightKg,
+          content.reps,
+          content.repsInReserve,
+        ]),
+    ).toEqual([
+      ["a", "entry", "warmup", 20, 10, undefined],
+      ["w", "entry", "normal", 60, 5, 2],
     ]);
   });
 });

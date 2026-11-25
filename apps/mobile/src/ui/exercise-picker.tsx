@@ -1,5 +1,5 @@
 import { type ReactNode, useMemo, useRef, useState } from "react";
-import { Modal, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { useAppData } from "../data/app-data.tsx";
 import { choiceLabel, createCustomExercise, pickerLibrary } from "../data/custom-exercises.ts";
 import { type BuiltInExercise, findExercises, type PickerExercise } from "../data/exercises.ts";
@@ -21,27 +21,56 @@ const PAGE_TITLES = {
   browse: "Add exercise",
   create: "New exercise",
   selected: "Selected exercises",
+  next: "",
 } as const;
 
 const exerciseKey = (exercise: PickerExercise) => exercise.id;
 
+/**
+ * A page after the selection, inside the same sheet: its back button returns to the list with the
+ * selection kept. Nothing is added until the page itself saves.
+ */
+export type PickerNextPage = {
+  title: string;
+  /** The back button's label, naming the list it returns to. */
+  backLabel: string;
+  render: (selected: PickerExercise[]) => { body: ReactNode; footer: ReactNode };
+};
+
 type PickerProps = {
   included: string[];
-  nextPage?: { title: string; content: ReactNode } | null;
+  /** How the list marks an exercise already included, "Already added" unless given. */
+  includedLabel?: string;
+  /** A small line above the title, such as the workout being added to. */
+  eyebrow?: string;
   onClose: () => void;
 } & (
-  | { onPick: (exercise: BuiltInExercise) => void; onPickMany?: never; selectionLimit?: never }
-  | { onPick?: never; onPickMany: (exercises: BuiltInExercise[]) => void; selectionLimit?: number }
+  | {
+      onPick: (exercise: BuiltInExercise) => void;
+      onPickMany?: never;
+      selectionLimit?: never;
+      next?: never;
+    }
+  | {
+      onPick?: never;
+      onPickMany: (exercises: BuiltInExercise[]) => void;
+      selectionLimit?: number;
+      next?: never;
+    }
+  | { onPick?: never; onPickMany?: never; selectionLimit?: never; next: PickerNextPage }
 );
 
 export function ExercisePicker({
   included,
+  includedLabel = "Already added",
+  eyebrow,
   onClose,
   onPick,
   onPickMany,
-  nextPage,
+  next,
   selectionLimit,
 }: PickerProps) {
+  const multi = !!onPickMany || !!next;
   const styles = useStyles(sheet);
   const c = useColors();
   const submitted = useRef<PickerExercise[] | null>(null);
@@ -91,7 +120,7 @@ export function ExercisePicker({
     );
   };
   const add = () => {
-    if (submitted.current === selected || !onPickMany || !selected.length) return;
+    if (submitted.current === selected || !multi || !selected.length) return;
     const latest = new Map(pickerLibrary(store).map((item) => [item.id, item]));
     const current = selected.filter((choice) => {
       const item = latest.get(choice.id);
@@ -106,6 +135,12 @@ export function ExercisePicker({
       setError("The routine is full. Deselect an exercise to continue.");
       return;
     }
+    if (next) {
+      setFocused(false);
+      setPage("next");
+      return;
+    }
+    if (!onPickMany) return;
     submitted.current = selected;
     try {
       onPickMany(current);
@@ -123,21 +158,32 @@ export function ExercisePicker({
     }
   };
 
-  if (nextPage)
-    return (
-      <Modal aria-label={nextPage.title} animationType="slide" onRequestClose={onClose}>
-        {nextPage.content}
-      </Modal>
-    );
-  const title = PAGE_TITLES[page];
   const count = (n: number) => `${n} ${n === 1 ? "exercise" : "exercises"}`;
+  if (page === "next" && next) {
+    const { body, footer } = next.render(selected);
+    return (
+      <BottomSheet
+        title={next.title}
+        size="large"
+        scroll={false}
+        closeLabel={next.backLabel}
+        {...(eyebrow ? { eyebrow } : {})}
+        onClose={back}
+        footer={footer}
+      >
+        {body}
+      </BottomSheet>
+    );
+  }
+  const title = PAGE_TITLES[page];
+  const caption = multi && selected.length ? `${selected.length} selected` : eyebrow;
   return (
     <BottomSheet
       title={title}
       size="large"
       scroll={false}
       closeLabel={page === "browse" ? "Cancel" : "Back"}
-      {...(onPickMany && selected.length ? { eyebrow: `${selected.length} selected` } : {})}
+      {...(caption ? { eyebrow: caption } : {})}
       onClose={back}
       action={
         page === "browse" ? (
@@ -153,7 +199,7 @@ export function ExercisePicker({
         ) : undefined
       }
       footer={
-        onPickMany && page !== "create" ? (
+        multi && page !== "create" ? (
           <>
             <FieldError message={error} />
             <View
@@ -170,9 +216,18 @@ export function ExercisePicker({
               )}
               <Button
                 rank="primary"
-                label={selected.length ? `Add ${count(selected.length)}` : "Select exercises"}
+                label={
+                  !selected.length
+                    ? "Select exercises"
+                    : next
+                      ? `Next · ${selected.length}`
+                      : `Add ${count(selected.length)}`
+                }
+                {...(next ? { accessibilityLabel: `Next, ${count(selected.length)}` } : {})}
                 icon={
-                  selected.length ? <PlusIcon color={c.bg} size={16} strokeWidth={2} /> : undefined
+                  selected.length && !next ? (
+                    <PlusIcon color={c.bg} size={16} strokeWidth={2} />
+                  ) : undefined
                 }
                 disabled={!selected.length}
                 onPress={add}
@@ -276,9 +331,9 @@ export function ExercisePicker({
             const checked = selectedIds.has(item.id);
             return (
               <Tap
-                accessibilityRole={onPickMany ? "checkbox" : "button"}
-                accessibilityState={onPickMany ? { checked } : undefined}
-                accessibilityLabel={`${onPickMany ? "" : "Add "}${item.name}${includedAlready ? " again" : ""}, ${TYPE_NAMES[item.type]}${selectedMuscle ? `, ${selectedMuscle}` : ""}`}
+                accessibilityRole={multi ? "checkbox" : "button"}
+                accessibilityState={multi ? { checked } : undefined}
+                accessibilityLabel={`${multi ? "" : "Add "}${item.name}${includedAlready ? " again" : ""}, ${TYPE_NAMES[item.type]}${selectedMuscle ? `, ${selectedMuscle}` : ""}`}
                 onPress={() => choose(item)}
                 scaleTo={0.98}
                 style={[
@@ -294,12 +349,12 @@ export function ExercisePicker({
                     {item.name}
                   </Text>
                   <Text style={styles.rowMeta} numberOfLines={1}>
-                    {includedAlready ? "Already added · " : ""}
+                    {includedAlready ? `${includedLabel} · ` : ""}
                     {TYPE_NAMES[item.type]} · {selectedMuscle || item.muscles.join(", ")} ·{" "}
                     {item.equipment}
                   </Text>
                 </View>
-                {onPickMany ? (
+                {multi ? (
                   <View style={[styles.checkbox, checked && styles.checked]}>
                     {checked && <CheckIcon size={14} color={c.bg} strokeWidth={2.4} />}
                   </View>
