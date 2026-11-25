@@ -1,5 +1,4 @@
 import type { WeightUnit } from "@leve/core";
-import type { ReactNode } from "react";
 import { Text, View } from "react-native";
 import type { MonthDay, MonthOdometer } from "../model/past-workouts.ts";
 import { numeral, radius, space, type } from "../theme.ts";
@@ -20,7 +19,6 @@ export function MonthCard({
   firstWeekday,
   selected,
   onSelect,
-  children,
 }: {
   odometer: MonthOdometer;
   unit: WeightUnit;
@@ -28,8 +26,6 @@ export function MonthCard({
   /** The picked date's day of the month. */
   selected: number | null;
   onSelect: (date: number) => void;
-  /** Under the dates, such as the picked date's sessions. */
-  children?: ReactNode;
 }) {
   const styles = useStyles(sheet);
   const { sessions, trainingDays, volumeKg, minutes, records } = odometer;
@@ -88,7 +84,6 @@ export function MonthCard({
           </View>
         ))}
       </View>
-      {children}
     </View>
   );
 }
