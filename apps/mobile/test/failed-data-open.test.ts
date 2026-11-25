@@ -1,4 +1,5 @@
 import { createSqlJsEngine } from "@leve/storage/sqljs";
+import { useState } from "react";
 import { jsx } from "react/jsx-runtime";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import initSqlJs from "sql.js";
@@ -295,6 +296,83 @@ it("loads no synthetic data when deleting what is on the device fails", async ()
   } finally {
     await act(() => screen?.unmount());
     seeding.mockRestore();
+    build.sampleData = true;
+    vi.unstubAllGlobals();
+  }
+});
+
+/** Reads the store as it renders, as Settings does, and repaints when pressed. */
+function ReadingScreen({ capture }: { capture(data: AppData, press: () => void): void }) {
+  const data = useAppData();
+  const [, setPresses] = useState(0);
+  data.store.get("body_measurement", "logged");
+  capture(data, () => setPresses((n) => n + 1));
+  return null;
+}
+
+it.each([
+  ["deleting everything", false],
+  ["starting again with sample data", true],
+])("renders no screen from the closed store while %s", async (_name, sampleData) => {
+  build.sampleData = false;
+  const files = new Map<string, Uint8Array>();
+  // The next flush waits for this, standing in for a reset still deleting when the app repaints.
+  let holding: Promise<void> | null = null;
+  vi.mocked(openEngine).mockImplementation(async () => ({
+    engine: createSqlJsEngine(await initSqlJs(), { files }),
+    paths: () => [...files.keys()],
+    flush: () => {
+      const held = holding;
+      holding = null;
+      return held ?? Promise.resolve();
+    },
+    onSaveProblem: () => {},
+    exportRecovery: async () => {},
+  }));
+  const capture = vi.fn<(data: AppData, press: () => void) => void>();
+  const shown = () => {
+    const [data, press] = capture.mock.lastCall ?? [];
+    if (!data || !press) throw Error("No screen is showing the device data");
+    return { data, press };
+  };
+  const failed = vi.fn(() => null);
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  let screen: ReactTestRenderer | undefined;
+  try {
+    await act(async () => {
+      screen = create(
+        jsx(AppDataProvider, { loading: null, failed, children: jsx(ReadingScreen, { capture }) }),
+      );
+    });
+    const { data, press } = shown();
+    data.store.put("body_measurement", "logged", {
+      takenAt: "2026-11-20T08:00:00.000Z",
+      bodyweightKg: 81,
+      fatPercent: null,
+    });
+
+    let release = () => {};
+    holding = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let resetting: Promise<boolean> | undefined;
+    // The confirming press: the sheet shows it is busy while the reset runs.
+    act(() => {
+      resetting = data.reset(sampleData);
+      press();
+    });
+    release();
+    await act(async () => {
+      expect(await resetting).toBe(true);
+    });
+
+    const fresh = shown().data;
+    expect(fresh.store).not.toBe(data.store);
+    expect(fresh.store.get("body_measurement", "logged")).toBeNull();
+    expect(fresh.store.get("routine", "seed-routine-push") !== null).toBe(sampleData);
+    expect(failed).not.toHaveBeenCalled();
+  } finally {
+    await act(() => screen?.unmount());
     build.sampleData = true;
     vi.unstubAllGlobals();
   }
