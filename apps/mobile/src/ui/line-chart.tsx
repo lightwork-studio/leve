@@ -110,8 +110,8 @@ export function LineChart({
   // vertices of both lines, which would otherwise pile up move after move.
   const lastLine = useRef<Polyline>(NO_LINE);
   const drawnWidth = useRef(0);
-  // A cover over the plot slides away to the right, revealing the line.
-  const cover = useSharedValue(0);
+  // How much of the line shows, from the left: it draws in by widening from 0 to 1.
+  const reveal = useSharedValue(0);
 
   useLayoutEffect(() => {
     if (width === 0) return;
@@ -137,10 +137,10 @@ export function LineChart({
     to.value = target;
     progress.value = 1;
     if (now.t.length === 0 && target.t.length > 0) {
-      cover.value = 0;
-      cover.value = withTiming(1, { duration: REVEAL, easing: Easing.out(Easing.cubic) });
+      reveal.value = 0;
+      reveal.value = withTiming(1, { duration: REVEAL, easing: Easing.out(Easing.cubic) });
     }
-  }, [target, width, from, to, progress, cover]);
+  }, [target, width, from, to, progress, reveal]);
 
   const drawn = useDerivedValue(() => lerpLine(from.value, to.value, progress.value));
   const lineProps = useAnimatedProps(() => ({ d: linePath(drawn.value) }));
@@ -183,7 +183,7 @@ export function LineChart({
     });
     if (nearest >= 0) pick(nearest);
   };
-  const coverStyle = useAnimatedStyle(() => ({ transform: [{ translateX: cover.value * width }] }));
+  const revealStyle = useAnimatedStyle(() => ({ width: reveal.value * width }));
 
   const shown: { x: number; label: string }[] = [];
   for (const mark of marks) {
@@ -215,39 +215,8 @@ export function LineChart({
       <View style={styles.row}>
         <View style={styles.plot} onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
           {width > 0 && (
+            // The scale lines go under the line, so they never cross it.
             <Svg width={width} height={PLOT_HEIGHT}>
-              <Defs>
-                <LinearGradient id={fill} x1="0" y1="0" x2="0" y2="1">
-                  <Stop offset="0" stopColor={c.fg} stopOpacity={0.16} />
-                  <Stop offset="1" stopColor={c.fg} stopOpacity={0} />
-                </LinearGradient>
-              </Defs>
-              <AnimatedPath animatedProps={areaProps} fill={`url(#${fill})`} />
-              <AnimatedPath
-                animatedProps={lineProps}
-                stroke={c.fg}
-                strokeWidth={2}
-                strokeLinejoin="round"
-                strokeLinecap="round"
-                fill="none"
-              />
-              {onSelect && (
-                <AnimatedLine
-                  animatedProps={ruleProps}
-                  y1={PAD}
-                  y2={PLOT_HEIGHT - PAD}
-                  stroke={c.fg}
-                  strokeWidth={1}
-                  strokeDasharray="2 3"
-                  strokeOpacity={0.55}
-                />
-              )}
-              <AnimatedCircle animatedProps={dotProps} fill={c.s1} stroke={c.fg} strokeWidth={2} />
-            </Svg>
-          )}
-          <Animated.View pointerEvents="none" style={[styles.cover, coverStyle]} />
-          {width > 0 && (
-            <Svg width={width} height={PLOT_HEIGHT} style={StyleSheet.absoluteFill}>
               {[0, 1, 2].map((i) => {
                 const at = y(axis.low + i * axis.step);
                 return (
@@ -255,6 +224,45 @@ export function LineChart({
                 );
               })}
             </Svg>
+          )}
+          {width > 0 && (
+            // Revealed by widening its window from the left, which leaves the scale in view.
+            <Animated.View pointerEvents="none" style={[styles.reveal, revealStyle]}>
+              <Svg width={width} height={PLOT_HEIGHT}>
+                <Defs>
+                  <LinearGradient id={fill} x1="0" y1="0" x2="0" y2="1">
+                    <Stop offset="0" stopColor={c.fg} stopOpacity={0.16} />
+                    <Stop offset="1" stopColor={c.fg} stopOpacity={0} />
+                  </LinearGradient>
+                </Defs>
+                <AnimatedPath animatedProps={areaProps} fill={`url(#${fill})`} />
+                <AnimatedPath
+                  animatedProps={lineProps}
+                  stroke={c.fg}
+                  strokeWidth={2}
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                  fill="none"
+                />
+                {onSelect && (
+                  <AnimatedLine
+                    animatedProps={ruleProps}
+                    y1={PAD}
+                    y2={PLOT_HEIGHT - PAD}
+                    stroke={c.fg}
+                    strokeWidth={1}
+                    strokeDasharray="2 3"
+                    strokeOpacity={0.55}
+                  />
+                )}
+                <AnimatedCircle
+                  animatedProps={dotProps}
+                  fill={c.s1}
+                  stroke={c.fg}
+                  strokeWidth={2}
+                />
+              </Svg>
+            </Animated.View>
           )}
           <CrossFade id={note?.label ?? ""} style={StyleSheet.absoluteFill}>
             {note && (
@@ -309,7 +317,7 @@ export function LineChart({
 const sheet = themedStyles((c) => ({
   row: { flexDirection: "row" },
   plot: { flex: 1, height: PLOT_HEIGHT, overflow: "hidden" },
-  cover: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: c.s1 },
+  reveal: { position: "absolute", top: 0, bottom: 0, left: 0, overflow: "hidden" },
   note: {
     position: "absolute",
     left: PAD,

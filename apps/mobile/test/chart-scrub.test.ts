@@ -123,3 +123,27 @@ it("picks the nearest point of the line as the finger moves", async () => {
   );
   expect(chart.props.accessibilityValue).toEqual({ text: "Point 3" });
 });
+
+it("draws the scale lines under the line, so they never cross it", async () => {
+  const root = await mount(
+    createElement(LineChart, {
+      points: [
+        { time: 1, x: 0, value: 83.6 },
+        { time: 2, x: 1, value: 82.4 },
+      ],
+      axis: { low: 82, step: 1, high: 84 },
+      tickLabel: String,
+      marks: [],
+      accessibilityLabel: "Bodyweight",
+    }),
+  );
+  const plot = root.find((n) => typeof n.props.onLayout === "function");
+  await act(() => plot.props.onLayout(layout(300)));
+  // Later siblings paint over earlier ones: the scale has to come first.
+  const [scale, line, ...rest] = root.findAllByType("Svg" as never);
+  expect(rest).toEqual([]);
+  expect(scale?.findAllByType("Line" as never)).toHaveLength(3);
+  expect(scale?.findAllByType("Path" as never)).toEqual([]);
+  expect(line?.findAllByType("Path" as never)).toHaveLength(2);
+  expect(line?.findAllByType("Line" as never)).toEqual([]);
+});
