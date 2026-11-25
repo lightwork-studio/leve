@@ -27,10 +27,10 @@ export interface AppData {
   change<T>(fn: (store: DeviceStore) => T, scope?: "active-workout"): T;
   /**
    * Deletes everything on this device and starts again: empty, or from the synthetic data in builds
-   * that have it (see `buildInfo.sampleData`). Resolves to whether
+   * that have it (see `buildInfo.sampleData`) or when `sampleData` asks for it. Resolves to whether
    * fresh data opened; when it didn't, the app shows why in place of its screens.
    */
-  reset(): Promise<boolean>;
+  reset(sampleData?: boolean): Promise<boolean>;
   /** Why changes can't be saved right now, if they can't. */
   saveProblem: string | null;
 }
@@ -42,7 +42,7 @@ type State =
 
 const Context = createContext<AppData | null>(null);
 
-async function openStore(opened: OpenedEngine): Promise<DeviceStore> {
+async function openStore(opened: OpenedEngine, sampleData: boolean): Promise<DeviceStore> {
   const store = await openDeviceStore({
     engine: opened.engine,
     path: DATABASE_PATH,
@@ -50,8 +50,8 @@ async function openStore(opened: OpenedEngine): Promise<DeviceStore> {
     randomId: newId,
   });
   // A development preview's first start gets synthetic data, and a reset brings it back.
-  // TestFlight builds start empty.
-  if (wantsSampleData(store, buildInfo.sampleData)) seedSyntheticData(store);
+  // TestFlight builds start empty, unless a reset asked for the synthetic data.
+  if (wantsSampleData(store, sampleData)) seedSyntheticData(store);
   await opened.flush();
   return store;
 }
@@ -72,13 +72,13 @@ export function AppDataProvider({
   const current = useRef<DeviceStore | null>(null);
 
   /** Opens the store. False if it couldn't, and the reason is shown in place of the app. */
-  const start = useCallback(async (): Promise<boolean> => {
+  const start = useCallback(async (sampleData = buildInfo.sampleData): Promise<boolean> => {
     try {
       if (!engine.current) {
         engine.current = await openEngine();
         engine.current.onSaveProblem(setSaveProblem);
       }
-      const store = await openStore(engine.current);
+      const store = await openStore(engine.current, sampleData);
       current.current = store;
       setState((previous) => ({
         status: "ready",
@@ -114,23 +114,29 @@ export function AppDataProvider({
     return result;
   }, []);
 
-  /** Deletes every database file, then opens fresh synthetic data. False if that didn't work. */
-  const startOver = useCallback(async (): Promise<boolean> => {
-    const opened = engine.current;
-    if (!opened) return false;
-    try {
-      current.current?.close();
-      current.current = null;
-      for (const path of opened.paths()) opened.engine.remove(path);
-      await opened.flush();
-    } catch (error) {
-      // The old store is closed, so screens can't go on with it: say why instead.
-      current.current = null;
-      setState({ status: "failed", message: (error as Error).message });
-      return false;
-    }
-    return start();
-  }, [start]);
+  /**
+   * Deletes every database file, then opens a fresh store, with the synthetic data if `sampleData`.
+   * False if that didn't work.
+   */
+  const startOver = useCallback(
+    async (sampleData = buildInfo.sampleData): Promise<boolean> => {
+      const opened = engine.current;
+      if (!opened) return false;
+      try {
+        current.current?.close();
+        current.current = null;
+        for (const path of opened.paths()) opened.engine.remove(path);
+        await opened.flush();
+      } catch (error) {
+        // The old store is closed, so screens can't go on with it: say why instead.
+        current.current = null;
+        setState({ status: "failed", message: (error as Error).message });
+        return false;
+      }
+      return start(sampleData);
+    },
+    [start],
+  );
 
   const value = useMemo<AppData | null>(
     () =>
