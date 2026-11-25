@@ -86,6 +86,7 @@ export function useWorkoutPlayer() {
       }))
     : [];
   const values = valuesLine(views, unit);
+  const unitValues = valuesLine(views, unit, true);
   const measurements = views
     .map(({ metric, view }) =>
       metric === "duration" ? view.text : `${view.text} ${fieldUnit(metric, unit, distanceUnit)}`,
@@ -174,6 +175,7 @@ export function useWorkoutPlayer() {
     title,
     setName,
     values,
+    unitValues,
     progress,
     resume,
     log,

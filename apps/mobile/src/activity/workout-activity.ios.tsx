@@ -3,6 +3,7 @@ import Constants from "expo-constants";
 import { router } from "expo-router";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AppState, Platform } from "react-native";
+import { useAppearanceSetting } from "../data/appearance-setting.ts";
 import { readDevicePreference, writeDevicePreference } from "../data/device-preference-store.ts";
 import { useWorkoutPlayer } from "../ui/live/use-workout-player.ts";
 import { showToast } from "../ui/notice.tsx";
@@ -67,6 +68,7 @@ export function WorkoutActivityHost() {
 
 function LiveWorkout() {
   const player = useWorkoutPlayer();
+  const appearance = useAppearanceSetting();
   const [revision, refresh] = useState(0);
   const rest = player?.rest;
   useEffect(() => {
@@ -97,6 +99,7 @@ function LiveWorkout() {
       player,
       Date.now(),
       Number.parseInt(String(Platform.Version), 10) >= 17,
+      appearance,
     );
     void widgets.session.publish(frame, lastRevision.current !== revision);
     lastRevision.current = revision;

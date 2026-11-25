@@ -1,4 +1,5 @@
 import { CryptoDigestAlgorithm, digestStringAsync } from "expo-crypto";
+import type { AppearanceSetting } from "../data/appearance-setting.ts";
 import { newId } from "../data/ids.ts";
 // Only this display snapshot crosses into ActivityKit. In particular, no notes, history records,
 // account identifiers or input objects are shared with the extension.
@@ -18,6 +19,8 @@ export interface WorkoutDisplay {
   interactive: boolean;
   canLog: boolean;
   finish: boolean;
+  /** Leve's Appearance setting, so the activity matches the app rather than only the system. */
+  appearance: AppearanceSetting;
 }
 export type WorkoutContent = WorkoutDisplay & { token: string; openUrl?: string };
 export interface WorkoutActivity {

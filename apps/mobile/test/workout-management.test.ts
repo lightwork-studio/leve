@@ -4159,7 +4159,7 @@ function supersetWorkout() {
 }
 
 function PlayerProbe({ capture }: { capture: (frame: ReturnType<typeof workoutFrame>) => void }) {
-  capture(workoutFrame(useWorkoutPlayer(), Date.now(), true));
+  capture(workoutFrame(useWorkoutPlayer(), Date.now(), true, "dark"));
   return null;
 }
 
@@ -4420,7 +4420,7 @@ describe("the minimised workout", () => {
       title: "Training",
       exercise: "Bench Press",
       set: "set 1",
-      compact: "50×8",
+      compact: "50 kg × 8",
       measurements: "50 kg × 8 reps",
       previous: "",
       volume: "0 kg",
@@ -4432,12 +4432,13 @@ describe("the minimised workout", () => {
       restEnd: 0,
       canLog: true,
       finish: false,
+      appearance: "dark",
       token: expect.any(String),
       openUrl: "leve-preview:///workout/active",
     };
     expect(received).toEqual([
       expected,
-      { ...expected, compact: "50×10", measurements: "50 kg × 10 reps" },
+      { ...expected, compact: "50 kg × 10", measurements: "50 kg × 10 reps" },
     ]);
   });
 

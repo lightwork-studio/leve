@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { emptyWorkoutSet } from "../src/model/live.ts";
 import type { WorkoutTree } from "../src/model/past-workouts.ts";
 import type { WorkoutSet } from "../src/model/types.ts";
-import { fieldView, logValues } from "../src/ui/live/set-fields.ts";
+import { type FieldView, fieldView, logValues, valuesLine } from "../src/ui/live/set-fields.ts";
 import { dockTarget, exerciseAfterLog } from "../src/ui/live/targets.ts";
 
 const done = "2026-11-20T10:00:00.000Z";
@@ -173,5 +173,31 @@ describe("the exercise selected after a set is logged", () => {
     const t = workout([entry("a", "A", [{}, {}], 1), entry("b", "B", [{}], 1)]);
     Object.assign(t.entries[1]?.sets[0] ?? {}, { needsSyncReview: true });
     expect(exerciseAfterLog(t, "a")).toBe("a");
+  });
+});
+
+describe("valuesLine", () => {
+  const view = (text: string, value: number | null): FieldView => ({
+    text,
+    firm: value !== null,
+    value,
+    missing: false,
+  });
+
+  it("keeps the weight's unit next to reps only when asked", () => {
+    const views = [
+      { metric: "weight" as const, view: view("60", 60) },
+      { metric: "reps" as const, view: view("8", 8) },
+    ];
+    expect(valuesLine(views, "kg")).toBe("60 × 8");
+    expect(valuesLine(views, "lbs", true)).toBe("60 lbs × 8");
+  });
+
+  it("leaves a weight placeholder without a unit", () => {
+    const views = [
+      { metric: "weight" as const, view: view("Add weight", null) },
+      { metric: "reps" as const, view: view("8", 8) },
+    ];
+    expect(valuesLine(views, "kg", true)).toBe("Add weight × 8");
   });
 });
