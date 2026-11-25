@@ -3,7 +3,7 @@
   // Two Workers. The top level is development (`leve-sync`): Clerk's development instance, used by
   // Leve Dev and TestFlight preview builds, deployed from every main commit whose check passed.
   // `production` (`leve-sync-prod`) uses Clerk's production instance and serves App Store builds;
-  // it deploys from verified release tags. Each Worker keeps its own secrets and accounts.
+  // it deploys from new release tags. Each Worker keeps its own secrets and accounts.
   "name": "leve-sync",
   "main": "src/worker.ts",
   "compatibility_date": "2026-11-01",
@@ -24,7 +24,8 @@
   "env": {
     "production": {
       "name": "leve-sync-prod",
-      // Bindings aren't inherited by an environment, so they are repeated here.
+      // Bindings aren't inherited by an environment, so they are repeated here
+      // (src/wrangler-config.test.ts checks that they match).
       "durable_objects": {
         "bindings": [
           { "name": "ACCOUNTS", "class_name": "AccountObject" },

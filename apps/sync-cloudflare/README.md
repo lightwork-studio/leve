@@ -27,23 +27,39 @@ production Worker.
 
 ## Workers
 
-| Worker           | Clerk instance | Used by                          | Deployed by CI                                    |
-| ---------------- | -------------- | -------------------------------- | ------------------------------------------------- |
-| `leve-sync`      | development    | Leve Dev and TestFlight previews | each `main` commit whose `check` passed (Release) |
-| `leve-sync-prod` | production     | App Store builds                 | each verified release tag (App Store workflow)    |
+| Worker           | Clerk instance | Used by                          | Deployed by CI                                          |
+| ---------------- | -------------- | -------------------------------- | ------------------------------------------------------- |
+| `leve-sync`      | development    | Leve Dev and TestFlight previews | each `main` commit whose `check` passed (Release)       |
+| `leve-sync-prod` | production     | App Store builds                 | each new release tag's store build (App Store workflow) |
 
-Both run the same code from `wrangler.jsonc`, but each keeps its own secrets and accounts:
-nothing is shared between them. The development Worker is the place to try a server change with
-the preview app before a release tag carries it to production.
+Both run the same code from `wrangler.jsonc`, each with its own secrets and accounts. The
+development Worker is the place to try a server change with the preview app before a release tag
+carries it to production.
 
 A CI deploy publishes code only. Secrets are set by hand (below) and carried into every new
 version. Each deploy job skips with a warning while its GitHub environment (`sync-development`,
-`sync-production`) has no `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. The production
-deploy runs only when App Store releases are enabled (`LEVE_APP_STORE_ENABLED`), and the App Store
-publish waits for it, so a release never reaches users before its server.
+`sync-production`) has no `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
+
+The production deploy runs only when App Store releases are enabled (`LEVE_APP_STORE_ENABLED`),
+and the App Store publish waits for it, so a release never reaches users before its server. It
+deploys only a store build of the newest release tag on `main`, so production never moves back to
+older code. OTA fixes don't change the server; a server fix ships with a new release tag.
 
 A rollback of the development Worker lasts until the next `main` commit deploys over it; to keep
 it off, delete `CLERK_JWT_KEY` instead.
+
+### Setting up CI deploys
+
+1. **Use a separate Cloudflare account for production.** A Workers API token can change every
+   Worker in its account, so a development token in the same account could also deploy over,
+   roll back or delete `leve-sync-prod`. With two accounts, each environment's token reaches only
+   its own Worker.
+2. **Create both GitHub environments before adding secrets.** Restrict both to the `main` branch.
+   Give `sync-production` the same protection as `app-store`: a separate required reviewer and no
+   administrator bypass. Keep Cloudflare secrets out of repository-level secrets, which every
+   environment would inherit.
+3. **Set a Worker's secrets before its environment's credentials.** Deploy and set the secrets by
+   hand once (below); until then the Worker answers 503.
 
 ## Layout
 
@@ -70,8 +86,9 @@ npx wrangler@4.158.0 secret put CLERK_JWT_KEY  # API keys → JWT public key →
 npx wrangler@4.158.0 secret put ADMIN_TOKEN    # any long random value, for the operator
 ```
 
-For production, add `--env=production` to each `secret put` and use the production Clerk
-instance's issuer and key. Deploy only a `main` commit whose `check` passed.
+For production, use the production Cloudflare account's credentials, add `--env=production` to
+each `secret put`, and use the production Clerk instance's issuer and key. Deploy only a `main`
+commit whose `check` passed, and never one older than what production already runs.
 
 ## Load tests
 
