@@ -553,11 +553,19 @@ function GrowingInput({
   const styles = useStyles(sheet);
   const c = useColors();
   const [height, setHeight] = useState(LINE);
+  // Opened to edit, the cursor starts after the text, then moves as the lifter moves it.
+  const [start, setStart] = useState(
+    autoFocus ? { start: value.length, end: value.length } : undefined,
+  );
   return (
     <TextInput
       accessibilityLabel={label}
       {...(placeholder ? { placeholder, placeholderTextColor: c.fg3 } : {})}
       autoFocus={autoFocus}
+      {...(start ? { selection: start } : {})}
+      onSelectionChange={() => {
+        if (start) setStart(undefined);
+      }}
       maxLength={LIMITS.noteLength}
       multiline
       // One line until the text needs more: the web's text area starts two lines tall.
