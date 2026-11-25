@@ -224,6 +224,20 @@ it("warns before another account's unsynced changes are deleted", async () => {
   expect(session().calls).not.toContain("replace");
 });
 
+it("lets the account question wait, deleting nothing", async () => {
+  clerk.signOutFails = true;
+  data.unsyncedCount = 2;
+  await render();
+  await report({ prompt: { kind: "switch", reason: "account" } });
+  await tap("Keep them and sign out");
+  expect(screen()).toContain("Signing out didn't work.");
+  // A failed sign-out doesn't silence the sign-in reminder.
+  expect(signInReminderDue(Date.now())).toBe(true);
+  await tap("Not now");
+  expect(screen()).toBe("");
+  expect(session().calls).not.toContain("replace");
+});
+
 it("waits until the workout in progress ends", async () => {
   data.workout = true;
   await render();

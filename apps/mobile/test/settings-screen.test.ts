@@ -36,6 +36,8 @@ const build = vi.hoisted(() => ({
   sampleDataOnRequest: false,
 }));
 vi.mock("../src/build-info.ts", () => ({ buildInfo: build }));
+const sync = vi.hoisted(() => ({ on: false }));
+vi.mock("../src/sync/sync-config.ts", () => ({ syncEnabled: () => sync.on, syncServerUrl: "" }));
 vi.mock("expo-constants", () => ({ default: { expoConfig: { version: "0.1.0" } } }));
 vi.mock("expo-router", () => ({ router: { canGoBack: () => true, back: vi.fn() } }));
 vi.mock("../src/data/app-data.tsx", () => ({
@@ -509,6 +511,28 @@ it("offers TestFlight a start again with sample data, apart from deleting everyt
   await act(async () => confirm("Delete and load sample data")?.click());
   expect(reset).toHaveBeenCalledTimes(2);
   expect(reset).toHaveBeenLastCalledWith(true);
+});
+
+it("never offers made-up workouts in a build that syncs", async () => {
+  // They would go up to the signed-in account.
+  sync.on = true;
+  build.sampleData = true;
+  build.sampleDataOnRequest = true;
+  try {
+    await render();
+    expect(document.body.textContent).not.toContain("made-up");
+    expect(document.body.textContent).not.toContain("Start again with sample data");
+    expect(document.body.textContent).toContain("Delete everything on this device");
+    await press("Delete everything on this device");
+    await act(async () =>
+      [...document.querySelectorAll<HTMLElement>('[role="alertdialog"] [role="button"]')]
+        .find((button) => button.textContent === "Delete and start again")
+        ?.click(),
+    );
+    expect(reset).toHaveBeenLastCalledWith(false);
+  } finally {
+    sync.on = false;
+  }
 });
 
 it("draws the logo in the about line and still names it Leve", async () => {

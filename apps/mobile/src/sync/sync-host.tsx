@@ -56,6 +56,8 @@ function Sync() {
   const { isLoaded, isSignedIn, userId, getToken, signOut } = useAuth();
   const { store, version, change, reset, exportData } = useAppData();
   const [status, setStatus] = useState<SyncStatus>(IDLE);
+  /** "Not now" on the account question: hidden until the app starts again; sync stays paused. */
+  const [switchLater, setSwitchLater] = useState(false);
   const session = useRef<SyncSession | null>(null);
   // The session outlives renders: it reaches these through refs, and restarts only for another
   // account or store.
@@ -127,7 +129,7 @@ function Sync() {
       />
     );
   }
-  if (prompt?.kind === "switch") {
+  if (prompt?.kind === "switch" && !switchLater) {
     return (
       <SwitchPrompt
         reason={prompt.reason}
@@ -136,8 +138,14 @@ function Sync() {
         onSwitch={() => session.current?.replaceLocalData()}
         onSignOut={async () => {
           setSignInReminder("off");
-          await signOut();
+          try {
+            await signOut();
+          } catch (error) {
+            setSignInReminder("");
+            throw error;
+          }
         }}
+        onLater={() => setSwitchLater(true)}
         exportData={exportData}
       />
     );
@@ -265,12 +273,14 @@ function SwitchPrompt({
   unsynced,
   onSwitch,
   onSignOut,
+  onLater,
   exportData,
 }: {
   reason: "account" | "server";
   unsynced: number;
   onSwitch: () => void;
   onSignOut: () => Promise<void>;
+  onLater: () => void;
   exportData: () => Promise<void>;
 }) {
   const styles = useStyles(sheet);
@@ -306,6 +316,7 @@ function SwitchPrompt({
               );
             }}
           />
+          <Button rank="text" label="Not now" onPress={onLater} />
         </View>
       }
     >

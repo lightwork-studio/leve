@@ -30,6 +30,7 @@ import {
 } from "../src/data/settings-actions.ts";
 import { saveShowTargets, useShowTargets } from "../src/data/show-targets.ts";
 import { canChangeTrackRir, useTrackRir } from "../src/data/track-rir.ts";
+import { syncEnabled } from "../src/sync/sync-config.ts";
 import { font, gutter, numeral, radius, space, type } from "../src/theme.ts";
 import { ActionSheet, useConfirmation } from "../src/ui/action-sheet.tsx";
 import { ActionRow, ChoiceRow, Stepper, ToggleRow } from "../src/ui/choice-row.tsx";
@@ -99,6 +100,9 @@ const APPEARANCE_CHOICES: readonly Choice<AppearanceSetting>[] = [
 ];
 
 export default function SettingsScreen() {
+  // Builds that sync never load made-up workouts: they would go up to the signed-in account.
+  const seedsSample = buildInfo.sampleData && !syncEnabled();
+  const sampleOnRequest = buildInfo.sampleDataOnRequest && !syncEnabled();
   const styles = useStyles(sheet);
   const { store, change, reset } = useAppData();
   const optimistic = useOptimisticSettings(store);
@@ -152,7 +156,7 @@ export default function SettingsScreen() {
       haptic.success();
     }
   };
-  const fresh = useConfirmation(startOver(buildInfo.sampleData));
+  const fresh = useConfirmation(startOver(seedsSample));
   // TestFlight starts empty, but can be filled with the made-up data to try things out.
   const sample = useConfirmation(startOver(true));
 
@@ -265,9 +269,9 @@ export default function SettingsScreen() {
             <Group
               label="More"
               footnote={
-                buildInfo.sampleData
+                seedsSample
                   ? "This preview keeps made-up workouts on this device only. Starting again deletes everything here, including your settings, and brings the made-up data back."
-                  : buildInfo.sampleDataOnRequest
+                  : sampleOnRequest
                     ? "Deleting everything removes your workouts and settings from this device. Leve then starts empty, or with made-up workouts when you start again with sample data."
                     : "Deleting everything removes your workouts and settings from this device. Leve then starts empty."
               }
@@ -324,7 +328,7 @@ export default function SettingsScreen() {
               />
               <ActionRow
                 label={
-                  buildInfo.sampleData
+                  seedsSample
                     ? "Start again with fresh preview data"
                     : "Delete everything on this device"
                 }
@@ -336,7 +340,7 @@ export default function SettingsScreen() {
                   fresh.ask();
                 }}
               />
-              {buildInfo.sampleDataOnRequest && (
+              {sampleOnRequest && (
                 <ActionRow
                   label="Start again with sample data"
                   danger
@@ -378,7 +382,7 @@ export default function SettingsScreen() {
         {fresh.asking && (
           <ActionSheet
             message={
-              buildInfo.sampleData
+              seedsSample
                 ? "Everything on this device, including your settings, will be deleted and the made-up preview data brought back."
                 : "Everything on this device, including your workouts and settings, will be deleted. Leve then starts empty."
             }
