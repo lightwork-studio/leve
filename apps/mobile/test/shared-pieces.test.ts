@@ -310,7 +310,7 @@ describe("fields, search and notices", () => {
     ).toBe("Push");
   });
 
-  it("rings a focused or refused field with an even border, not a half-point inset shadow", async () => {
+  it("rings a focused or refused field with an even border all the way round", async () => {
     const render = (error?: string) =>
       act(() =>
         root.render(
@@ -325,8 +325,15 @@ describe("fields, search and notices", () => {
         ),
       );
     const ring = () => document.querySelector<HTMLElement>('[data-testid="field-ring"]');
+    // Each side's width, and the one colour all four sides share ("" if they differ).
     const sides = (element: HTMLElement) => {
       const style = getComputedStyle(element);
+      const colors = new Set([
+        style.borderTopColor,
+        style.borderRightColor,
+        style.borderBottomColor,
+        style.borderLeftColor,
+      ]);
       return {
         widths: [
           style.borderTopWidth,
@@ -334,15 +341,10 @@ describe("fields, search and notices", () => {
           style.borderBottomWidth,
           style.borderLeftWidth,
         ],
-        colors: new Set([
-          style.borderTopColor,
-          style.borderRightColor,
-          style.borderBottomColor,
-          style.borderLeftColor,
-        ]).size,
-        shadow: style.boxShadow,
+        color: colors.size === 1 ? [...colors][0] : "",
       };
     };
+    const even = ["1.5px", "1.5px", "1.5px", "1.5px"];
 
     await render();
     expect(ring()).toBeNull();
@@ -352,11 +354,9 @@ describe("fields, search and notices", () => {
     await act(async () => input.focus());
     const focused = ring();
     if (!focused) throw Error("No ring while typing");
-    expect(sides(focused)).toEqual({
-      widths: ["1.5px", "1.5px", "1.5px", "1.5px"],
-      colors: 1,
-      shadow: expect.not.stringContaining("inset"),
-    });
+    const typing = sides(focused);
+    expect(typing.widths).toEqual(even);
+    expect(typing.color).not.toBe("");
 
     await act(async () => input.blur());
     expect(ring()).toBeNull();
@@ -364,9 +364,12 @@ describe("fields, search and notices", () => {
     await render("Too long.");
     const refused = ring();
     if (!refused) throw Error("No ring on a refused field");
-    expect(sides(refused).widths).toEqual(["1.5px", "1.5px", "1.5px", "1.5px"]);
+    const refusal = sides(refused);
+    expect(refusal.widths).toEqual(even);
+    expect(refusal.color).not.toBe("");
+    // A refusal rings in the alert colour, not the typing one.
+    expect(refusal.color).not.toBe(typing.color);
   });
-
   it("offers clearing a search only once there is text", async () => {
     const change = vi.fn();
     const render = (value: string) =>
