@@ -96,7 +96,7 @@ export function BottomSheet({
           accessibilityViewIsModal
           style={[styles.sheet, size === "large" && styles.fill, { marginTop: insets.top + 12 }]}
         >
-          <Animated.View style={[styles.fill, size === "fit" && styles.fit, drag.style]}>
+          <Animated.View style={[size === "fit" ? styles.fit : styles.fill, drag.style]}>
             <View {...drag.handlers} style={styles.head}>
               <View style={styles.grabber} />
               <View style={styles.bar}>
@@ -176,7 +176,9 @@ const sheet = themedStyles((c) => ({
     overflow: "hidden",
   },
   fill: { flex: 1 },
-  fit: { flex: 0, flexShrink: 1 },
+  // Longhands rather than `flex: 0`: on the web that is CSS's `0 1 0%`, whose zero basis collapsed
+  // the sheet's body and left its fields and buttons clipped away under the bar.
+  fit: { flexGrow: 0, flexShrink: 1, flexBasis: "auto" },
   fitBody: { flexGrow: 0, flexShrink: 1 },
   head: { paddingTop: 8 },
   grabber: {
