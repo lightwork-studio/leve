@@ -13,6 +13,7 @@ import { previewContract } from "../../../packages/contract/test/support/preview
 import { World } from "../../../packages/sync/test/support/harness.ts";
 import ActiveWorkoutScreen from "../app/workout/active.tsx";
 import { forgetDevicePreferences } from "../src/data/device-preference-store.ts";
+import { addExerciseNote } from "../src/data/exercise-notes.ts";
 import { EXERCISES } from "../src/data/exercises.ts";
 import { liveData, readSettings } from "../src/data/read.ts";
 import { restTimer } from "../src/data/rest-timer.ts";
@@ -111,6 +112,8 @@ vi.mock("../src/ui/icons.tsx", () => ({
   MinusIcon: "Icon",
   TimerIcon: "Icon",
   NoteIcon: "Icon",
+  PinIcon: "Icon",
+  CommentIcon: "Icon",
 }));
 vi.mock("../src/ui/muscle-map.tsx", () => ({ WorkoutMuscleSummary: "WorkoutMuscleSummary" }));
 vi.mock("../src/ui/progress.tsx", () => ({ Fill: "Fill" }));
@@ -137,7 +140,11 @@ vi.mock("../src/data/queries.ts", () => ({
   useSettings: () => readSettings(store),
 }));
 vi.mock("../src/data/app-data.tsx", () => ({
-  useAppData: () => ({ store, change: (write: (store: DeviceStore) => void) => write(store) }),
+  useAppData: () => ({
+    store,
+    version: 0,
+    change: (write: (store: DeviceStore) => void) => write(store),
+  }),
 }));
 
 const SQL = await initSqlJs();
@@ -281,21 +288,27 @@ describe("rest above the keypad", () => {
   });
 
   it("shows one compact timer inside the native note sheet while its keyboard is visible", async () => {
-    benchWorkout();
+    const { workout } = benchWorkout();
+    addExerciseNote(store, {
+      exerciseId: EXERCISES.bench.id,
+      workoutId: workout,
+      text: "Slow",
+      pinned: false,
+    });
     const ui = await mount();
     await ui.press("Log set 1");
-    await ui.press("Manage Bench Press");
-    await ui.pressText("Add exercise note");
+    // Today's note opens in its own sheet.
+    await ui.press("Slow");
     const sheet = ui.root.find(
-      (n) => String(n.type) === "Modal" && n.props["aria-label"] === "Bench Press",
+      (n) => String(n.type) === "Modal" && n.props["aria-label"] === "Note",
     );
-    await act(() => ui.control("Note for Bench Press").props.onChangeText("Pause"));
+    await act(() => ui.control("Note").props.onChangeText("Pause"));
     expect(sheet.findAllByType(RestSlab)).toHaveLength(0);
     await act(() => keyboardEvents.get("keyboardDidShow")?.());
     expect(sheet.findByType(RestSlab).props.onTime).toBeUndefined();
     await act(() => keyboardEvents.get("keyboardDidHide")?.());
     expect(sheet.findAllByType(RestSlab)).toHaveLength(0);
-    expect(ui.control("Note for Bench Press").props.value).toBe("Pause");
+    expect(ui.control("Note").props.value).toBe("Pause");
   });
 
   it("shows completion briefly and keeps an unfinished entry open across expiry", async () => {
@@ -632,15 +645,37 @@ describe("a set that changes while its removal waits for Undo", () => {
     ["the dock's Finish workout", "/workout/finish"],
     ["the workout's notes", "/workout/notes/[id]"],
   ] as const)("stays to say why when %s ends an Undo that is refused", async (via, route) => {
-    const { sets } = benchWorkout(2);
+    const { workout, sets } = benchWorkout(2);
     const [first, second] = sets();
     for (const set of [first, second]) logSet(store, set?.id ?? "", { weightKg: 60, reps: 8 });
     const push = vi.spyOn(router, "push");
+    if (via === "the workout's notes") {
+      // The notes tile leaves the workout only to review a note's sync issue.
+      const problems = store.problems.bind(store);
+      vi.spyOn(store, "problems").mockImplementation(() => [
+        ...problems(),
+        {
+          kind: "workout_note",
+          id: "rejected",
+          content: {
+            workoutId: workout,
+            pinned: false,
+            text: "Seat 3",
+            createdAt: "",
+            agent: null,
+          },
+        } as never,
+      ]);
+    }
     const ui = await mount();
     const leave = () =>
       via === "Finish in the header"
         ? ui.pressText("Finish")
-        : ui.press(via === "the workout's notes" ? "Workout notes, 0" : "Finish workout");
+        : ui.press(
+            via === "the workout's notes"
+              ? "Workout notes, 0, review sync issue"
+              : "Finish workout",
+          );
     const pushed = () =>
       push.mock.calls.map(([to]) =>
         typeof to === "string" ? to : (to as { pathname: string }).pathname,

@@ -98,8 +98,14 @@ it("runs one workout from a routine through to the end", { timeout: 60_000 }, as
   const done = store.get("workout", id)?.content as Record<string, unknown>;
   expect(done).toMatchObject({ routineId: null, title: "Push day" });
   expect(done.endedAt).not.toBeNull();
-  // Not counted for its routine, the note has no later workouts to be pinned in.
-  expect(store.list("workout_note").map((note) => note.content)).toEqual([
+  // Not counted for its routine, the note has no later workouts to be pinned in. (The seeded
+  // push days have notes of their own.)
+  expect(
+    store
+      .list("workout_note")
+      .filter((note) => note.content?.workoutId === id)
+      .map((note) => note.content),
+  ).toEqual([
     { workoutId: id, pinned: false, text: "Felt good", createdAt: expect.any(String), agent: null },
   ]);
   // Only what was logged stays: the bench press with its one logged set.
@@ -300,7 +306,10 @@ it("removes an accidental set and corrects a saved session without losing its ti
     endedAt: ended,
   });
   expect(
-    store.list("workout_note").map((note) => [note.content?.workoutId, note.content?.text]),
+    store
+      .list("workout_note")
+      .filter((note) => !note.id.startsWith("seed-"))
+      .map((note) => [note.content?.workoutId, note.content?.text]),
   ).toEqual([[id, "After running"]]);
   expect(() => removeWorkoutSet(store, first.id)).toThrow(/only logged set/);
   expect(store.get("workout_set", first.id)?.content?.durationSeconds).toBe(45);
