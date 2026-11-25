@@ -13,8 +13,11 @@ import {
 export type SyncPrompt =
   /** Data on this phone that never synced, and an account that already has data. */
   | { kind: "combine" }
-  /** This phone's data belongs to another account or server, and some of it hasn't synced. */
-  | { kind: "switch"; unsynced: number }
+  /**
+   * This phone's data belongs to another account (or, after a build change, another server), and
+   * some of it hasn't synced. The app counts the changes when it asks, as they can grow meanwhile.
+   */
+  | { kind: "switch"; reason: "account" | "server" }
   /** The server no longer accepts the sign-in. */
   | { kind: "sign_in" }
   /** The server no longer syncs with this version of the app. */
@@ -66,6 +69,8 @@ export interface SyncTiming {
   nudge: number;
   /** How long one wait on the server for changes lasts. */
   wait: number;
+  /** How often to look again while a workout in progress holds back replacing this phone's data. */
+  busy: number;
 }
 
 export const SYNC_TIMING: SyncTiming = {
@@ -74,6 +79,7 @@ export const SYNC_TIMING: SyncTiming = {
   serverUpdate: 60 * 60_000,
   nudge: 1_500,
   wait: MAX_WAIT_MS,
+  busy: 60_000,
 };
 
 /** Whether the phone holds any data at all. */
@@ -123,9 +129,13 @@ export class SyncSession {
     this.#timing = { ...SYNC_TIMING, ...options.timing };
     this.#status = { prompt: null, lastSynced: options.lastSynced ?? null, failingSince: null };
     const headers = async (): Promise<Record<string, string>> => {
+      // A request of a stopped session (still running when another account signed in) must not
+      // go out with the new account's token.
+      if (this.#stopped) throw new TransportError("this sync session has ended");
       const fresh = this.#freshToken;
       this.#freshToken = false;
       const token = await options.token(fresh);
+      if (this.#stopped) throw new TransportError("this sync session has ended");
       return token ? { authorization: `Bearer ${token}` } : {};
     };
     const connect = options.connect ?? ((server, h) => httpTransport(server, h));
@@ -194,7 +204,7 @@ export class SyncSession {
    */
   replaceLocalData(): void {
     const prompt = this.#status.prompt?.kind;
-    if (prompt !== "combine" && prompt !== "switch") return;
+    if (this.#stopped || (prompt !== "combine" && prompt !== "switch")) return;
     this.stop();
     this.#options.startOver();
   }
@@ -310,9 +320,13 @@ export class SyncSession {
         }
       }
     } else if (state.account !== this.#options.account || state.server !== this.#options.server) {
-      const unsynced = unsyncedChanges(store);
-      if (unsynced > 0) {
-        this.#ask({ kind: "switch", unsynced });
+      // Never take a workout in progress away; look again once it ends.
+      if (store.activeWorkout()) return this.#timing.busy;
+      if (unsyncedChanges(store) > 0) {
+        this.#ask({
+          kind: "switch",
+          reason: state.account !== this.#options.account ? "account" : "server",
+        });
         return null;
       }
       // Everything here is on the other account's server already: nothing is lost.

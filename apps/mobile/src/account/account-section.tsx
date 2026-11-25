@@ -83,9 +83,15 @@ function Account() {
   const signOutNow = () =>
     run(
       async () => {
-        await signOut();
-        // Signed out on purpose: don't ask to sign in again.
+        // Signed out on purpose: don't ask to sign in again. Set first, so the question can't
+        // flash up between signing out and this.
         setSignInReminder("off");
+        try {
+          await signOut();
+        } catch (error) {
+          setSignInReminder("");
+          throw error;
+        }
       },
       () => SIGN_OUT_FAILED,
     );
@@ -129,7 +135,7 @@ function Account() {
             }}
           >
             <Text style={styles.warning}>
-              {`${unsynced === 1 ? "1 change hasn't" : `${unsynced} changes haven't`} synced yet. ${unsynced === 1 ? "It stays" : "They stay"} on this phone and ${unsynced === 1 ? "syncs" : "sync"} when you sign in again with this account. Signing in with a different account deletes ${unsynced === 1 ? "it" : "them"}.`}
+              {`${unsynced === 1 ? "1 change hasn't" : `${unsynced} changes haven't`} synced yet. ${unsynced === 1 ? "It stays" : "They stay"} on this phone and ${unsynced === 1 ? "syncs" : "sync"} when you sign in again with this account. Signing in with a different account would ask to delete ${unsynced === 1 ? "it" : "them"}.`}
             </Text>
           </Dialog>
         ) : null}

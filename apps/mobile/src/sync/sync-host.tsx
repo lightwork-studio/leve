@@ -25,7 +25,7 @@ import {
   signInReminderDue,
   writeLastSynced,
 } from "./sync-preferences.ts";
-import { SyncSession, type SyncStatus } from "./sync-session.ts";
+import { SyncSession, type SyncStatus, unsyncedChanges } from "./sync-session.ts";
 
 /** How long sync may fail before the app says that changes aren't syncing. */
 export const STALE_AFTER_MS = 24 * 60 * 60_000;
@@ -59,8 +59,8 @@ function Sync() {
   const session = useRef<SyncSession | null>(null);
   // The session outlives renders: it reaches these through refs, and restarts only for another
   // account or store.
-  const latest = useRef({ getToken, change, reset });
-  latest.current = { getToken, change, reset };
+  const latest = useRef({ getToken, change, reset, userId });
+  latest.current = { getToken, change, reset, userId };
   // Re-render when a reminder choice is saved.
   const [, setPreferences] = useState(0);
   useEffect(() => subscribeDevicePreferences(() => setPreferences((n) => n + 1)), []);
@@ -72,7 +72,12 @@ function Sync() {
       server: syncServerUrl,
       account: userId,
       app: `leve-preview ${buildInfo.commit}`,
-      token: (fresh) => latest.current.getToken(fresh ? { skipCache: true } : undefined),
+      // Only the account this session syncs: a request still on its way when someone else signs in
+      // fails as offline rather than reach the new account.
+      token: (fresh) =>
+        latest.current.userId === userId
+          ? latest.current.getToken(fresh ? { skipCache: true } : undefined)
+          : Promise.reject(new Error("another account signed in")),
       onPulled: () => latest.current.change(() => undefined),
       onStatus: (next) => {
         setStatus(next);
@@ -122,7 +127,9 @@ function Sync() {
   if (prompt?.kind === "switch") {
     return (
       <SwitchPrompt
-        unsynced={prompt.unsynced}
+        reason={prompt.reason}
+        // Counted now, not when sync asked: work done meanwhile is lost too.
+        unsynced={unsyncedChanges(store)}
         onSwitch={() => session.current?.replaceLocalData()}
         onSignOut={async () => {
           setSignInReminder("off");
@@ -206,7 +213,13 @@ function CombinePrompt({
         eyebrow="Replace this phone's data"
         onClose={() => setReplacing(false)}
         closeLabel="Back"
-        confirm={{ label: "Delete and replace", onPress: onReplace }}
+        confirm={{
+          label: "Delete and replace",
+          // Not while the copy is being written: it reads the files this deletes.
+          onPress: () => {
+            if (!saved.busy) onReplace();
+          },
+        }}
         footer={
           <View style={styles.actions}>
             <Button
@@ -219,7 +232,7 @@ function CombinePrompt({
         }
       >
         <Body
-          text={`This deletes the ${what} on this phone, then downloads your account. It can't be undone.`}
+          text={`This deletes everything on this phone${workouts > 0 ? `, including ${what}` : ""}, then downloads your account. It can't be undone.`}
         />
         {saved.note ? <Body text={saved.note} /> : null}
       </Dialog>
@@ -245,11 +258,13 @@ function CombinePrompt({
 }
 
 function SwitchPrompt({
+  reason,
   unsynced,
   onSwitch,
   onSignOut,
   exportData,
 }: {
+  reason: "account" | "server";
   unsynced: number;
   onSwitch: () => void;
   onSignOut: () => Promise<void>;
@@ -258,10 +273,19 @@ function SwitchPrompt({
   const styles = useStyles(sheet);
   const saved = useExport(exportData);
   const [problem, setProblem] = useState<string | null>(null);
+  const one = unsynced === 1;
+  const it = one ? "it" : "them";
   return (
     <Dialog
-      eyebrow="Signed in with another account"
-      confirm={{ label: "Delete and switch", onPress: onSwitch }}
+      eyebrow={
+        reason === "account" ? "Signed in with another account" : "This phone used another server"
+      }
+      confirm={{
+        label: "Delete and switch",
+        onPress: () => {
+          if (!saved.busy) onSwitch();
+        },
+      }}
       footer={
         <View style={styles.actions}>
           <Button
@@ -272,7 +296,7 @@ function SwitchPrompt({
           />
           <Button
             rank="text"
-            label="Sign out instead"
+            label="Keep them and sign out"
             onPress={() => {
               onSignOut().catch(() =>
                 setProblem("Signing out didn't work. Check the connection and try again."),
@@ -283,7 +307,11 @@ function SwitchPrompt({
       }
     >
       <Body
-        text={`${plural(unsynced, "change")} on this phone ${unsynced === 1 ? "belongs" : "belong"} to the account that was signed in before and ${unsynced === 1 ? "hasn't" : "haven't"} synced. Switching to this account deletes ${unsynced === 1 ? "it" : "them"} from this phone. Sign out instead to keep ${unsynced === 1 ? "it" : "them"} and sync later with the other account.`}
+        text={
+          reason === "account"
+            ? `${plural(unsynced, "change")} on this phone ${one ? "belongs" : "belong"} to the account that was signed in before and ${one ? "hasn't" : "haven't"} synced. Switching to this account deletes ${it} from this phone. To keep ${it}, sign out and sign in again with the other account.`
+            : `${plural(unsynced, "change")} on this phone ${one ? "hasn't" : "haven't"} reached the sync server this phone used before, which this version of Leve doesn't use. Switching deletes ${it} from this phone. Signing out keeps ${it} here, unsynced.`
+        }
       />
       {saved.note ? <Body text={saved.note} /> : null}
       {problem ? <Body text={problem} /> : null}

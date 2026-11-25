@@ -105,9 +105,16 @@ export function firstStart(
   return true;
 }
 
-/** Whether a newly opened store gets the synthetic data (see firstStart). */
+/**
+ * Whether a newly opened store gets the synthetic data (see firstStart). Never a store tied to an
+ * account, even an empty one: the data would sync into the account without asking.
+ */
 export function wantsSampleData(store: DeviceStore, sampleData: boolean): boolean {
-  return sampleData && !store.db.get("SELECT 1 FROM records LIMIT 1");
+  return (
+    sampleData &&
+    store.syncState().account === null &&
+    !store.db.get("SELECT 1 FROM records LIMIT 1")
+  );
 }
 
 export function seedSyntheticData(store: DeviceStore, now: Date = new Date()): void {

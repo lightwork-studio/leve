@@ -20,6 +20,7 @@ const sessions = vi.hoisted(() => ({
   }[],
 }));
 vi.mock("../src/sync/sync-session.ts", () => ({
+  unsyncedChanges: () => data.unsyncedCount,
   SyncSession: class {
     calls: string[] = [];
     constructor(public options: SyncSessionOptions) {
@@ -61,6 +62,7 @@ const data = vi.hoisted(() => ({
   version: 1,
   exported: 0,
   resets: [] as boolean[],
+  unsyncedCount: 0,
   store: {
     activeWorkout: () => (data.workout ? { id: "w" } : null),
     syncState: () => ({ account: data.account }),
@@ -143,6 +145,7 @@ beforeEach(() => {
     version: 1,
     exported: 0,
     resets: [],
+    unsyncedCount: 0,
   });
   sessions.created.length = 0;
   host = document.createElement("div");
@@ -197,7 +200,7 @@ it("asks to combine, and answers with the person's choice", async () => {
   expect(session().calls).toContain("combine");
 
   await tap("Replace with my account's data");
-  expect(screen()).toContain("This deletes the 3 workouts on this phone");
+  expect(screen()).toContain("This deletes everything on this phone, including 3 workouts");
   await tap("Save a copy first");
   expect(data.exported).toBe(1);
   expect(screen()).toContain("A copy is saved.");
@@ -207,11 +210,16 @@ it("asks to combine, and answers with the person's choice", async () => {
 
 it("warns before another account's unsynced changes are deleted", async () => {
   await render();
-  await report({ prompt: { kind: "switch", unsynced: 4 } });
+  data.unsyncedCount = 4;
+  await report({ prompt: { kind: "switch", reason: "account" } });
   expect(screen()).toContain(
     "4 changes on this phone belong to the account that was signed in before and haven't synced.",
   );
-  await tap("Sign out instead");
+  // Counted when shown: work done since sync asked counts too.
+  data.unsyncedCount = 30;
+  await render();
+  expect(screen()).toContain("30 changes on this phone belong");
+  await tap("Keep them and sign out");
   expect(clerk.calls).toContain("signOut");
   expect(session().calls).not.toContain("replace");
 });

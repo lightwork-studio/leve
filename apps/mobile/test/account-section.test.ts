@@ -151,7 +151,9 @@ it("in a build that syncs, warns before signing out with unsynced changes", asyn
   // The dialog is a modal, drawn outside the section.
   const dialog = () => document.querySelector<HTMLElement>("[role=dialog]");
   expect(dialog()?.textContent).toContain("2 changes haven't synced yet.");
-  expect(dialog()?.textContent).toContain("Signing in with a different account deletes them.");
+  expect(dialog()?.textContent).toContain(
+    "Signing in with a different account would ask to delete them.",
+  );
   await act(async () => {
     [...(dialog()?.querySelectorAll<HTMLElement>("[role=button]") ?? [])]
       .find((element) => element.textContent?.includes("Sign out"))

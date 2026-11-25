@@ -113,7 +113,7 @@ function start(
       events.startedOver += 1;
     },
     connect: connect as (server: string, headers: unknown) => Transport,
-    timing: { offline: [20], error: 20, serverUpdate: 20, nudge: 10, wait: 200 },
+    timing: { offline: [20], error: 20, serverUpdate: 20, nudge: 10, wait: 200, busy: 20 },
   });
   sessions.push(session);
   session.start();
@@ -206,7 +206,7 @@ it("asks before deleting another account's unsynced changes, and sends none of t
 
   const { session, events } = start(store, "bob");
   await until(() => session.status.prompt !== null);
-  expect(session.status.prompt).toEqual({ kind: "switch", unsynced: 2 });
+  expect(session.status.prompt).toEqual({ kind: "switch", reason: "account" });
   expect(unsyncedChanges(store)).toBe(2);
   expect(events.startedOver).toBe(0);
   expect(await serverFolders("bob")).toEqual([]);
@@ -214,6 +214,57 @@ it("asks before deleting another account's unsynced changes, and sends none of t
 
   session.replaceLocalData();
   expect(events.startedOver).toBe(1);
+});
+
+it("never takes a workout in progress away, even when all of it synced", async () => {
+  const store = await phone();
+  store.put("workout", "w-live", {
+    title: "Push",
+    startedAt: "2026-11-25T08:00:00.000Z",
+    endedAt: null,
+  });
+  const alice = start(store, "alice").session;
+  await until(() => store.get("workout", "w-live")?.status === "synced");
+  alice.stop();
+
+  const { session, events } = start(store, "bob");
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  expect(events.startedOver).toBe(0);
+  expect(session.status.prompt).toBeNull();
+  expect(requests.filter((line) => line.startsWith("bob"))).toEqual([]);
+
+  store.put("workout", "w-live", {
+    title: "Push",
+    startedAt: "2026-11-25T08:00:00.000Z",
+    endedAt: "2026-11-25T09:00:00.000Z",
+  });
+  // The finished workout hasn't synced: now it asks.
+  await until(() => session.status.prompt !== null);
+  expect(session.status.prompt).toEqual({ kind: "switch", reason: "account" });
+});
+
+it("sends nothing more once stopped, even from a sync already under way", async () => {
+  const store = await phone();
+  folder(store, "f-phone", "On the phone");
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let asked = 0;
+  const { session } = start(store, "alice", {
+    token: async () => {
+      asked += 1;
+      // The second request (connecting, after the probe) waits for its token while it stops.
+      if (asked === 2) await held;
+      return "alice-token";
+    },
+  });
+  await until(() => asked === 2);
+  session.stop();
+  release();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(requests).toEqual(["alice /sync/hello"]);
+  expect(store.get("routine_folder", "f-phone")).toMatchObject({ status: "pending" });
 });
 
 it("stays quiet while offline, and catches up once the connection is back", async () => {
