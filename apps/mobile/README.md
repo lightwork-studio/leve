@@ -72,7 +72,8 @@ asks only when the person has to decide, and never during a workout:
   deletes them only on confirmation, or signs the new account out to keep them.
 - **Sign in again:** the sign-in ran out. It can wait a day or be ignored; changes stay on the
   phone until then.
-- **Update Leve:** the server no longer syncs with this version. This one can't be dismissed.
+- **Update Leve:** the server no longer syncs with this version. "Not now" puts it aside until the
+  app next comes to the front; logging carries on meanwhile, unsynced.
 
 ## TestFlight
 

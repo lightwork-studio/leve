@@ -60,6 +60,14 @@ function Sync() {
   const [status, setStatus] = useState<SyncStatus>(IDLE);
   /** "Not now" on a question: hidden until the app starts again; sync stays paused meanwhile. */
   const [later, setLater] = useState(false);
+  /** "Not now" on the update question: hidden until the app next comes to the front. */
+  const [updateLater, setUpdateLater] = useState(false);
+  useEffect(() => {
+    const watch = AppState.addEventListener("change", (state) => {
+      if (state === "active") setUpdateLater(false);
+    });
+    return () => watch.remove();
+  }, []);
   /** When the last sync was saved: every wait for changes ends in one, every 25 s or so. */
   const lastWritten = useRef(0);
   const session = useRef<SyncSession | null>(null);
@@ -125,7 +133,9 @@ function Sync() {
   if (store.activeWorkout()) return null;
 
   const prompt = status.prompt;
-  if (prompt?.kind === "update") return <UpdatePrompt />;
+  if (prompt?.kind === "update" && !updateLater) {
+    return <UpdatePrompt onLater={() => setUpdateLater(true)} />;
+  }
   if (prompt?.kind === "combine" && !later) {
     return (
       <CombinePrompt
@@ -407,13 +417,20 @@ function SignInPrompt({
   );
 }
 
-function UpdatePrompt() {
+/**
+ * Comes back each time the app comes to the front, but can be put aside: logging works without
+ * syncing, so it never stands between someone and their workout.
+ */
+function UpdatePrompt({ onLater }: { onLater: () => void }) {
   // TestFlight builds (the preview channel) update from TestFlight. Development builds are
   // rebuilt, and App Store builds don't sync yet.
   const testFlight = channel === "preview";
   return (
     <Dialog
       eyebrow="Update Leve"
+      onClose={onLater}
+      closeLabel="Not now"
+      footer={<Button rank="text" label="Not now" onPress={onLater} />}
       {...(testFlight
         ? {
             confirm: {
@@ -423,7 +440,7 @@ function UpdatePrompt() {
           }
         : {})}
     >
-      <Body text="This version of Leve can't sync anymore. Update it to keep syncing. Your workouts are safe on this phone." />
+      <Body text="This version of Leve can't sync anymore. Update it to keep syncing. Until then, everything you log stays on this phone." />
     </Dialog>
   );
 }

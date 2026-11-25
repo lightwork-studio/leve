@@ -85,11 +85,18 @@ vi.mock("../src/data/app-data.tsx", () => ({
     },
   }),
 }));
+const appState = vi.hoisted(() => ({ listeners: new Set<(state: string) => void>() }));
 vi.mock("react-native", async () => {
   const web = await vi.importActual<Record<string, unknown>>("react-native-web");
   return {
     ...web,
-    AppState: { currentState: "active", addEventListener: () => ({ remove: () => {} }) },
+    AppState: {
+      currentState: "active",
+      addEventListener: (_event: string, listener: (state: string) => void) => {
+        appState.listeners.add(listener);
+        return { remove: () => appState.listeners.delete(listener) };
+      },
+    },
   };
 });
 vi.mock("../src/ui/haptics.ts", () => ({
@@ -259,8 +266,13 @@ it("waits until the workout in progress ends", async () => {
   data.workout = false;
   await render();
   expect(screen()).toContain("This version of Leve can't sync anymore.");
-  // It can't be closed: only updating ends it.
-  expect(document.querySelector("[aria-label=Cancel]")).toBeNull();
+  // It can be put aside, so the app stays usable for logging, and comes back on return.
+  await tap("Not now");
+  expect(screen()).toBe("");
+  await act(async () => {
+    for (const listener of appState.listeners) listener("active");
+  });
+  expect(screen()).toContain("This version of Leve can't sync anymore.");
 });
 
 it("asks to sign in again when the sign-in ran out, and remembers later and ignore", async () => {
