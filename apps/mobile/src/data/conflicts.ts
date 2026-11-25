@@ -262,11 +262,25 @@ function phonePlanOk(store: DeviceStore, row: DeviceRecord, shown: Set<string>):
 }
 
 /** Whether a workout conflict is a deletion that reaches into the workout (see Conflict.review). */
-function reviewOnScreen(key: string, records: DeviceRecord[]): Conflict["review"] | undefined {
+function reviewOnScreen(
+  store: DeviceStore,
+  key: string,
+  records: DeviceRecord[],
+): Conflict["review"] | undefined {
   if (!key.startsWith("workout:") || key.includes("|")) return undefined;
   const deletion = (kinds: string[], which: RecordCase) =>
     records.some((row) => kinds.includes(row.kind) && recordCase(row) === which);
   const workoutId = key.slice("workout:".length);
+  // The workout screen reviews only a workout it can show; otherwise History does.
+  const shownWorkout = store.get("workout", workoutId);
+  const workoutScreen: ReviewTarget =
+    shownWorkout?.content && !shownWorkout.deleted
+      ? { pathname: "/workout/[id]", params: { id: workoutId } }
+      : { pathname: "/(tabs)/history" };
+  // Below a deleted note, a comment is kept by saving its note as new: the popup does that.
+  const underDeletedWorkoutPart = (row: DeviceRecord) =>
+    row.problem?.reason === "parent_deleted" &&
+    ["workout", "workout_exercise"].includes(deletedAncestor(store, row)?.kind ?? "");
   if (deletion(["workout"], "gone_here"))
     return {
       target: { pathname: "/(tabs)/history" },
@@ -275,16 +289,16 @@ function reviewOnScreen(key: string, records: DeviceRecord[]): Conflict["review"
     };
   if (deletion(["workout_exercise"], "gone_here"))
     return {
-      target: { pathname: "/workout/[id]", params: { id: workoutId } },
+      target: workoutScreen,
       message:
         "An exercise deleted on this phone was changed in your account since. Review the workout to see its sets before it goes.",
     };
   if (
     deletion(["workout", "workout_exercise"], "gone_there") ||
-    records.some((row) => row.problem?.reason === "parent_deleted")
+    records.some(underDeletedWorkoutPart)
   )
     return {
-      target: { pathname: "/workout/[id]", params: { id: workoutId } },
+      target: workoutScreen,
       message:
         "Deleted in your account, but this phone has changes in it. Review the workout to keep them as new or let them go.",
     };
@@ -306,7 +320,7 @@ export function conflicts(store: DeviceStore): Conflict[] {
     // half of what clashes.
     if (records.some((row) => !recordCase(row) || blocked(store, row))) continue;
     // A deletion reaching into a workout is reviewed on the workout's own screen.
-    const review = reviewOnScreen(key, records);
+    const review = reviewOnScreen(store, key, records);
     if (review) {
       result.push({ ...describe(store, key, records, false), review });
       continue;
@@ -698,13 +712,15 @@ function describe(
         .filter(([n]) => n > 0)
         .map(([n, noun]) => `${n} ${noun}${n === 1 ? "" : "s"}`);
       if (parts.length) account.push({ label: "Holds", value: parts.join(" · ") });
-      // And the sets themselves, as the account has them: an edit made there shows.
+      // And what's below, as the account has it: an edit or a comment made there shows.
       for (const item of below) {
-        if (item.kind !== "workout_set") continue;
-        const set = store.get(item.kind, item.id);
-        const values = set?.server?.state === "live" ? set.server.content : null;
-        if (set && values)
-          account.push({ label: recordLabel(store, set), value: setValue(store, values) });
+        const child = store.get(item.kind, item.id);
+        const values = child?.server?.state === "live" ? child.server.content : null;
+        if (!child || !values) continue;
+        if (item.kind === "workout_set")
+          account.push({ label: recordLabel(store, child), value: setValue(store, values) });
+        else if (typeof values.text === "string")
+          account.push({ label: recordLabel(store, child), value: short(values.text) });
       }
     }
     // Letting go something the account no longer has drops what this phone holds below it.

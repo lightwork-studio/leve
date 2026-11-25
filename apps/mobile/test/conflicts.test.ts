@@ -462,3 +462,48 @@ it("asks straight away about work logged under something deleted in the account"
   b.store.put("workout_set", "s10", { ...set(100, 3), position: 2 });
   expect(conflicts(b.store).map((item) => item.review?.target.pathname)).toEqual(["/workout/[id]"]);
 });
+
+const note = (text: string) => ({
+  workoutId: "w1",
+  pinned: false,
+  text,
+  createdAt: STARTED,
+  agent: null,
+});
+const comment = (text: string) => ({ noteId: "n1", text, createdAt: STARTED, agent: null });
+
+it("keeps a comment under a note deleted in the account by saving the note as new, in the popup", async () => {
+  const { a, b } = await twoPhones((store) => {
+    store.put("workout", "w1", workout("Push Day"));
+    store.put("workout_note", "n1", note("Felt strong"));
+    store.put("workout_note_comment", "c1", comment("Agreed"));
+  });
+  a.store.delete("workout_note", "n1");
+  await a.sync();
+  b.store.put("workout_note_comment", "c1", comment("Agreed, and add weight next time"));
+  await b.sync();
+  const [conflict] = conflicts(b.store);
+  expect(conflict?.review).toBeUndefined();
+  expect(conflict?.phone.choosable).toBe(true);
+  settleConflict(b.store, conflict!, "phone");
+  await b.sync();
+  expect(conflicts(b.store)).toEqual([]);
+  const kept = b.store
+    .list("workout_note_comment")
+    .filter((row) => row.content?.text === "Agreed, and add weight next time");
+  expect(kept).toHaveLength(1);
+  expect(kept[0]!.content?.noteId).not.toBe("n1");
+});
+
+it("shows the account's comments before a note's deletion is kept over them", async () => {
+  const { a, b } = await twoPhones((store) => {
+    store.put("workout", "w1", workout("Push Day"));
+    store.put("workout_note", "n1", note("Felt strong"));
+  });
+  a.store.put("workout_note_comment", "c1", comment("Try a pause rep"));
+  await a.sync();
+  b.store.delete("workout_note", "n1");
+  await b.sync();
+  const [conflict] = conflicts(b.store);
+  expect(conflict?.account.lines).toContainEqual({ label: "Comment", value: "Try a pause rep" });
+});

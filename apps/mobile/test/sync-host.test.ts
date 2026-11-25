@@ -484,3 +484,24 @@ it("leads a conflict reviewed on its screen there, stays away meanwhile, and ask
   await render();
   expect(screen()).toContain("Review it");
 });
+
+it("asks again after leaving a review screen it was already on", async () => {
+  route.path = "/history";
+  pending.conflicts = [
+    {
+      ...folderConflict("workout:w1", "Leg Day"),
+      subtitle: null,
+      review: {
+        target: { pathname: "/(tabs)/history" },
+        message: "Deleted on this phone, but changed in your account since.",
+      },
+    },
+  ];
+  await render();
+  await tap("Review it");
+  expect(screen()).toBe("");
+  route.path = "/";
+  await render();
+  await render();
+  expect(screen()).toContain("Review it");
+});

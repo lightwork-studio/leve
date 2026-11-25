@@ -222,7 +222,9 @@ function Sync() {
         items={pending}
         onReview={(item) => {
           if (!item.review) return;
-          setReviewing({ key: item.key, path: reviewPath(item.review.target), arrived: false });
+          const path = reviewPath(item.review.target);
+          // Already there (History is a tab): it counts as arrived, so leaving asks again.
+          setReviewing({ key: item.key, path, arrived: pathname === path });
           router.push(item.review.target);
         }}
       />
