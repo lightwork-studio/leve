@@ -150,7 +150,7 @@ async function mountHistory(options?: Parameters<typeof create>[1]) {
   return { screen, root, layout };
 }
 
-it("pages through full-width months, the current one first, with each month's figures", async () => {
+it("pages through full-width months, oldest to newest, with each month's figures", async () => {
   historyMonths = [
     monthOf(2026, 9, [
       session("Legs", [2026, 9, 14, 18], { volumeKg: 4200.4, durationMinutes: 62 }),
@@ -164,9 +164,10 @@ it("pages through full-width months, the current one first, with each month's fi
     await layout(362);
     const pager = root.findByType(FlatList);
     expect(pager.props).toMatchObject({ horizontal: true, pagingEnabled: true });
-    // November has nothing yet but still comes first, as the current month.
-    expect(pager.props.data.map((m: { key: string }) => m.key)).toEqual(["2026-11", "2026-10"]);
-    const october = pager.props.renderItem({ item: pager.props.data[1], index: 1 });
+    // November has nothing yet but is still there, last, as the current month the pager opens on.
+    expect(pager.props.data.map((m: { key: string }) => m.key)).toEqual(["2026-10", "2026-11"]);
+    expect(pager.props.initialScrollIndex).toBe(1);
+    const october = pager.props.renderItem({ item: pager.props.data[0], index: 0 });
     expect(october.props.style.width).toBe(362);
     await act(() => {
       page = create(october);
@@ -228,23 +229,69 @@ it("browses earlier months by button and keeps the controls aligned after a swip
       });
     };
     await layout(362);
-    expectVisibleMonth(0, 1);
-    expect(newer().props.disabled).toBe(true);
-    await act(() => older().props.onPress());
-    expect(scrollToOffset).toHaveBeenLastCalledWith({ offset: 362, animated: false });
-    expect(older().props.disabled).toBe(true);
-    expectVisibleMonth(1, 0);
-    await layout(430);
+    // September, then November as the current month, which the pager opens on at the right.
     expect(root.findByType(FlatList).props.initialScrollIndex).toBe(1);
+    expectVisibleMonth(1, 0);
+    expect(newer().props.disabled).toBe(true);
+    // The older month is to the left.
+    await act(() => older().props.onPress());
+    expect(scrollToOffset).toHaveBeenLastCalledWith({ offset: 0, animated: false });
+    expect(older().props.disabled).toBe(true);
+    expect(newer().props.disabled).toBe(false);
+    expectVisibleMonth(0, 1);
+    await layout(430);
+    expect(root.findByType(FlatList).props.initialScrollIndex).toBe(0);
     await act(() =>
-      root.findByType(FlatList).props.onScroll({ nativeEvent: { contentOffset: { x: 0 } } }),
+      root.findByType(FlatList).props.onScroll({ nativeEvent: { contentOffset: { x: 430 } } }),
     );
     expect(newer().props.disabled).toBe(true);
     expect(older().props.disabled).toBe(false);
-    expectVisibleMonth(0, 1);
+    expectVisibleMonth(1, 0);
     await act(() => older().props.onPress());
     await act(() => newer().props.onPress());
-    expect(scrollToOffset).toHaveBeenLastCalledWith({ offset: 0, animated: false });
+    expect(scrollToOffset).toHaveBeenLastCalledWith({ offset: 430, animated: false });
+  } finally {
+    await act(() => screen.unmount());
+    historyMonths = [];
+    vi.unstubAllGlobals();
+  }
+});
+
+it("keeps the month on screen when an older month arrives in front of it", async () => {
+  historyMonths = [monthOf(2026, 9, [session("Legs", [2026, 9, 14, 18])])];
+  const { screen, root, layout } = await mountHistory({
+    createNodeMock: (node) => (node.type === FlatList ? { scrollToOffset: () => {} } : null),
+  });
+  try {
+    await layout(362);
+    const pager = () => root.findByType(FlatList);
+    const older = () => root.findByProps({ accessibilityLabel: "Show older month" });
+    const shown = () => {
+      const at = pager().props.data.findIndex(
+        (_: unknown, index: number) =>
+          pager().props.renderItem({ item: pager().props.data[index], index }).props.inert !== true,
+      );
+      return pager().props.data[at].key;
+    };
+    await act(() => older().props.onPress());
+    expect(shown()).toBe("2026-10");
+    const before = pager();
+    // Say a sync brings in August: it lands to the left, and October stays on screen.
+    historyMonths = [
+      monthOf(2026, 9, [session("Legs", [2026, 9, 14, 18])]),
+      monthOf(2026, 7, [session("Pull", [2026, 7, 3, 18])]),
+    ];
+    await act(() => screen.update(createElement(HistoryScreen)));
+    expect(pager().props.data.map((m: { key: string }) => m.key)).toEqual([
+      "2026-08",
+      "2026-10",
+      "2026-11",
+    ]);
+    expect(shown()).toBe("2026-10");
+    // Laid out afresh so it opens on October, not left at the old offset showing August.
+    expect(pager()).not.toBe(before);
+    expect(pager().props.initialScrollIndex).toBe(1);
+    expect(older().props.disabled).toBe(false);
   } finally {
     await act(() => screen.unmount());
     historyMonths = [];
@@ -513,7 +560,7 @@ it("opens leap-day sessions from an earlier month in the chosen weekday order", 
     await act(() => root.findByProps({ accessibilityLabel: "Show older month" }).props.onPress());
     const pager = () => root.findByType(FlatList);
     const renderFebruary = () =>
-      pager().props.renderItem({ item: pager().props.data[1], index: 1 });
+      pager().props.renderItem({ item: pager().props.data[0], index: 0 });
     await act(() => {
       card = create(renderFebruary());
     });
