@@ -166,6 +166,10 @@ export default function TrainScreen() {
   // grip drags it within its folder, and folders can be renamed. Starting steps aside meanwhile.
   const [editingMode, setEditing] = useState(false);
   const editing = editingMode && groups.length > 0;
+  // With nothing left to edit, editing ends, rather than waiting to come back with the next routine.
+  useEffect(() => {
+    if (groups.length === 0) setEditing(false);
+  }, [groups.length]);
   // While a grip is held the page stays still under the finger.
   const [gripHeld, setGripHeld] = useState(false);
   const toggleEditing = useCallback(() => {
@@ -250,8 +254,14 @@ export default function TrainScreen() {
         {editing && (
           <View style={styles.banner}>
             <Text style={styles.bannerText}>
-              <Text style={styles.bannerStrong}>Drag ⠿ to reorder.</Text> Tap a routine to edit it
-              or move it to another folder.
+              {routineCount > 0 ? (
+                <>
+                  <Text style={styles.bannerStrong}>Drag ⠿ to reorder.</Text> Tap a routine to edit
+                  it or move it to another folder.
+                </>
+              ) : (
+                "Rename or delete a folder with the pencil beside its name."
+              )}
             </Text>
           </View>
         )}
@@ -557,13 +567,29 @@ const OpenGroup = memo(function OpenGroup({
   const heights = useRef<number[]>([]);
   // Rows that went (deleted, or moved to another folder) take no room any more.
   heights.current.length = Math.min(heights.current.length, group.routines.length);
-  const [drag, setDrag] = useState<{ from: number; dy: number } | null>(null);
+  const seen = group.routines.map((routine) => routine.id);
+  // The drag under way, with the folder as it was when the grip was taken: the drop is placed and
+  // checked against that order, so one that changes mid-drag (a sync) is refused, not misplaced.
+  const [drag, setDrag] = useState<{
+    id: string;
+    from: number;
+    seen: readonly string[];
+    dy: number;
+  } | null>(null);
+  const take = (id: string, from: number, dy: number) =>
+    setDrag((current) => (current?.id === id ? { ...current, dy } : { id, from, seen, dy }));
   // A grip held as editing ends, or as the folder goes, lets go of the page.
   useEffect(() => {
     if (!editing) setDrag(null);
     return () => onGripHeld(false);
   }, [editing, onGripHeld]);
-  const seen = group.routines.map((routine) => routine.id);
+  // So does one whose routine leaves the folder mid-drag: its grip is gone and never lets go.
+  const gone = drag !== null && !seen.includes(drag.id);
+  useEffect(() => {
+    if (!gone) return;
+    setDrag(null);
+    onGripHeld(false);
+  }, [gone, onGripHeld]);
   const place = drag ? dropPlace(heights.current, drag.from, drag.dy) : null;
   // The dragged row follows the finger; the rows it passes step aside by its height.
   const offset = (index: number) => {
@@ -578,12 +604,14 @@ const OpenGroup = memo(function OpenGroup({
   // row that takes its place at the top drops its line too, as in the routine editor.
   const lineHidden = (index: number) =>
     drag !== null && (index === drag.from || (drag.from === 0 && place !== 0 && index === 1));
-  const endDrag = (routine: RoutineCard, from: number, dy?: number) => {
+  const endDrag = (dy?: number) => {
+    const held = drag;
     onGripHeld(false);
     setDrag(null);
-    if (dy === undefined) return;
-    const to = dropPlace(heights.current, from, dy);
-    if (to !== from) onMove(routine, seen, to);
+    const routine = held && group.routines.find((r) => r.id === held.id);
+    if (!held || !routine || dy === undefined) return;
+    const to = dropPlace(heights.current, held.from, dy);
+    if (to !== held.from) onMove(routine, held.seen, to);
   };
   return (
     <View>
@@ -616,11 +644,14 @@ const OpenGroup = memo(function OpenGroup({
           editing ? (
             <DragBlock
               key={routine.id}
-              lifted={drag?.from === i}
+              lifted={drag?.id === routine.id}
               offset={offset(i)}
-              onGrab={() => onGripHeld(true)}
-              onMove={(dy) => setDrag({ from: i, dy })}
-              onEnd={(dy) => endDrag(routine, i, dy)}
+              onGrab={() => {
+                onGripHeld(true);
+                take(routine.id, i, 0);
+              }}
+              onMove={(dy) => take(routine.id, i, dy)}
+              onEnd={endDrag}
             >
               {(grip) => (
                 <EditRoutineRow
@@ -884,9 +915,10 @@ function EditRoutineRow({
           ...(canMoveUp ? [{ name: "moveUp", label: "Move up" }] : []),
           ...(canMoveDown ? [{ name: "moveDown", label: "Move down" }] : []),
         ]}
-        onAccessibilityAction={({ nativeEvent }) =>
-          onShift(nativeEvent.actionName === "moveUp" ? -1 : 1)
-        }
+        onAccessibilityAction={({ nativeEvent }) => {
+          if (nativeEvent.actionName === "moveUp") onShift(-1);
+          else if (nativeEvent.actionName === "moveDown") onShift(1);
+        }}
         style={styles.routineDetails}
         scaleTo={0.98}
         onPress={() => openRoutine(routine.id)}
@@ -969,7 +1001,7 @@ const sheet = themedStyles((c) => ({
   sectionAside: { ...type.label, color: c.fg3 },
   iconAction: { width: touch, height: touch, alignItems: "center", justifyContent: "center" },
   headerRow: { flexDirection: "row", alignItems: "center" },
-  // The pencil's glyph lines up with the ones on the routine rows below.
+  // The folder pencil's glyph lines up with the chevrons on the routine rows below, while editing.
   headerWithAction: { marginRight: space.xs + 1 },
   groupHeader: {
     flexDirection: "row",

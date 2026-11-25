@@ -584,6 +584,101 @@ it("asks what to do with the running workout before starting another routine", a
   }
 });
 
+it("drops against the folder as it was grabbed, lets go when the routine goes, and ends editing with nothing left", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  activeTitle = null;
+  for (const mock of [change, moveRoutine]) mock.mockReset();
+  const row = (id: string) => ({
+    id,
+    title: `Routine ${id}`,
+    exerciseNames: [],
+    exerciseCount: 0,
+    daysSinceLast: null,
+  });
+  const folder = { id: "Home", content: { title: "Home", position: 1 } };
+  const show = (ids: string[]) => {
+    groupsOverride = [{ folder, routines: ids.map(row) }];
+  };
+  show(["a", "b", "c", "d"]);
+  let screen: ReactTestRenderer | undefined;
+  try {
+    await act(() => {
+      screen = create(createElement(TrainScreen));
+    });
+    if (!screen) throw Error("Train did not mount");
+    const root = screen.root;
+    const rerender = () => act(() => screen?.update(createElement(TrainScreen)));
+    const blocks = () => root.findAllByType("DragBlock" as never);
+    const block = (id: string) => {
+      const found = blocks().find(
+        (b) =>
+          b.findAll((n) => n.props.accessibilityLabel === `Drag to reorder Routine ${id}`).length,
+      );
+      if (!found) throw Error(`No grip for ${id}`);
+      return found;
+    };
+    const measure = () => {
+      for (const b of blocks())
+        b.find((n) => n.type === View && typeof n.props.onLayout === "function").props.onLayout({
+          nativeEvent: { layout: { height: 80 } },
+        });
+    };
+    const scrolls = () => root.find((n) => n.props.title === "Train").props.scrollEnabled;
+    await act(() => press(root, "Edit routines"));
+    measure();
+
+    // A sync puts d first while a is held: the drop is checked against the order a was grabbed
+    // in, so the store refuses it rather than placing a somewhere the person never saw.
+    await act(() => block("a").props.onGrab());
+    await act(() => block("a").props.onMove(170));
+    show(["d", "a", "b", "c"]);
+    await rerender();
+    expect(block("a").props.lifted).toBe(true);
+    await act(() => block("a").props.onEnd(170));
+    const store = { name: "store" };
+    change.mock.calls[0]?.[0](store);
+    expect(moveRoutine.mock.calls).toEqual([[store, "a", ["a", "b", "c", "d"], 2]]);
+    expect(scrolls()).toBe(true);
+
+    // The held routine leaves the folder mid-drag: its grip is gone, so the page lets go of it.
+    await act(() => block("b").props.onGrab());
+    await act(() => block("b").props.onMove(90));
+    expect(scrolls()).toBe(false);
+    show(["d", "a", "c"]);
+    await rerender();
+    expect(scrolls()).toBe(true);
+    expect(blocks().map((b) => [b.props.lifted, b.props.offset])).toEqual([
+      [false, 0],
+      [false, 0],
+      [false, 0],
+    ]);
+    expect(change).toHaveBeenCalledTimes(1);
+
+    // A folder with no routines left: the note speaks only of the folder's pencil.
+    show([]);
+    await rerender();
+    expect(
+      root.findAll(
+        (n) => n.type === Text && /pencil beside its name/.test(String(n.props.children)),
+      ),
+    ).toHaveLength(1);
+
+    // With nothing left at all, editing ends; it doesn't return with the next routine.
+    groupsOverride = [];
+    await rerender();
+    show(["e"]);
+    await rerender();
+    expect(root.findAllByProps({ accessibilityLabel: "Done editing routines" })).toHaveLength(0);
+    expect(rowAction(root, "Routine e")?.props.accessibilityLabel).toMatch(/^Start Routine e, /);
+  } finally {
+    activeTitle = "Bench";
+    groupsOverride = null;
+    change.mockReset();
+    await act(() => screen?.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
 it("draws each day's bar against the week's biggest day and totals the week underneath", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   let screen: ReactTestRenderer | undefined;

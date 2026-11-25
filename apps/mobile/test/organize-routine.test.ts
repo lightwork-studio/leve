@@ -324,3 +324,91 @@ it("numbers a group afresh when no position fits, and refuses routines with sync
   expect(titles(store)).toEqual([["A", "C", "B"]]);
   store.close();
 });
+
+it("refuses to renumber over another routine's sync issue, and to move one offered again after a restore", async () => {
+  const store = await openDeviceStore({
+    engine: createSqlJsEngine(SQL),
+    path: "/reorder-guards.db",
+    appVersion: "test",
+  });
+  // Three ties: moving c between a and b renumbers all three, b included.
+  store.put("routine", "a", routineAt("A", null, 1));
+  store.put("routine", "b", routineAt("B", null, 1));
+  store.put("routine", "c", routineAt("C", null, 1));
+  const submissions = store.prepareSubmissions("1.0");
+  store.applyPushResults(
+    submissions.map(({ submission }, i) =>
+      submission.id === "b"
+        ? {
+            status: "invalid" as const,
+            submissionId: submission.submissionId,
+            code: "invalid_content",
+            message: "Review this routine",
+          }
+        : { status: "accepted" as const, submissionId: submission.submissionId, revision: i + 1 },
+    ),
+  );
+  expect(store.get("routine", "b")?.problem).not.toBeNull();
+  expect(() => moveRoutine(store, "c", ["a", "b", "c"], 1)).toThrow(/sync issues in this folder/);
+  expect(["a", "b", "c"].map((id) => store.get("routine", id)?.content?.position)).toEqual([
+    1, 1, 1,
+  ]);
+  store.close();
+
+  // After a server restore, a routine waits to be offered again: it can't be moved meanwhile,
+  // and neither can a neighbour a renumber would rewrite.
+  const restored = await openDeviceStore({
+    engine: createSqlJsEngine(SQL),
+    path: "/reorder-restore.db",
+    appVersion: "test",
+  });
+  restored.put("routine", "x", routineAt("X", null, 1));
+  restored.put("routine", "y", routineAt("Y", null, 2));
+  restored.applyPushResults(
+    restored.prepareSubmissions("1.0").map(({ submission }, i) => ({
+      status: "accepted" as const,
+      submissionId: submission.submissionId,
+      revision: i + 1,
+    })),
+  );
+  restored.resetForServerRestore();
+  expect(restored.get("routine", "y")?.fromRestore).toBe(true);
+  expect(() => moveRoutine(restored, "y", ["x", "y"], 0)).toThrow(/sync issue/);
+  expect(titles(restored)).toEqual([["X", "Y"]]);
+  restored.close();
+});
+
+it("keeps another phone's concurrent rename when a routine is moved, as a conflict to review", {
+  timeout: 60000,
+}, async () => {
+  const world = new World();
+  try {
+    const server = world.server({ releases: ["1.0"] });
+    const account = { server: "s", account: "athlete", transport: server.transport("athlete") };
+    const a = await world.phone("a", account);
+    const b = await world.phone("b", account);
+    a.store.put("routine", "push", routineAt("Push", null, 1));
+    a.store.put("routine", "pull", routineAt("Pull", null, 2));
+    await a.sync();
+    await b.sync();
+
+    // B renames Pull offline while A moves it to the top; A's move reaches the server first.
+    const pull = b.store.get("routine", "pull")?.content;
+    if (!pull) throw new Error("Missing routine");
+    b.store.put("routine", "pull", { ...pull, title: "Pull heavy" });
+    moveRoutine(a.store, "pull", ["push", "pull"], 0);
+    await a.sync();
+    await b.sync();
+
+    // B's rename isn't lost or merged: B keeps it as a conflict to settle, and can't move it
+    // until it does.
+    const conflicted = b.store.get("routine", "pull");
+    expect(conflicted?.problem).not.toBeNull();
+    expect(conflicted?.content?.title).toBe("Pull heavy");
+    expect(conflicted?.server?.content?.position).toBe(0);
+    expect(() => moveRoutine(b.store, "pull", ["push", "pull"], 0)).toThrow(/sync issue/);
+    expect(titles(a.store)).toEqual([["Pull", "Push"]]);
+  } finally {
+    await world.dispose();
+  }
+});
