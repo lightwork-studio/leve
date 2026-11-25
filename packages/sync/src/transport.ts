@@ -6,7 +6,12 @@ export interface TransportResponse {
   body: unknown;
   writtenRevisions?: string;
 }
-export type Transport = (path: string, body: unknown) => Promise<TransportResponse>;
+/** `signal` gives a request up: it then rejects with a TransportError. */
+export type Transport = (
+  path: string,
+  body: unknown,
+  options?: { signal?: AbortSignal },
+) => Promise<TransportResponse>;
 /**
  * Headers sent with every request: fixed, or worked out for each request, for a sign-in token that
  * only lives a minute.
@@ -35,7 +40,7 @@ export function httpTransport(
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Transport {
   const base = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-  return async (path, body) => {
+  return async (path, body, options = {}) => {
     let sent: Record<string, string>;
     try {
       sent = typeof headers === "function" ? await headers() : headers;
@@ -46,6 +51,9 @@ export function httpTransport(
     const text = JSON.stringify(body);
     // A plain controller and timer: AbortSignal.timeout isn't available on every platform.
     const controller = new AbortController();
+    const giveUp = () => controller.abort();
+    if (options.signal?.aborted) throw new TransportError("request given up");
+    options.signal?.addEventListener("abort", giveUp);
     const timer = setTimeout(
       () => controller.abort(),
       timeoutMs + Math.ceil(text.length * MS_PER_BYTE),
@@ -62,7 +70,11 @@ export function httpTransport(
         });
       } catch (error) {
         throw new TransportError(
-          controller.signal.aborted ? "request timed out" : (error as Error).message,
+          options.signal?.aborted
+            ? "request given up"
+            : controller.signal.aborted
+              ? "request timed out"
+              : (error as Error).message,
         );
       }
       try {
@@ -76,6 +88,7 @@ export function httpTransport(
       }
     } finally {
       clearTimeout(timer);
+      options.signal?.removeEventListener("abort", giveUp);
     }
     const writtenRevisions = response.headers.get(WRITTEN_REVISIONS_HEADER);
     return {

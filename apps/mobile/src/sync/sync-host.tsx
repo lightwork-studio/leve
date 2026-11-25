@@ -74,10 +74,13 @@ function Sync() {
       app: `leve-preview ${buildInfo.commit}`,
       // Only the account this session syncs: a request still on its way when someone else signs in
       // fails as offline rather than reach the new account.
-      token: (fresh) =>
-        latest.current.userId === userId
-          ? latest.current.getToken(fresh ? { skipCache: true } : undefined)
-          : Promise.reject(new Error("another account signed in")),
+      token: async (fresh) => {
+        if (latest.current.userId !== userId) throw new Error("another account signed in");
+        const token = await latest.current.getToken(fresh ? { skipCache: true } : undefined);
+        // Signed in but no token: Clerk couldn't be reached. Offline, not a sign-in problem.
+        if (!token) throw new Error("no session token");
+        return token;
+      },
       onPulled: () => latest.current.change(() => undefined),
       onStatus: (next) => {
         setStatus(next);

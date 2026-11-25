@@ -9,7 +9,12 @@ import { type Transport, TransportError } from "@leve/sync";
 import { SyncService, serviceTransport } from "@leve/sync/server";
 import initSqlJs from "sql.js";
 import { afterEach, beforeEach, expect, it } from "vitest";
-import { SyncSession, type SyncStatus, unsyncedChanges } from "../src/sync/sync-session.ts";
+import {
+  SyncSession,
+  type SyncStatus,
+  type SyncTiming,
+  unsyncedChanges,
+} from "../src/sync/sync-session.ts";
 
 /* The app's sync session against a real sync service, reached through a stand-in for the Worker's
    sign-in check: a token names the account, an unknown token is refused with 401. */
@@ -96,7 +101,10 @@ async function otherPhone(account: string, folderId: string): Promise<void> {
 function start(
   store: DeviceStore,
   account: string,
-  options: { token?: (fresh: boolean) => Promise<string | null> } = {},
+  options: {
+    token?: (fresh: boolean) => Promise<string | null>;
+    timing?: Partial<SyncTiming>;
+  } = {},
 ) {
   const events = { pulled: 0, startedOver: 0, statuses: [] as SyncStatus[] };
   const session = new SyncSession({
@@ -113,7 +121,15 @@ function start(
       events.startedOver += 1;
     },
     connect: connect as (server: string, headers: unknown) => Transport,
-    timing: { offline: [20], error: 20, serverUpdate: 20, nudge: 10, wait: 200, busy: 20 },
+    timing: {
+      offline: [20],
+      error: 20,
+      serverUpdate: 20,
+      nudge: 10,
+      wait: 200,
+      busy: 20,
+      ...options.timing,
+    },
   });
   sessions.push(session);
   session.start();
@@ -320,16 +336,19 @@ it("asks for an update when the server no longer syncs with this version", async
 
 it("sends an edit soon after it is made, and hears about changes made elsewhere", async () => {
   const store = await phone();
-  const { session, events } = start(store, "alice");
+  // Waits on the server far longer than the test allows below, so only giving up the wait for the
+  // edit, and the server's answer to the other phone's change, can pass it.
+  const { session, events } = start(store, "alice", { timing: { wait: 10_000 } });
   await until(() => session.status.lastSynced !== null);
+  await until(() => requests.at(-1) === "alice /sync/pull");
 
   // An edit while the session waits on the server for changes.
   folder(store, "f-phone", "On the phone");
   session.nudge();
-  await until(() => store.get("routine_folder", "f-phone")?.status === "synced");
+  await until(() => store.get("routine_folder", "f-phone")?.status === "synced", 2_000);
 
   await otherPhone("alice", "f-other");
-  await until(() => store.get("routine_folder", "f-other") !== null);
+  await until(() => store.get("routine_folder", "f-other") !== null, 2_000);
   expect(events.pulled).toBeGreaterThan(0);
   expect(session.status.prompt).toBeNull();
 });

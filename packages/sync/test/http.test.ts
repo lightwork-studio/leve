@@ -356,6 +356,14 @@ describe("HTTP transport", () => {
       await httpTransport(`${root}/leve/`)("/sync/hello", {});
       expect(seen).toEqual(["/leve/sync/hello", "/leve/sync/hello"]);
       await expect(httpTransport(root, {}, 200)("/stuck", {})).rejects.toThrow(TransportError);
+      // Given up by the caller long before its timeout, and the connection closes.
+      const abort = new AbortController();
+      const waiting = httpTransport(root)("/stuck", {}, { signal: abort.signal });
+      setTimeout(() => abort.abort(), 20);
+      await expect(waiting).rejects.toThrow("request given up");
+      await expect(httpTransport(root)("/stuck", {}, { signal: abort.signal })).rejects.toThrow(
+        "request given up",
+      );
     } finally {
       stub.closeAllConnections();
       await new Promise<void>((resolve) => stub.close(() => resolve()));

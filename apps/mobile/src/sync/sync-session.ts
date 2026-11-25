@@ -179,6 +179,11 @@ export class SyncSession {
   setForeground(active: boolean): void {
     this.#foreground = active;
     if (active) {
+      // A sign-in the server refused may work again (say after a server fix): try once more.
+      if (this.#status.prompt?.kind === "sign_in") {
+        this.retry();
+        return;
+      }
       this.#failures = 0;
       this.#due = true;
       this.#interrupt();
@@ -245,12 +250,20 @@ export class SyncSession {
    * download fetches the same changes.
    */
   #interruptible(inner: Transport): Transport {
-    return (path, body) => {
-      const request = inner(path, body);
-      if (!(body as { waitMs?: number } | null)?.waitMs) return request;
+    return (path, body, options) => {
+      if (!(body as { waitMs?: number } | null)?.waitMs) return inner(path, body, options);
+      // An edit made while connecting for this wait: send it instead of waiting.
+      if (this.#due || this.#stopped) {
+        this.#interrupted = true;
+        return Promise.reject(new TransportError("stopped waiting"));
+      }
+      // Closes the request too, so it doesn't hold a connection to the server for nothing.
+      const abort = new AbortController();
+      const request = inner(path, body, { signal: abort.signal });
       return new Promise((resolve, reject) => {
         const stop = () => {
           this.#interrupted = true;
+          abort.abort();
           reject(new TransportError("stopped waiting"));
         };
         this.#stopWaiting = stop;
@@ -313,6 +326,8 @@ export class SyncSession {
     if (state.account === null) {
       if (!this.#join && hasLocalData(store)) {
         const probe = await this.#client.probe();
+        // Stopped meanwhile (another account signed in): don't tie this phone to this one.
+        if (this.#stopped) return null;
         if (probe.state !== "ready") return this.#handle(probe);
         if (probe.revision > 0) {
           this.#ask({ kind: "combine" });
@@ -334,6 +349,7 @@ export class SyncSession {
       this.#options.startOver();
       return null;
     }
+    if (this.#stopped) return null;
     return this.#handle(await this.#client.sync());
   }
 
