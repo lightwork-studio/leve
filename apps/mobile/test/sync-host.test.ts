@@ -426,6 +426,7 @@ it("can't keep a change the server refused", async () => {
         lines: [{ label: "Name", value: "Couldn't be saved" }],
         choosable: false,
         confirm: "",
+        why: "This phone's change couldn't be saved in your account.",
       },
       account: {
         lines: [{ label: "Name", value: "Push" }],

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Text, View } from "react-native";
+import { ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { useAppData } from "../data/app-data.tsx";
 import { type Conflict, type ConflictSide, type Side, settleConflict } from "../data/conflicts.ts";
 import { space, type } from "../theme.ts";
@@ -21,14 +21,15 @@ export function ConflictPrompt({ items }: { items: Conflict[] }) {
   const [picked, setPicked] = useState<Side | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [settled, setSettled] = useState(0);
+  const { height } = useWindowDimensions();
   const current = items[0];
-  const key = current?.key;
-  // A new conflict starts with nothing chosen.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reset only when the conflict changes
+  // A new conflict, or the same one changed while shown, starts with nothing chosen.
+  const shown = current ? JSON.stringify(current) : "";
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset only when what's shown changes
   useEffect(() => {
     setPicked(null);
     setProblem(null);
-  }, [key]);
+  }, [shown]);
   if (!current) return null;
 
   const keep = () => {
@@ -39,6 +40,8 @@ export function ConflictPrompt({ items }: { items: Conflict[] }) {
       setSettled((count) => count + 1);
     } catch (error) {
       haptic.warning();
+      // Look again before choosing: nothing stays picked.
+      setPicked(null);
       setProblem((error as Error).message);
     }
   };
@@ -61,13 +64,17 @@ export function ConflictPrompt({ items }: { items: Conflict[] }) {
           .filter(Boolean)
           .join(" · ")}
       </Text>
-      <View accessibilityRole="radiogroup" style={styles.choices}>
+      {/* A big workout can hold many lines: they scroll, and the confirm stays in reach. */}
+      <ScrollView
+        style={{ maxHeight: Math.round(height * 0.5) }}
+        contentContainerStyle={styles.choices}
+        accessibilityRole="radiogroup"
+      >
         <Choice
           label="On this phone"
           side={current.phone}
           selected={picked === "phone"}
           onPress={() => setPicked("phone")}
-          refused="This phone's change couldn't be saved in your account."
         />
         <Choice
           label="In your account"
@@ -75,7 +82,7 @@ export function ConflictPrompt({ items }: { items: Conflict[] }) {
           selected={picked === "account"}
           onPress={() => setPicked("account")}
         />
-      </View>
+      </ScrollView>
       {problem ? (
         <Text accessibilityRole="alert" style={styles.problem}>
           {problem}
@@ -97,13 +104,11 @@ function Choice({
   side,
   selected,
   onPress,
-  refused,
 }: {
   label: string;
   side: ConflictSide;
   selected: boolean;
   onPress: () => void;
-  refused?: string;
 }) {
   const styles = useStyles(sheet);
   const enabled = side.choosable;
@@ -140,7 +145,7 @@ function Choice({
           </Text>
         </View>
       ))}
-      {!enabled && refused ? <Text style={styles.refused}>{refused}</Text> : null}
+      {!enabled && side.why ? <Text style={styles.refused}>{side.why}</Text> : null}
     </Tap>
   );
 }
@@ -156,7 +161,7 @@ const sheet = themedStyles((c) => ({
     marginTop: 2,
     marginRight: 4,
   },
-  choices: { gap: space.sm, marginTop: space.md, marginRight: 4 },
+  choices: { gap: space.sm, paddingTop: space.md, marginRight: 4 },
   choice: {
     backgroundColor: c.s2,
     borderWidth: 1.5,

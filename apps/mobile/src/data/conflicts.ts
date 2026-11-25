@@ -33,6 +33,8 @@ export interface ConflictSide {
   choosable: boolean;
   /** What keeping this side does, for the confirm button. */
   confirm: string;
+  /** Why this side can't be kept, when it can't. */
+  why?: string;
 }
 
 export interface Conflict {
@@ -53,6 +55,8 @@ type RecordCase =
   | "gone_there"
   /** Deleted here, changed in the account. */
   | "gone_here"
+  /** Deleted here and in the account: only the deletion is left to agree on. */
+  | "gone_both"
   /** The server refused this phone's version as invalid. */
   | "rejected";
 
@@ -63,37 +67,46 @@ function accountContent(row: DeviceRecord): JsonObject | null {
 }
 
 function recordCase(row: DeviceRecord): RecordCase | null {
-  if (row.status === "invalid") return "rejected";
+  // Undoing a refused change takes the account's version. One that never reached the account has
+  // none, and undoing it would also drop what waits below it unseen: it isn't settled here.
+  if (row.status === "invalid") return accountContent(row) ? "rejected" : null;
   if (row.status !== "conflict") return null;
   // Changed here under something deleted in the account: kept only by copying that ancestor.
   if (row.problem?.reason === "parent_deleted") return row.content ? "gone_there" : null;
   if (row.server?.state === "unavailable") return null;
-  if (row.deleted) return accountContent(row) ? "gone_here" : null;
+  // A deletion made here is only weighed against a live version in the account. (A copy a restored
+  // server lacks is sent as deleted anyway.)
+  if (row.deleted) {
+    if (row.server?.state === "deleted") return "gone_both";
+    return row.server?.state === "live" && row.server.content ? "gone_here" : null;
+  }
   if (!row.content) return null;
   if (row.server?.state === "deleted" || (!row.server && !row.keptContent)) return "gone_there";
   return accountContent(row) ? "both" : null;
 }
 
 /**
- * The resolution keeping `side` means for one record: null when that side can't be kept, and
- * "with_parent" for a record that is kept by copying its deleted ancestor.
+ * What keeping `side` means for one record: null when that side can't be kept, and "with_parent"
+ * for a record that is kept by copying its deleted ancestor.
  */
-function resolutionFor(row: DeviceRecord, side: Side): Resolution | "with_parent" | null {
+function resolutionFor(row: DeviceRecord, side: Side): Resolution["choice"] | "with_parent" | null {
   const which = recordCase(row);
   if (!which) return null;
-  if (side === "account") return { choice: "keep_theirs" };
+  if (side === "account") return "keep_theirs";
   switch (which) {
     case "both":
-      return { choice: "keep_mine" };
+      return "keep_mine";
     case "gone_there":
       // A record under a deleted ancestor, or sharing its parent's id, goes along with that copy.
       if (row.problem?.reason === "parent_deleted" || row.kind === "workout_rest")
         return "with_parent";
-      return { choice: "save_as_new", newId: newId() };
+      return "save_as_new";
     case "gone_here":
-      // Keeping the deletion sends it again, against the account's current version. A copy the
-      // restored server lacks can't be deleted there; it is only offered back.
-      return row.server?.state === "live" ? { choice: "keep_mine" } : null;
+      // Keeping the deletion sends it again, against the account's current version.
+      return "keep_mine";
+    case "gone_both":
+      // Both sides deleted it: the account's deletion is this phone's too.
+      return "keep_theirs";
     case "rejected":
       return null;
   }
@@ -147,6 +160,12 @@ function workoutOf(store: DeviceStore, row: DeviceRecord): string | null {
 }
 
 function groupKey(store: DeviceStore, row: DeviceRecord): string | null {
+  const base = baseKey(store, row);
+  // A refused change is decided on its own: undoing it shouldn't take valid changes beside it.
+  return base && recordCase(row) === "rejected" ? `${base}|${row.kind}:${row.id}` : base;
+}
+
+function baseKey(store: DeviceStore, row: DeviceRecord): string | null {
   const workout = workoutOf(store, row);
   if (workout) return `workout:${workout}`;
   if (row.kind === "exercise_note_comment") {
@@ -207,18 +226,23 @@ export function conflicts(store: DeviceStore): Conflict[] {
  * in it changed since, so the person sees the latest before choosing.
  */
 export function settleConflict(store: DeviceStore, shown: Conflict, side: Side): void {
+  // Everything shown counts, not only the records: what the account's version still holds, too.
   const current = conflicts(store).find((item) => item.key === shown.key);
-  if (!current || !jsonEqual(current.records, shown.records))
+  if (!current || !jsonEqual(current, shown))
     throw Error("This changed in the meantime. Have a look at the latest versions.");
   if (!current[side].choosable) throw Error("That version can't be kept.");
   for (const shownRow of current.records) {
     // Settling a parent can settle what's below it (a copy takes its children along).
     const row = store.get(shownRow.kind, shownRow.id);
     if (!row?.problem) continue;
-    const resolution = resolutionFor(row, side);
+    const choice = resolutionFor(row, side);
     // Still here after its ancestor was copied: the copy didn't take it along.
-    if (!resolution || resolution === "with_parent") throw Error("That version can't be kept.");
-    store.resolve(row.kind, row.id, resolution);
+    if (!choice || choice === "with_parent") throw Error("That version can't be kept.");
+    store.resolve(
+      row.kind,
+      row.id,
+      choice === "save_as_new" ? { choice, newId: newId() } : { choice },
+    );
   }
 }
 
@@ -256,7 +280,17 @@ const LABELS: Record<string, string> = {
   previousValues: "Previous values",
   autoUpdateRoutineValues: "Update routines",
   trackRepsInReserve: "Track reps in reserve",
+  exerciseName: "Exercise",
+  doubleDumbbellVolume: "Double dumbbells",
+  archived: "Archived",
+  routineId: "Routine",
+  rpe: "RPE",
+  repsInReserve: "Reps in reserve",
+  completedAt: "Done",
+  useRepRange: "Rep range",
 };
+/** Fields whose values are words joined by underscores ("upper_back", "same_routine"). */
+const WORDS = new Set(["primaryMuscle", "secondaryMuscles", "equipment", "previousValues", "type"]);
 /** Bookkeeping the person never sees: differences here alone don't make a line. */
 const HIDDEN = new Set([
   "createdAt",
@@ -317,8 +351,12 @@ function valueLabel(store: DeviceStore, name: string, value: JsonValue | undefin
     return String(field(store.get("routine_folder", value), "title") ?? "Another folder");
   if (name === "exercises" && Array.isArray(value))
     return value.length === 1 ? "1 exercise" : `${value.length} exercises`;
-  if (Array.isArray(value)) return value.map((item) => String(item)).join(", ") || "None";
-  if (typeof value === "string") return short(value);
+  const words = (text: string) => (WORDS.has(name) ? text.replaceAll("_", " ") : text);
+  if (Array.isArray(value)) return value.map((item) => words(String(item))).join(", ") || "None";
+  if (name === "completedAt" && typeof value === "string") return dateTime(value);
+  if (name === "routineId" && typeof value === "string")
+    return String(field(store.get("routine", value), "title") ?? "Another routine");
+  if (typeof value === "string") return short(words(value));
   if (typeof value === "number") return String(value);
   return "Changed";
 }
@@ -334,10 +372,44 @@ function setValue(store: DeviceStore, values: JsonObject): string {
   if (typeof values.durationSeconds === "number") parts.push(durationLabel(values.durationSeconds));
   if (typeof values.distanceMeters === "number") parts.push(`${values.distanceMeters} m`);
   if (typeof values.count === "number") parts.push(String(values.count));
+  if (typeof values.rpe === "number") parts.push(`RPE ${values.rpe}`);
+  if (typeof values.repsInReserve === "number") parts.push(`RIR ${values.repsInReserve}`);
   if (typeof values.type === "string" && values.type !== "normal")
     parts.push(values.type === "warmup" ? "(warm-up)" : `(${values.type})`);
   if (values.completedAt === null) parts.push("(not done)");
   return parts.join(" ") || "Empty";
+}
+
+/** A routine exercise's plan: "3 sets · 85 kg × 8". */
+function plannedExercise(store: DeviceStore, exercise: JsonObject): string {
+  const sets = Array.isArray(exercise.sets) ? (exercise.sets as JsonObject[]) : [];
+  const values = [...new Set(sets.map((set) => setValue(store, set)))];
+  const count = sets.length === 1 ? "1 set" : `${sets.length} sets`;
+  return values.length ? `${count} · ${values.join(", ")}` : count;
+}
+
+/** The exercises of a routine that differ, exercise by exercise. */
+function routineExerciseLines(store: DeviceStore, mine: unknown, theirs: unknown): ConflictLine[] {
+  const list = (value: unknown) => (Array.isArray(value) ? (value as JsonObject[]) : []);
+  const others = list(theirs);
+  const unmatched = new Map(others.map((exercise) => [exercise.id, exercise]));
+  const lines: ConflictLine[] = [];
+  list(mine).forEach((exercise, index) => {
+    const match = unmatched.get(exercise.id);
+    unmatched.delete(exercise.id);
+    const moved = !!match && others.indexOf(match) !== index;
+    if (match && !moved && jsonEqual(match, exercise)) return;
+    lines.push({
+      label: String(exercise.exerciseName ?? "Exercise"),
+      value: `${plannedExercise(store, exercise)}${moved ? ` · number ${index + 1}` : ""}`,
+    });
+  });
+  for (const exercise of unmatched.values())
+    lines.push({
+      label: String(exercise.exerciseName ?? "Exercise"),
+      value: "Not in this version",
+    });
+  return lines;
 }
 
 function recordLabel(store: DeviceStore, row: DeviceRecord): string {
@@ -387,25 +459,42 @@ function sideLines(
 ): ConflictLine[] {
   const label = recordLabel(store, row);
   if (!mine) return [{ label: label || "This", value: gone }];
-  if (row.kind === "workout_set") return [{ label, value: setValue(store, mine) }];
   if (!theirs) {
     // Nothing to compare with: name what it is.
+    if (row.kind === "workout_set") return [{ label, value: setValue(store, mine) }];
     if (typeof mine.bodyweightKg === "number")
       return [{ label: "Bodyweight", value: valueLabel(store, "bodyweightKg", mine.bodyweightKg) }];
     const name = mine.title ?? mine.name ?? mine.text ?? mine.exerciseName;
-    if (typeof name === "string") return [{ label: label || "Name", value: short(name) }];
+    if (typeof name === "string")
+      return [{ label: label && label !== name ? label : "Name", value: short(name) }];
     return [{ label: label || "This", value: "Kept" }];
   }
   const fields = [...new Set([...Object.keys(mine), ...Object.keys(theirs)])].filter(
-    (name) => !HIDDEN.has(name) && !jsonEqual(mine[name] ?? null, theirs[name] ?? null),
+    (name) => !jsonEqual(mine[name] ?? null, theirs[name] ?? null),
   );
-  return fields.map((name) => ({
-    label:
-      label && row.kind !== "workout" && row.kind !== "body_measurement"
-        ? `${label} · ${LABELS[name] ?? name}`
-        : (LABELS[name] ?? name),
-    value: valueLabel(store, name, mine[name]),
-  }));
+  const shown = fields.filter((name) => !HIDDEN.has(name));
+  const prefix = (name: string) =>
+    label && row.kind !== "workout" && row.kind !== "body_measurement"
+      ? `${label} · ${LABELS[name] ?? name}`
+      : (LABELS[name] ?? name);
+  const lines: ConflictLine[] = [];
+  if (row.kind === "workout_set") {
+    // The set as logged, then whatever else differs that its value doesn't show.
+    const value = setValue(store, mine);
+    lines.push({ label, value });
+    if (value === setValue(store, theirs))
+      for (const name of shown)
+        lines.push({ label: prefix(name), value: valueLabel(store, name, mine[name]) });
+  } else {
+    for (const name of shown) {
+      if (name === "exercises" && row.kind === "routine")
+        lines.push(...routineExerciseLines(store, mine.exercises, theirs.exercises));
+      else lines.push({ label: prefix(name), value: valueLabel(store, name, mine[name]) });
+    }
+  }
+  // Only bookkeeping differs: still say that something does, so neither side reads as nothing.
+  if (!lines.length && fields.length) lines.push({ label: label || "Details", value: "Changed" });
+  return lines;
 }
 
 function describe(
@@ -420,7 +509,8 @@ function describe(
   for (const row of records) {
     const which = recordCase(row);
     const mine = row.deleted ? null : (row.content ?? null);
-    const theirs = accountContent(row);
+    // Under something deleted in the account, the account's copy goes with it, whatever it held.
+    const theirs = row.problem?.reason === "parent_deleted" ? null : accountContent(row);
     phone.push(
       ...sideLines(
         store,
@@ -452,9 +542,24 @@ function describe(
         .map(([n, noun]) => `${n} ${noun}${n === 1 ? "" : "s"}`);
       if (parts.length) account.push({ label: "Holds", value: parts.join(" · ") });
     }
+    // Letting go a workout the account no longer has drops what this phone holds below it.
+    if (which === "gone_there" && row.kind === "workout") {
+      const entries = store.list("workout_exercise", { parentId: row.id });
+      const sets = store.list("workout_set", { parentIds: entries.map((entry) => entry.id) });
+      const said = (
+        [
+          [entries.length, "exercise"],
+          [sets.length, "set"],
+        ] as const
+      )
+        .filter(([n]) => n > 0)
+        .map(([n, noun]) => `${n} ${noun}${n === 1 ? "" : "s"}`);
+      if (said.length) phone.push({ label: "Holds", value: said.join(" · ") });
+    }
   }
-  const kind = key.slice(0, key.indexOf(":"));
-  const id = key.slice(key.indexOf(":") + 1);
+  const base = key.split("|")[0] as string;
+  const kind = base.slice(0, base.indexOf(":"));
+  const id = base.slice(base.indexOf(":") + 1);
   let title: string;
   let subtitle: string | null = null;
   switch (kind) {
@@ -492,8 +597,11 @@ function describe(
   const ownerCase = recordCase(owner);
   const ownerGoneThere = ownerCase === "gone_there";
   const ownerGoneHere = ownerCase === "gone_here";
+  const goneBoth = records.every((row) => recordCase(row) === "gone_both");
   const rejected = records.some((row) => recordCase(row) === "rejected");
-  const noun = kind === "workout" ? "workout" : kind === "settings" ? "settings" : "it";
+  // Named after the topmost record that clashes, not the group: an exercise deleted in the
+  // account leaves its workout in place either way.
+  const noun = owner.kind === "workout" ? "workout" : "it";
   return {
     key,
     title,
@@ -502,18 +610,33 @@ function describe(
     phone: {
       lines: phone,
       choosable: phoneOk,
-      confirm: ownerGoneThere
-        ? noun === "it"
-          ? "Keep it"
-          : `Keep the ${noun}`
-        : ownerGoneHere
-          ? "Delete it"
-          : "Keep this version",
+      ...(phoneOk
+        ? {}
+        : {
+            why: rejected
+              ? "This phone's change couldn't be saved in your account."
+              : "This version can't be kept on its own.",
+          }),
+      confirm: goneBoth
+        ? "Keep it deleted"
+        : ownerGoneThere
+          ? noun === "it"
+            ? "Keep it"
+            : `Keep the ${noun}`
+          : ownerGoneHere
+            ? "Delete it"
+            : "Keep this version",
     },
     account: {
       lines: account,
       choosable: true,
-      confirm: ownerGoneThere ? "Delete it" : rejected ? "Undo my change" : "Keep this version",
+      confirm: goneBoth
+        ? "Keep it deleted"
+        : ownerGoneThere
+          ? "Delete it"
+          : rejected
+            ? "Undo my change"
+            : "Keep this version",
     },
   };
 }

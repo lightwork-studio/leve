@@ -252,9 +252,9 @@ can't be put off, except that it waits while a workout is in progress. One choic
 record of that conflict. A conflict that can't be settled yet (a sync still running, a server
 restore, or fields this server or app doesn't know) waits until it can. Keeping a deletion over a
 change made elsewhere first shows what the account's version holds. Work recorded entirely offline
-is flagged on the start screen. A conflicted record is not resubmitted automatically. An `invalid` answer is handled the
-same way, unless the user already edited the record again, in which case the newer version is
-sent. The kept version is the newest local one. The user can:
+is flagged on the start screen. A conflicted record is not resubmitted automatically. An `invalid`
+answer is handled the same way, unless the user already edited the record again, in which case the
+newer version is sent. The kept version is the newest local one. The user can:
 
 - **Keep mine:** resubmit the local version based on the server's current revision. It can be
   rejected again if the record changed once more.
@@ -264,7 +264,14 @@ sent. The kept version is the newest local one. The user can:
 - **Save as new:** for a record deleted on the server or never accepted by it, save it and every
   descendant it still shows under new ids. Deleted records are never restored under their old id. A
   child whose parent was deleted is saved by saving its parent as new.
-- Keep mine is not offered for a deleted record or one this build can't show.
+- Keep mine is not offered for a record deleted in the account or one this build can't show. For a
+  record deleted here but changed in the account, the popup offers keeping the deletion: it shows
+  what the account's version still holds, then sends the deletion again against that version. (The
+  per-screen reviews offer only the account's version in that case.)
+- A refused (`invalid`) change is decided on its own, so undoing it never undoes valid changes made
+  beside it. The popup offers only undoing it (keep theirs), since the server won't take it as it
+  is. One that never reached the account isn't asked about in the popup, since undoing it would
+  also drop what waits below it unseen; it is edited again where it is shown.
 
 ## Downloading
 

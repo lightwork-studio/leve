@@ -6,7 +6,7 @@ import { type DeviceStore, openDeviceStore } from "@leve/storage";
 import { createNodeSqliteEngine } from "@leve/storage/node";
 import { ServerStorage } from "@leve/storage/server";
 import { createSqlJsEngine } from "@leve/storage/sqljs";
-import { SyncClient } from "@leve/sync";
+import { SyncClient, type Transport } from "@leve/sync";
 import { SyncService, serviceTransport } from "@leve/sync/server";
 import initSqlJs from "sql.js";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -29,11 +29,52 @@ beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), "leve-conflicts-"));
   storage = new ServerStorage({ engine: createNodeSqliteEngine(), directory, appVersion: "test" });
   service = new SyncService({ storage });
+  refuse = new Set();
 });
 afterEach(async () => {
   await storage.close();
   rmSync(directory, { recursive: true, force: true });
 });
+
+/** Which records the server should turn down as invalid, as `kind:id`. */
+let refuse = new Set<string>();
+
+/** The service, except that uploads of the records in `refuse` are turned down as invalid. */
+const refusing =
+  (inner: Transport): Transport =>
+  async (path, body) => {
+    if (path !== "/sync/push") return inner(path, body);
+    const request = body as { submissions: { submissionId: string; kind: string; id: string }[] };
+    const refused = request.submissions.filter((item) => refuse.has(`${item.kind}:${item.id}`));
+    if (!refused.length) return inner(path, body);
+    // The server never sees them: it answers only for the rest.
+    const rest = request.submissions.filter((item) => !refused.includes(item));
+    const reply = rest.length
+      ? await inner(path, { ...request, submissions: rest })
+      : { status: 200, body: { release: (body as { release: string }).release, results: [] } };
+    if (reply.status !== 200) return reply;
+    const answered = new Map(
+      (reply.body as { results: { submissionId: string }[] }).results.map((result) => [
+        result.submissionId,
+        result,
+      ]),
+    );
+    return {
+      status: 200,
+      body: {
+        ...(reply.body as object),
+        results: request.submissions.map(
+          (item) =>
+            answered.get(item.submissionId) ?? {
+              status: "invalid",
+              submissionId: item.submissionId,
+              code: "invalid_content",
+              message: "refused in this test",
+            },
+        ),
+      },
+    };
+  };
 
 async function phone(name: string) {
   const store = await openDeviceStore({
@@ -44,7 +85,7 @@ async function phone(name: string) {
   });
   const client = new SyncClient({
     store,
-    transport: serviceTransport(service, "alice"),
+    transport: refusing(serviceTransport(service, "alice")),
     server: "s",
     account: "alice",
     app: name,
@@ -270,4 +311,168 @@ it("shows what a workout still holds in the account before a deletion is kept ov
   expect(conflicts(b.store)).toEqual([]);
   expect((await serverRow("workout", "w1"))?.state).toBe("deleted");
   expect((await serverRow("workout_set", "s2"))?.state).toBe("deleted");
+});
+
+it("leaves out a refused change that never reached the account, so nothing below it goes unseen", async () => {
+  const b = await phone("b");
+  b.store.put("workout", "w1", workout("Offline Day"));
+  b.store.put("workout_exercise", "e1", entry("w1"));
+  b.store.put("workout_set", "s1", set(60, 10));
+  refuse = new Set(["workout:w1"]);
+  await b.sync();
+  expect(b.store.get("workout", "w1")?.status).toBe("invalid");
+  expect(conflicts(b.store)).toEqual([]);
+  // Nothing was dropped: the workout and what waits below it are still here.
+  expect(b.store.get("workout_set", "s1")?.content).toMatchObject({ weightKg: 60 });
+});
+
+it("asks about a refused change on its own, apart from valid changes beside it", async () => {
+  const { a, b } = await twoPhones((store) => {
+    store.put("workout", "w1", workout("Push"));
+    store.put("workout_exercise", "e1", entry("w1"));
+    store.put("workout_set", "s1", set(80, 8));
+  });
+  a.store.put("workout", "w1", workout("Push A"));
+  await a.sync();
+  b.store.put("workout", "w1", workout("Push B"));
+  b.store.put("workout_set", "s1", set(90, 8));
+  refuse = new Set(["workout_set:s1"]);
+  await b.sync();
+
+  const all = conflicts(b.store);
+  expect(all.map((item) => item.key).sort()).toEqual(["workout:w1", "workout:w1|workout_set:s1"]);
+  const title = all.find((item) => item.key === "workout:w1")!;
+  const refused = all.find((item) => item.key !== "workout:w1")!;
+  expect(title.phone.choosable).toBe(true);
+  expect(refused).toMatchObject({
+    phone: { choosable: false },
+    account: { confirm: "Undo my change" },
+  });
+
+  // Undoing the refused set leaves the title choice open, and keeping this phone's title works.
+  settleConflict(b.store, refused, "account");
+  expect(b.store.get("workout_set", "s1")?.content).toMatchObject({ weightKg: 80 });
+  settleConflict(b.store, conflicts(b.store)[0]!, "phone");
+  expect(b.store.get("workout", "w1")?.content).toMatchObject({ title: "Push B" });
+});
+
+it("refuses a choice when what the account holds changed since it was shown", async () => {
+  const { a, b } = await twoPhones((store) => {
+    store.put("workout", "w1", workout("Leg Day"));
+    store.put("workout_exercise", "e1", entry("w1"));
+    store.put("workout_set", "s1", set(100, 5));
+  });
+  a.store.put("workout_set", "s2", { ...set(100, 5), position: 2 });
+  await a.sync();
+  b.store.delete("workout", "w1");
+  await b.sync();
+  const shown = conflicts(b.store)[0]!;
+  expect(shown.account.lines).toContainEqual({ label: "Holds", value: "1 exercise · 2 sets" });
+
+  // Another set arrives in the account before the choice is made.
+  a.store.put("workout_set", "s3", { ...set(100, 5), position: 3 });
+  await a.sync();
+  await b.sync();
+  expect(() => settleConflict(b.store, shown, "phone")).toThrow("changed in the meantime");
+  expect((await serverRow("workout_set", "s3"))?.state).toBe("live");
+});
+
+it("shows differences a set's weight and reps don't, and a routine's planned targets", async () => {
+  const plan = (kg: number) => ({
+    title: "Push",
+    folderId: null,
+    position: 1,
+    effortScale: null,
+    exercises: [
+      {
+        id: "x1",
+        exerciseId: "bench-press-barbell",
+        exerciseName: "Bench Press",
+        exerciseType: "weight_reps",
+        supersetId: null,
+        restSeconds: 90,
+        useRepRange: false,
+        sets: [
+          {
+            id: "t1",
+            type: "normal",
+            weightKg: kg,
+            reps: 8,
+            repRangeMin: null,
+            repRangeMax: null,
+            distanceMeters: null,
+            durationSeconds: null,
+            count: null,
+            rpe: null,
+            repsInReserve: null,
+          },
+        ],
+      },
+    ],
+  });
+  const { a, b } = await twoPhones((store) => {
+    store.put("workout", "w1", workout("Push Day"));
+    store.put("workout_exercise", "e1", entry("w1"));
+    store.put("workout_set", "s1", set(80, 8));
+    store.put("routine", "r1", plan(80));
+  });
+  a.store.put("workout_set", "s1", { ...set(80, 8), rpe: 7 });
+  a.store.put("routine", "r1", plan(90));
+  await a.sync();
+  b.store.put("workout_set", "s1", { ...set(80, 8), rpe: 9 });
+  b.store.put("routine", "r1", plan(85));
+  await b.sync();
+
+  const all = conflicts(b.store);
+  const workoutConflict = all.find((item) => item.key === "workout:w1")!;
+  expect(workoutConflict.phone.lines).toEqual([
+    { label: "Bench Press · Set 1", value: "80 kg × 8 RPE 9" },
+  ]);
+  expect(workoutConflict.account.lines).toEqual([
+    { label: "Bench Press · Set 1", value: "80 kg × 8 RPE 7" },
+  ]);
+  const routineConflict = all.find((item) => item.key === "routine:r1")!;
+  expect(routineConflict.phone.lines).toEqual([
+    { label: "Bench Press", value: "1 set · 85 kg × 8" },
+  ]);
+  expect(routineConflict.account.lines).toEqual([
+    { label: "Bench Press", value: "1 set · 90 kg × 8" },
+  ]);
+});
+
+it("settles a record deleted in both places", async () => {
+  const entryOf = (kg: number) => ({ takenAt: STARTED, bodyweightKg: kg, fatPercent: null });
+  const { a, b } = await twoPhones((store) => store.put("body_measurement", "m1", entryOf(80)));
+  a.store.delete("body_measurement", "m1");
+  await a.sync();
+  b.store.put("body_measurement", "m1", entryOf(81));
+  await b.sync();
+  // Deleted here too while the question waited.
+  b.store.delete("body_measurement", "m1");
+  const [conflict] = conflicts(b.store);
+  expect(conflict).toMatchObject({
+    phone: { confirm: "Keep it deleted", choosable: true },
+    account: { confirm: "Keep it deleted" },
+  });
+  settleConflict(b.store, conflict!, "phone");
+  expect(b.store.problems()).toEqual([]);
+});
+
+it("names the choice after what clashes, not the workout around it", async () => {
+  const { a, b } = await twoPhones((store) => {
+    store.put("workout", "w1", workout("Push Day"));
+    store.put("workout_exercise", "e1", entry("w1"));
+    store.put("workout_set", "s1", set(80, 8));
+  });
+  a.store.delete("workout_exercise", "e1");
+  await a.sync();
+  b.store.put("workout_set", "s1", set(85, 8));
+  await b.sync();
+  const [conflict] = conflicts(b.store);
+  expect(conflict).toMatchObject({
+    key: "workout:w1",
+    phone: { confirm: "Keep it" },
+    account: { confirm: "Delete it" },
+  });
+  expect(conflict!.account.lines.every((line) => line.value === "Deleted")).toBe(true);
 });
