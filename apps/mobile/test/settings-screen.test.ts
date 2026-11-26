@@ -37,9 +37,17 @@ const build = vi.hoisted(() => ({
 }));
 vi.mock("../src/build-info.ts", () => ({ buildInfo: build }));
 const sync = vi.hoisted(() => ({ on: false }));
-vi.mock("../src/sync/sync-config.ts", () => ({ syncEnabled: () => sync.on, syncServerUrl: "" }));
+vi.mock("../src/sync/sync-config.ts", () => ({
+  syncEnabled: () => sync.on,
+  syncServerUrl: "",
+  builtInServerConfigured: () => false,
+  ownServerAvailable: () => false,
+}));
 vi.mock("expo-constants", () => ({ default: { expoConfig: { version: "0.1.0" } } }));
-vi.mock("expo-router", () => ({ router: { canGoBack: () => true, back: vi.fn() } }));
+vi.mock("expo-router", () => ({
+  router: { canGoBack: () => true, back: vi.fn() },
+  useLocalSearchParams: () => ({}),
+}));
 vi.mock("../src/data/app-data.tsx", () => ({
   useAppData: () => ({
     store,

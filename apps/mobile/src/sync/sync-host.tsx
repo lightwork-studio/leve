@@ -20,7 +20,19 @@ import { Dialog } from "../ui/dialog.tsx";
 import { Banner } from "../ui/notice.tsx";
 import { themedStyles, useAppearance, useStyles } from "../ui/themed.ts";
 import { ConflictPrompt } from "./conflict-prompt.tsx";
-import { syncEnabled, syncServerUrl } from "./sync-config.ts";
+import { type OwnServer, serverLabel } from "./own-server.ts";
+import {
+  previousServer,
+  readServerChoice,
+  subscribeServerChoice,
+  switchBack,
+} from "./own-server-store.ts";
+import {
+  builtInServerConfigured,
+  ownServerAvailable,
+  syncEnabled,
+  syncServerUrl,
+} from "./sync-config.ts";
 import {
   REMIND_LATER_MS,
   readLastSynced,
@@ -58,16 +70,116 @@ function workoutCount(store: ReturnType<typeof useAppData>["store"]): number {
  * syncing does, as a note. Nothing is asked during a workout: questions wait until it ends.
  */
 export function SyncHost() {
-  if (!syncEnabled()) return null;
-  return <Sync />;
+  const own = useOwnServer();
+  // If the keychain is locked, wait before choosing which account to sync.
+  if (own === undefined || !syncEnabled()) return null;
+  // A new pairing is a new session, even with the same account id.
+  if (own) {
+    const key = `${own.server} ${own.device}`;
+    return builtInServerConfigured() ? (
+      <PairedSyncWithClerk key={key} own={own} />
+    ) : (
+      <Sync key={key} connection={ownConnection(own)} />
+    );
+  }
+  if (!builtInServerConfigured()) return null;
+  return <ClerkSync />;
 }
 
-function Sync() {
+/** Who the phone syncs as, and with which server. */
+interface Connection {
+  /** The build's own server with a Clerk sign-in, or a server the person paired. */
+  kind: "built_in" | "own";
+  server: string;
+  isLoaded: boolean;
+  isSignedIn: boolean;
+  userId: string | null;
+  getToken(fresh: boolean): Promise<string | null>;
+  signOut(): Promise<void>;
+}
+
+/** The paired server, while it is the phone's choice; follows changes made in Settings. */
+function useOwnServer(): OwnServer | null | undefined {
+  const [, setVersion] = useState(0);
+  useEffect(() => subscribeServerChoice(() => setVersion((n) => n + 1)), []);
+  // A keychain that couldn't be read (a locked phone) is read again when the app comes back.
+  useEffect(() => {
+    const watch = AppState.addEventListener("change", (state) => {
+      if (state === "active") setVersion((n) => n + 1);
+    });
+    return () => watch.remove();
+  }, []);
+  return ownServerAvailable() ? readServerChoice() : null;
+}
+
+/**
+ * Whether switching back to the choice before reaches the server and account this phone's data
+ * belongs to. Anything else would only move the question to another server.
+ */
+function switchesBackToData(
+  bound: { server: string | null; account: string | null },
+  builtInAccount: string | null,
+): boolean {
+  if (!ownServerAvailable()) return false;
+  const previous = previousServer();
+  if (previous) return previous.server === bound.server && previous.account === bound.account;
+  // The build's own server, if the current choice is a paired one.
+  return (
+    builtInAccount !== null && bound.server === syncServerUrl && bound.account === builtInAccount
+  );
+}
+
+/** A paired server: always signed in, with the device token it gave this phone. */
+function ownConnection(own: OwnServer): Connection {
+  return {
+    kind: "own",
+    server: own.server,
+    isLoaded: true,
+    isSignedIn: true,
+    userId: own.account,
+    getToken: async () => own.token,
+    signOut: async () => switchBack(),
+  };
+}
+
+function PairedSyncWithClerk({ own }: { own: OwnServer }) {
+  const { isSignedIn, userId } = useAuth();
+  return (
+    <Sync connection={ownConnection(own)} builtInAccount={isSignedIn ? (userId ?? null) : null} />
+  );
+}
+
+function ClerkSync() {
   const { isLoaded, isSignedIn, userId, getToken, signOut } = useAuth();
+  return (
+    <Sync
+      connection={{
+        kind: "built_in",
+        server: syncServerUrl,
+        isLoaded,
+        isSignedIn: !!isSignedIn,
+        userId: userId ?? null,
+        getToken: (fresh) => getToken(fresh ? { skipCache: true } : undefined),
+        signOut: () => signOut(),
+      }}
+    />
+  );
+}
+
+function Sync({
+  connection,
+  builtInAccount = null,
+}: {
+  connection: Connection;
+  builtInAccount?: string | null;
+}) {
+  const { isLoaded, isSignedIn, userId, getToken, signOut, server } = connection;
+  const own = connection.kind === "own";
   const { store, version, change, reset, exportData } = useAppData();
   const [status, setStatus] = useState<SyncStatus>(IDLE);
   /** "Not now" on a question: hidden until the session restarts; sync stays paused meanwhile. */
   const [later, setLater] = useState(false);
+  const [refusedLater, setRefusedLater] = useState(false);
   /** "Not now" on the update question: hidden until the app next comes to the front. */
   const [updateLater, setUpdateLater] = useState(false);
   /** A conflict being reviewed on its own screen, and whether that screen has opened yet. */
@@ -88,7 +200,10 @@ function Sync() {
   }, [pathname]);
   useEffect(() => {
     const watch = AppState.addEventListener("change", (state) => {
-      if (state === "active") setUpdateLater(false);
+      if (state === "active") {
+        setUpdateLater(false);
+        setRefusedLater(false);
+      }
     });
     return () => watch.remove();
   }, []);
@@ -107,20 +222,21 @@ function Sync() {
     if (!isLoaded || !isSignedIn || !userId) return;
     const running = new SyncSession({
       store,
-      server: syncServerUrl,
+      server,
       account: userId,
       app: `leve-preview ${buildInfo.commit}`,
       // Only the account this session syncs: a request still on its way when someone else signs in
       // fails as offline rather than reach the new account.
       token: async (fresh) => {
         if (latest.current.userId !== userId) throw new Error("another account signed in");
-        const token = await latest.current.getToken(fresh ? { skipCache: true } : undefined);
+        const token = await latest.current.getToken(fresh);
         // Signed in but no token: Clerk couldn't be reached. Offline, not a sign-in problem.
         if (!token) throw new Error("no session token");
         return token;
       },
       onPulled: () => latest.current.change(() => undefined),
       onStatus: (next) => {
+        if (next.prompt?.kind !== "sign_in") setRefusedLater(false);
         setStatus(next);
         if (next.lastSynced !== null && next.lastSynced - lastWritten.current > SAVE_SYNCED_MS) {
           lastWritten.current = next.lastSynced;
@@ -148,7 +264,7 @@ function Sync() {
       session.current = null;
       setStatus(IDLE);
     };
-  }, [isLoaded, isSignedIn, userId, store]);
+  }, [isLoaded, isSignedIn, userId, store, server]);
 
   // Every change to the data passes here; the session sends it shortly, if there is any to send.
   useEffect(() => {
@@ -166,6 +282,7 @@ function Sync() {
     return (
       <CombinePrompt
         workouts={workoutCount(store)}
+        sampleData={prompt.sampleData === true}
         onCombine={() => session.current?.combine()}
         onReplace={() => session.current?.replaceLocalData()}
         onLater={() => setLater(true)}
@@ -180,15 +297,23 @@ function Sync() {
         // Counted now, not when sync asked: work done meanwhile is lost too.
         unsynced={unsyncedChanges(store)}
         onSwitch={() => session.current?.replaceLocalData()}
-        onSignOut={async () => {
-          setSignInReminder("off");
-          try {
-            await signOut();
-          } catch (error) {
-            setSignInReminder("");
-            throw error;
-          }
-        }}
+        // Keeping them means going back, when the choice before is where they belong; on the
+        // build's own server, otherwise, signing this account out.
+        {...(switchesBackToData(store.syncState(), builtInAccount)
+          ? { onSwitchBack: () => switchBack() }
+          : own
+            ? {}
+            : {
+                onSignOut: async () => {
+                  setSignInReminder("off");
+                  try {
+                    await signOut();
+                  } catch (error) {
+                    setSignInReminder("");
+                    throw error;
+                  }
+                },
+              })}
         onLater={() => setLater(true)}
         exportData={exportData}
       />
@@ -196,9 +321,15 @@ function Sync() {
   }
 
   const now = Date.now();
+  if (own && prompt?.kind === "sign_in") {
+    // Keep Settings reachable for re-pairing even when this device has a conflict to settle.
+    return refusedLater || pathname === "/settings" ? null : (
+      <RefusedPrompt server={server} onLater={() => setRefusedLater(true)} />
+    );
+  }
   const lapsed =
     prompt?.kind === "sign_in" || (isLoaded && !isSignedIn && store.syncState().account !== null);
-  if (lapsed && signInReminderDue(now)) {
+  if (!own && lapsed && signInReminderDue(now)) {
     return (
       <SignInPrompt
         signedIn={!!isSignedIn}
@@ -212,7 +343,10 @@ function Sync() {
   }
 
   // Conflicts are settled here and now: one at a time, before the app goes on.
-  const pending = conflicts(store);
+  const bound = store.syncState();
+  const switching =
+    isSignedIn && bound.account !== null && (bound.server !== server || bound.account !== userId);
+  const pending = switching ? [] : conflicts(store);
   // While the person is on the screen a conflict sent them to, nothing covers it. Leaving it with
   // the conflict unsettled brings the popup back.
   if (reviewing && pending.some((item) => item.key === reviewing.key)) return null;
@@ -267,12 +401,14 @@ function useExport(exportData: () => Promise<void>) {
 
 function CombinePrompt({
   workouts,
+  sampleData,
   onCombine,
   onReplace,
   onLater,
   exportData,
 }: {
   workouts: number;
+  sampleData: boolean;
   onCombine: () => void;
   onReplace: () => void;
   onLater: () => void;
@@ -317,7 +453,7 @@ function CombinePrompt({
   }
   return (
     <Dialog
-      eyebrow="Your account already has data"
+      eyebrow={sampleData ? "This phone has sample data" : "Your account already has data"}
       confirm={{ label: "Add to my account", onPress: onCombine }}
       footer={
         <View style={styles.actions}>
@@ -331,7 +467,11 @@ function CombinePrompt({
       }
     >
       <Body
-        text={`This phone has ${what} that ${one ? "isn't" : "aren't"} in your account yet. Add ${one ? "it" : "them"} to your account, or replace ${one ? "it" : "them"} with what's in your account.`}
+        text={
+          sampleData
+            ? "This phone has sample records from an earlier build. Adding this phone's data uploads the sample records along with anything you logged."
+            : `This phone has ${what} that ${one ? "isn't" : "aren't"} in your account yet. Add ${one ? "it" : "them"} to your account, or replace ${one ? "it" : "them"} with what's in your account.`
+        }
       />
     </Dialog>
   );
@@ -342,13 +482,17 @@ function SwitchPrompt({
   unsynced,
   onSwitch,
   onSignOut,
+  onSwitchBack,
   onLater,
   exportData,
 }: {
   reason: "account" | "server";
   unsynced: number;
   onSwitch: () => void;
-  onSignOut: () => Promise<void>;
+  /** Keeps the changes by signing this account out (the build's own server)... */
+  onSignOut?: () => Promise<void>;
+  /** ... or by going back to the server or pairing the phone used before. */
+  onSwitchBack?: () => void;
   onLater: () => void;
   exportData: () => Promise<void>;
 }) {
@@ -376,15 +520,29 @@ function SwitchPrompt({
             busy={saved.busy}
             onPress={saved.run}
           />
-          <Button
-            rank="text"
-            label="Keep them and sign out"
-            onPress={() => {
-              onSignOut().catch(() =>
-                setProblem("Signing out didn't work. Check the connection and try again."),
-              );
-            }}
-          />
+          {onSwitchBack ? (
+            <Button
+              rank="text"
+              label="Keep them and switch back"
+              onPress={() => {
+                try {
+                  onSwitchBack();
+                } catch {
+                  setProblem("Switching back didn't work. Try again.");
+                }
+              }}
+            />
+          ) : onSignOut ? (
+            <Button
+              rank="text"
+              label="Keep them and sign out"
+              onPress={() => {
+                onSignOut().catch(() =>
+                  setProblem("Signing out didn't work. Check the connection and try again."),
+                );
+              }}
+            />
+          ) : null}
           <Button rank="text" label="Not now" onPress={onLater} />
         </View>
       }
@@ -392,12 +550,42 @@ function SwitchPrompt({
       <Body
         text={
           reason === "account"
-            ? `${plural(unsynced, "change")} on this phone ${one ? "belongs" : "belong"} to the account that was signed in before and ${one ? "hasn't" : "haven't"} synced. Switching to this account deletes ${it} from this phone. To keep ${it}, sign out and sign in again with the other account.`
-            : `${plural(unsynced, "change")} on this phone ${one ? "hasn't" : "haven't"} reached the sync server this phone used before, which this version of Leve doesn't use. Switching deletes ${it} from this phone. Signing out keeps ${it} here, unsynced.`
+            ? `${plural(unsynced, "change")} on this phone ${one ? "belongs" : "belong"} to the account that was signed in before and ${one ? "hasn't" : "haven't"} synced. Switching to this account deletes ${it} from this phone. ${onSwitchBack ? `To keep ${it}, switch back to the account it used before.` : onSignOut ? `To keep ${it}, sign out and sign in again with the other account.` : `Not now keeps ${it} on this phone, unsynced.`}`
+            : onSwitchBack
+              ? `${plural(unsynced, "change")} on this phone ${one ? "hasn't" : "haven't"} reached the sync server this phone used before. Switching to this server deletes ${it} from this phone. Switching back keeps ${it} for the other server.`
+              : onSignOut
+                ? `${plural(unsynced, "change")} on this phone ${one ? "hasn't" : "haven't"} reached the sync server this phone used before, which this version of Leve doesn't use. Switching deletes ${it} from this phone. Signing out keeps ${it} here, unsynced.`
+                : `${plural(unsynced, "change")} on this phone ${one ? "hasn't" : "haven't"} reached the sync server this phone used before. Switching to this server deletes ${it} from this phone. Not now keeps ${it} here, unsynced.`
         }
       />
       {saved.note ? <Body text={saved.note} /> : null}
       {problem ? <Body text={problem} /> : null}
+    </Dialog>
+  );
+}
+
+/**
+ * A paired server refused this phone's token: its operator signed the phone out, or the account
+ * is gone. The data stays; a new pairing link from the operator connects it again.
+ */
+function RefusedPrompt({ server, onLater }: { server: string; onLater: () => void }) {
+  return (
+    <Dialog
+      eyebrow="Connect again"
+      onClose={onLater}
+      closeLabel="Not now"
+      confirm={{
+        label: "Open Settings",
+        onPress: () => {
+          onLater();
+          router.push("/settings");
+        },
+      }}
+      footer={<Button rank="text" label="Not now" onPress={onLater} />}
+    >
+      <Body
+        text={`${serverLabel(server)} no longer accepts this phone. Until you connect again with a new pairing link from whoever runs it, new workouts and changes stay only on this phone.`}
+      />
     </Dialog>
   );
 }

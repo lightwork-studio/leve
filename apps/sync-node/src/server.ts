@@ -88,7 +88,9 @@ export function createSyncServer(options: SyncServerOptions): Server {
     if (!paired) {
       return failure(response, 401, "unauthorized", "This code doesn't work. Ask for a new one.");
     }
-    return json(response, 200, paired);
+    // The operator's name for the account, so the phone can show which one it joined.
+    const name = accounts.findAccount(paired.account)?.name;
+    return json(response, 200, { ...paired, ...(name ? { accountName: name } : {}) });
   };
 
   return createServer((request, response) => {

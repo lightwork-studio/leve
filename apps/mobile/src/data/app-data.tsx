@@ -10,7 +10,7 @@ import {
   useState,
 } from "react";
 import { buildInfo } from "../build-info.ts";
-import { syncConfigured } from "../sync/sync-server.ts";
+import { mayEverSync, syncConfigured } from "../sync/sync-server.ts";
 import { exportStoredRecovery, type OpenedEngine, openEngine } from "./engine";
 import { newId } from "./ids.ts";
 import { PREVIEW_STORAGE } from "./preview-storage.ts";
@@ -53,9 +53,11 @@ async function openStore(opened: OpenedEngine, sampleData: boolean): Promise<Dev
     randomId: newId,
   });
   // A development preview's first start gets synthetic data, and a reset brings it back.
-  // TestFlight builds start empty, unless a reset asked for the synthetic data. Builds that sync
-  // never get it: it would go up to the signed-in account.
-  if (!syncConfigured() && wantsSampleData(store, sampleData)) seedSyntheticData(store);
+  // TestFlight builds start empty, unless a reset asked for the synthetic data. Builds that sync,
+  // or could once the person pairs a server, never get it: it would go up to the account.
+  if (!syncConfigured() && !mayEverSync() && wantsSampleData(store, sampleData)) {
+    seedSyntheticData(store);
+  }
   await opened.flush();
   return store;
 }

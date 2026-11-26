@@ -2,14 +2,21 @@
 /// <reference lib="dom" />
 import { act, createElement as h, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Conflict } from "../src/data/conflicts.ts";
 import { forgetDevicePreferences } from "../src/data/device-preference-store.ts";
+import {
+  chooseBuiltInServer,
+  chooseOwnServer,
+  forgetServerChoice,
+  ownServer,
+} from "../src/sync/own-server-store.ts";
 import { SyncHost } from "../src/sync/sync-host.tsx";
 import { signInReminderDue } from "../src/sync/sync-preferences.ts";
 import type { SyncSessionOptions, SyncStatus } from "../src/sync/sync-session.ts";
 import { clerk } from "./support/clerk-expo.ts";
 import { files } from "./support/expo-file-system.ts";
+import { keychain } from "./support/expo-secure-store.ts";
 
 /* The prompts sync shows, driven by a stand-in session whose status the tests set. */
 
@@ -76,9 +83,13 @@ vi.mock("expo-router", () => ({
 vi.mock("../src/sync/sync-config.ts", () => ({
   syncEnabled: () => true,
   syncServerUrl: "https://sync.test",
+  builtInServerConfigured: () => true,
+  ownServerAvailable: () => true,
 }));
 const data = vi.hoisted(() => ({
   account: null as string | null,
+  /** The server the phone's data belongs to. */
+  server: null as string | null,
   workout: false,
   unsynced: false,
   workouts: 3,
@@ -88,7 +99,7 @@ const data = vi.hoisted(() => ({
   unsyncedCount: 0,
   store: {
     activeWorkout: () => (data.workout ? { id: "w" } : null),
-    syncState: () => ({ account: data.account }),
+    syncState: () => ({ account: data.account, server: data.server }),
     hasUnsyncedWork: () => data.unsynced,
     db: { get: () => ({ n: data.workouts }) },
   },
@@ -169,6 +180,7 @@ beforeEach(() => {
   clerk.signedIn = true;
   Object.assign(data, {
     account: null,
+    server: null,
     workout: false,
     unsynced: false,
     workouts: 3,
@@ -180,6 +192,8 @@ beforeEach(() => {
   Object.assign(pending, { conflicts: [], settled: [], refuse: null });
   Object.assign(route, { path: "/", pushed: [] });
   sessions.created.length = 0;
+  keychain.reset();
+  forgetServerChoice();
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -360,6 +374,165 @@ it("notes a day without syncing only when changes are waiting", async () => {
   expect(screen()).toContain("Changes haven't synced since");
   await report({ lastSynced: Date.now() });
   expect(screen()).toBe("");
+});
+
+describe("a server the person paired", () => {
+  const home = {
+    server: "https://sync.home.example",
+    account: "acc-home",
+    device: "dev-1",
+    token: "device-token",
+  };
+
+  it("syncs with it on the phone's own token, without a Clerk sign-in", async () => {
+    clerk.signedIn = false;
+    chooseOwnServer(home);
+    await render();
+    expect(session().options).toMatchObject({ server: home.server, account: "acc-home" });
+    expect(await session().options.token(true)).toBe("device-token");
+    // The token is kept in the keychain, for this phone only, readable once it has been unlocked.
+    expect([...keychain.items.values()][0]?.options).toEqual({
+      keychainAccessible: "AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY",
+    });
+  });
+
+  it("says when the server no longer accepts the phone, and offers no Apple sign-in", async () => {
+    chooseOwnServer(home);
+    await render();
+    await report({ prompt: { kind: "sign_in" } });
+    pending.conflicts = [folderConflict("folder", "Training")];
+    expect(screen()).toContain("sync.home.example no longer accepts this phone");
+    expect(screen()).not.toContain("Sign in again");
+    await tap("Open Settings");
+    expect(route.pushed).toEqual(["/settings"]);
+    expect(screen()).not.toContain("no longer accepts");
+    expect(screen()).not.toContain("Training");
+    route.path = "/settings";
+    await act(async () => {
+      for (const listener of appState.listeners) listener("active");
+    });
+    expect(screen()).not.toContain("no longer accepts");
+    await report({ prompt: { kind: "combine" } });
+    expect(screen()).toContain("Your account already has data");
+  });
+
+  it("keeps unsynced changes by switching back to the server they belong to", async () => {
+    chooseOwnServer(home);
+    await render();
+    // The data belongs to the build's own server, where switching back goes.
+    data.server = "https://sync.test";
+    data.account = "user_1";
+    data.unsyncedCount = 2;
+    await report({ prompt: { kind: "switch", reason: "server" } });
+    expect(screen()).toContain("Switching back keeps them for the other server");
+    expect(screen()).not.toContain("Keep them and sign out");
+    await tap("Keep them and switch back");
+    // Back on the build's own server, signed in with Clerk.
+    expect(ownServer()).toBeNull();
+    expect(session().options).toMatchObject({ server: "https://sync.test", account: "user_1" });
+  });
+
+  it("offers going back to the paired server after leaving it for the build's own", async () => {
+    chooseOwnServer(home);
+    chooseBuiltInServer();
+    await render();
+    data.server = home.server;
+    data.account = home.account;
+    data.unsyncedCount = 1;
+    await report({ prompt: { kind: "switch", reason: "server" } });
+    await tap("Keep them and switch back");
+    expect(ownServer()).toEqual(home);
+    expect(session().options).toMatchObject({ server: home.server });
+  });
+
+  it("restarts syncing when another server is paired", async () => {
+    chooseOwnServer(home);
+    await render();
+    const first = session();
+    await act(async () =>
+      chooseOwnServer({
+        ...home,
+        server: "https://other.example",
+        device: "d2",
+        token: "other-token",
+      }),
+    );
+    expect(first.calls).toContain("stop");
+    expect(session().options.server).toBe("https://other.example");
+    // The old session, should it still ask, gets the old server's token, never the new one's.
+    expect(await first.options.token(false)).toBe("device-token");
+    expect(await session().options.token(false)).not.toBe(await first.options.token(false));
+  });
+
+  it("offers switching back only to where the phone's data belongs", async () => {
+    // Paired once, then back on the build's own server; the data is a Clerk account's.
+    chooseOwnServer(home);
+    chooseBuiltInServer();
+    data.server = "https://sync.test";
+    data.account = "user_0";
+    await render();
+    data.unsyncedCount = 1;
+    await report({ prompt: { kind: "switch", reason: "account" } });
+    expect(screen()).toContain("Keep them and sign out");
+    expect(screen()).not.toContain("switch back");
+  });
+
+  it("offers nothing but waiting when the data belongs to a server neither choice is", async () => {
+    chooseOwnServer({ ...home, server: "https://third.example", device: "d3" });
+    chooseOwnServer(home);
+    data.server = "https://sync.test";
+    data.account = "user_1";
+    await render();
+    data.unsyncedCount = 1;
+    await report({ prompt: { kind: "switch", reason: "server" } });
+    expect(screen()).toContain("Not now keeps it here, unsynced");
+    expect(screen()).not.toContain("Keep them and");
+  });
+
+  it("syncs nowhere while the keychain can't be read", async () => {
+    chooseOwnServer(home);
+    forgetServerChoice();
+    keychain.failReads = true;
+    await render();
+    expect(sessions.created).toEqual([]);
+    keychain.failReads = false;
+  });
+  it("never falls back to Leve if the keychain unlocks between reads", async () => {
+    chooseOwnServer(home);
+    forgetServerChoice();
+    keychain.failNextRead = true;
+
+    await render();
+    expect(sessions.created).toEqual([]);
+    await act(async () => {
+      for (const listener of appState.listeners) listener("active");
+    });
+    expect(sessions.created.map((entry) => entry.options.server)).toEqual([home.server]);
+  });
+
+  it("shows conflicts for the paired account after a server switch is settled", async () => {
+    chooseOwnServer(home);
+    data.account = "user_1";
+    data.server = "https://sync.test";
+    pending.conflicts = [folderConflict("folder", "Training")];
+    await render();
+    expect(screen()).not.toContain("Training");
+
+    data.account = home.account;
+    data.server = home.server;
+    await report({ lastSynced: Date.now() });
+    expect(screen()).toContain("Training");
+  });
+
+  it("doesn't offer to switch back into a different Clerk account", async () => {
+    data.server = "https://sync.test";
+    data.account = "user_0";
+    data.unsyncedCount = 1;
+    chooseOwnServer(home);
+    await render();
+    await report({ prompt: { kind: "switch", reason: "server" } });
+    expect(screen()).not.toContain("Keep them and switch back");
+  });
 });
 
 const folderConflict = (key: string, title: string): Conflict => ({

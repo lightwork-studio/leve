@@ -1,6 +1,7 @@
 import { MAX_WAIT_MS } from "@leve/contract";
 import type { DeviceStore } from "@leve/storage";
 import {
+  DEFAULT_TIMEOUT_MS,
   httpTransport,
   type RequestHeaders,
   SyncClient,
@@ -9,10 +10,13 @@ import {
   TransportError,
 } from "@leve/sync";
 
+import { fetch as expoFetch } from "expo/fetch";
+import { hasSampleData } from "../data/seed.ts";
+
 /** What the person has to decide or do before syncing can go on. */
 export type SyncPrompt =
-  /** Data on this phone that never synced, and an account that already has data. */
-  | { kind: "combine" }
+  /** This phone has sample data or the account already holds data. */
+  | { kind: "combine"; sampleData?: true }
   /**
    * This phone's data belongs to another account (or, after a build change, another server), and
    * some of it hasn't synced. The app counts the changes when it asks, as they can grow meanwhile.
@@ -123,6 +127,7 @@ export class SyncSession {
   /** Trying a refused sign-in again in the background, with its question still showing. */
   #checkingSignIn = false;
   #join = false;
+  #acceptSampleData = false;
   #status: SyncStatus;
 
   constructor(options: SyncSessionOptions) {
@@ -146,7 +151,8 @@ export class SyncSession {
       if (this.#stopped) throw new TransportError("this sync session has ended");
       return token ? { authorization: `Bearer ${token}` } : {};
     };
-    const connect = options.connect ?? ((server, h) => httpTransport(server, h));
+    const connect =
+      options.connect ?? ((server, h) => httpTransport(server, h, DEFAULT_TIMEOUT_MS, expoFetch));
     this.#client = new SyncClient({
       store: options.store,
       transport: this.#interruptible(connect(options.server, headers)),
@@ -212,6 +218,7 @@ export class SyncSession {
   /** The answer to "combine": the phone's data joins the account. */
   combine(): void {
     if (this.#status.prompt?.kind !== "combine") return;
+    if (this.#status.prompt.sampleData) this.#acceptSampleData = true;
     this.#join = true;
     this.#resume();
   }
@@ -352,8 +359,9 @@ export class SyncSession {
         // The server answered: a fresh-token retry that got here has done its job.
         this.#retriedSignIn = false;
         this.#checkingSignIn = false;
-        if (probe.revision > 0) {
-          this.#ask({ kind: "combine" });
+        const sampleData = hasSampleData(store);
+        if (sampleData || probe.revision > 0) {
+          this.#ask(sampleData ? { kind: "combine", sampleData: true } : { kind: "combine" });
           return null;
         }
       }
@@ -370,6 +378,10 @@ export class SyncSession {
       // Everything here is on the other account's server already: nothing is lost.
       this.stop();
       this.#options.startOver();
+      return null;
+    }
+    if (!this.#acceptSampleData && hasSampleData(store)) {
+      this.#ask({ kind: "combine", sampleData: true });
       return null;
     }
     if (this.#stopped) return null;
