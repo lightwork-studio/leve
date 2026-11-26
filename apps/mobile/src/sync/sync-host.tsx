@@ -183,6 +183,7 @@ function Sync({
   const [status, setStatus] = useState<SyncStatus>(IDLE);
   /** "Not now" on a question: hidden until the session restarts; sync stays paused meanwhile. */
   const [later, setLater] = useState(false);
+  const [refusedLater, setRefusedLater] = useState(false);
   /** "Not now" on the update question: hidden until the app next comes to the front. */
   const [updateLater, setUpdateLater] = useState(false);
   /** A conflict being reviewed on its own screen, and whether that screen has opened yet. */
@@ -203,7 +204,10 @@ function Sync({
   }, [pathname]);
   useEffect(() => {
     const watch = AppState.addEventListener("change", (state) => {
-      if (state === "active") setUpdateLater(false);
+      if (state === "active") {
+        setUpdateLater(false);
+        setRefusedLater(false);
+      }
     });
     return () => watch.remove();
   }, []);
@@ -236,6 +240,7 @@ function Sync({
       },
       onStoreChanged: () => latest.current.change(() => undefined),
       onStatus: (next) => {
+        if (next.prompt?.kind !== "sign_in") setRefusedLater(false);
         setStatus(next);
         if (next.lastSynced !== null && next.lastSynced - lastWritten.current > SAVE_SYNCED_MS) {
           lastWritten.current = next.lastSynced;
@@ -337,8 +342,11 @@ function Sync({
   }
 
   const now = Date.now();
-  if (own && prompt?.kind === "sign_in" && !later) {
-    return <RefusedPrompt server={server} onLater={() => setLater(true)} />;
+  if (own && prompt?.kind === "sign_in") {
+    // Keep Settings reachable for re-pairing even when this device has a conflict to settle.
+    return refusedLater || pathname === "/settings" ? null : (
+      <RefusedPrompt server={server} onLater={() => setRefusedLater(true)} />
+    );
   }
   const lapsed =
     prompt?.kind === "sign_in" || (isLoaded && !isSignedIn && store.syncState().account !== null);

@@ -406,11 +406,20 @@ describe("a server the person paired", () => {
     chooseOwnServer(home);
     await render();
     await report({ prompt: { kind: "sign_in" } });
+    pending.conflicts = [folderConflict("folder", "Training")];
     expect(screen()).toContain("sync.home.example no longer accepts this phone");
     expect(screen()).not.toContain("Sign in again");
     await tap("Open Settings");
     expect(route.pushed).toEqual(["/settings"]);
     expect(screen()).not.toContain("no longer accepts");
+    expect(screen()).not.toContain("Training");
+    route.path = "/settings";
+    await act(async () => {
+      for (const listener of appState.listeners) listener("active");
+    });
+    expect(screen()).not.toContain("no longer accepts");
+    await report({ prompt: { kind: "combine" } });
+    expect(screen()).toContain("Your account already has data");
   });
 
   it("keeps unsynced changes by switching back to the server they belong to", async () => {
