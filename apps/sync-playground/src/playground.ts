@@ -113,7 +113,10 @@ export async function startPlayground(options: PlaygroundOptions): Promise<Playg
     service = new SyncService({ storage });
     syncHandler = createSyncHttpHandler({
       service,
-      authenticate: () => ACCOUNT,
+      // Local only: every request is a phone of the one account.
+      authenticate: () => ({
+        principal: { account: ACCOUNT, client: { kind: "device", id: "playground" } },
+      }),
       onError: (error) => note(`server error: ${(error as Error).message}`),
     });
   };
