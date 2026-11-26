@@ -59,10 +59,12 @@ filesystems may not honour.
 ### systemd
 
 ```sh
-useradd --system --home-dir /var/lib/leve --shell /usr/sbin/nologin leve
+useradd --system --user-group --home-dir /var/lib/leve --shell /usr/sbin/nologin leve
 install -m 0755 apps/sync-node/dist/leve-sync.mjs /usr/local/bin/leve-sync
 install -d -o leve -g leve -m 0700 /var/backups/leve   # before the first start, see below
 ```
+
+Save the unit as `/etc/systemd/system/leve.service`:
 
 ```ini
 [Unit]
@@ -105,7 +107,8 @@ WantedBy=multi-user.target
 ```
 
 `leve-sync` needs `node` (24 or later) on the PATH; otherwise use `ExecStart=/path/to/node
-/usr/local/bin/leve-sync serve`. Administer it as the same user, with the same socket:
+/usr/local/bin/leve-sync serve`. Run `systemctl daemon-reload` and
+`systemctl enable --now leve.service`. Administer it as the same user, with the same socket:
 
 ```sh
 sudo -u leve LEVE_ADMIN_SOCKET=/run/leve/admin.sock leve-sync admin accounts list
@@ -128,8 +131,9 @@ docker exec leve leve-sync admin backup /var/backups/leve
 ```
 
 Run one container per volume. A second container on the same volume refuses to start, so stop the
-old one before starting its replacement. A bind mount instead of a volume needs to be owned by
-10001 (`chown -R 10001:10001 <folder>`).
+old one before starting its replacement. Create bind-mount directories with
+`install -d -o 10001 -g 10001 -m 0700 <folder>`. For an existing directory, verify that the
+service user owns the directory and its files and that only that user can read them.
 
 ### HTTPS in front
 
