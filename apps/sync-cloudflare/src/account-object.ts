@@ -3,9 +3,11 @@
 
 import { DurableObject } from "cloudflare:workers";
 import type { ServerAccountStore } from "@leve/storage/server";
-import { errorReply, type Reply, SyncService } from "@leve/sync/server";
+import { createMcpEndpoint } from "@leve/sync/mcp";
+import { errorReply, type Principal, type Reply, SyncService } from "@leve/sync/server";
 import { openAccountDatabase, readSyncBody, startNewLineage, syncResponse } from "./account-db.ts";
 import { durableObjectConnection, type SqlMeter } from "./do-sql.ts";
+import { CLIENT_HEADER, MCP_PATH, SCOPES_HEADER } from "./gate.ts";
 
 const ROUTES = { "/sync/hello": "hello", "/sync/push": "push", "/sync/pull": "pull" } as const;
 
@@ -50,6 +52,7 @@ export class AccountObject extends DurableObject<Env> {
       },
     },
   });
+  readonly #mcp = createMcpEndpoint({ service: this.#service, version: "1" });
   #requests = 0;
   /** Checked once per session, before anything else: a restore may have just happened. */
   #restoreChecked: Promise<void> | null = null;
@@ -99,6 +102,18 @@ export class AccountObject extends DurableObject<Env> {
       return json(503, errorReply("unavailable", "this account is not available").body);
     }
     await this.#finishRestore(account);
+    if (path === MCP_PATH) {
+      // The gate checked the access token and set these; the object trusts only the gate.
+      const principal: Principal = {
+        account,
+        client: {
+          kind: "agent",
+          id: decodeURIComponent(request.headers.get(CLIENT_HEADER) ?? ""),
+        },
+        scopes: (request.headers.get(SCOPES_HEADER) ?? "").split(" ").filter(Boolean),
+      };
+      return this.#mcp(request, principal);
+    }
     const route = ROUTES[path as keyof typeof ROUTES];
     if (route) {
       const read = await readSyncBody(request);

@@ -12,6 +12,9 @@ account.
   finish, and a web origin not listed in `CLERK_AUTHORIZED_PARTIES` are refused.
 - **Admin** (`/admin/*`) needs the operator token (`ADMIN_TOKEN`, at least 32 characters) and names
   the account in the `x-leve-account` header. Without it the admin endpoints are closed.
+- **MCP** (`/mcp`) uses stateless Streamable HTTP. It takes a Clerk OAuth access token with the MCP
+  endpoint URL as its audience and the `leve:read` scope. Tools can only read the Clerk user's
+  synced workouts, progress, routines, notes, measurements and settings.
 
 A missing setting, or a key that can't be read, makes sync answer 503 rather than let anyone in.
 A valid key from the wrong instance, an issuer with a trailing `/`, or a token version other than 2
@@ -24,6 +27,23 @@ account. Each version keeps the secrets it was deployed with, so rolling back pa
 `secret delete` brings the deleted secret back. Clerk can rotate the instance key: then put the
 new PEM in `CLERK_JWT_KEY`. Add `--env=production` to any of these commands to act on the
 production Worker.
+
+### Enable MCP in development
+
+1. In the Clerk development instance, [register the full HTTPS MCP URL][clerk-mcp], including
+   `/mcp`. Enable JWT access tokens and Include Audience. Allow public clients to connect using
+   Client ID Metadata Documents, or register an OAuth client with its own redirect URI and PKCE.
+2. Create the `leve:read` custom OAuth scope and grant it to the OAuth clients you want to test.
+   For clients that omit a scope request, configure `leve:read` as a default for dynamic clients.
+3. From this directory, run `npx wrangler@4.158.0 secret put MCP_RESOURCE_URL` on the development
+   Worker and enter the same HTTPS URL. Connect a Streamable HTTP MCP client to that URL and sign
+   in with a test account that has synced data.
+
+The Worker publishes OAuth discovery at `/.well-known/oauth-protected-resource/mcp`. Issued JWTs
+are accepted until expiry. Delete `MCP_RESOURCE_URL` to turn off MCP immediately while phone sync
+continues. Reauthorizing the client may be needed when its audience or scopes change.
+
+[clerk-mcp]: https://clerk.com/docs/guides/ai/mcp/build-mcp-server
 
 ## Workers
 

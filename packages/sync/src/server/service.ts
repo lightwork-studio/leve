@@ -438,6 +438,29 @@ export class SyncService {
     return record ? this.#change(record, release) : null;
   }
 
+  /**
+   * Every live record of each kind for `release`, read in one transaction so they are consistent
+   * with each other, for readers such as MCP tools. Kinds the release lacks come back empty; a
+   * record the release can't represent comes back `unavailable`.
+   */
+  async readKinds(
+    accountId: string,
+    kinds: readonly string[],
+    release: ReleaseId,
+  ): Promise<Map<string, Change[]>> {
+    if (!this.releases.includes(release)) throw new Error(`Unsupported sync release ${release}`);
+    const store = await this.#storage.account(accountId);
+    const rows = store.transaction((tx) =>
+      kinds.map((kind) => (this.contract.hasKind(kind, release) ? tx.live(kind) : [])),
+    );
+    return new Map(
+      kinds.map((kind, i) => [
+        kind,
+        (rows[i] ?? []).map((record) => this.#change(record, release)),
+      ]),
+    );
+  }
+
   #waitForChange(accountId: string, ms: number): Promise<void> {
     return new Promise((resolve) => {
       let waiting = this.#waiting.get(accountId);

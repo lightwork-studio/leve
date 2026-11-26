@@ -331,6 +331,13 @@ export class ServerTransaction {
     return revision;
   }
 
+  /** Every live record of a kind, in id order (the primary key's order). */
+  live(kind: string): StoredRecord[] {
+    return this.#db
+      .all("SELECT * FROM records WHERE kind = ? AND state = 'live' ORDER BY id", [kind])
+      .map(toStored);
+  }
+
   liveChildren(kind: string, id: string): StoredRecord[] {
     return this.#db
       .all("SELECT * FROM records WHERE parent_kind = ? AND parent_id = ? AND state = 'live'", [
