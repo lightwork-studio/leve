@@ -1,7 +1,7 @@
 import type { WeightUnit } from "@leve/core";
 import { Link } from "expo-router";
 import { useMemo, useState } from "react";
-import { Modal, ScrollView, StyleSheet, Text, View } from "react-native";
+import { type ImageSourcePropType, Modal, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { choiceLabel } from "../data/custom-exercises.ts";
 import {
@@ -21,6 +21,7 @@ import {
 import type { ExerciseHistory, WorkoutPoint } from "../model/progress.ts";
 import { numeral, radius, space, type } from "../theme.ts";
 import { ChartTabs, Segmented } from "./chart-controls.tsx";
+import { ExercisePlate, PLATE_PRIMARY, PLATE_SECONDARY } from "./exercise-image.tsx";
 import { readoutWeight, wholeWeight } from "./format.ts";
 import { ChevronIcon } from "./icons.tsx";
 import { MuscleFigure } from "./muscle-figure.tsx";
@@ -405,8 +406,22 @@ export function MuscleCard({
   );
 }
 
-/** An exercise's own muscles: the figure with its primary muscles darkest, and their names. */
-export function ExerciseMuscles({ targets }: { targets: MuscleTargets | undefined }) {
+/**
+ * An exercise's own muscles and their names. Most exercises show the figure with their primary
+ * muscles darkest. One with an image shows it across the top of the card instead, and the names
+ * below take the image's colours as their key.
+ */
+export function ExerciseMuscles({
+  targets,
+  image,
+  name,
+}: {
+  targets: MuscleTargets | undefined;
+  /** The exercise's image, when it has one. */
+  image?: ImageSourcePropType | null;
+  /** The exercise's name, for the image's description. */
+  name?: string;
+}) {
   const styles = useStyles(sheet);
   const c = useColors();
   const amounts = useMemo(() => targetAmounts(targets), [targets]);
@@ -414,25 +429,42 @@ export function ExerciseMuscles({ targets }: { targets: MuscleTargets | undefine
   const primary = targets.primaryMuscles.map(choiceLabel);
   const secondary = targets.secondaryMuscles.map(choiceLabel);
   return (
-    <View style={styles.exercise}>
-      <MuscleFigure
-        amounts={amounts}
-        height={124}
-        accessibilityLabel={`Primary ${primary.join(", ")}${secondary.length ? `, secondary ${secondary.join(", ")}` : ""}`}
-      />
-      <View style={styles.exerciseText}>
-        <View style={styles.exerciseKind}>
+    <View style={image ? undefined : styles.exercise}>
+      {image ? (
+        <ExercisePlate
+          source={image}
+          height={290}
+          radius={0}
+          zoom={1.17}
+          label={`${name ?? "The exercise"}, with the muscles it works highlighted`}
+        />
+      ) : (
+        <MuscleFigure
+          amounts={amounts}
+          height={124}
+          accessibilityLabel={`Primary ${primary.join(", ")}${secondary.length ? `, secondary ${secondary.join(", ")}` : ""}`}
+        />
+      )}
+      <View style={image ? styles.exerciseKey : styles.exerciseText}>
+        <View style={[styles.exerciseKind, !!image && styles.keyCell]}>
           <Text style={styles.label}>Primary</Text>
           <View style={styles.exerciseName}>
-            <View style={[styles.dot, { backgroundColor: c.muscle.ramp[4] }]} />
+            <View
+              style={[styles.dot, { backgroundColor: image ? PLATE_PRIMARY : c.muscle.ramp[4] }]}
+            />
             <Text style={styles.primary}>{primary.join(" · ")}</Text>
           </View>
         </View>
-        <View style={styles.exerciseKind}>
+        <View style={[styles.exerciseKind, !!image && styles.keyCell]}>
           <Text style={styles.label}>Secondary</Text>
           <View style={styles.exerciseName}>
             {secondary.length > 0 && (
-              <View style={[styles.dot, { backgroundColor: c.muscle.ramp[2] }]} />
+              <View
+                style={[
+                  styles.dot,
+                  { backgroundColor: image ? PLATE_SECONDARY : c.muscle.ramp[2] },
+                ]}
+              />
             )}
             <Text style={styles.secondary}>
               {secondary.length ? secondary.join(" · ") : "None"}
@@ -573,7 +605,10 @@ const sheet = themedStyles((c) => ({
     paddingHorizontal: 16,
   },
   exerciseText: { flex: 1, minWidth: 0, gap: 12 },
+  // Under an image: the primary and secondary names side by side.
+  exerciseKey: { flexDirection: "row", gap: 16, paddingVertical: 14, paddingHorizontal: 16 },
   exerciseKind: { gap: 6 },
+  keyCell: { flex: 1, minWidth: 0 },
   exerciseName: { flexDirection: "row", alignItems: "center", gap: 8 },
   dot: { width: 10, height: 10, borderRadius: 3 },
   primary: { ...type.cardTitle, fontSize: 19, lineHeight: 22, color: c.fg, flexShrink: 1 },
