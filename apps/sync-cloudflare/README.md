@@ -56,7 +56,8 @@ Grant the `leve:write` custom OAuth scope only to the clients you want to test, 
 Sync a test account from the app first. An MCP client can then call `get_record` to get its account
 history identifier, the record's revision, and any descendant revisions. Supply a unique request
 ID for each write and reuse it with the same arguments on retry. An update sends the fields to
-change. A stale update returns the current copy for review. For names on agent notes and comments,
+change. A stale update returns the current copy for review if it would change any fields. A retry
+that matches the current fields is acknowledged without advancing the revision. For agent names,
 optionally set `MCP_CLIENT_NAMES` to a JSON object mapping OAuth client IDs to their registered
 names. Unlisted clients are attributed by their verified OAuth client ID.
 

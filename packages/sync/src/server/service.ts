@@ -48,7 +48,7 @@ export interface Reply<T> {
 export interface SyncServiceOptions {
   /** Opens account databases: files on a server, or the database of an account's Durable Object. */
   storage: Pick<ServerStorage, "account">;
-  /** Optional non-creating lookup for hosts exposing read-only tools. */
+  /** Hosts whose storage opens missing accounts must provide a non-creating lookup for MCP. */
   existingAccount?: (accountId: string) => Promise<ServerAccountStore | null>;
   contract?: Contract;
   /** Releases this server accepts, oldest first. */
@@ -96,12 +96,10 @@ export class LineageChangedError extends Error {
 const restoredReply = () =>
   errorReply("cursor_reset", "The account was restored or reset; download everything again");
 
-function sameDescendants(
-  live: readonly StoredRecord[],
-  known: readonly { kind: string; id: string; revision: number }[],
-): boolean {
-  const key = (record: { kind: string; id: string; revision: number }) =>
-    `${record.kind}/${record.id}@${record.revision}`;
+type DescendantRef = Pick<StoredRecord, "kind" | "id" | "revision">;
+
+function sameDescendants(live: readonly DescendantRef[], known: readonly DescendantRef[]): boolean {
+  const key = ({ kind, id, revision }: DescendantRef) => `${kind}/${id}@${revision}`;
   const expected = new Set(live.map(key));
   const given = new Set(known.map(key));
   return expected.size === given.size && [...expected].every((entry) => given.has(entry));
@@ -274,6 +272,24 @@ export class SyncService {
       .flatMap((child) => [child, ...this.#liveDescendants(tx, child.kind, child.id)]);
   }
 
+  /** One extra revision lets MCP recognize a tree too large for any delete submission. */
+  #boundedDescendants(tx: ServerTransaction, kind: string, id: string): DescendantRef[] {
+    const descendants: DescendantRef[] = [];
+    const parents = [{ kind, id }];
+    for (const parent of parents) {
+      if (this.contract.childKinds(parent.kind).length === 0) continue;
+      const children = tx.liveChildRefs(
+        parent.kind,
+        parent.id,
+        MAX_DESCENDANTS + 1 - descendants.length,
+      );
+      descendants.push(...children);
+      if (descendants.length > MAX_DESCENDANTS) break;
+      parents.push(...children);
+    }
+    return descendants;
+  }
+
   #change(record: StoredRecord, release: ReleaseId): Change {
     const { kind, id, revision } = record;
     if (record.state === "deleted") return { state: "deleted", kind, id, revision };
@@ -379,7 +395,10 @@ export class SyncService {
       if (current.state === "deleted") return accept(current.revision);
       if (current.revision !== submission.baseRevision) return conflict("stale", current);
       // Deleting removes the descendants too: the deleter must have seen each of them as it is.
-      if (!sameDescendants(this.#liveDescendants(tx, kind, id), submission.descendants)) {
+      const descendants = agent
+        ? this.#boundedDescendants(tx, kind, id)
+        : this.#liveDescendants(tx, kind, id);
+      if (!sameDescendants(descendants, submission.descendants)) {
         return conflict("stale", current);
       }
       return accept(tx.writeDeleted(kind, id));
@@ -388,11 +407,10 @@ export class SyncService {
     let submitted =
       agent?.name === undefined ? submission.content : { ...submission.content, agent: agent.name };
     if (patch) {
-      // MCP sends only the requested fields. Apply them to the exact copy its client read
-      // inside the same transaction that checks the revision and commits the write.
+      // Build the candidate inside the write transaction. The revision check below only
+      // accepts a stale candidate when it is already identical to the current record.
       if (current?.state === "deleted") return conflict("deleted", current);
-      if (!current || current.revision !== submission.baseRevision)
-        return conflict("stale", current);
+      if (!current) return conflict("stale", null);
       const base = this.#change(current, release);
       if (base.state !== "live") return conflict("stale", current);
       if (
@@ -519,7 +537,7 @@ export class SyncService {
   ): Promise<{
     lineage: string | null;
     record: Change | null;
-    descendants: { kind: string; id: string; revision: number }[];
+    descendants: DescendantRef[];
     descendantsTruncated: boolean;
   }> {
     if (!this.releases.includes(release)) throw new Error(`Unsupported sync release ${release}`);
@@ -528,21 +546,10 @@ export class SyncService {
       return { lineage: null, record: null, descendants: [], descendantsTruncated: false };
     return store.transaction((tx) => {
       const current = this.contract.hasKind(kind, release) ? tx.get(kind, id) : null;
-      const descendants: { kind: string; id: string; revision: number }[] = [];
-      if (includeDescendants && current?.state === "live") {
-        const parents = [{ kind, id }];
-        for (const parent of parents) {
-          if (this.contract.childKinds(parent.kind).length === 0) continue;
-          const children = tx.liveChildRefs(
-            parent.kind,
-            parent.id,
-            MAX_DESCENDANTS + 1 - descendants.length,
-          );
-          descendants.push(...children);
-          if (descendants.length > MAX_DESCENDANTS) break;
-          parents.push(...children);
-        }
-      }
+      const descendants =
+        includeDescendants && current?.state === "live"
+          ? this.#boundedDescendants(tx, kind, id)
+          : [];
       return {
         lineage: tx.lineage(),
         record: current ? this.#change(current, release) : null,

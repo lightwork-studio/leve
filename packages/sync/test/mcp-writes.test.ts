@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Leve contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
+import { MAX_DESCENDANTS } from "@leve/contract";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { afterEach, describe, expect, it } from "vitest";
 import { type Principal, SCOPES } from "../src/server/index.ts";
@@ -105,7 +106,7 @@ describe("MCP writes through phone sync", () => {
     );
   });
 
-  it("applies one field, replays a lost reply and leaves a concurrent phone edit for review", async () => {
+  it("applies one field, replays its receipt and leaves a concurrent phone edit for review", async () => {
     const { server, alice, other, connect } = await setup();
     const { call, get } = await connect();
     const initial = await get();
@@ -149,6 +150,9 @@ describe("MCP writes through phone sync", () => {
     expect((await server.row("alice", "workout", "workout-a"))?.content).toMatchObject({
       title: "Agent title",
     });
+    expect(await server.head("alice")).toBe(2);
+    server.clock.advanceDays(91);
+    expect(await call("update_record", args)).toEqual(written);
     expect(await server.head("alice")).toBe(2);
   });
 
@@ -359,6 +363,56 @@ describe("MCP writes through phone sync", () => {
     expect(response.headers.get("www-authenticate")).toContain('scope="leve:write"');
     expect(response.headers.get("www-authenticate")).toContain(`resource_metadata="${metadata}"`);
     expect(await server.row("alice", "workout", "blocked")).toBeUndefined();
+  });
+
+  it("returns bounded descendant revisions and refuses deletion of a larger tree", async () => {
+    const { server, connect } = await setup();
+    const { get, call } = await connect();
+    const store = await server.storage.account("alice");
+    store.transaction((tx) => {
+      for (let n = 0; n < 20; n++) {
+        const noteId = `note-${n}`;
+        tx.writeLive("workout_note", noteId, {
+          workoutId: "workout-a",
+          pinned: false,
+          text: "Note",
+          createdAt,
+          agent: null,
+        });
+        for (let c = 0; c < 99; c++) {
+          tx.writeLive("workout_note_comment", `${noteId}-comment-${c}`, {
+            noteId,
+            text: "Comment",
+            createdAt,
+            agent: null,
+          });
+        }
+      }
+    });
+    const full = await get();
+    expect(full.descendants).toHaveLength(MAX_DESCENDANTS);
+    expect(full).toMatchObject({ descendantsTruncated: false });
+    store.transaction((tx) =>
+      tx.writeLive("workout_note_comment", "extra-comment", {
+        noteId: "note-0",
+        text: "Comment",
+        createdAt,
+        agent: null,
+      }),
+    );
+    const overflow = await get();
+    expect(overflow.descendants).toHaveLength(MAX_DESCENDANTS);
+    expect(overflow).toMatchObject({ descendantsTruncated: true });
+    expect(
+      await call("delete_record", {
+        requestId: "too-big",
+        lineage: overflow.lineage,
+        kind: "workout",
+        id: "workout-a",
+        baseRevision: overflow.record?.revision,
+        descendants: overflow.descendants,
+      }),
+    ).toMatchObject({ status: "conflict", reason: "stale", current: { state: "live" } });
   });
 
   it("keeps writes disabled even for a write-scoped client while reads work", async () => {
