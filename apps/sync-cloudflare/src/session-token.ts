@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Leve contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
+import type { Authenticator } from "@leve/sync/server";
+
 /**
  * Checks a Clerk session token without a network call: the signature against the instance's public
  * key, then who issued it, when it is valid and whose it is. The account is the signed-in user.
@@ -78,7 +80,7 @@ export async function verifySessionToken(
   token: string,
   config: SessionKeys,
   now = Date.now(),
-): Promise<{ account: string } | null> {
+): Promise<{ account: string; session: string } | null> {
   const parts = token.split(".");
   if (parts.length !== 3) return null;
   const [headerPart, payloadPart, signaturePart] = parts as [string, string, string];
@@ -121,5 +123,19 @@ export async function verifySessionToken(
     if (typeof claims.azp !== "string" || !allowed.includes(claims.azp)) return null;
   }
   if (typeof claims.sub !== "string" || !ACCOUNT_ID.test(claims.sub)) return null;
-  return { account: claims.sub };
+  return { account: claims.sub, session: claims.sid };
+}
+
+/**
+ * Phones signing in with Clerk: a good session token is a device of its user. Throws (making the
+ * request `unavailable`) when the configured key can't be used.
+ */
+export function clerkSessions(config: SessionKeys): Authenticator {
+  return async (token) => {
+    const session = await verifySessionToken(token, config);
+    if (!session) return { refused: true };
+    return {
+      principal: { account: session.account, client: { kind: "device", id: session.session } },
+    };
+  };
 }

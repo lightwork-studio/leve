@@ -181,9 +181,11 @@ describe("signing in to sync", () => {
     // Issued by a clock 3 seconds ahead: accepted. Expired 3 seconds ago: still accepted.
     expect(await verifySessionToken(issued, config, (t - 3) * 1000)).toEqual({
       account: "user_alice",
+      session: "sess_1",
     });
     expect(await verifySessionToken(issued, config, (t + 63) * 1000)).toEqual({
       account: "user_alice",
+      session: "sess_1",
     });
     expect(await verifySessionToken(issued, config, (t - 10) * 1000)).toBeNull();
     expect(await verifySessionToken(issued, config, (t + 70) * 1000)).toBeNull();
@@ -251,6 +253,18 @@ describe("the operator's admin endpoints", () => {
     expect(wrong.status).toBe(401);
     expect((await send("/admin/stats", ADMIN_TOKEN)).status).toBe(400);
     expect(reached).toEqual([]);
+  });
+
+  it("take an operator token of any characters, as they always have", async () => {
+    const spaced = "operator pass phrase with spaces and ümlauts 0123456789";
+    const { send, reached } = setup({ ADMIN_TOKEN: spaced });
+    expect((await send("/admin/stats", spaced, { [ACCOUNT_HEADER]: "user_alice" })).status).toBe(
+      200,
+    );
+    expect(
+      (await send("/admin/stats", "operator", { [ACCOUNT_HEADER]: "user_alice" })).status,
+    ).toBe(401);
+    expect(reached).toHaveLength(1);
   });
 
   it("are closed when no operator token, or a short one, is set", async () => {

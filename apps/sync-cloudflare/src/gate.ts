@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: Leve contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { errorReply } from "@leve/sync/server";
-import { verifySessionToken } from "./session-token.ts";
+import { authenticateBearer, errorReply } from "@leve/sync/server";
+import { clerkSessions } from "./session-token.ts";
 
 /** Names the account inside the Worker. Set by the gate, never taken from the client. */
 export const ACCOUNT_HEADER = "x-leve-account";
@@ -44,7 +44,7 @@ function sameSecret(given: string, expected: string): boolean {
 export async function handleRequest(request: Request, env: GateEnv): Promise<Response> {
   const url = new URL(request.url);
   if (request.method !== "POST") return reply(400, errorReply("invalid_request", "use POST").body);
-  const bearer = request.headers.get("authorization")?.match(/^Bearer (.+)$/i)?.[1] ?? "";
+  const authorization = request.headers.get("authorization");
 
   let account: string;
   if (url.pathname.startsWith("/sync/")) {
@@ -52,30 +52,33 @@ export async function handleRequest(request: Request, env: GateEnv): Promise<Res
       console.error("sign-in is not configured: set CLERK_ISSUER and CLERK_JWT_KEY");
       return reply(503, errorReply("unavailable", "sync is temporarily unavailable").body);
     }
-    let session: { account: string } | null;
-    try {
-      session = await verifySessionToken(bearer, {
-        issuer: env.CLERK_ISSUER,
-        publicKeyPem: env.CLERK_JWT_KEY,
-        authorizedParties: (env.CLERK_AUTHORIZED_PARTIES ?? "")
-          .split(",")
-          .map((party) => party.trim())
-          .filter(Boolean),
-      });
-    } catch (error) {
-      // A broken key would otherwise send every client back to sign in, again and again.
-      console.error("CLERK_JWT_KEY can't be used", error);
+    const sessions = clerkSessions({
+      issuer: env.CLERK_ISSUER,
+      publicKeyPem: env.CLERK_JWT_KEY,
+      authorizedParties: (env.CLERK_AUTHORIZED_PARTIES ?? "")
+        .split(",")
+        .map((party) => party.trim())
+        .filter(Boolean),
+    });
+    // A broken key would otherwise send every client back to sign in, again and again.
+    const outcome = await authenticateBearer(sessions, authorization, (error) =>
+      console.error("CLERK_JWT_KEY can't be used", error),
+    );
+    if ("unavailable" in outcome) {
       return reply(503, errorReply("unavailable", "sync is temporarily unavailable").body);
     }
-    if (!session) return unauthorized();
-    account = session.account;
+    // Only the lifter's own devices sync; agents get their own, scoped endpoints.
+    if ("refused" in outcome || outcome.principal.client.kind !== "device") return unauthorized();
+    account = outcome.principal.account;
     const type = request.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
     if (type !== "application/json") {
       return reply(400, errorReply("invalid_request", "send application/json").body);
     }
   } else if (url.pathname.startsWith("/admin/")) {
     const operator = env.ADMIN_TOKEN ?? "";
-    if (operator.length < 32 || !sameSecret(bearer, operator)) return unauthorized();
+    // Any characters, as before: the operator chose the token.
+    const given = authorization?.match(/^Bearer (.+)$/i)?.[1] ?? "";
+    if (operator.length < 32 || !sameSecret(given, operator)) return unauthorized();
     account = request.headers.get(ACCOUNT_HEADER) ?? "";
     if (!ACCOUNT_ID.test(account)) {
       return reply(
