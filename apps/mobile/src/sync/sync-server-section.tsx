@@ -26,8 +26,7 @@ import {
 } from "./own-server-store.ts";
 import { builtInServerConfigured, ownServerAvailable, syncServerUrl } from "./sync-config.ts";
 
-const OWN_NOTE =
-  "Your workouts sync with this server. Connecting to another server, or going back, asks first if anything here hasn't synced.";
+const OWN_NOTE = "Changes stay on this phone while a server switch is waiting for your answer.";
 const BUILT_IN_NOTE =
   "To sync with a server you or someone you trust runs, open the pairing link its operator gives you, or paste it here.";
 
