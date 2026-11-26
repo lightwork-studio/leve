@@ -50,8 +50,10 @@ export async function verifyAccessToken(
   config: AccessTokenConfig,
   now = Date.now(),
 ): Promise<AccessToken | null> {
-  const verified = await verifiedJwt(token, config.publicKeyPem, (typ) =>
-    ACCESS_TOKEN_TYPES.includes(String(typ).toLowerCase()),
+  const verified = await verifiedJwt(
+    token,
+    config.publicKeyPem,
+    (typ) => typeof typ === "string" && ACCESS_TOKEN_TYPES.includes(typ.toLowerCase()),
   );
   if (!verified) return null;
   const { claims } = verified;

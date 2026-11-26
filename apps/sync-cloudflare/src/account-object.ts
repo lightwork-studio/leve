@@ -43,6 +43,10 @@ export class AccountObject extends DurableObject<Env> {
   readonly #db = durableObjectConnection(this.ctx.storage, this.#meter);
   #store: ServerAccountStore | null = openAccountDatabase(this.#db, false);
   readonly #service = new SyncService({
+    existingAccount: async () => {
+      if (this.#closed) throw new Error("the account is closed");
+      return this.#store;
+    },
     storage: {
       account: async () => {
         // A request that was waiting while the account was deleted must not bring it back.

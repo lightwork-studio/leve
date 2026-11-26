@@ -44,8 +44,8 @@ export function createMcpEndpoint(options: McpEndpointOptions) {
               "routines, notes and body measurements. Records come with their id and revision.",
           },
         );
-        registerReadTools(server, (kinds) =>
-          AccountView.load(options.service, account, release, kinds),
+        registerReadTools(server, (kinds, workouts) =>
+          AccountView.load(options.service, account, release, kinds, workouts),
         );
         return server;
       },

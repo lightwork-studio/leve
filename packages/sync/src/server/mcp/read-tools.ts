@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Leve contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
+import { MAX_PAGE_BYTES } from "@leve/contract";
 import {
   buildProgress,
   countsTowardTotals,
@@ -14,6 +15,7 @@ import {
 } from "@leve/core";
 import type { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod";
+import type { WorkoutReadSelection } from "../service.ts";
 import type { AccountView, ReadKind, Shown } from "./account-view.ts";
 
 /*
@@ -22,7 +24,10 @@ import type { AccountView, ReadKind, Shown } from "./account-view.ts";
  * account's settings say which units the lifter sees.
  */
 
-type ViewLoader = (kinds: readonly ReadKind[]) => Promise<AccountView>;
+type ViewLoader = (
+  kinds: readonly ReadKind[],
+  workouts?: WorkoutReadSelection,
+) => Promise<AccountView>;
 
 const workoutKinds = [
   "workout",
@@ -44,10 +49,15 @@ type ToolResult = {
   isError?: boolean;
 };
 
-const ok = (value: Record<string, unknown>): ToolResult => ({
-  content: [{ type: "text", text: JSON.stringify(value) }],
-  structuredContent: value,
-});
+const ok = (value: Record<string, unknown>): ToolResult => {
+  const text = JSON.stringify(value);
+  if (new TextEncoder().encode(text).byteLength > MAX_PAGE_BYTES) {
+    return refuse(
+      "The result is too large. Use a smaller date range or page size where available.",
+    );
+  }
+  return { content: [{ type: "text", text }], structuredContent: value };
+};
 const refuse = (message: string): ToolResult => ({
   content: [{ type: "text", text: message }],
   isError: true,
@@ -61,7 +71,11 @@ const range = {
 const inRange = (time: number, from?: string, to?: string) =>
   (from === undefined || time >= Date.parse(from)) && (to === undefined || time < Date.parse(to));
 
-const startedAt = (workout: Shown) => Date.parse(String(workout.content.startedAt));
+const utcTime = (value: string) => new Date(value).toISOString();
+const utcRange = (from?: string, to?: string) => ({
+  ...(from === undefined ? {} : { from: utcTime(from) }),
+  ...(to === undefined ? {} : { to: utcTime(to) }),
+});
 const workoutCursor = z.object({ startedAt: isoTime, id: z.string().min(1) });
 
 const record = ({ id, revision, content }: Shown) => ({ id, revision, ...content });
@@ -147,9 +161,30 @@ function addWorkout(total: Totals, workout: Omit<Totals, "workouts">) {
   total.reps += workout.reps;
 }
 
-function weekOf(time: number, firstWeekday: number) {
-  const start = new Date(time);
-  start.setUTCHours(0, 0, 0, 0);
+const dateInZone = (timeZone: string) =>
+  new Intl.DateTimeFormat("en", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+
+const timeZoneName = z.string().refine((value) => {
+  try {
+    dateInZone(value);
+    return !/^[+-]/.test(value);
+  } catch {
+    return false;
+  }
+}, "Use an IANA time zone such as Europe/Berlin");
+
+function weekOf(time: number, firstWeekday: number, date: Intl.DateTimeFormat) {
+  const parts = Object.fromEntries(
+    date.formatToParts(time).map(({ type, value }) => [type, value]),
+  );
+  const start = new Date(
+    `${parts.year?.padStart(4, "0")}-${parts.month}-${parts.day}T00:00:00.000Z`,
+  );
   start.setUTCDate(start.getUTCDate() - ((start.getUTCDay() - firstWeekday + 7) % 7));
   return start.toISOString().slice(0, 10);
 }
@@ -186,19 +221,13 @@ export function registerReadTools(server: McpServer, load: ViewLoader): void {
       annotations: readOnly,
     },
     async ({ from, to, cursor, limit }) => {
-      const view = await load(workoutKinds);
+      const view = await load(workoutKinds, {
+        ...utcRange(from, to),
+        ...(cursor ? { cursor: { ...cursor, startedAt: utcTime(cursor.startedAt) } } : {}),
+        limit: limit + 1,
+      });
       const options = figureOptions(view);
-      const cursorTime = cursor ? Date.parse(cursor.startedAt) : 0;
-      const matching = view
-        .list("workout")
-        .filter((w) => inRange(startedAt(w), from, to))
-        .filter(
-          (w) =>
-            !cursor ||
-            startedAt(w) < cursorTime ||
-            (startedAt(w) === cursorTime && w.id > cursor.id),
-        )
-        .sort((a, b) => startedAt(b) - startedAt(a) || (a.id < b.id ? -1 : 1));
+      const matching = view.list("workout");
       const page = matching.slice(0, limit);
       const last = page.at(-1);
       return ok({
@@ -222,13 +251,10 @@ export function registerReadTools(server: McpServer, load: ViewLoader): void {
       annotations: readOnly,
     },
     async ({ id }) => {
-      const view = await load([
-        ...workoutKinds,
-        "workout_rest",
-        "workout_note",
-        "workout_note_comment",
-        ...noteKinds,
-      ]);
+      const view = await load(
+        [...workoutKinds, "workout_rest", "workout_note", "workout_note_comment", ...noteKinds],
+        { id },
+      );
       const workout = view.get("workout", id);
       if (!workout) return refuse(`No workout ${id}. list_workouts shows the workouts there are.`);
       const tree = view.tree(workout);
@@ -308,7 +334,7 @@ export function registerReadTools(server: McpServer, load: ViewLoader): void {
       annotations: readOnly,
     },
     async ({ exerciseId, limit }) => {
-      const view = await load(workoutKinds);
+      const view = await load(workoutKinds, { exerciseId, finished: true });
       const index = buildProgress(view.trees(), progressOptions(view));
       const history = index.byExercise.get(exerciseId);
       if (!history) {
@@ -347,6 +373,9 @@ export function registerReadTools(server: McpServer, load: ViewLoader): void {
         `trends. ${UNITS}`,
       inputSchema: z.object({
         ...range,
+        timeZone: timeZoneName
+          .default("UTC")
+          .describe("Time zone for grouping weeks, default UTC."),
         exercises: z
           .number()
           .int()
@@ -357,25 +386,22 @@ export function registerReadTools(server: McpServer, load: ViewLoader): void {
       }),
       annotations: readOnly,
     },
-    async ({ from, to, exercises }) => {
-      const view = await load(workoutKinds);
+    async ({ from, to, exercises, timeZone }) => {
+      const view = await load(workoutKinds, { ...utcRange(from, to), finished: true });
       const index = buildProgress(view.trees(), progressOptions(view));
-      const workouts = index.workouts.filter((w) => inRange(w.time, from, to));
+      const { workouts } = index;
       const totals = emptyTotals();
       const weeks = new Map<string, Totals>();
       const { firstWeekday } = view.settings();
+      const date = dateInZone(timeZone);
       for (const workout of workouts) {
         addWorkout(totals, workout);
-        const week = weekOf(workout.time, firstWeekday);
+        const week = weekOf(workout.time, firstWeekday, date);
         const weekTotals = weeks.get(week) ?? emptyTotals();
         addWorkout(weekTotals, workout);
         weeks.set(week, weekTotals);
       }
-      const byExercise = index.exercises
-        .map((history) => ({
-          history,
-          sessions: history.sessions.filter((s) => inRange(s.time, from, to)),
-        }))
+      const byExercise = [...index.exercises]
         .filter(({ sessions }) => sessions.length > 0)
         .sort((a, b) => b.sessions.length - a.sessions.length)
         .slice(0, exercises);
@@ -390,10 +416,10 @@ export function registerReadTools(server: McpServer, load: ViewLoader): void {
           sets: w.sets,
           reps: w.reps,
         })),
-        exercises: byExercise.map(({ history, sessions }) => ({
-          exerciseId: history.exerciseId,
-          name: history.name,
-          type: history.type,
+        exercises: byExercise.map(({ exerciseId, name, type, sessions }) => ({
+          exerciseId,
+          name,
+          type,
           sessions: [...sessions].reverse().map((s) => ({
             workoutId: s.workoutId,
             startedAt: s.startedAt,

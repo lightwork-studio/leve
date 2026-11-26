@@ -11,7 +11,7 @@ import {
   type WorkoutSetContent,
   type WorkoutTree,
 } from "@leve/core";
-import type { SyncService } from "../service.ts";
+import type { SyncService, WorkoutReadSelection } from "../service.ts";
 
 /** Every kind an MCP read can show. */
 const READ_KINDS = [
@@ -87,8 +87,9 @@ export class AccountView {
     account: string,
     release: ReleaseId,
     kinds: readonly ReadKind[],
+    workouts?: WorkoutReadSelection,
   ) {
-    const changes = await service.readKinds(account, kinds, release);
+    const changes = await service.readKinds(account, kinds, release, workouts);
     const shown = new Map<ReadKind, Shown[]>();
     for (const kind of kinds) {
       // Within one major release every live record is representable; anything else is skipped
@@ -167,12 +168,15 @@ export class AccountView {
       )
       .sort((a, b) => a.at - b.at);
     return (time) => {
-      let found: number | null = null;
-      for (const m of measured) {
-        if (m.at > time) break;
-        found = m.kg;
+      let low = 0;
+      let high = measured.length;
+      while (low < high) {
+        const middle = Math.floor((low + high) / 2);
+        const measurement = measured[middle];
+        if (measurement && measurement.at <= time) low = middle + 1;
+        else high = middle;
       }
-      return found;
+      return measured[low - 1]?.kg ?? null;
     };
   }
 

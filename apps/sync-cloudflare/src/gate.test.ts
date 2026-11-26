@@ -434,6 +434,7 @@ describe("signing in to MCP", () => {
       await signAccess({ nbf: now() + 600 }),
       await signAccess({}, { header: { alg: "RS256", typ: "JWT" } }),
       await signAccess({}, { header: { alg: "RS256" } }),
+      await signAccess({}, { header: { alg: "RS256", typ: { toString: null } } }),
       await signAccess({}, { header: { alg: "RS256", typ: "at+jwt", crit: ["x"] } }),
       `${encode({ alg: "none", typ: "at+jwt" })}.${payload}.`,
       `${encode({ alg: "HS256", typ: "at+jwt" })}.${payload}.${signature}`,

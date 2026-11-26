@@ -35,6 +35,8 @@ production Worker.
    Client ID Metadata Documents, or register an OAuth client with its own redirect URI and PKCE.
 2. Create the `leve:read` custom OAuth scope and grant it to the OAuth clients you want to test.
    For clients that omit a scope request, configure `leve:read` as a default for dynamic clients.
+   Keep Clerk's consent screen enabled and describe the synced data this scope reveals, including
+   workout notes and body measurements.
 3. From this directory, run `npx wrangler@4.158.0 secret put MCP_RESOURCE_URL` on the development
    Worker and enter the same HTTPS URL. Connect a Streamable HTTP MCP client to that URL and sign
    in with a test account that has synced data.
@@ -42,6 +44,8 @@ production Worker.
 The Worker publishes OAuth discovery at `/.well-known/oauth-protected-resource/mcp`. Issued JWTs
 are accepted until expiry. Delete `MCP_RESOURCE_URL` to turn off MCP immediately while phone sync
 continues. Reauthorizing the client may be needed when its audience or scopes change.
+For weekly progress, pass the lifter's IANA time zone to `get_progress` to match the phone's local
+week boundaries. The tool uses UTC when no time zone is supplied.
 
 [clerk-mcp]: https://clerk.com/docs/guides/ai/mcp/build-mcp-server
 

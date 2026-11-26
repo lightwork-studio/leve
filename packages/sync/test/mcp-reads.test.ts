@@ -2,15 +2,16 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { JsonObject, Submission } from "@leve/contract";
-import { ServerStorage } from "@leve/storage/server";
+import { ServerStorage, ServerTransaction } from "@leve/storage/server";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { type Principal, SCOPES, SyncService } from "../src/server/index.ts";
 import { createMcpEndpoint } from "../src/server/mcp/index.ts";
 import { engine } from "./support/harness.ts";
 
 const dirs: string[] = [];
 afterEach(() => {
+  vi.restoreAllMocks();
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
@@ -86,7 +87,11 @@ async function setup() {
   const dir = mkdtempSync(join(tmpdir(), "leve-mcp-"));
   dirs.push(dir);
   const storage = new ServerStorage({ engine, directory: dir, appVersion: "mcp-test" });
-  const service = new SyncService({ storage });
+  const service = new SyncService({
+    storage,
+    existingAccount: (account) =>
+      account === "carol" ? Promise.resolve(null) : storage.account(account),
+  });
   const endpoint = createMcpEndpoint({ service, version: "test" });
 
   await write(service, "alice", [
@@ -223,7 +228,7 @@ async function setup() {
     };
     return { client, call };
   };
-  return { service, endpoint, connect };
+  return { service, storage, endpoint, connect };
 }
 
 describe("MCP reads", () => {
@@ -305,6 +310,40 @@ describe("MCP reads", () => {
     expect(result.exerciseNotes).toMatchObject([{ text: "Elbows in" }]);
     const missing = await call("get_workout", { id: "nope" });
     expect(missing.isError).toBe(true);
+  });
+
+  it("groups weekly progress by the requested local date", async () => {
+    const { connect, service } = await setup();
+    await write(service, "alice", [
+      ["workout", "late", workout("Late", "2026-11-01T23:30:00.000Z", "2026-11-02T00:00:00.000Z")],
+    ]);
+    const { call } = await connect(agent("alice"));
+    const args = { from: "2026-11-01T23:00:00Z", to: "2026-11-02T01:00:00+01:00" };
+    expect((await call("get_progress", args)).structuredContent?.weeks).toMatchObject([
+      { weekStart: "2026-10-26", workouts: 1 },
+    ]);
+    expect(
+      (await call("get_progress", { ...args, timeZone: "Europe/Berlin" })).structuredContent?.weeks,
+    ).toMatchObject([{ weekStart: "2026-11-02", workouts: 1 }]);
+  });
+
+  it("loads sets only for workouts and exercises selected for the request", async () => {
+    const { connect } = await setup();
+    const all = vi.spyOn(ServerTransaction.prototype, "live");
+    const children = vi.spyOn(ServerTransaction.prototype, "liveChildren");
+    const { call } = await connect(agent("alice"));
+    await call("get_workout", { id: "w2" });
+    expect(all).not.toHaveBeenCalledWith("workout_set");
+    expect(children.mock.calls.filter(([, , kind]) => kind === "workout_set")).toEqual([
+      ["workout_exercise", "w2e1", "workout_set"],
+      ["workout_exercise", "w2e2", "workout_set"],
+    ]);
+    children.mockClear();
+    await call("get_exercise_history", { exerciseId: "builtin:barbell-bench-press" });
+    expect(children.mock.calls.filter(([, , kind]) => kind === "workout_set")).toEqual([
+      ["workout_exercise", "w2e2", "workout_set"],
+      ["workout_exercise", "w1e1", "workout_set"],
+    ]);
   });
 
   it("gives exercise history, records and progress from finished workouts only", async () => {
@@ -465,10 +504,12 @@ describe("MCP access is one account's", () => {
     expect(write.status).toBe(200);
   });
 
-  it("reaches a new account without creating anything another account can see", async () => {
-    const { connect } = await setup();
+  it("returns an empty result without invoking storage creation for an account with no data", async () => {
+    const { connect, storage } = await setup();
+    const createAccount = vi.spyOn(storage, "account");
     const { call } = await connect(agent("carol"));
     const workouts = (await call("list_workouts")).structuredContent as { workouts: unknown[] };
     expect(workouts.workouts).toEqual([]);
+    expect(createAccount).not.toHaveBeenCalled();
   });
 });
