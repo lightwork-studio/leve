@@ -52,13 +52,22 @@ stops until they pair again.
 ## Install
 
 `pnpm --filter @leve/sync-node bundle` builds one file, `dist/leve-sync.mjs`, that runs with Node 24
-and nothing else. Run it in one of these ways, and put HTTPS in front of it.
+and nothing else. Run it in one of these ways, and put HTTPS in front of it. Keep the data
+directory on a local disk: one server uses it at a time, held by a file lock that network
+filesystems may not honour.
 
 ### systemd
+
+```sh
+useradd --system --home-dir /var/lib/leve --shell /usr/sbin/nologin leve
+install -m 0755 apps/sync-node/dist/leve-sync.mjs /usr/local/bin/leve-sync
+install -d -o leve -g leve -m 0700 /var/backups/leve   # before the first start, see below
+```
 
 ```ini
 [Unit]
 Description=Leve sync
+Wants=network-online.target
 After=network-online.target
 
 [Service]
@@ -66,45 +75,61 @@ User=leve
 Group=leve
 Environment=LEVE_DATA=/var/lib/leve LEVE_ADMIN_SOCKET=/run/leve/admin.sock LEVE_SQLITE_WAL=1
 Environment=LEVE_PUBLIC_URL=https://sync.example.com PORT=8787
-ExecStart=/usr/bin/node /opt/leve/leve-sync.mjs serve
+ExecStart=/usr/local/bin/leve-sync serve
 StateDirectory=leve
 StateDirectoryMode=0700
 RuntimeDirectory=leve
 RuntimeDirectoryMode=0700
+UMask=0077
 Restart=always
 LimitNOFILE=65536
 NoNewPrivileges=yes
 PrivateTmp=yes
+PrivateDevices=yes
 ProtectSystem=strict
 ProtectHome=yes
-# The leading - lets the unit start before the backup folder exists.
-ReadWritePaths=/var/lib/leve -/var/backups/leve
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+# The backup folder must exist when the service starts, or it stays read-only until a restart.
+ReadWritePaths=/var/lib/leve /var/backups/leve
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-Administer it as the same user, with the same socket:
+`leve-sync` needs `node` (24 or later) on the PATH; otherwise use `ExecStart=/path/to/node
+/usr/local/bin/leve-sync serve`. Administer it as the same user, with the same socket:
 
 ```sh
-sudo -u leve LEVE_ADMIN_SOCKET=/run/leve/admin.sock node /opt/leve/leve-sync.mjs admin accounts list
+sudo -u leve LEVE_ADMIN_SOCKET=/run/leve/admin.sock leve-sync admin accounts list
+sudo -u leve LEVE_ADMIN_SOCKET=/run/leve/admin.sock leve-sync admin backup /var/backups/leve
 ```
 
 ### Container
 
-The [Containerfile](Containerfile) packages the bundle on `node:24-slim`, running as an unprivileged
-user with its data in a volume:
+The [Containerfile](Containerfile) packages the bundle on `node:24-slim`, running as user and group
+10001 with its data in a volume and a backups folder next to it:
 
 ```sh
 pnpm --filter @leve/sync-node bundle
 docker build -t leve-sync -f apps/sync-node/Containerfile apps/sync-node
-docker run -d --name leve -p 127.0.0.1:8787:8787 -v leve-data:/var/lib/leve \
+docker run -d --name leve --restart unless-stopped -p 127.0.0.1:8787:8787 \
+  -v leve-data:/var/lib/leve -v leve-backups:/var/backups/leve \
   -e LEVE_PUBLIC_URL=https://sync.example.com leve-sync
 docker exec leve leve-sync admin accounts add Alice
+docker exec leve leve-sync admin backup /var/backups/leve
 ```
 
-Write backups inside the volume (`leve-sync admin backup /var/lib/leve/backups`) or into a second
-mounted volume, then copy them off the machine.
+Run one container per volume. A second container on the same volume refuses to start, so stop the
+old one before starting its replacement. A bind mount instead of a volume needs to be owned by
+10001 (`chown -R 10001:10001 <folder>`).
 
 ### HTTPS in front
 

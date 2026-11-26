@@ -22,7 +22,7 @@ and follow the [mobile app guide](apps/mobile/README.md).
 The iPhone app stores workouts on the device. Sync runs on the
 [Cloudflare sync server](apps/sync-cloudflare/README.md) or on a
 [Node sync server you host yourself](apps/sync-node/README.md), which has its own accounts and
-paired phones; choosing your own server in the app is in development. Both are development
+paired phones; the app can't connect to one yet. Both are development
 previews: use disposable data in an environment you control. Hevy CSV import and MCP access are
 planned.
 
