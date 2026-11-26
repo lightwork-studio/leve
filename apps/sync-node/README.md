@@ -44,37 +44,83 @@ pnpm --filter @leve/sync-node admin accounts add Alice
 | `HOST`, `PORT`      | The public listener (default `127.0.0.1:8787`); put HTTPS in front of it |
 | `LEVE_SQLITE_WAL=1` | Write-ahead logging for account databases: one disk sync per commit      |
 
+One server uses a data directory at a time: a second refuses to start while the first runs.
+
 To cut every phone off at once, run `devices revoke --everyone`. Phones keep their data, and sync
 stops until they pair again.
 
-`pnpm --filter @leve/sync-node bundle` builds one file, `dist/server.mjs`, that runs with Node 24
-and nothing else. The benchmark server ran it under systemd behind Caddy, which serves HTTPS:
+## Install
+
+`pnpm --filter @leve/sync-node bundle` builds one file, `dist/leve-sync.mjs`, that runs with Node 24
+and nothing else. Run it in one of these ways, and put HTTPS in front of it.
+
+### systemd
 
 ```ini
+[Unit]
+Description=Leve sync
+After=network-online.target
+
 [Service]
 User=leve
-Environment=LEVE_DATA=/var/lib/leve/accounts PORT=8787 LEVE_SQLITE_WAL=1
-Environment=LEVE_PUBLIC_URL=https://sync.example.com LEVE_ADMIN_SOCKET=/run/leve/admin.sock
-ExecStart=/usr/local/bin/node /opt/leve/server.mjs serve
+Group=leve
+Environment=LEVE_DATA=/var/lib/leve LEVE_ADMIN_SOCKET=/run/leve/admin.sock LEVE_SQLITE_WAL=1
+Environment=LEVE_PUBLIC_URL=https://sync.example.com PORT=8787
+ExecStart=/usr/bin/node /opt/leve/leve-sync.mjs serve
+StateDirectory=leve
+StateDirectoryMode=0700
 RuntimeDirectory=leve
 RuntimeDirectoryMode=0700
 Restart=always
 LimitNOFILE=65536
+NoNewPrivileges=yes
+PrivateTmp=yes
 ProtectSystem=strict
-ReadWritePaths=/var/lib/leve
+ProtectHome=yes
+# The leading - lets the unit start before the backup folder exists.
+ReadWritePaths=/var/lib/leve -/var/backups/leve
+
+[Install]
+WantedBy=multi-user.target
 ```
 
 Administer it as the same user, with the same socket:
 
 ```sh
-sudo -u leve LEVE_ADMIN_SOCKET=/run/leve/admin.sock node /opt/leve/server.mjs admin accounts list
+sudo -u leve LEVE_ADMIN_SOCKET=/run/leve/admin.sock node /opt/leve/leve-sync.mjs admin accounts list
 ```
+
+### Container
+
+The [Containerfile](Containerfile) packages the bundle on `node:24-slim`, running as an unprivileged
+user with its data in a volume:
+
+```sh
+pnpm --filter @leve/sync-node bundle
+docker build -t leve-sync -f apps/sync-node/Containerfile apps/sync-node
+docker run -d --name leve -p 127.0.0.1:8787:8787 -v leve-data:/var/lib/leve \
+  -e LEVE_PUBLIC_URL=https://sync.example.com leve-sync
+docker exec leve leve-sync admin accounts add Alice
+```
+
+Write backups inside the volume (`leve-sync admin backup /var/lib/leve/backups`) or into a second
+mounted volume, then copy them off the machine.
+
+### HTTPS in front
+
+Phones only connect over HTTPS. The proxy must pass request bodies of at least 1 MiB and keep a
+request open for at least 60 seconds, because phones wait on the server for changes for up to 25
+seconds at a time. Caddy does both by default:
 
 ```text
 sync.example.com {
 	reverse_proxy 127.0.0.1:8787
 }
 ```
+
+With nginx, set `client_max_body_size 2m;` and keep `proxy_read_timeout` at 60 seconds or more. A
+server behind a path (`https://example.com/leve`) works: set `LEVE_PUBLIC_URL` to that address
+and have the proxy strip the path.
 
 ## Backups and restores
 

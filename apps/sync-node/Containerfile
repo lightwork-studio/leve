@@ -1,0 +1,25 @@
+# The self-hosted sync server as a container. It runs the single-file bundle, so build that first:
+#
+#   pnpm --filter @leve/sync-node bundle
+#   docker build -t leve-sync -f apps/sync-node/Containerfile apps/sync-node
+#
+# The image holds no data: mount a volume at /var/lib/leve and keep it backed up.
+FROM docker.io/library/node:24-slim
+
+RUN useradd --system --home-dir /var/lib/leve --shell /usr/sbin/nologin leve \
+  && install -d -o leve -g leve -m 0700 /var/lib/leve /run/leve
+COPY --chmod=0644 dist/leve-sync.mjs /usr/local/lib/leve-sync.mjs
+RUN printf '#!/bin/sh\nexec node /usr/local/lib/leve-sync.mjs "$@"\n' > /usr/local/bin/leve-sync \
+  && chmod 0755 /usr/local/bin/leve-sync
+
+USER leve
+ENV LEVE_DATA=/var/lib/leve \
+  LEVE_ADMIN_SOCKET=/run/leve/admin.sock \
+  LEVE_SQLITE_WAL=1 \
+  HOST=0.0.0.0 \
+  PORT=8787
+VOLUME /var/lib/leve
+EXPOSE 8787
+STOPSIGNAL SIGTERM
+ENTRYPOINT ["leve-sync"]
+CMD ["serve"]
