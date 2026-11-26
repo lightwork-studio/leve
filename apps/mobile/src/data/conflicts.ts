@@ -48,6 +48,7 @@ export interface Conflict {
   subtitle: string | null;
   phone: ConflictSide;
   account: ConflictSide;
+  accountLabel?: string;
   /** The records as shown, so a choice made on an outdated view is refused. */
   records: DeviceRecord[];
   /**
@@ -108,6 +109,8 @@ function resolutionFor(row: DeviceRecord, side: Side): Resolution["choice"] | "w
     case "both":
       return "keep_mine";
     case "gone_there":
+      // Settings always uses its singleton ID, including when the destination has no copy.
+      if (row.kind === "settings" && row.server === null) return "keep_mine";
       // A record under a deleted ancestor, or sharing its parent's id, goes along with that copy.
       if (row.problem?.reason === "parent_deleted" || row.kind === "workout_rest")
         return "with_parent";
@@ -832,6 +835,12 @@ function describe(
   const ownerGoneThere = ownerCase === "gone_there";
   const ownerGoneHere = ownerCase === "gone_here";
   const goneBoth = ownerCase === "gone_both";
+  const missingSettings = owner.kind === "settings" && owner.server === null;
+  const accountLabel = missingSettings
+    ? owner.keptContent
+      ? "Previous synced settings"
+      : "Default settings"
+    : null;
   const rejected = records.some((row) => recordCase(row) === "rejected");
   // Named after the topmost record that clashes, not the group: an exercise deleted in the
   // account leaves its workout in place either way.
@@ -841,6 +850,7 @@ function describe(
     title,
     subtitle,
     records,
+    ...(accountLabel ? { accountLabel } : {}),
     phone: {
       lines: phone,
       choosable: phoneOk,
@@ -866,13 +876,15 @@ function describe(
     account: {
       lines: account,
       choosable: true,
-      confirm: goneBoth
-        ? "Keep it deleted"
-        : ownerGoneThere
-          ? "Delete it"
-          : rejected
-            ? "Undo my change"
-            : "Keep this version",
+      confirm: accountLabel
+        ? `Use ${accountLabel.toLowerCase()}`
+        : goneBoth
+          ? "Keep it deleted"
+          : ownerGoneThere
+            ? "Delete it"
+            : rejected
+              ? "Undo my change"
+              : "Keep this version",
     },
   };
 }

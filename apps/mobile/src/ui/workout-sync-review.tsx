@@ -287,7 +287,7 @@ export function WorkoutSyncReview({
               {record.status === "invalid"
                 ? "This workout is too large to delete in one sync. Restore it to review its exercises and sets."
                 : !record.server
-                  ? "The restored server has no copy of this workout. Restore the previous copy and its exercises to review them."
+                  ? "The sync server has no copy of this workout. Restore the previous copy and its exercises to review them."
                   : "This workout changed after you deleted it. Restore it to review its exercises and sets before deleting it again."}
             </Text>
             {action("Restore workout to review", "keep_theirs", "primary")}

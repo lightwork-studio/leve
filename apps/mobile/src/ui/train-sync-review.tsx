@@ -63,12 +63,12 @@ export function TrainSyncReview({ record }: { record: DeviceRecord }) {
     restore: !record.server
       ? `You deleted “${title}” here, and the server was then restored without it. Restore the copy from before to see it, then delete it again if you still want to.`
       : restored
-        ? `You deleted “${title}” here, but the restored server still has it. Restore it to see it, then delete it again if you still want to.`
+        ? `You deleted “${title}” here, but the sync server still has it. Restore it to see it, then delete it again if you still want to.`
         : `You deleted “${title}” here, but it changed on another device first. Restore it to see the changes, then delete it again if you still want to.`,
     deleted_elsewhere: restored
-      ? `“${title}” is deleted on the restored server. ${saveNew}, or let it go.`
+      ? `“${title}” is deleted on the sync server. ${saveNew}, or let it go.`
       : `“${title}” was deleted on another device while it had changes here. ${saveNew}, or let it go.`,
-    missing_on_server: `The restored server has no copy of “${title}” as this device has it. ${saveNew}, or ${record.keptContent ? "use the previous server copy" : "let it go"}.`,
+    missing_on_server: `The sync server has no copy of “${title}” as this device has it. ${saveNew}, or ${record.keptContent ? "use the previous server copy" : "let it go"}.`,
     both_changed: "This folder changed here and on another device.",
   }[kase];
   return (

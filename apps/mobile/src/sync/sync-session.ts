@@ -18,8 +18,9 @@ export type SyncPrompt =
   /** This phone has sample data or the account already holds data. */
   | { kind: "combine"; sampleData?: true }
   /**
-   * This phone's data belongs to another account (or, after a build change, another server), and
-   * some of it hasn't synced. The app counts the changes when it asks, as they can grow meanwhile.
+   * This phone's data belongs to another account and some of it hasn't synced, or it belongs to
+   * another server (whether or not all of it synced: the person may want to bring it along). The
+   * app counts the changes when it asks, as they can grow meanwhile.
    */
   | { kind: "switch"; reason: "account" | "server" }
   /** The server no longer accepts the sign-in. */
@@ -45,8 +46,8 @@ export interface SyncSessionOptions {
   app: string;
   /** A session token for the account, or null without one. `fresh` skips a cached token. */
   token(fresh: boolean): Promise<string | null>;
-  /** Downloaded changes were applied: screens should read the store again. */
-  onPulled(): void;
+  /** Sync changed the device store, so screens should read it again. */
+  onStoreChanged(): void;
   onStatus(status: SyncStatus): void;
   /**
    * Delete this phone's data and open an empty store, which a new session then syncs. This session
@@ -234,6 +235,18 @@ export class SyncSession {
     this.#options.startOver();
   }
 
+  /**
+   * The answer to "switch" when the phone used another server: bring this phone's data to this
+   * server and account instead of deleting it. The old server keeps its copy.
+   */
+  moveLocalData(): void {
+    const prompt = this.#status.prompt;
+    if (this.#stopped || prompt?.kind !== "switch" || prompt.reason !== "server") return;
+    this.#options.store.moveTo(this.#options.server, this.#options.account);
+    this.#options.onStoreChanged();
+    this.#resume();
+  }
+
   /** Try again after a sign-in prompt, for example once the person signed in again. */
   retry(): void {
     if (this.#status.prompt?.kind !== "sign_in") return;
@@ -368,10 +381,13 @@ export class SyncSession {
     } else if (state.account !== this.#options.account || state.server !== this.#options.server) {
       // Never take a workout in progress away; look again once it ends.
       if (store.activeWorkout()) return this.#timing.busy;
-      if (unsyncedChanges(store) > 0) {
+      const otherServer = state.server !== this.#options.server;
+      // Another server: ask, even with everything synced, since the person may want to bring the
+      // phone's data along rather than start from what the new server holds.
+      if (unsyncedChanges(store) > 0 || (otherServer && hasLocalData(store))) {
         this.#ask({
           kind: "switch",
-          reason: state.account !== this.#options.account ? "account" : "server",
+          reason: otherServer ? "server" : "account",
         });
         return null;
       }
@@ -385,11 +401,17 @@ export class SyncSession {
       return null;
     }
     if (this.#stopped) return null;
-    return this.#handle(await this.#client.sync());
+    const restoring = store.syncState().restoring;
+    const outcome = await this.#client.sync();
+    if (this.#stopped) return null;
+    return this.#handle(outcome, restoring && !store.syncState().restoring);
   }
 
-  #handle(outcome: SyncOutcome): number | null {
+  #handle(outcome: SyncOutcome, completedRestore = false): number | null {
     if (this.#stopped) return null;
+    if (completedRestore || (outcome.state === "synced" && outcome.pulled > 0)) {
+      this.#options.onStoreChanged();
+    }
     this.#checkingSignIn = false;
     // The fresh-token retry counts only once the server has answered it.
     if (outcome.state !== "signed_out") this.#retriedSignIn = false;
@@ -402,7 +424,6 @@ export class SyncSession {
           failingSince: null,
           ...(this.#status.prompt?.kind === "sign_in" ? { prompt: null } : {}),
         });
-        if (outcome.pulled > 0) this.#options.onPulled();
         return null;
       case "offline": {
         const steps = this.#timing.offline;

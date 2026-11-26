@@ -53,6 +53,9 @@ vi.mock("../src/sync/sync-session.ts", () => ({
     replaceLocalData() {
       this.calls.push("replace");
     }
+    moveLocalData() {
+      this.calls.push("move");
+    }
     retry() {
       this.calls.push("retry");
     }
@@ -97,10 +100,12 @@ const data = vi.hoisted(() => ({
   exported: 0,
   resets: [] as boolean[],
   unsyncedCount: 0,
+  unavailableRecords: false,
   store: {
     activeWorkout: () => (data.workout ? { id: "w" } : null),
     syncState: () => ({ account: data.account, server: data.server }),
     hasUnsyncedWork: () => data.unsynced,
+    hasUnavailableRecords: () => data.unavailableRecords,
     db: { get: () => ({ n: data.workouts }) },
   },
 }));
@@ -188,6 +193,7 @@ beforeEach(() => {
     exported: 0,
     resets: [],
     unsyncedCount: 0,
+    unavailableRecords: false,
   });
   Object.assign(pending, { conflicts: [], settled: [], refuse: null });
   Object.assign(route, { path: "/", pushed: [] });
@@ -424,9 +430,9 @@ describe("a server the person paired", () => {
     data.account = "user_1";
     data.unsyncedCount = 2;
     await report({ prompt: { kind: "switch", reason: "server" } });
-    expect(screen()).toContain("Switching back keeps them for the other server");
+    expect(screen()).toContain("2 changes that haven't reached the previous server");
     expect(screen()).not.toContain("Keep them and sign out");
-    await tap("Keep them and switch back");
+    await tap("Switch back");
     // Back on the build's own server, signed in with Clerk.
     expect(ownServer()).toBeNull();
     expect(session().options).toMatchObject({ server: "https://sync.test", account: "user_1" });
@@ -440,7 +446,7 @@ describe("a server the person paired", () => {
     data.account = home.account;
     data.unsyncedCount = 1;
     await report({ prompt: { kind: "switch", reason: "server" } });
-    await tap("Keep them and switch back");
+    await tap("Switch back");
     expect(ownServer()).toEqual(home);
     expect(session().options).toMatchObject({ server: home.server });
   });
@@ -477,7 +483,7 @@ describe("a server the person paired", () => {
     expect(screen()).not.toContain("switch back");
   });
 
-  it("offers nothing but waiting when the data belongs to a server neither choice is", async () => {
+  it("offers no way back when the data belongs to a server neither choice is", async () => {
     chooseOwnServer({ ...home, server: "https://third.example", device: "d3" });
     chooseOwnServer(home);
     data.server = "https://sync.test";
@@ -485,8 +491,8 @@ describe("a server the person paired", () => {
     await render();
     data.unsyncedCount = 1;
     await report({ prompt: { kind: "switch", reason: "server" } });
-    expect(screen()).toContain("Not now keeps it here, unsynced");
-    expect(screen()).not.toContain("Keep them and");
+    expect(screen()).toContain("Bring them to this server");
+    expect(screen()).not.toContain("Switch back");
   });
 
   it("syncs nowhere while the keychain can't be read", async () => {
@@ -531,7 +537,53 @@ describe("a server the person paired", () => {
     chooseOwnServer(home);
     await render();
     await report({ prompt: { kind: "switch", reason: "server" } });
-    expect(screen()).not.toContain("Keep them and switch back");
+    expect(screen()).not.toContain("Switch back");
+  });
+
+  it("offers to bring the phone's data along to another server, even with all of it synced", async () => {
+    chooseOwnServer(home);
+    data.server = "https://sync.test";
+    data.account = "user_1";
+    await render();
+    data.unsyncedCount = 0;
+    await report({ prompt: { kind: "switch", reason: "server" } });
+    expect(screen()).toContain(
+      "Bringing your data adds it to account “acc-home” on sync.home.example.",
+    );
+    expect(screen()).toContain("That server keeps its copy.");
+    await tap("Bring them to this server");
+    expect(session().calls).toContain("move");
+    expect(session().calls).not.toContain("replace");
+  });
+
+  it("starts from the new server's data only when asked", async () => {
+    chooseOwnServer(home);
+    data.server = "https://sync.test";
+    data.account = "user_1";
+    await render();
+    data.unsyncedCount = 3;
+    await report({ prompt: { kind: "switch", reason: "server" } });
+    await tap("Delete 3 changes and start over");
+    expect(screen()).toContain("Delete unsynced changes?");
+    expect(session().calls).not.toContain("replace");
+    await tap("Delete and start over");
+    expect(session().calls).toContain("replace");
+    expect(session().calls).not.toContain("move");
+  });
+  it("asks for an update instead of offering to move unreadable records", async () => {
+    chooseOwnServer(home);
+    data.server = "https://sync.test";
+    data.account = "user_1";
+    data.unavailableRecords = true;
+    try {
+      await render();
+      await report({ prompt: { kind: "switch", reason: "server" } });
+      expect(screen()).toContain("Update Leve before moving");
+      expect(screen()).not.toContain("Bring them to this server");
+      expect(screen()).toContain("Save a copy first");
+    } finally {
+      data.unavailableRecords = false;
+    }
   });
 });
 

@@ -11,6 +11,7 @@ import { SyncService, serviceTransport } from "@leve/sync/server";
 import initSqlJs from "sql.js";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { conflicts, settleConflict } from "../src/data/conflicts.ts";
+import { saveSettings, settingsContent } from "../src/data/settings-actions.ts";
 
 /* Real conflicts, made by two phones syncing one account through a real sync service. */
 
@@ -597,3 +598,102 @@ it("still asks about clashes beside a deletion a restored server never had", asy
   const s2 = conflicts(b.store).find((item) => item.key === "workout:w1")!;
   expect(s2.records.map((row) => row.id)).toEqual(["s2"]);
 });
+
+it.each([
+  [false, "phone", "lbs"],
+  [false, "account", null],
+  [true, "account", "kg"],
+] as const)(
+  "settles moved settings in the popup when the destination has no copy (prior copy: %s, choice: %s)",
+  async (hasPrevious, choice, unit) => {
+    const { store } = await phone("settings-move");
+    store.bindAccount("s", "alice");
+    store.setNegotiated("1.0", [], "source");
+    const previous = {
+      kind: "settings",
+      id: "settings",
+      state: "live",
+      revision: 1,
+      content: settingsContent(null, { weightUnit: "kg" }),
+    } as const;
+    if (hasPrevious) store.applyPull([previous], 1);
+    saveSettings(store, { weightUnit: "lbs" });
+    const [outgoing] = store.prepareSubmissions("1.0");
+    if (!outgoing) throw Error("expected settings ready to upload");
+    store.applyPushResults([
+      {
+        status: "conflict",
+        submissionId: outgoing.submission.submissionId,
+        reason: "stale",
+        current: hasPrevious ? { ...previous, revision: 2 } : null,
+      },
+    ]);
+
+    store.moveTo("destination", "bob");
+    expect(conflicts(store)).toEqual([]);
+    const client = new SyncClient({
+      store,
+      transport: serviceTransport(service, "bob"),
+      server: "destination",
+      account: "bob",
+      app: "test",
+    });
+    expect((await client.sync()).state).toBe("synced");
+    const [shown] = conflicts(store);
+    if (!shown) throw Error("expected a settings conflict in the popup");
+    expect(shown.accountLabel).toBe(hasPrevious ? "Previous synced settings" : "Default settings");
+    settleConflict(store, shown, choice);
+    expect(conflicts(store)).toEqual([]);
+    expect((await client.sync()).state).toBe("synced");
+    const synced = await service.read("bob", "settings", "settings", "1.0");
+    if (unit === null) expect(synced).toBeNull();
+    else expect(synced).toMatchObject({ id: "settings", content: { weightUnit: unit } });
+  },
+);
+
+it.each([
+  ["phone", "lbs"],
+  ["account", "kg"],
+] as const)(
+  "settles settings against a populated destination by choosing %s",
+  async (choice, unit) => {
+    const { store: other } = await phone("destination-settings");
+    const transport = serviceTransport(service, "bob");
+    const destination = new SyncClient({
+      store: other,
+      transport,
+      server: "destination",
+      account: "bob",
+      app: "test",
+    });
+    saveSettings(other, { weightUnit: "kg" });
+    expect((await destination.sync()).state).toBe("synced");
+
+    const { store, sync } = await phone("settings-to-move");
+    saveSettings(store, { weightUnit: "lbs" });
+    await sync();
+    store.moveTo("destination", "bob");
+    const moved = new SyncClient({
+      store,
+      transport,
+      server: "destination",
+      account: "bob",
+      app: "test",
+    });
+    expect((await moved.sync()).state).toBe("synced");
+    const [shown] = conflicts(store);
+    if (!shown) throw Error("expected a settings conflict in the popup");
+    expect(shown).toMatchObject({
+      title: "Settings",
+      phone: { lines: [{ label: "Weight unit", value: "lbs" }] },
+      account: { lines: [{ label: "Weight unit", value: "kg" }] },
+    });
+    expect(shown.accountLabel).toBeUndefined();
+    settleConflict(store, shown, choice);
+    expect((await moved.sync()).state).toBe("synced");
+    expect(conflicts(store)).toEqual([]);
+    expect(await service.read("bob", "settings", "settings", "1.0")).toMatchObject({
+      content: { weightUnit: unit },
+    });
+  },
+);
