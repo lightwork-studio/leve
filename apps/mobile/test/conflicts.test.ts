@@ -650,3 +650,50 @@ it.each([
     else expect(synced).toMatchObject({ id: "settings", content: { weightUnit: unit } });
   },
 );
+
+it.each([
+  ["phone", "lbs"],
+  ["account", "kg"],
+] as const)(
+  "settles settings against a populated destination by choosing %s",
+  async (choice, unit) => {
+    const { store: other } = await phone("destination-settings");
+    const transport = serviceTransport(service, "bob");
+    const destination = new SyncClient({
+      store: other,
+      transport,
+      server: "destination",
+      account: "bob",
+      app: "test",
+    });
+    saveSettings(other, { weightUnit: "kg" });
+    expect((await destination.sync()).state).toBe("synced");
+
+    const { store, sync } = await phone("settings-to-move");
+    saveSettings(store, { weightUnit: "lbs" });
+    await sync();
+    store.moveTo("destination", "bob");
+    const moved = new SyncClient({
+      store,
+      transport,
+      server: "destination",
+      account: "bob",
+      app: "test",
+    });
+    expect((await moved.sync()).state).toBe("synced");
+    const [shown] = conflicts(store);
+    if (!shown) throw Error("expected a settings conflict in the popup");
+    expect(shown).toMatchObject({
+      title: "Settings",
+      phone: { lines: [{ label: "Weight unit", value: "lbs" }] },
+      account: { lines: [{ label: "Weight unit", value: "kg" }] },
+    });
+    expect(shown.accountLabel).toBeUndefined();
+    settleConflict(store, shown, choice);
+    expect((await moved.sync()).state).toBe("synced");
+    expect(conflicts(store)).toEqual([]);
+    expect(await service.read("bob", "settings", "settings", "1.0")).toMatchObject({
+      content: { weightUnit: unit },
+    });
+  },
+);
