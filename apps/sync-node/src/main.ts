@@ -54,6 +54,7 @@ function engine(wal: boolean): SqlEngine {
 }
 
 async function serve(config: Config): Promise<void> {
+  process.umask(process.umask() | 0o077);
   const { directory } = config;
   for (const warning of config.warnings) console.warn(warning);
   mkdirSync(directory, { recursive: true, mode: 0o700 });
@@ -70,7 +71,11 @@ async function serve(config: Config): Promise<void> {
     const token = readFileSync(config.benchmarkTokenFile, "utf8").trim();
     server = createSyncServer({ storage, authenticate: sharedTokenAuth(token), benchmark: true });
   } else {
-    accounts = Accounts.open({ engine: sqlite, path: join(directory, "accounts.db") });
+    accounts = Accounts.open({
+      engine: createNodeSqliteEngine(),
+      path: join(directory, "accounts.db"),
+      wal: config.wal,
+    });
     const onError = (error: unknown) => console.error("request failed", error);
     server = createSyncServer({
       storage,
