@@ -3275,17 +3275,18 @@ it("keeps both recorded versions when an open set editor becomes stale", async (
   expect(host.textContent).not.toContain("Save changes");
 });
 
-it("offers workout notes immediately and reads the notes after the workout transition", async () => {
+it("reuses the workout notes snapshot when the transition settles", async () => {
   beginWorkout(store);
   const list = vi.spyOn(store, "list");
   settled = false;
   try {
     await act(() => root.render(h(ActiveWorkoutScreen)));
     expect(host.querySelector('[aria-label="Workout notes, 0"]')).not.toBeNull();
-    expect(list.mock.calls.filter(([kind]) => kind === "workout_note")).toHaveLength(0);
+    expect(list.mock.calls.filter(([kind]) => kind === "workout_note")).toHaveLength(1);
+    list.mockClear();
     settled = true;
     await act(() => root.render(h(ActiveWorkoutScreen)));
-    expect(list.mock.calls.some(([kind]) => kind === "workout_note")).toBe(true);
+    expect(list.mock.calls.filter(([kind]) => kind === "workout_note")).toHaveLength(0);
   } finally {
     settled = true;
     list.mockRestore();
@@ -4161,6 +4162,7 @@ describe("the logging dock and the number pad", () => {
         content: { workoutId: workout, pinned: false, text: "Seat 3", createdAt: "", agent: null },
       } as never,
     ]);
+    change(() => {});
     try {
       await act(() => root.render(h(ActiveWorkoutScreen)));
       await openRest();
@@ -4172,6 +4174,7 @@ describe("the logging dock and the number pad", () => {
       expect(restDialog()).toBeNull();
     } finally {
       review.mockRestore();
+      change(() => {});
     }
     await act(() => root.render(h(ActiveWorkoutScreen)));
 
@@ -4276,7 +4279,7 @@ describe("the minimised workout", () => {
     expect(host.querySelector('[aria-label="Log set 2 of Bench Press"]')).not.toBeNull();
   });
 
-  it("resumes with the logged values and previous-set suggestions before the transition ends", async () => {
+  it("resumes with notes, logged values, and previous-set suggestions before the transition ends", async () => {
     const past = beginWorkout(store);
     const pastBench = addExercise(store, past, EXERCISES.bench, 0);
     const pastSquat = addExercise(store, past, EXERCISES.squat, 0);
@@ -4290,6 +4293,13 @@ describe("the minimised workout", () => {
     const workout = beginWorkout(store);
     addExercise(store, workout, EXERCISES.bench, 0);
     const squat = addExercise(store, workout, EXERCISES.squat, 0);
+    writeWorkoutNote(store, workout, null, { text: "Use rack three", pinned: false });
+    addExerciseNote(store, {
+      exerciseId: EXERCISES.squat.id,
+      workoutId: null,
+      text: "Brace before unracking",
+      pinned: true,
+    });
     for (let i = 0; i < 10; i++) addSet(store, squat);
     const mini = () => act(() => root.render(h(MiniPlayer)));
     await mini();
@@ -4314,6 +4324,8 @@ describe("the minimised workout", () => {
         "disabled",
         false,
       );
+      expect(host.querySelector('[aria-label="Workout notes, 1"]')).not.toBeNull();
+      expect(host.querySelector('[aria-label="Pinned. Brace before unracking"]')).not.toBeNull();
       expect(list).not.toHaveBeenCalled();
       expect(syncState.mock.calls.length).toBeLessThanOrEqual(6);
 
@@ -4326,6 +4338,36 @@ describe("the minimised workout", () => {
       syncState.mockRestore();
     }
   });
+
+  it.each(["direct open", "resume before the mini-player catches up"])(
+    "reads current notes on the first frame on %s",
+    async (entry) => {
+      const workout = beginWorkout(store);
+      addExercise(store, workout, EXERCISES.bench, 0);
+      if (entry === "resume before the mini-player catches up") {
+        await act(() => root.render(h(MiniPlayer)));
+      }
+      change((db) => {
+        writeWorkoutNote(db, workout, null, { text: "Keep rests short", pinned: false });
+        addExerciseNote(db, {
+          exerciseId: EXERCISES.bench.id,
+          workoutId: workout,
+          text: "Pause on the chest",
+          pinned: false,
+        });
+      }, "active-workout");
+
+      settled = false;
+      onTestFinished(() => {
+        settled = true;
+      });
+      if (entry !== "direct open") await press("Resume Workout");
+      await act(() => root.render(h(ActiveWorkoutScreen)));
+      expect(host.querySelector('[aria-label="Pause on the chest"]')).not.toBeNull();
+      await press("Workout notes, 1");
+      expect(host.textContent).toContain("Keep rests short");
+    },
+  );
 
   it.each([
     "unchanged",
@@ -6092,12 +6134,14 @@ describe("notes where they apply", () => {
     // A later reply from the agent opens the replies again while the note is shown.
     await press("1 reply");
     expect(host.textContent).not.toContain("Drop the weight 5 kg today");
-    store.put("exercise_note_comment", "reply-2", {
-      noteId: lastTime,
-      text: "Good, keep it there",
-      createdAt: "2026-03-02T09:40:00.000Z",
-      agent: "Coach",
-    });
+    change((db) =>
+      db.put("exercise_note_comment", "reply-2", {
+        noteId: lastTime,
+        text: "Good, keep it there",
+        createdAt: "2026-03-02T09:40:00.000Z",
+        agent: "Coach",
+      }),
+    );
     await render();
     expect(host.textContent).toContain("Good, keep it there");
     expect(labels(/sore|repl/)).toEqual(["Last time. Elbow felt sore. 2 replies", "2 replies"]);

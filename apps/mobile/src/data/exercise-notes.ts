@@ -76,30 +76,39 @@ export function commentsByNote(store: DeviceStore, kind: NoteKind) {
  * The notes each exercise card of a workout shows, by exercise id. Notes that aren't pinned are due
  * once, in the next workout that includes their exercise.
  */
-export function workoutExerciseNotes(
+export function workoutExerciseNotesData(
   store: DeviceStore,
   workoutId: string,
-  history: ReadonlyMap<string, WithId<Workout>[]> = workoutsByExercise(store),
-): Map<string, ExerciseCardNotes> {
-  const result = new Map<string, ExerciseCardNotes>();
+  readHistory: () => ReadonlyMap<string, WithId<Workout>[]> = () => workoutsByExercise(store),
+) {
+  const byExercise = new Map<string, ExerciseCardNotes>();
+  const empty = { byExercise, comments: new Map<string, NoteComment[]>() };
   const row = store.get("workout", workoutId);
-  if (!row?.content || row.deleted) return result;
+  if (!row?.content || row.deleted) return empty;
   const target: WithId<Workout> = { id: workoutId, content: row.content as unknown as Workout };
   const exerciseIds = new Set(
     store
       .list("workout_exercise", { parentId: workoutId })
       .map((entry) => (entry.content as unknown as WorkoutEntry).exerciseId),
   );
-  if (exerciseIds.size === 0) return result;
+  if (exerciseIds.size === 0) return empty;
   const notes = exerciseNotesByExercise(store);
-  if (![...exerciseIds].some((id) => notes.has(id))) return result;
+  if (![...exerciseIds].some((id) => notes.has(id))) return empty;
   const comments = commentsByNote(store, "exercise_note");
+  const history = readHistory();
   for (const exerciseId of exerciseIds) {
     const own = notes.get(exerciseId);
     if (!own) continue;
-    result.set(exerciseId, exerciseCardNotes(own, target, history.get(exerciseId) ?? [], comments));
+    byExercise.set(
+      exerciseId,
+      exerciseCardNotes(own, target, history.get(exerciseId) ?? [], comments),
+    );
   }
-  return result;
+  return { byExercise, comments };
+}
+
+export function workoutExerciseNotes(store: DeviceStore, workoutId: string) {
+  return workoutExerciseNotesData(store, workoutId).byExercise;
 }
 
 /**
