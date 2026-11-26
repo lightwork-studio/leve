@@ -62,10 +62,12 @@ filesystems may not honour.
 ### systemd
 
 ```sh
-useradd --system --home-dir /var/lib/leve --shell /usr/sbin/nologin leve
+useradd --system --user-group --home-dir /var/lib/leve --shell /usr/sbin/nologin leve
 install -m 0755 apps/sync-node/dist/leve-sync.mjs /usr/local/bin/leve-sync
 install -d -o leve -g leve -m 0700 /var/backups/leve   # before the first start, see below
 ```
+
+Save the unit as `/etc/systemd/system/leve.service`:
 
 ```ini
 [Unit]
@@ -108,7 +110,8 @@ WantedBy=multi-user.target
 ```
 
 `leve-sync` needs `node` (24 or later) on the PATH; otherwise use `ExecStart=/path/to/node
-/usr/local/bin/leve-sync serve`. Administer it as the same user, with the same socket:
+/usr/local/bin/leve-sync serve`. Run `systemctl daemon-reload` and
+`systemctl enable --now leve.service`. Administer it as the same user, with the same socket:
 
 ```sh
 sudo -u leve LEVE_ADMIN_SOCKET=/run/leve/admin.sock leve-sync admin accounts list
@@ -131,8 +134,9 @@ docker exec leve leve-sync admin backup /var/backups/leve
 ```
 
 Run one container per volume. A second container on the same volume refuses to start, so stop the
-old one before starting its replacement. A bind mount instead of a volume needs to be owned by
-10001 (`chown -R 10001:10001 <folder>`).
+old one before starting its replacement. Create bind-mount directories with
+`install -d -o 10001 -g 10001 -m 0700 <folder>`. For an existing directory, verify that the
+service user owns the directory and its files and that only that user can read them.
 
 ### HTTPS in front
 
@@ -182,14 +186,23 @@ What a restore can't bring back:
 Restoring account databases by copying files, rather than with `restore`, is noticed only once a
 phone's cursor is ahead of the restored account, so use the command.
 
+If the live workout database is damaged and the command cannot save the copy it would replace,
+stop the service. Move the live `account-<id>.db` and any matching `-journal`, `-wal` and
+`-shm` files together to a private recovery directory. Restart the service and use `restore`
+with a verified backup. Keep the moved files until you confirm the result.
+
 ### Restoring accounts.db
 
-`accounts.db` has no restore command, because it holds the server's sign-ins rather than
-anyone's workouts. If it is lost or damaged, first note `accounts list` if you still can. Then stop the server, delete `accounts.db` together with
-any `accounts.db-journal`, `accounts.db-wal` and `accounts.db-shm` next to it (an old journal
-would be applied to the copy), copy the backup's `accounts.db` in and start the server. Phones
-paired after that backup have to pair again. **Phones signed out after the backup can sign in
-again**, so run `devices list` and revoke them once more. Accounts created after that backup are
+`accounts.db` contains sign-ins. If it is lost or damaged, record `accounts list` if you can.
+Stop the server and stage the backup copy as a separate, owner-readable file on the data disk.
+Move the current `accounts.db` and any `-journal`, `-wal` and `-shm` sidecars together to a
+private recovery directory. Rename the staged copy to `accounts.db` and start the service.
+Keep the recovery files until you confirm the result.
+
+Phones paired after the backup need a new pairing. Tokens revoked after the backup may work again,
+so list and revoke them before reopening the public listener. A recent backup can also reinstate
+unexpired pairing codes. Start with `LEVE_PAIRING=off` until any restored codes expire.
+Accounts created after that backup are
 missing from it, though their databases are still there: the next `backup` lists them as not
 copied. Add each account again (it gets a new id), then, before pairing any phone with it, put
 its data back with `restore <name> <data>/account-<old id>.db --other-account`.
