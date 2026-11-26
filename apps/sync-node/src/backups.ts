@@ -1,9 +1,14 @@
 // SPDX-FileCopyrightText: Leve contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { basename, isAbsolute, join } from "node:path";
-import { type SqlEngine, StorageRecoveryError, StorageTooNewError } from "@leve/storage";
+import {
+  type SqlConnection,
+  type SqlEngine,
+  StorageRecoveryError,
+  StorageTooNewError,
+} from "@leve/storage";
 import { accountDatabasePath, type ServerStorage } from "@leve/storage/server";
 import { type Accounts, AccountsError } from "./accounts.ts";
 
@@ -29,8 +34,31 @@ export interface BackupManifest {
   format: 1;
   createdAt: string;
   accounts: { id: string; name: string; file: string; revision: number; lineage: string }[];
+  /** Accounts that couldn't be copied, for example a database that fails to open. */
+  failed: { id: string; name: string; error: string }[];
   accountsFile: string;
 }
+
+/**
+ * Finishes a copy: back to a rollback journal, so it opens anywhere, even read-only and without
+ * the -wal and -shm files a write-ahead-log copy needs; readable by its owner only; and the
+ * revision and lineage it actually holds, which a sync after the copy can't move.
+ */
+function seal<T>(engine: SqlEngine, path: string, read: (copy: SqlConnection) => T): T {
+  const copy = engine.open(path);
+  try {
+    copy.exec("PRAGMA journal_mode = DELETE");
+    chmodSync(path, 0o600);
+    return read(copy);
+  } finally {
+    copy.close();
+  }
+}
+
+const accountPoint = (copy: SqlConnection) => {
+  const row = copy.get("SELECT revision, lineage FROM account WHERE id = 1");
+  return { revision: Number(row?.revision ?? 0), lineage: String(row?.lineage ?? "") };
+};
 
 const absolute = (path: unknown, name: string): string => {
   if (typeof path !== "string" || !isAbsolute(path)) {
@@ -60,25 +88,34 @@ export async function backupAll(
     format: 1,
     createdAt,
     accounts: [],
+    failed: [],
     accountsFile: "accounts.db",
   };
   for (const account of accounts.listAccounts()) {
     // An account no phone has synced with yet has no database; opening it here would make one.
     if (!engine.exists(accountDatabasePath(directory, account.id))) continue;
-    const store = await storage.account(account.id);
     const file = basename(accountDatabasePath(directory, account.id));
-    await engine.backup(store.db, join(folder, file));
-    manifest.accounts.push({
-      id: account.id,
-      name: account.name,
-      file,
-      revision: store.headRevision(),
-      lineage: store.lineage(),
-    });
+    // One account that can't be opened (a failed upgrade, a damaged file) is reported, and the
+    // others are still copied: it affects only that account, as everywhere else.
+    try {
+      const store = await storage.account(account.id);
+      await engine.backup(store.db, join(folder, file));
+      manifest.accounts.push({
+        id: account.id,
+        name: account.name,
+        file,
+        ...seal(engine, join(folder, file), accountPoint),
+      });
+    } catch (error) {
+      rmSync(join(folder, file), { force: true });
+      manifest.failed.push({ id: account.id, name: account.name, error: (error as Error).message });
+    }
   }
   // Last, so every account in the copies has its row: a backup of accounts.db taken first could
   // miss an account created meanwhile.
   await engine.backup(accounts.db, join(folder, manifest.accountsFile));
+  seal(engine, join(folder, manifest.accountsFile), () => undefined);
+  // The manifest is written last: a folder without one is an unfinished backup.
   writeFileSync(join(folder, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, {
     mode: 0o600,
   });
@@ -100,7 +137,9 @@ export async function restoreAccount(
   if (!account) throw new AccountsError(`no account named ${nameOrId}`);
   const source = absolute(file, "the backup file");
   const expected = basename(accountDatabasePath(options.directory, account.id));
-  if (basename(source) !== expected && !otherAccount) {
+  // The account's own backups, and the copy a restore kept of the database it replaced.
+  const own = basename(source) === expected || basename(source).startsWith(`${expected}.replaced-`);
+  if (!own && !otherAccount) {
     throw new AccountsError(
       `${basename(source)} isn't a backup of ${account.name} (${expected}); add --other-account to restore it anyway`,
     );
@@ -143,7 +182,7 @@ export async function accountStats(options: BackupOptions, nameOrId: string) {
     records: count("SELECT count(*) AS n FROM records"),
     liveRecords: count("SELECT count(*) AS n FROM records WHERE state = 'live'"),
     receipts: count("SELECT count(*) AS n FROM receipts"),
-    contentBytes: count("SELECT coalesce(sum(length(content)), 0) AS n FROM records"),
+    contentBytes: count("SELECT coalesce(sum(length(CAST(content AS BLOB))), 0) AS n FROM records"),
     databaseBytes: count(
       "SELECT page_count * page_size AS n FROM pragma_page_count(), pragma_page_size()",
     ),

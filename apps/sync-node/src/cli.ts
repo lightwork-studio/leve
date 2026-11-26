@@ -112,7 +112,17 @@ export async function runAdmin(socket: string, args: readonly string[]): Promise
   if (group === "backup") {
     if (!action || rest.length) throw new UsageError("give the folder to back up into");
     // The server writes the copies, so it needs the folder as an absolute path.
-    const result = await call("/backup", { to: resolve(action) });
+    const result = (await call("/backup", { to: resolve(action) })) as {
+      folder: string;
+      manifest: { failed: { name: string; error: string }[] };
+    };
+    // A backup that missed accounts fails the command, so a scheduled run is noticed.
+    const { failed } = result.manifest;
+    if (failed.length > 0) {
+      throw new Error(
+        `backed up to ${result.folder}, but ${failed.length} account${failed.length === 1 ? "" : "s"} couldn't be copied: ${failed.map((f) => `${f.name} (${f.error})`).join("; ")}`,
+      );
+    }
     return show(
       result,
       (b: { folder: string; manifest: { accounts: unknown[] } }) =>

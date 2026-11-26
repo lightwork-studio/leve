@@ -26,7 +26,8 @@ async function start() {
   const dir = mkdtempSync(join(tmpdir(), "leve-backups-"));
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
   const data = join(dir, "data");
-  const engine = createNodeSqliteEngine();
+  // Small backup steps, so a backup and a sync interleave.
+  const engine = createNodeSqliteEngine({ backupPagesPerStep: 1 });
   const { mkdirSync } = await import("node:fs");
   mkdirSync(data);
   const accounts = Accounts.open({ engine, path: join(data, "accounts.db") });
@@ -93,7 +94,7 @@ async function start() {
       .sort();
   };
 
-  return { dir, data, socket, phone, serverTitles };
+  return { dir, data, socket, phone, serverTitles, engine };
 }
 
 describe("backups and restores", () => {
@@ -155,7 +156,14 @@ describe("backups and restores", () => {
     const damaged = join(dir, `account-${alice.account}.db`);
     writeFileSync(damaged, "not a database");
     await expect(runAdmin(socket, ["restore", "Alice", damaged])).rejects.toThrow("cannot restore");
-    await expect(runAdmin(socket, ["restore", "Alice", join(dir, "missing.db")])).rejects.toThrow();
+    await expect(
+      runAdmin(socket, ["restore", "Alice", join(dir, "nowhere", `account-${alice.account}.db`)]),
+    ).rejects.toThrow("cannot restore");
+    // Nothing was left behind by the refusals.
+    const { readdirSync } = await import("node:fs");
+    expect(readdirSync(join(dir, "data")).filter((f) => /\.(restore|replaced-)/.test(f))).toEqual(
+      [],
+    );
     expect(await serverTitles(alice.token)).toEqual(["Kept"]);
     await alice.sync();
   });
@@ -171,5 +179,72 @@ describe("backups and restores", () => {
     expect(stats).toMatchObject({ synced: false });
     const { readdirSync } = await import("node:fs");
     expect(readdirSync(data).filter((f) => f.startsWith("account-"))).toEqual([]);
+  });
+
+  it("restores another account's backup only when told to, and a restore's own kept copy", async () => {
+    const { dir, socket, phone, serverTitles } = await start();
+    const alice = await phone("Alice");
+    const bob = await phone("Bob");
+    alice.store.put("workout", "w-a", workout("Alice's", { initialPlan: null }));
+    await alice.sync();
+    bob.store.put("workout", "w-b", workout("Bob's", { initialPlan: null }));
+    await bob.sync();
+    const backup = JSON.parse(await runAdmin(socket, ["backup", join(dir, "b"), "--json"]));
+    const bobsFile = join(backup.folder, `account-${bob.account}.db`);
+    const moved = JSON.parse(
+      await runAdmin(socket, ["restore", "Alice", bobsFile, "--other-account", "--json"]),
+    );
+    expect(await serverTitles(alice.token)).toEqual(["Bob's"]);
+    // Undoing it from the copy the restore kept needs no flag: it is Alice's own.
+    await runAdmin(socket, ["restore", "Alice", moved.replaced]);
+    expect(await serverTitles(alice.token)).toEqual(["Alice's"]);
+  });
+
+  it("still backs up the others when one account can't be opened, and says so", async () => {
+    const { dir, data, socket, phone } = await start();
+    const alice = await phone("Alice");
+    alice.store.put("workout", "w-a", workout("Kept", { initialPlan: null }));
+    await alice.sync();
+    const broken = JSON.parse(await runAdmin(socket, ["accounts", "add", "Broken", "--json"]));
+    writeFileSync(join(data, `account-${broken.id}.db`), "not a database");
+
+    await expect(runAdmin(socket, ["backup", join(dir, "b")])).rejects.toThrow(
+      "1 account couldn't be copied: Broken",
+    );
+    const { readdirSync } = await import("node:fs");
+    const [folder] = readdirSync(join(dir, "b"));
+    const manifest = JSON.parse(
+      readFileSync(join(dir, "b", folder as string, "manifest.json"), "utf8"),
+    );
+    expect(manifest.accounts.map((a: { name: string }) => a.name)).toEqual(["Alice"]);
+    expect(manifest.failed).toEqual([expect.objectContaining({ id: broken.id, name: "Broken" })]);
+    expect(existsSync(join(dir, "b", folder as string, `account-${broken.id}.db`))).toBe(false);
+  });
+
+  it("copies consistently while a phone syncs, into files only their owner reads", async () => {
+    const { dir, socket, phone, engine } = await start();
+    const alice = await phone("Alice");
+    for (let i = 0; i < 20; i++) {
+      alice.store.put("workout", `w-${i}`, workout(`Workout ${i}`, { initialPlan: null }));
+    }
+    await alice.sync();
+    alice.store.put("workout", "w-during", workout("During the backup", { initialPlan: null }));
+    const [output] = await Promise.all([
+      runAdmin(socket, ["backup", join(dir, "b"), "--json"]),
+      alice.sync(),
+    ]);
+    const backup = JSON.parse(output);
+    const file = join(backup.folder, `account-${alice.account}.db`);
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+    expect(statSync(join(backup.folder, "accounts.db")).mode & 0o777).toBe(0o600);
+    // A plain database file: it opens read-only on its own, with no -wal file next to it.
+    const copy = engine.open(file, { readOnly: true });
+    expect(copy.get("PRAGMA integrity_check")?.integrity_check).toBe("ok");
+    expect(copy.get("PRAGMA journal_mode")?.journal_mode).toBe("delete");
+    // The manifest says what the copy holds, whichever side of the sync it fell on.
+    const held = Number(copy.get("SELECT revision FROM account WHERE id = 1")?.revision);
+    copy.close();
+    expect(backup.manifest.accounts[0].revision).toBe(held);
+    expect([20, 21]).toContain(held);
   });
 });

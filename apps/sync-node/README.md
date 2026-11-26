@@ -85,13 +85,17 @@ leve-sync admin restore Alice /var/backups/leve/leve-<time>/account-<id>.db
 ```
 
 A backup is a new folder named for its time, holding a SQLite backup of each account database,
-`accounts.db` and a `manifest.json`. It is consistent while phones keep syncing. The server
-writes it, so the folder must be writable by the server's user. Copy the folders off the machine
-with the tool you already use (restic, borg, rsync).
+`accounts.db` and a `manifest.json`, all readable by the server's user only. It is consistent while
+phones keep syncing. The manifest is written last, so a folder without one is an unfinished
+backup. If an account can't be copied (say its database is damaged), the others still are, the
+manifest lists it under `failed` and the command exits with an error, so a scheduled backup is
+noticed. The server writes the folder, so it must be writable by the server's user. Copy the
+folders off the machine with the tool you already use (restic, borg, rsync).
 
-Restoring checks the copy before replacing anything, keeps the database it replaces next to it,
-and gives the account a new lineage. Its phones notice, download everything again and offer back
-what the backup lacks; anything that differs goes to the person for review (see
+Restoring checks the copy before replacing anything, keeps the database it replaces next to it
+(`account-<id>.db.replaced-<time>`, which `restore` also accepts, to undo), and gives the account
+a new lineage. Its phones notice, download everything again and offer back what the backup lacks;
+anything that differs goes to the person for review (see
 [Server restores](../../docs/data-compatibility.md#server-restores)). A restore refuses another
 account's backup unless you add `--other-account`.
 
@@ -99,13 +103,26 @@ What a restore can't bring back:
 
 - A change made after the backup that no phone still holds.
 - A deletion made after the backup, if no phone remembers it.
-- Phones paired or signed out after the backup, if you restore `accounts.db` itself. Do that
-  only after losing it, with the server stopped, then check `devices list` again.
 
 Restoring account databases by copying files, rather than with `restore`, is noticed only once a
-phone's cursor is ahead of the restored account, so use the command. To remove an account's data
-for good, sign its phones out (`devices revoke --all`), stop the server and delete its
-`account-<id>.db`.
+phone's cursor is ahead of the restored account, so use the command.
+
+### Restoring accounts.db
+
+`accounts.db` has no restore command, because it holds the server's sign-ins rather than
+anyone's workouts. If it is lost or damaged, stop the server, delete `accounts.db` together with
+any `accounts.db-journal`, `accounts.db-wal` and `accounts.db-shm` next to it (an old journal
+would be applied to the copy), copy the backup's `accounts.db` in and start the server. Phones
+paired after that backup have to pair again. **Phones signed out after the backup can sign in
+again**, so run `devices list` and revoke them once more.
+
+### Removing an account's data
+
+There is no command for it yet. Sign its phones out (`devices revoke --all <account>`), stop the
+server, and delete from the data directory its `account-<id>.db`, any `account-<id>.db-wal` and
+`-shm`, and every `account-<id>.db.replaced-*` that restores kept. Its data also stays in every
+backup folder, and in whatever copies them off the machine, until those are pruned. The account's
+name stays in `accounts.db`.
 
 ## Benchmark mode
 
