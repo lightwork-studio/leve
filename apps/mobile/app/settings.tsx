@@ -113,10 +113,12 @@ export default function SettingsScreen() {
   const settings = { ...committed, ...optimistic.patch };
   const insets = useSafeAreaInsets();
   // A pairing link that opened the app (app/connect.tsx) arrives as these.
-  const linked = useLocalSearchParams<{ server?: string; code?: string }>();
+  const linked = useLocalSearchParams<{ server?: string; code?: string; opened?: string }>();
+  // A new object each time a link is opened, even the same link, so the dialog asks again.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `opened` marks each opening
   const pairing = useMemo(
     () => pairingLinkFrom(linked.server, linked.code),
-    [linked.server, linked.code],
+    [linked.server, linked.code, linked.opened],
   );
   const [problem, setProblem] = useState<string | null>(null);
   const [trackRir, setTrackRir] = useTrackRir();

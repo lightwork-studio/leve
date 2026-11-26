@@ -45,13 +45,14 @@ function useServerChoice(): OwnServer | null {
 function Section({ link }: { link: PairingLink | null }) {
   const own = useServerChoice();
   const [connecting, setConnecting] = useState<PairingLink | "paste" | null>(link);
+  const [problem, setProblem] = useState<string | null>(null);
   // A link opened while Settings is already showing.
   useEffect(() => {
     if (link) setConnecting(link);
   }, [link]);
   const builtIn = builtInServerConfigured();
   return (
-    <Group label="Sync server" footnote={own ? OWN_NOTE : BUILT_IN_NOTE}>
+    <Group label="Sync server" footnote={problem ?? (own ? OWN_NOTE : BUILT_IN_NOTE)}>
       <SettingRow
         label={own ? serverLabel(own.server) : builtIn ? "Leve" : "None"}
         hint={
@@ -76,7 +77,17 @@ function Section({ link }: { link: PairingLink | null }) {
           label={builtIn ? "Use Leve's server" : "Disconnect"}
           divider
           accessibilityHint="Asks first if anything on this phone hasn't synced"
-          onPress={() => chooseBuiltInServer()}
+          onPress={() => {
+            try {
+              chooseBuiltInServer();
+              setProblem(null);
+            } catch {
+              const message = "This phone couldn't save the change. Try again.";
+              haptic.warning();
+              setProblem(message);
+              announce(message);
+            }
+          }}
         />
       ) : null}
       {connecting ? (
@@ -114,8 +125,9 @@ function ConnectDialog({ initial, onClose }: { initial: PairingLink | null; onCl
     working.current = true;
     setBusy(true);
     setProblem(null);
+    let paired: OwnServer | null = null;
     try {
-      const paired = await pair(parsed, Constants.deviceName ?? "iPhone");
+      paired = await pair(parsed, Constants.deviceName ?? "iPhone");
       chooseOwnServer(paired);
       haptic.success();
       announce(`Connected to ${serverLabel(paired.server)}`);
@@ -124,7 +136,10 @@ function ConnectDialog({ initial, onClose }: { initial: PairingLink | null; onCl
       const message =
         error instanceof PairingError
           ? PAIRING_PROBLEMS[error.problem]
-          : "The connection couldn't be saved on this phone. Try again.";
+          : paired
+            ? // The code is used up by now: only a new one can pair this phone.
+              "This phone couldn't save the connection. Ask for a new pairing link and try again."
+            : "Something went wrong while connecting. Try again.";
       setProblem(message);
       setAttempt((n) => n + 1);
       haptic.warning();
@@ -138,7 +153,10 @@ function ConnectDialog({ initial, onClose }: { initial: PairingLink | null; onCl
   return (
     <Dialog
       eyebrow="Connect to a sync server"
-      onClose={onClose}
+      // Not while connecting: the answer would still switch the phone after the dialog closed.
+      onClose={() => {
+        if (!working.current) onClose();
+      }}
       confirm={{
         label: busy
           ? "Connecting…"

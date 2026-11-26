@@ -22,6 +22,7 @@ import { type OwnServer, serverLabel } from "./own-server.ts";
 import {
   ownServer,
   previousServer,
+  serverChoiceReadable,
   subscribeServerChoice,
   switchBack,
 } from "./own-server-store.ts";
@@ -65,6 +66,9 @@ function workoutCount(store: ReturnType<typeof useAppData>["store"]): number {
 export function SyncHost() {
   const own = useOwnServer();
   if (!syncEnabled()) return null;
+  // The keychain couldn't be read (say before the first unlock): syncing with the build's own
+  // server instead could start this phone over. Wait until the choice can be read.
+  if (ownServerAvailable() && !serverChoiceReadable()) return null;
   // A new pairing is a new session, even with the same account id.
   if (own) return <Sync key={`${own.server} ${own.device}`} connection={ownConnection(own)} />;
   if (!builtInServerConfigured()) return null;
@@ -88,6 +92,18 @@ function useOwnServer(): OwnServer | null {
   const [, setVersion] = useState(0);
   useEffect(() => subscribeServerChoice(() => setVersion((n) => n + 1)), []);
   return ownServerAvailable() ? ownServer() : null;
+}
+
+/**
+ * Whether switching back to the choice before reaches the server and account this phone's data
+ * belongs to. Anything else would only move the question to another server.
+ */
+function switchesBackToData(bound: { server: string | null; account: string | null }): boolean {
+  if (!ownServerAvailable()) return false;
+  const previous = previousServer();
+  if (previous) return previous.server === bound.server && previous.account === bound.account;
+  // The build's own server, if the current choice is a paired one.
+  return ownServer() !== null && builtInServerConfigured() && bound.server === syncServerUrl;
 }
 
 /** A paired server: always signed in, with the device token it gave this phone. */
@@ -223,20 +239,23 @@ function Sync({ connection }: { connection: Connection }) {
         // Counted now, not when sync asked: work done meanwhile is lost too.
         unsynced={unsyncedChanges(store)}
         onSwitch={() => session.current?.replaceLocalData()}
-        // On a paired server, or back on the build's own after one, keeping them means going back.
-        {...(own || previousServer() !== null
+        // Keeping them means going back, when the choice before is where they belong; on the
+        // build's own server, otherwise, signing this account out.
+        {...(switchesBackToData(store.syncState())
           ? { onSwitchBack: () => switchBack() }
-          : {
-              onSignOut: async () => {
-                setSignInReminder("off");
-                try {
-                  await signOut();
-                } catch (error) {
-                  setSignInReminder("");
-                  throw error;
-                }
-              },
-            })}
+          : own
+            ? {}
+            : {
+                onSignOut: async () => {
+                  setSignInReminder("off");
+                  try {
+                    await signOut();
+                  } catch (error) {
+                    setSignInReminder("");
+                    throw error;
+                  }
+                },
+              })}
         onLater={() => setLater(true)}
         exportData={exportData}
       />
@@ -412,7 +431,17 @@ function SwitchPrompt({
             onPress={saved.run}
           />
           {onSwitchBack ? (
-            <Button rank="text" label="Keep them and switch back" onPress={onSwitchBack} />
+            <Button
+              rank="text"
+              label="Keep them and switch back"
+              onPress={() => {
+                try {
+                  onSwitchBack();
+                } catch {
+                  setProblem("Switching back didn't work. Try again.");
+                }
+              }}
+            />
           ) : onSignOut ? (
             <Button
               rank="text"
@@ -431,10 +460,12 @@ function SwitchPrompt({
       <Body
         text={
           reason === "account"
-            ? `${plural(unsynced, "change")} on this phone ${one ? "belongs" : "belong"} to the account that was signed in before and ${one ? "hasn't" : "haven't"} synced. Switching to this account deletes ${it} from this phone. To keep ${it}, ${onSwitchBack ? "switch back to the account it used before" : "sign out and sign in again with the other account"}.`
+            ? `${plural(unsynced, "change")} on this phone ${one ? "belongs" : "belong"} to the account that was signed in before and ${one ? "hasn't" : "haven't"} synced. Switching to this account deletes ${it} from this phone. ${onSwitchBack ? `To keep ${it}, switch back to the account it used before.` : onSignOut ? `To keep ${it}, sign out and sign in again with the other account.` : `Not now keeps ${it} on this phone, unsynced.`}`
             : onSwitchBack
               ? `${plural(unsynced, "change")} on this phone ${one ? "hasn't" : "haven't"} reached the sync server this phone used before. Switching to this server deletes ${it} from this phone. Switching back keeps ${it} for the other server.`
-              : `${plural(unsynced, "change")} on this phone ${one ? "hasn't" : "haven't"} reached the sync server this phone used before, which this version of Leve doesn't use. Switching deletes ${it} from this phone. Signing out keeps ${it} here, unsynced.`
+              : onSignOut
+                ? `${plural(unsynced, "change")} on this phone ${one ? "hasn't" : "haven't"} reached the sync server this phone used before, which this version of Leve doesn't use. Switching deletes ${it} from this phone. Signing out keeps ${it} here, unsynced.`
+                : `${plural(unsynced, "change")} on this phone ${one ? "hasn't" : "haven't"} reached the sync server this phone used before. Switching to this server deletes ${it} from this phone. Not now keeps ${it} here, unsynced.`
         }
       />
       {saved.note ? <Body text={saved.note} /> : null}

@@ -8,7 +8,11 @@ export default function Connect() {
   const { server, code } = useLocalSearchParams<{ server?: string; code?: string }>();
   return (
     <Redirect
-      href={{ pathname: "/settings", params: { server: server ?? "", code: code ?? "" } }}
+      href={{
+        pathname: "/settings",
+        // When it was opened, so the same link opened again asks again.
+        params: { server: server ?? "", code: code ?? "", opened: String(Date.now()) },
+      }}
     />
   );
 }

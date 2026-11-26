@@ -69,6 +69,8 @@ vi.mock("expo-router", () => ({
 }));
 const data = vi.hoisted(() => ({
   account: null as string | null,
+  /** The server the phone's data belongs to. */
+  server: null as string | null,
   workout: false,
   unsynced: false,
   workouts: 3,
@@ -78,7 +80,7 @@ const data = vi.hoisted(() => ({
   unsyncedCount: 0,
   store: {
     activeWorkout: () => (data.workout ? { id: "w" } : null),
-    syncState: () => ({ account: data.account }),
+    syncState: () => ({ account: data.account, server: data.server }),
     hasUnsyncedWork: () => data.unsynced,
     db: { get: () => ({ n: data.workouts }) },
   },
@@ -159,6 +161,7 @@ beforeEach(() => {
   clerk.signedIn = true;
   Object.assign(data, {
     account: null,
+    server: null,
     workout: false,
     unsynced: false,
     workouts: 3,
@@ -385,6 +388,9 @@ describe("a server the person paired", () => {
   it("keeps unsynced changes by switching back to the server they belong to", async () => {
     chooseOwnServer(home);
     await render();
+    // The data belongs to the build's own server, where switching back goes.
+    data.server = "https://sync.test";
+    data.account = "user_1";
     data.unsyncedCount = 2;
     await report({ prompt: { kind: "switch", reason: "server" } });
     expect(screen()).toContain("Switching back keeps them for the other server");
@@ -399,6 +405,8 @@ describe("a server the person paired", () => {
     chooseOwnServer(home);
     chooseBuiltInServer();
     await render();
+    data.server = home.server;
+    data.account = home.account;
     data.unsyncedCount = 1;
     await report({ prompt: { kind: "switch", reason: "server" } });
     await tap("Keep them and switch back");
@@ -415,5 +423,39 @@ describe("a server the person paired", () => {
     );
     expect(first.calls).toContain("stop");
     expect(session().options.server).toBe("https://other.example");
+  });
+
+  it("offers switching back only to where the phone's data belongs", async () => {
+    // Paired once, then back on the build's own server; the data is a Clerk account's.
+    chooseOwnServer(home);
+    chooseBuiltInServer();
+    data.server = "https://sync.test";
+    data.account = "user_0";
+    await render();
+    data.unsyncedCount = 1;
+    await report({ prompt: { kind: "switch", reason: "account" } });
+    expect(screen()).toContain("Keep them and sign out");
+    expect(screen()).not.toContain("switch back");
+  });
+
+  it("offers nothing but waiting when the data belongs to a server neither choice is", async () => {
+    chooseOwnServer({ ...home, server: "https://third.example", device: "d3" });
+    chooseOwnServer(home);
+    data.server = "https://sync.test";
+    data.account = "user_1";
+    await render();
+    data.unsyncedCount = 1;
+    await report({ prompt: { kind: "switch", reason: "server" } });
+    expect(screen()).toContain("Not now keeps it here, unsynced");
+    expect(screen()).not.toContain("Keep them and");
+  });
+
+  it("syncs nowhere while the keychain can't be read", async () => {
+    chooseOwnServer(home);
+    forgetServerChoice();
+    keychain.failReads = true;
+    await render();
+    expect(sessions.created).toEqual([]);
+    keychain.failReads = false;
   });
 });

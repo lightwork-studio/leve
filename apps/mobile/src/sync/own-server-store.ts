@@ -24,6 +24,8 @@ interface Stored {
 }
 
 let cached: Stored | null = null;
+/** The last read failed: the choice is unknown, not "none". */
+let unreadable = false;
 const listeners = new Set<() => void>();
 
 function isOwnServer(value: unknown): value is OwnServer {
@@ -47,11 +49,15 @@ function read(): Stored {
       current: isOwnServer(value?.current) ? value.current : null,
       previous: isOwnServer(value?.previous) ? value.previous : null,
     };
-  } catch {
-    // An unreadable keychain entry (locked phone, damaged value) counts as none; it isn't cached,
-    // so the next read tries again.
-    return stored;
+  } catch (error) {
+    // A damaged value counts as none. A keychain that can't be read (a locked phone) is unknown:
+    // nothing is cached, so the next read tries again.
+    if (!(error instanceof SyntaxError)) {
+      unreadable = true;
+      return stored;
+    }
   }
+  unreadable = false;
   cached = stored;
   return stored;
 }
@@ -65,6 +71,12 @@ function write(next: Stored): void {
 /** The server this phone syncs with, if it is one of the person's own. */
 export function ownServer(): OwnServer | null {
   return read().current;
+}
+
+/** Whether the choice could be read; while it can't, the phone shouldn't sync anywhere. */
+export function serverChoiceReadable(): boolean {
+  read();
+  return !unreadable;
 }
 
 /** The choice before the current one, for switching back. */
@@ -100,4 +112,5 @@ export function subscribeServerChoice(listener: () => void): () => void {
 /** Tests start from nothing. */
 export function forgetServerChoice(): void {
   cached = null;
+  unreadable = false;
 }

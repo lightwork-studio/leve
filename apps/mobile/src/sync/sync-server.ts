@@ -16,14 +16,18 @@ export function builtInServerConfigured(): boolean {
 }
 
 /**
- * Whether the person may pair the phone with a server they run. Development and TestFlight builds
- * only, until Leve keeps real data: an App Store build ("production" channel) doesn't offer it.
+ * Whether the person may pair the phone with a server they run. TestFlight (the "preview" update
+ * channel) and development builds only, until Leve keeps real data. A build with no channel counts
+ * as development unless it calls itself the App Store build, so a store build that lost its channel
+ * still doesn't offer it.
  */
-export const ownServerOffered = channel !== "production";
+export const ownServerOffered =
+  channel === "preview" || (!channel && process.env.EXPO_PUBLIC_BUILD_LABEL !== "App Store");
 
 /**
  * Whether the phone has a server to sync with: the build's own, or one the person paired. Apart
- * from `syncEnabled` (sync-config.ts) so the data layer can ask without loading React Native.
+ * from `syncEnabled` (sync-config.ts) so the data layer can ask without loading React Native; it
+ * reads the keychain and the update channel, both native modules with stand-ins in tests.
  */
 export function syncConfigured(): boolean {
   return builtInServerConfigured() || (ownServerOffered && ownServer() !== null);

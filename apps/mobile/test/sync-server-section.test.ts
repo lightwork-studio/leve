@@ -98,8 +98,9 @@ async function tap(label: string) {
   const buttons = [...document.querySelectorAll<HTMLElement>("button, [role=button]")];
   // An exact label first: "Connect" is also the start of other buttons.
   const target =
-    buttons.find((b) => b.textContent?.trim() === label || b.getAttribute("aria-label") === label) ??
-    buttons.find((b) => b.textContent?.includes(label));
+    buttons.find(
+      (b) => b.textContent?.trim() === label || b.getAttribute("aria-label") === label,
+    ) ?? buttons.find((b) => b.textContent?.includes(label));
   if (!target) throw Error(`Missing ${label}`);
   await act(async () => {
     target.click();
@@ -177,4 +178,21 @@ it("offers to disconnect when the build has no server of its own, and is absent 
   offered.own = false;
   await render();
   expect(screen()).toBe("");
+});
+
+it("says so when the keychain refuses a change, and keeps the server", async () => {
+  chooseOwnServer({ server: "https://sync.home.example", account: "a", device: "d", token: "t" });
+  await render();
+  keychain.failWrites = true;
+  await tap("Use Leve's server");
+  expect(screen()).toContain("This phone couldn't save the change");
+  expect(ownServer()).toMatchObject({ server: "https://sync.home.example" });
+});
+
+it("asks for a new link when the pairing worked but the phone couldn't keep it", async () => {
+  await render({ server: "https://sync.home.example", code: CODE });
+  keychain.failWrites = true;
+  await tap("Connect to sync.home.example");
+  expect(screen()).toContain("Ask for a new pairing link");
+  expect(ownServer()).toBeNull();
 });
