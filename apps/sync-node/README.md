@@ -54,7 +54,9 @@ stops until they pair again.
 `pnpm --filter @leve/sync-node bundle` builds one file, `dist/leve-sync.mjs`, that runs with Node 24
 and nothing else. Run it in one of these ways, and put HTTPS in front of it. Keep the data
 directory on a local disk: one server uses it at a time, held by a file lock that network
-filesystems may not honour.
+filesystems may not honour. When reusing a data directory, verify it is owned by the service
+user and has mode 0700. Correct ownership and permissions on existing databases and journals
+before starting the service. New files are private by default.
 
 ### systemd
 
@@ -114,6 +116,9 @@ WantedBy=multi-user.target
 sudo -u leve LEVE_ADMIN_SOCKET=/run/leve/admin.sock leve-sync admin accounts list
 sudo -u leve LEVE_ADMIN_SOCKET=/run/leve/admin.sock leve-sync admin backup /var/backups/leve
 ```
+
+If `node` is unavailable on the admin user's PATH, invoke the wrapper's bundle directly with
+`sudo -u leve LEVE_ADMIN_SOCKET=/run/leve/admin.sock /path/to/node /usr/local/bin/leve-sync admin accounts list`.
 
 ### Container
 
