@@ -223,7 +223,9 @@ vi.mock("react-native-svg", () => ({
   Circle: "circle",
 }));
 vi.mock("../src/ui/muscle-map.tsx", () => ({
-  ExerciseMuscles: () => null,
+  // Says which version of the muscles card a screen chose, so its placement can be checked.
+  ExerciseMuscles: ({ image }: { image?: unknown }) =>
+    h("div", null, image ? "[muscles with image]" : "[muscles with figure]"),
   WorkoutMuscleSummary: () => null,
 }));
 vi.mock("../src/ui/haptics.ts", () => ({
@@ -294,6 +296,7 @@ vi.mock("react-native", () => {
     Modal: ({ children, "aria-label": label }: { children: ReactNode; "aria-label"?: string }) =>
       h("div", { role: "dialog", "aria-label": label }, children),
     Pressable: container,
+    Image: ({ source }: { source: unknown }) => h("img", { src: String(source) }),
     ScrollView: ({ children, inert }: { children: ReactNode; inert?: boolean }) =>
       h("div", { inert }, children),
     View: ({
@@ -3516,6 +3519,54 @@ it("opens the selected exercise’s earlier sets from training without logging i
   expect(returned?.textContent).toBe("0:35");
   expect(host.textContent).not.toContain("Previous core session");
   expect(readWorkoutTree(store, active)).toEqual(before);
+});
+
+it("shows an exercise's image at the top of its sheet and its screen, and leaves the rest as they were", async () => {
+  const workout = beginWorkout(store);
+  addExercise(store, workout, EXERCISES.bench, 0);
+  addExercise(store, workout, EXERCISES.plank, 0);
+  const image = (label: string) =>
+    host.querySelector(`[aria-label="${label}"] img`)?.getAttribute("src") ?? null;
+  const benchImage = "Bench Press, with the muscles it works highlighted";
+  await act(() => root.render(h(ActiveWorkoutScreen)));
+  await press("Manage Bench Press");
+  expect(image(benchImage)).toMatch(/\/barbell-bench-press\.webp$/);
+  // The image leads the sheet, before its first action.
+  const sheet = host.querySelector('[role="dialog"][aria-label="Bench Press"]');
+  const firstAction = sheet?.querySelector('[aria-label^="View history"]');
+  const plate = sheet?.querySelector(`[aria-label="${benchImage}"]`);
+  expect(plate && firstAction && plate.compareDocumentPosition(firstAction)).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+  await act(() => root.render(h("div")));
+  await act(() => root.render(h(ActiveWorkoutScreen)));
+  await press("Manage Plank");
+  expect(host.querySelector('[role="dialog"][aria-label="Plank"]')).not.toBeNull();
+  expect(host.querySelectorAll('[role="dialog"] img')).toHaveLength(0);
+  await act(() => root.render(h("div")));
+
+  // On the exercise's screen, the card with the image comes before the pinned notes, with no
+  // Muscles heading; an exercise without one keeps its figure under the notes.
+  const order = () => {
+    const text = host.textContent ?? "";
+    const muscles = Math.max(
+      text.indexOf("[muscles with image]"),
+      text.indexOf("[muscles with figure]"),
+    );
+    return muscles < text.indexOf("Pinned notes") ? "muscles first" : "notes first";
+  };
+  activeEntryId = undefined;
+  detailId = EXERCISES.bench.id;
+  await act(() => root.render(h(ExerciseScreen)));
+  expect(host.textContent).toContain("[muscles with image]");
+  expect(order()).toBe("muscles first");
+  expect(host.textContent).not.toContain("This exercise");
+  await act(() => root.render(h("div")));
+  detailId = EXERCISES.plank.id;
+  await act(() => root.render(h(ExerciseScreen)));
+  expect(host.textContent).toContain("[muscles with figure]");
+  expect(order()).toBe("notes first");
+  expect(host.textContent).toContain("This exercise");
 });
 
 it("identifies a custom exercise with no earlier sessions from the workout entry", async () => {

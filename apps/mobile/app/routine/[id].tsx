@@ -1,11 +1,11 @@
 import type { JsonObject } from "@leve/contract";
 import { type EffortScale, LIMITS } from "@leve/core";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams, usePreventRemove } from "expo-router";
 import { type ReactNode, useRef, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppData } from "../../src/data/app-data.tsx";
-import { deleteRoutine, organizeRoutine } from "../../src/data/organize-routine.ts";
+import { deleteRoutine, organizeRoutine, routineEdited } from "../../src/data/organize-routine.ts";
 import { readSettings } from "../../src/data/read.ts";
 import {
   createRoutine,
@@ -15,7 +15,7 @@ import {
 } from "../../src/data/routine-actions.ts";
 import { routineEffortScale } from "../../src/model/effort.ts";
 import { space, type } from "../../src/theme.ts";
-import { DestructiveButton } from "../../src/ui/action-sheet.tsx";
+import { ActionSheet, DestructiveButton } from "../../src/ui/action-sheet.tsx";
 import { Button } from "../../src/ui/buttons.tsx";
 import { CommitButton } from "../../src/ui/commit-button.tsx";
 import { Dialog, DialogField } from "../../src/ui/dialog.tsx";
@@ -165,13 +165,42 @@ function RoutineEditor({
   const folders = store
     .list("routine_folder")
     .map((folder) => ({ id: folder.id, title: String(folder.content?.title ?? "") }));
-  const save = () => {
+  /** The plan saving would write, and the effort scale to keep. Throws on input it can't save. */
+  const written = () => {
+    const exercises = writePlan(plan, settings, effortScale);
+    const scale =
+      effortScale !== openedScale || routineEffortScale({ exercises }) !== effortScale
+        ? effortScale
+        : opened.effortScale;
+    return { exercises, scale };
+  };
+  let edited: boolean;
+  try {
+    const { exercises, scale } = written();
+    edited = routineEdited(
+      opened,
+      { title, folderId, effortScale: scale },
+      { opened: opened.exercises, next: exercises },
+    );
+  } catch {
+    // Input that can't be saved yet is still something typed in.
+    edited = true;
+  }
+  // Leaving with changes that saving would write asks first: the header's back, a swipe back or
+  // the browser's. Set once this editor has saved, copied or deleted the routine on the way out.
+  const [left, setLeft] = useState(false);
+  const [leaving, setLeaving] = useState<(() => void) | null>(null);
+  const allowLeaving = usePreventRemove(edited && available && !left, ({ repeat }) =>
+    setLeaving(() => repeat),
+  );
+  const leave = (then: () => void) => {
+    setLeft(true);
+    allowLeaving();
+    then();
+  };
+  const save = (then = back) => {
     try {
-      const exercises = writePlan(plan, settings, effortScale);
-      const scale =
-        effortScale !== openedScale || routineEffortScale({ exercises }) !== effortScale
-          ? effortScale
-          : opened.effortScale;
+      const { exercises, scale } = written();
       change((db) => {
         // A folder chosen here and deleted before saving leaves the routine in none, as the
         // editor then shows. A folder already gone when it opened stays as it was, unless moved.
@@ -189,9 +218,11 @@ function RoutineEditor({
     } catch (e) {
       haptic.warning();
       setError((e as Error).message);
+      // The problem shows below the plan, which reordering hides.
+      setReordering(false);
       return;
     }
-    back();
+    leave(then);
   };
   const saveCopy = () => {
     if (savingCopy.current || copyName === null) return;
@@ -210,7 +241,7 @@ function RoutineEditor({
       setCopyAttempt((n) => n + 1);
       return;
     }
-    back();
+    leave(back);
   };
   if (!available && !deleted.current) return <Unavailable back={back} />;
   return (
@@ -274,7 +305,7 @@ function RoutineEditor({
             label="Save routine"
             detail={planSummary(plan)}
             icon={<CheckIcon color={c.commitInk} size={26} strokeWidth={2.4} />}
-            onPress={save}
+            onPress={() => save()}
           />
           <Button
             rank="text"
@@ -305,11 +336,32 @@ function RoutineEditor({
                   return;
                 }
                 haptic.tap();
-                back();
+                leave(back);
               }}
             />
           )}
         </View>
+      )}
+      {leaving && (
+        <ActionSheet
+          message="Your changes to this routine aren’t saved."
+          choices={[
+            {
+              label: "Save routine",
+              onPress: () => {
+                setLeaving(null);
+                save(leaving);
+              },
+            },
+          ]}
+          action="Discard changes"
+          keep="Keep editing"
+          onConfirm={() => {
+            setLeaving(null);
+            leave(leaving);
+          }}
+          onClose={() => setLeaving(null)}
+        />
       )}
       {copyName !== null && (
         <Dialog
