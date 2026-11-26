@@ -76,6 +76,68 @@ sync.example.com {
 }
 ```
 
+## Backups and restores
+
+```sh
+leve-sync admin backup /var/backups/leve       # every account and accounts.db, while it runs
+leve-sync admin stats Alice                    # revision, lineage, records
+leve-sync admin restore Alice /var/backups/leve/leve-<time>/account-<id>.db
+```
+
+A backup is a new folder named for its time, holding a SQLite backup of each account database,
+`accounts.db` and a `manifest.json`, all readable by the server's user only. It is consistent while
+phones keep syncing. The manifest is written last, so a folder without one is an unfinished
+backup. If an account can't be copied (say its database is damaged), the others still are, the
+manifest lists it under `failed` and the command exits with an error, so a scheduled backup is
+noticed. The server writes the folder, so it must be writable by the server's user. Copy the
+folders off the machine with the tool you already use (restic, borg, rsync).
+
+Restoring checks the copy before replacing anything, keeps the database it replaces next to it
+(`account-<id>.db.replaced-<time>`, which `restore` also accepts, to undo, as it does the
+`account-<id>.db.snapshot-v<N>` a storage upgrade keeps), and gives the account
+a new lineage. Its phones notice, download everything again and offer back what the backup lacks;
+anything that differs goes to the person for review (see
+[Server restores](../../docs/data-compatibility.md#server-restores)). A restore refuses another
+account's backup unless you add `--other-account`. This safeguard uses the backup's original
+filename. Preserve that filename and confirm the account in the manifest before restoring.
+
+What a restore can't bring back:
+
+- A change made after the backup that no phone still holds.
+- A deletion made after the backup, if no phone remembers it.
+
+Restoring account databases by copying files, rather than with `restore`, is noticed only once a
+phone's cursor is ahead of the restored account, so use the command.
+
+If the live workout database is damaged and the command cannot save the copy it would replace,
+stop the service. Move the live `account-<id>.db` and any matching `-journal`, `-wal` and
+`-shm` files together to a private recovery directory. Restart the service and use `restore`
+with a verified backup. Keep the moved files until you confirm the result.
+
+### Restoring accounts.db
+
+`accounts.db` contains sign-ins. If it is lost or damaged, record `accounts list` if you can.
+Take the public HTTPS route offline and stop the server. Stage the backup copy as a separate file
+on the data disk, owned by the service user with mode 0600. Move the current `accounts.db` and any `-journal`, `-wal` and `-shm` sidecars together to a
+private recovery directory. Rename the staged copy to `accounts.db` and start the service.
+Keep the recovery files until you confirm the result.
+
+Phones paired after the backup need a new pairing. Tokens revoked after the backup may work again,
+so list and revoke them before reopening the HTTPS route. A recent backup can also reinstate
+unexpired pairing codes. Start with `LEVE_PAIRING=off` until any restored codes expire.
+Accounts created after that backup are
+missing from it, though their databases are still there: the next `backup` lists them as not
+copied. Add each account again (it gets a new id), then, before pairing any phone with it, put
+its data back with `restore <name> <data>/account-<old id>.db --other-account`.
+
+### Removing an account's data
+
+There is no command for it yet. Sign its phones out (`devices revoke --all <account>`), stop the
+server, and delete every file in the data directory whose name starts with `account-<id>.db`:
+the database, its journals, the copies restores kept and the snapshots storage upgrades kept. Its data also stays in every
+backup folder, and in whatever copies them off the machine, until those are pruned. The account's
+name stays in `accounts.db`.
+
 ## Benchmark mode
 
 `LEVE_AUTH=benchmark` with `LEVE_TOKEN_FILE` replaces accounts with one shared token: every

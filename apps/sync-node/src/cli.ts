@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Leve contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
+import { resolve } from "node:path";
 import type { Account, Device } from "./accounts.ts";
 import { adminRequest } from "./admin.ts";
 
@@ -14,6 +15,11 @@ export const ADMIN_USAGE = `leve-sync admin <command>
   devices revoke --all <account>
                                sign every phone of an account out
   devices revoke --everyone    sign every phone of every account out
+  stats <account>              what an account holds: records, revision, lineage
+  backup <folder>              copy every account and accounts.db into a new dated folder
+  restore <account> <file> [--other-account]
+                               put one account back from a backed-up account-<id>.db; its
+                               phones download everything again and offer back what it lacks
 
 Options: --json prints the server's answer as JSON.
 The command talks to the running server through LEVE_ADMIN_SOCKET.`;
@@ -29,7 +35,8 @@ const refuse = (message: string): never => {
 /** Runs one admin command and returns what to print. */
 export async function runAdmin(socket: string, args: readonly string[]): Promise<string> {
   const asJson = args.includes("--json");
-  const words = args.filter((arg) => arg !== "--json");
+  const otherAccount = args.includes("--other-account");
+  const words = args.filter((arg) => arg !== "--json" && arg !== "--other-account");
   const [group, action, ...rest] = words;
   const call = (command: string, body: Record<string, unknown> = {}) =>
     adminRequest(socket, command, body);
@@ -95,6 +102,45 @@ export async function runAdmin(socket: string, args: readonly string[]): Promise
     return show(
       result,
       (r: { revoked: number }) => `Signed out ${r.revoked} phone${r.revoked === 1 ? "" : "s"}.`,
+    );
+  }
+  if (group === "stats") {
+    const account = [action, ...rest].filter(Boolean).join(" ");
+    if (!account) throw new UsageError("give the account");
+    return JSON.stringify(await call("/stats", { account }), null, 2);
+  }
+  if (group === "backup") {
+    if (!action || rest.length) throw new UsageError("give the folder to back up into");
+    // The server writes the copies, so it needs the folder as an absolute path.
+    const result = (await call("/backup", { to: resolve(action) })) as {
+      folder: string;
+      manifest: { failed: { name: string; error: string }[]; unknown: string[] };
+    };
+    // A backup that missed accounts fails the command, so a scheduled run is noticed.
+    const { failed, unknown } = result.manifest;
+    const strays = unknown.length
+      ? `\nNot copied, as no account names them: ${unknown.join(", ")}`
+      : "";
+    if (failed.length > 0) {
+      throw new Error(
+        `backed up to ${result.folder}, but ${failed.length} account${failed.length === 1 ? "" : "s"} couldn't be copied: ${failed.map((f) => `${f.name} (${f.error})`).join("; ")}${strays}`,
+      );
+    }
+    return show(
+      result,
+      (b: { folder: string; manifest: { accounts: unknown[] } }) =>
+        `Backed up ${b.manifest.accounts.length} account${b.manifest.accounts.length === 1 ? "" : "s"} and accounts.db to ${b.folder}${strays}`,
+    );
+  }
+  if (group === "restore") {
+    const parts = [action, ...rest].filter(Boolean) as string[];
+    if (parts.length < 2) throw new UsageError("give the account and the backed-up account file");
+    const file = resolve(parts.pop() as string);
+    const result = await call("/restore", { account: parts.join(" "), from: file, otherAccount });
+    return show(
+      result,
+      (r: { account: string; replaced: string | null; revision: number }) =>
+        `Restored ${r.account} to revision ${r.revision}. Its phones download everything again and offer back what the backup lacks.${r.replaced ? `\nThe database it replaced is kept at ${r.replaced}.` : ""}`,
     );
   }
   throw new UsageError(ADMIN_USAGE);
