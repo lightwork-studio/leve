@@ -4,6 +4,7 @@ import {
   AppleAuthenticationButtonStyle,
   AppleAuthenticationButtonType,
 } from "expo-apple-authentication";
+import { router } from "expo-router";
 import { channel } from "expo-updates";
 import { useEffect, useRef, useState } from "react";
 import { AppState, Linking, Text, View } from "react-native";
@@ -17,7 +18,19 @@ import { Button } from "../ui/buttons.tsx";
 import { Dialog } from "../ui/dialog.tsx";
 import { Banner } from "../ui/notice.tsx";
 import { themedStyles, useAppearance, useStyles } from "../ui/themed.ts";
-import { syncEnabled, syncServerUrl } from "./sync-config.ts";
+import { type OwnServer, serverLabel } from "./own-server.ts";
+import {
+  ownServer,
+  previousServer,
+  subscribeServerChoice,
+  switchBack,
+} from "./own-server-store.ts";
+import {
+  builtInServerConfigured,
+  ownServerAvailable,
+  syncEnabled,
+  syncServerUrl,
+} from "./sync-config.ts";
 import {
   REMIND_LATER_MS,
   readLastSynced,
@@ -50,12 +63,66 @@ function workoutCount(store: ReturnType<typeof useAppData>["store"]): number {
  * syncing does, as a note. Nothing is asked during a workout: questions wait until it ends.
  */
 export function SyncHost() {
+  const own = useOwnServer();
   if (!syncEnabled()) return null;
-  return <Sync />;
+  // A new pairing is a new session, even with the same account id.
+  if (own) return <Sync key={`${own.server} ${own.device}`} connection={ownConnection(own)} />;
+  if (!builtInServerConfigured()) return null;
+  return <ClerkSync />;
 }
 
-function Sync() {
+/** Who the phone syncs as, and with which server. */
+interface Connection {
+  /** The build's own server with a Clerk sign-in, or a server the person paired. */
+  kind: "built_in" | "own";
+  server: string;
+  isLoaded: boolean;
+  isSignedIn: boolean;
+  userId: string | null;
+  getToken(fresh: boolean): Promise<string | null>;
+  signOut(): Promise<void>;
+}
+
+/** The paired server, while it is the phone's choice; follows changes made in Settings. */
+function useOwnServer(): OwnServer | null {
+  const [, setVersion] = useState(0);
+  useEffect(() => subscribeServerChoice(() => setVersion((n) => n + 1)), []);
+  return ownServerAvailable() ? ownServer() : null;
+}
+
+/** A paired server: always signed in, with the device token it gave this phone. */
+function ownConnection(own: OwnServer): Connection {
+  return {
+    kind: "own",
+    server: own.server,
+    isLoaded: true,
+    isSignedIn: true,
+    userId: own.account,
+    getToken: async () => own.token,
+    signOut: async () => switchBack(),
+  };
+}
+
+function ClerkSync() {
   const { isLoaded, isSignedIn, userId, getToken, signOut } = useAuth();
+  return (
+    <Sync
+      connection={{
+        kind: "built_in",
+        server: syncServerUrl,
+        isLoaded,
+        isSignedIn: !!isSignedIn,
+        userId: userId ?? null,
+        getToken: (fresh) => getToken(fresh ? { skipCache: true } : undefined),
+        signOut: () => signOut(),
+      }}
+    />
+  );
+}
+
+function Sync({ connection }: { connection: Connection }) {
+  const { isLoaded, isSignedIn, userId, getToken, signOut, server } = connection;
+  const own = connection.kind === "own";
   const { store, version, change, reset, exportData } = useAppData();
   const [status, setStatus] = useState<SyncStatus>(IDLE);
   /** "Not now" on a question: hidden until the session restarts; sync stays paused meanwhile. */
@@ -83,14 +150,14 @@ function Sync() {
     if (!isLoaded || !isSignedIn || !userId) return;
     const running = new SyncSession({
       store,
-      server: syncServerUrl,
+      server,
       account: userId,
       app: `leve-preview ${buildInfo.commit}`,
       // Only the account this session syncs: a request still on its way when someone else signs in
       // fails as offline rather than reach the new account.
       token: async (fresh) => {
         if (latest.current.userId !== userId) throw new Error("another account signed in");
-        const token = await latest.current.getToken(fresh ? { skipCache: true } : undefined);
+        const token = await latest.current.getToken(fresh);
         // Signed in but no token: Clerk couldn't be reached. Offline, not a sign-in problem.
         if (!token) throw new Error("no session token");
         return token;
@@ -124,7 +191,7 @@ function Sync() {
       session.current = null;
       setStatus(IDLE);
     };
-  }, [isLoaded, isSignedIn, userId, store]);
+  }, [isLoaded, isSignedIn, userId, store, server]);
 
   // Every change to the data passes here; the session sends it shortly, if there is any to send.
   useEffect(() => {
@@ -156,15 +223,20 @@ function Sync() {
         // Counted now, not when sync asked: work done meanwhile is lost too.
         unsynced={unsyncedChanges(store)}
         onSwitch={() => session.current?.replaceLocalData()}
-        onSignOut={async () => {
-          setSignInReminder("off");
-          try {
-            await signOut();
-          } catch (error) {
-            setSignInReminder("");
-            throw error;
-          }
-        }}
+        // On a paired server, or back on the build's own after one, keeping them means going back.
+        {...(own || previousServer() !== null
+          ? { onSwitchBack: () => switchBack() }
+          : {
+              onSignOut: async () => {
+                setSignInReminder("off");
+                try {
+                  await signOut();
+                } catch (error) {
+                  setSignInReminder("");
+                  throw error;
+                }
+              },
+            })}
         onLater={() => setLater(true)}
         exportData={exportData}
       />
@@ -172,9 +244,12 @@ function Sync() {
   }
 
   const now = Date.now();
+  if (own && prompt?.kind === "sign_in" && !later) {
+    return <RefusedPrompt server={server} onLater={() => setLater(true)} />;
+  }
   const lapsed =
     prompt?.kind === "sign_in" || (isLoaded && !isSignedIn && store.syncState().account !== null);
-  if (lapsed && signInReminderDue(now)) {
+  if (!own && lapsed && signInReminderDue(now)) {
     return (
       <SignInPrompt
         signedIn={!!isSignedIn}
@@ -298,13 +373,17 @@ function SwitchPrompt({
   unsynced,
   onSwitch,
   onSignOut,
+  onSwitchBack,
   onLater,
   exportData,
 }: {
   reason: "account" | "server";
   unsynced: number;
   onSwitch: () => void;
-  onSignOut: () => Promise<void>;
+  /** Keeps the changes by signing this account out (the build's own server)... */
+  onSignOut?: () => Promise<void>;
+  /** ... or by going back to the server or pairing the phone used before. */
+  onSwitchBack?: () => void;
   onLater: () => void;
   exportData: () => Promise<void>;
 }) {
@@ -332,15 +411,19 @@ function SwitchPrompt({
             busy={saved.busy}
             onPress={saved.run}
           />
-          <Button
-            rank="text"
-            label="Keep them and sign out"
-            onPress={() => {
-              onSignOut().catch(() =>
-                setProblem("Signing out didn't work. Check the connection and try again."),
-              );
-            }}
-          />
+          {onSwitchBack ? (
+            <Button rank="text" label="Keep them and switch back" onPress={onSwitchBack} />
+          ) : onSignOut ? (
+            <Button
+              rank="text"
+              label="Keep them and sign out"
+              onPress={() => {
+                onSignOut().catch(() =>
+                  setProblem("Signing out didn't work. Check the connection and try again."),
+                );
+              }}
+            />
+          ) : null}
           <Button rank="text" label="Not now" onPress={onLater} />
         </View>
       }
@@ -348,12 +431,40 @@ function SwitchPrompt({
       <Body
         text={
           reason === "account"
-            ? `${plural(unsynced, "change")} on this phone ${one ? "belongs" : "belong"} to the account that was signed in before and ${one ? "hasn't" : "haven't"} synced. Switching to this account deletes ${it} from this phone. To keep ${it}, sign out and sign in again with the other account.`
-            : `${plural(unsynced, "change")} on this phone ${one ? "hasn't" : "haven't"} reached the sync server this phone used before, which this version of Leve doesn't use. Switching deletes ${it} from this phone. Signing out keeps ${it} here, unsynced.`
+            ? `${plural(unsynced, "change")} on this phone ${one ? "belongs" : "belong"} to the account that was signed in before and ${one ? "hasn't" : "haven't"} synced. Switching to this account deletes ${it} from this phone. To keep ${it}, ${onSwitchBack ? "switch back to the account it used before" : "sign out and sign in again with the other account"}.`
+            : onSwitchBack
+              ? `${plural(unsynced, "change")} on this phone ${one ? "hasn't" : "haven't"} reached the sync server this phone used before. Switching to this server deletes ${it} from this phone. Switching back keeps ${it} for the other server.`
+              : `${plural(unsynced, "change")} on this phone ${one ? "hasn't" : "haven't"} reached the sync server this phone used before, which this version of Leve doesn't use. Switching deletes ${it} from this phone. Signing out keeps ${it} here, unsynced.`
         }
       />
       {saved.note ? <Body text={saved.note} /> : null}
       {problem ? <Body text={problem} /> : null}
+    </Dialog>
+  );
+}
+
+/**
+ * A paired server refused this phone's token: its operator signed the phone out, or the account
+ * is gone. The data stays; a new pairing link from the operator connects it again.
+ */
+function RefusedPrompt({ server, onLater }: { server: string; onLater: () => void }) {
+  return (
+    <Dialog
+      eyebrow="Connect again"
+      onClose={onLater}
+      closeLabel="Not now"
+      confirm={{
+        label: "Open Settings",
+        onPress: () => {
+          onLater();
+          router.push("/settings");
+        },
+      }}
+      footer={<Button rank="text" label="Not now" onPress={onLater} />}
+    >
+      <Body
+        text={`${serverLabel(server)} no longer accepts this phone. Until you connect again with a new pairing link from whoever runs it, new workouts and changes stay only on this phone.`}
+      />
     </Dialog>
   );
 }

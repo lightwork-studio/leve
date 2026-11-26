@@ -24,6 +24,9 @@ leve-sync admin devices revoke --everyone # the off switch: every phone of every
 
 Run it as the server's user with the same `LEVE_ADMIN_SOCKET` (or `LEVE_DATA`) as the server.
 
+On the phone, open the link (or scan its QR code with the camera), or paste it under Settings,
+Sync server. Leve names the server and asks before connecting.
+
 A pairing link opens a page on the server that hands the code to the app. The code is in the
 link's fragment, which browsers don't send, so it stays out of access logs. To show it as a QR code
 for the phone's camera: `qrencode -t ansiutf8 '<link>'`.

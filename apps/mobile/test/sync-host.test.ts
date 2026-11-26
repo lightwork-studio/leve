@@ -2,13 +2,20 @@
 /// <reference lib="dom" />
 import { act, createElement as h, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { forgetDevicePreferences } from "../src/data/device-preference-store.ts";
+import {
+  chooseBuiltInServer,
+  chooseOwnServer,
+  forgetServerChoice,
+  ownServer,
+} from "../src/sync/own-server-store.ts";
 import { SyncHost } from "../src/sync/sync-host.tsx";
 import { signInReminderDue } from "../src/sync/sync-preferences.ts";
 import type { SyncSessionOptions, SyncStatus } from "../src/sync/sync-session.ts";
 import { clerk } from "./support/clerk-expo.ts";
 import { files } from "./support/expo-file-system.ts";
+import { keychain } from "./support/expo-secure-store.ts";
 
 /* The prompts sync shows, driven by a stand-in session whose status the tests set. */
 
@@ -53,6 +60,12 @@ vi.mock("../src/sync/sync-session.ts", () => ({
 vi.mock("../src/sync/sync-config.ts", () => ({
   syncEnabled: () => true,
   syncServerUrl: "https://sync.test",
+  builtInServerConfigured: () => true,
+  ownServerAvailable: () => true,
+}));
+const navigation = vi.hoisted(() => ({ pushed: [] as string[] }));
+vi.mock("expo-router", () => ({
+  router: { push: (path: string) => navigation.pushed.push(path) },
 }));
 const data = vi.hoisted(() => ({
   account: null as string | null,
@@ -155,6 +168,9 @@ beforeEach(() => {
     unsyncedCount: 0,
   });
   sessions.created.length = 0;
+  keychain.reset();
+  forgetServerChoice();
+  navigation.pushed.length = 0;
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -333,4 +349,71 @@ it("notes a day without syncing only when changes are waiting", async () => {
   expect(screen()).toContain("Changes haven't synced since");
   await report({ lastSynced: Date.now() });
   expect(screen()).toBe("");
+});
+
+describe("a server the person paired", () => {
+  const home = {
+    server: "https://sync.home.example",
+    account: "acc-home",
+    device: "dev-1",
+    token: "device-token",
+  };
+
+  it("syncs with it on the phone's own token, without a Clerk sign-in", async () => {
+    clerk.signedIn = false;
+    chooseOwnServer(home);
+    await render();
+    expect(session().options).toMatchObject({ server: home.server, account: "acc-home" });
+    expect(await session().options.token(true)).toBe("device-token");
+    // The token is kept in the keychain, for this phone only, readable once it has been unlocked.
+    expect([...keychain.items.values()][0]?.options).toEqual({
+      keychainAccessible: "AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY",
+    });
+  });
+
+  it("says when the server no longer accepts the phone, and offers no Apple sign-in", async () => {
+    chooseOwnServer(home);
+    await render();
+    await report({ prompt: { kind: "sign_in" } });
+    expect(screen()).toContain("sync.home.example no longer accepts this phone");
+    expect(screen()).not.toContain("Sign in again");
+    await tap("Open Settings");
+    expect(navigation.pushed).toEqual(["/settings"]);
+    expect(screen()).not.toContain("no longer accepts");
+  });
+
+  it("keeps unsynced changes by switching back to the server they belong to", async () => {
+    chooseOwnServer(home);
+    await render();
+    data.unsyncedCount = 2;
+    await report({ prompt: { kind: "switch", reason: "server" } });
+    expect(screen()).toContain("Switching back keeps them for the other server");
+    expect(screen()).not.toContain("Keep them and sign out");
+    await tap("Keep them and switch back");
+    // Back on the build's own server, signed in with Clerk.
+    expect(ownServer()).toBeNull();
+    expect(session().options).toMatchObject({ server: "https://sync.test", account: "user_1" });
+  });
+
+  it("offers going back to the paired server after leaving it for the build's own", async () => {
+    chooseOwnServer(home);
+    chooseBuiltInServer();
+    await render();
+    data.unsyncedCount = 1;
+    await report({ prompt: { kind: "switch", reason: "server" } });
+    await tap("Keep them and switch back");
+    expect(ownServer()).toEqual(home);
+    expect(session().options).toMatchObject({ server: home.server });
+  });
+
+  it("restarts syncing when another server is paired", async () => {
+    chooseOwnServer(home);
+    await render();
+    const first = session();
+    await act(async () =>
+      chooseOwnServer({ ...home, server: "https://other.example", device: "d2" }),
+    );
+    expect(first.calls).toContain("stop");
+    expect(session().options.server).toBe("https://other.example");
+  });
 });

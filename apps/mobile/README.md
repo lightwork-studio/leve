@@ -57,6 +57,14 @@ Preview sync with the development Worker (`leve-sync`, see
 EAS `development` and `preview` environments, and in your shell or `.env` for a local build. The
 App Store build has no sync server yet, so it keeps everything on the phone. Browsers never sync.
 
+Development and TestFlight builds can also sync with a server the person runs
+([apps/sync-node](../sync-node/README.md)), whatever server the build has. Under Settings, Sync
+server, they paste the pairing link its operator gives them, or open it on the phone; the app
+names the server and asks before connecting. The phone then signs in with a device token of its
+own, kept in the keychain for this phone only, and Sign in with Apple steps aside. The server
+that held the phone's data before is remembered: switching with unsynced changes offers to switch
+back instead of deleting them.
+
 Sign in with Apple needs the capability on each bundle ID and each bundle ID registered as a native
 app on the Clerk instance; Leve Dev (`app.leve.dev`) needs both before it can sign in.
 
@@ -71,7 +79,8 @@ asks only when the person has to decide, and never during a workout:
   switches without asking. Otherwise it says how many changes would be lost, offers a copy, and
   deletes them only on confirmation, or signs the new account out to keep them.
 - **Sign in again:** the sign-in ran out. It can wait a day or be ignored; changes stay on the
-  phone until then.
+  phone until then. On a paired server, this is **Connect again**: the server no longer accepts
+  the phone, and a new pairing link from its operator connects it again.
 - **Update Leve:** the server no longer syncs with this version. "Not now" puts it aside until the
   app next comes to the front; logging carries on meanwhile, unsynced.
 

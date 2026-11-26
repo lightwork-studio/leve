@@ -1,0 +1,180 @@
+import Constants from "expo-constants";
+import { useEffect, useRef, useState } from "react";
+import { Text } from "react-native";
+import { space, type } from "../theme.ts";
+import { ActionRow, SettingRow } from "../ui/choice-row.tsx";
+import { Dialog, DialogField } from "../ui/dialog.tsx";
+import { announce } from "../ui/focus.ts";
+import { Group } from "../ui/group.tsx";
+import { haptic } from "../ui/haptics.ts";
+import { themedStyles, useStyles } from "../ui/themed.ts";
+import {
+  type OwnServer,
+  PAIRING_PROBLEMS,
+  PairingError,
+  type PairingLink,
+  pair,
+  parsePairingLink,
+  serverLabel,
+} from "./own-server.ts";
+import {
+  chooseBuiltInServer,
+  chooseOwnServer,
+  ownServer,
+  subscribeServerChoice,
+} from "./own-server-store.ts";
+import { builtInServerConfigured, ownServerAvailable, syncServerUrl } from "./sync-config.ts";
+
+const OWN_NOTE =
+  "Your workouts sync with this server. Connecting to another server, or going back, asks first if anything here hasn't synced.";
+const BUILT_IN_NOTE =
+  "To sync with a server you or someone you trust runs, open the pairing link its operator gives you, or paste it here.";
+
+/** The server choice in Settings: the build's own server, or one paired with a link. */
+export function SyncServerSection({ link }: { link?: PairingLink | null }) {
+  if (!ownServerAvailable()) return null;
+  return <Section link={link ?? null} />;
+}
+
+function useServerChoice(): OwnServer | null {
+  const [, setVersion] = useState(0);
+  useEffect(() => subscribeServerChoice(() => setVersion((n) => n + 1)), []);
+  return ownServer();
+}
+
+function Section({ link }: { link: PairingLink | null }) {
+  const own = useServerChoice();
+  const [connecting, setConnecting] = useState<PairingLink | "paste" | null>(link);
+  // A link opened while Settings is already showing.
+  useEffect(() => {
+    if (link) setConnecting(link);
+  }, [link]);
+  const builtIn = builtInServerConfigured();
+  return (
+    <Group label="Sync server" footnote={own ? OWN_NOTE : BUILT_IN_NOTE}>
+      <SettingRow
+        label={own ? serverLabel(own.server) : builtIn ? "Leve" : "None"}
+        hint={
+          own
+            ? own.accountName
+              ? `Account ${own.accountName}`
+              : "Your own server"
+            : builtIn
+              ? serverLabel(syncServerUrl)
+              : "Workouts stay on this phone"
+        }
+      >
+        {null}
+      </SettingRow>
+      <ActionRow
+        label={own ? "Connect to another server" : "Connect to your own server"}
+        divider
+        onPress={() => setConnecting("paste")}
+      />
+      {own ? (
+        <ActionRow
+          label={builtIn ? "Use Leve's server" : "Disconnect"}
+          divider
+          accessibilityHint="Asks first if anything on this phone hasn't synced"
+          onPress={() => chooseBuiltInServer()}
+        />
+      ) : null}
+      {connecting ? (
+        <ConnectDialog
+          initial={connecting === "paste" ? null : connecting}
+          onClose={() => setConnecting(null)}
+        />
+      ) : null}
+    </Group>
+  );
+}
+
+/**
+ * Pairs the phone with a server from its link. It always names the server and asks before
+ * connecting: a link anyone sent could point anywhere, and connecting uploads this phone's
+ * workouts there.
+ */
+function ConnectDialog({ initial, onClose }: { initial: PairingLink | null; onClose: () => void }) {
+  const styles = useStyles(sheet);
+  const [text, setText] = useState("");
+  const [problem, setProblem] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const working = useRef(false);
+  const parsed = initial ?? (text ? parsePairingLink(text) : null);
+
+  const connect = async () => {
+    if (working.current) return;
+    if (!parsed) {
+      setProblem("Paste the whole pairing link, starting with https://");
+      setAttempt((n) => n + 1);
+      haptic.warning();
+      return;
+    }
+    working.current = true;
+    setBusy(true);
+    setProblem(null);
+    try {
+      const paired = await pair(parsed, Constants.deviceName ?? "iPhone");
+      chooseOwnServer(paired);
+      haptic.success();
+      announce(`Connected to ${serverLabel(paired.server)}`);
+      onClose();
+    } catch (error) {
+      const message =
+        error instanceof PairingError
+          ? PAIRING_PROBLEMS[error.problem]
+          : "The connection couldn't be saved on this phone. Try again.";
+      setProblem(message);
+      setAttempt((n) => n + 1);
+      haptic.warning();
+      announce(message);
+    } finally {
+      working.current = false;
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog
+      eyebrow="Connect to a sync server"
+      onClose={onClose}
+      confirm={{
+        label: busy
+          ? "Connecting…"
+          : parsed
+            ? `Connect to ${serverLabel(parsed.server)}`
+            : "Connect",
+        onPress: () => void connect(),
+      }}
+    >
+      {initial ? null : (
+        <DialogField
+          value={text}
+          onChangeText={(value) => {
+            setText(value);
+            setProblem(null);
+          }}
+          placeholder="Pairing link"
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType="url"
+          autoFocus
+          hint="From whoever runs the server. It works once."
+          {...(problem ? { error: problem } : {})}
+          attempt={attempt}
+        />
+      )}
+      <Text style={styles.body}>
+        {parsed
+          ? `This phone will sync its workouts with ${serverLabel(parsed.server)}. Connect only to a server you trust.`
+          : "Paste the link, then check the server it names."}
+      </Text>
+      {initial && problem ? <Text style={styles.body}>{problem}</Text> : null}
+    </Dialog>
+  );
+}
+
+const sheet = themedStyles((c) => ({
+  body: { ...type.body, fontSize: 15, lineHeight: 22, color: c.fg2, marginTop: space.sm },
+}));
