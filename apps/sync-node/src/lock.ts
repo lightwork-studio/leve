@@ -1,52 +1,42 @@
 // SPDX-FileCopyrightText: Leve contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 
 /*
  * One server per data directory. Two processes on the same account databases would each keep
- * their own view of open accounts and restores, so the second refuses to start. The lock is a file
- * naming the process that holds it; one left by a process that has stopped is taken over.
+ * their own view of open accounts and restores, so the second refuses to start. The lock is the
+ * kernel's: an exclusive SQLite lock on a small file, held for as long as the server runs. The
+ * kernel drops it when the process ends however it ends, so a crash never leaves it behind, and
+ * it holds between containers sharing a volume on one machine, whose processes may all be PID 1.
+ * (Network filesystems may not honour it; keep the data directory on a local disk.)
  */
 
-export const LOCK_FILE = "leve-sync.pid";
+export const LOCK_FILE = "leve-sync.lock";
 
 export class LockedError extends Error {
   override name = "LockedError";
 }
 
-function running(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    // It exists but belongs to someone else: still running.
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
-}
-
-/** Takes the data directory's lock, or throws when a running server holds it. Returns a release. */
+/** Takes the data directory's lock, or throws when another server holds it. Returns a release. */
 export function lockDataDirectory(directory: string): () => void {
-  const path = join(directory, LOCK_FILE);
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      writeFileSync(path, `${process.pid}\n`, { flag: "wx", mode: 0o600 });
-      return () => {
-        try {
-          if (readFileSync(path, "utf8").trim() === String(process.pid)) rmSync(path);
-        } catch {}
-      };
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+  const db = new DatabaseSync(join(directory, LOCK_FILE));
+  try {
+    db.exec("PRAGMA busy_timeout = 0");
+    // In exclusive mode the first write takes the lock, and it is kept until the connection closes.
+    db.exec("PRAGMA locking_mode = EXCLUSIVE");
+    db.exec("CREATE TABLE IF NOT EXISTS holder (id INTEGER PRIMARY KEY, pid INTEGER, since TEXT)");
+    db.prepare("INSERT OR REPLACE INTO holder (id, pid, since) VALUES (1, ?, ?)").run(
+      process.pid,
+      new Date().toISOString(),
+    );
+  } catch (error) {
+    db.close();
+    if (/locked|busy/i.test((error as Error).message)) {
+      throw new LockedError(`another leve-sync server uses ${directory}`);
     }
-    const holder = Number(readFileSync(path, "utf8").trim());
-    // Our own pid in the file is a previous run that had it too, as PID 1 in a container does.
-    if (Number.isInteger(holder) && holder > 0 && holder !== process.pid && running(holder)) {
-      throw new LockedError(`another leve-sync server (process ${holder}) uses ${directory}`);
-    }
-    // Left by a server that stopped without releasing it.
-    rmSync(path, { force: true });
+    throw error;
   }
-  throw new LockedError(`couldn't lock ${directory}`);
+  return () => db.close();
 }
