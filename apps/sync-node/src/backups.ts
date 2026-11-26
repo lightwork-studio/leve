@@ -1,8 +1,16 @@
 // SPDX-FileCopyrightText: Leve contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { chmodSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { basename, isAbsolute, join, resolve } from "node:path";
+import {
+  chmodSync,
+  mkdirSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { basename, isAbsolute, join } from "node:path";
 import {
   type SqlConnection,
   type SqlEngine,
@@ -147,22 +155,29 @@ export async function restoreAccount(
   const { accounts, storage } = options;
   const account = accounts.findAccount(nameOrId);
   if (!account) throw new AccountsError(`no account named ${nameOrId}`);
-  const source = absolute(file, "the backup file");
-  const expected = basename(accountDatabasePath(options.directory, account.id));
-  // The account's own backups, and the copy a restore kept of the database it replaced.
-  // The account's own backups, the copies restores keep of what they replaced, and the snapshots
-  // storage upgrades keep (a server rollback restores those).
+  const path = absolute(file, "the backup file");
+  let source: string;
+  try {
+    source = realpathSync(path);
+  } catch {
+    throw new AccountsError(`cannot restore: the backup file at ${path} is unavailable`);
+  }
+  const live = accountDatabasePath(options.directory, account.id);
+  const copyStat = statSync(source, { bigint: true });
+  const liveStat = statSync(live, { bigint: true, throwIfNoEntry: false });
   const name = basename(source);
+  if (liveStat && copyStat.dev === liveStat.dev && copyStat.ino === liveStat.ino) {
+    throw new AccountsError(`${name} is ${account.name}'s live database, not a backup`);
+  }
+  // The account's own backups, the copies restores keep, and storage upgrade snapshots.
+  const expected = basename(live);
   const own =
     name === expected ||
     name.startsWith(`${expected}.replaced-`) ||
     new RegExp(`^${expected.replace(/[.]/g, "\\.")}\\.snapshot-v\\d+$`).test(name);
-  if (resolve(source) === resolve(accountDatabasePath(options.directory, account.id))) {
-    throw new AccountsError(`${name} is ${account.name}'s live database, not a backup`);
-  }
-  if (!own && !otherAccount) {
+  if ((!own || copyStat.nlink > 1n) && !otherAccount) {
     throw new AccountsError(
-      `${basename(source)} isn't a backup of ${account.name} (${expected}); add --other-account to restore it anyway`,
+      `${name} isn't a backup of ${account.name} (${expected}); add --other-account to restore it anyway`,
     );
   }
   let result: { replaced: string | null };

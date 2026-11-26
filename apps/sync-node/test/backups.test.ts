@@ -1,4 +1,13 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  linkSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -145,6 +154,11 @@ describe("backups and restores", () => {
     await expect(runAdmin(socket, ["restore", "Alice", bobsFile])).rejects.toThrow(
       "isn't a backup of Alice",
     );
+    const alias = join(dir, `account-${alice.account}.db`);
+    symlinkSync(bobsFile, alias);
+    await expect(runAdmin(socket, ["restore", "Alice", alias])).rejects.toThrow(
+      "isn't a backup of Alice",
+    );
     expect(await serverTitles(alice.token)).toEqual(["Alice's"]);
   });
 
@@ -268,9 +282,12 @@ describe("backups and restores", () => {
     await runAdmin(socket, ["restore", "Alice", snapshot]);
     expect(await serverTitles(alice.token)).toEqual(["Before"]);
 
-    await expect(
-      runAdmin(socket, ["restore", "Alice", join(data, `account-${alice.account}.db`)]),
-    ).rejects.toThrow("live database");
+    const live = join(data, `account-${alice.account}.db`);
+    const alias = join(dir, `account-${alice.account}.db`);
+    linkSync(live, alias);
+    for (const source of [live, alias]) {
+      await expect(runAdmin(socket, ["restore", "Alice", source])).rejects.toThrow("live database");
+    }
 
     writeFileSync(join(data, "account-0000-stray.db"), "");
     const output = await runAdmin(socket, ["backup", join(dir, "c")]);
