@@ -1,4 +1,4 @@
-import type { Workout } from "./types.ts";
+export { workoutMinutes } from "@leve/core";
 
 /** The calendar day of `time` in local time, as "2026-11-12". */
 export function dayKey(time: number): string {
@@ -13,11 +13,4 @@ export function calendarDaysBetween(from: number, to: number): number {
     return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
   };
   return Math.round((utc(to) - utc(from)) / 86_400_000);
-}
-
-/** A finished workout's length in whole minutes; never negative, whatever another device sent. */
-export function workoutMinutes(workout: Workout): number {
-  if (workout.endedAt === null) return 0;
-  const ms = Date.parse(workout.endedAt) - Date.parse(workout.startedAt);
-  return Number.isFinite(ms) ? Math.max(0, Math.round(ms / 60_000)) : 0;
 }
