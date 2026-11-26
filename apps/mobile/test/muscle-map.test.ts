@@ -8,6 +8,7 @@ import type { MuscleTargets } from "../src/model/muscle-map.ts";
 import type { ExerciseHistory, WorkoutPoint } from "../src/model/progress.ts";
 import { palettes } from "../src/theme.ts";
 import { ChartTabs, Segmented } from "../src/ui/chart-controls.tsx";
+import { PLATE_PRIMARY, PLATE_SECONDARY } from "../src/ui/exercise-image.tsx";
 import { ExerciseMuscles, MuscleCard, WorkoutMuscleSummary } from "../src/ui/muscle-map.tsx";
 import paths from "../src/ui/muscle-paths.json";
 
@@ -25,6 +26,7 @@ vi.mock("react-native", () => ({
   Text: "span",
   Modal: "section",
   ScrollView: "article",
+  Image: "img",
 }));
 vi.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0 }),
@@ -235,6 +237,36 @@ it("shows an exercise's primary muscles darkest and its secondary ones at the mi
   expect(renderToStaticMarkup(createElement(ExerciseMuscles, { targets: undefined }))).toContain(
     "Muscle information unavailable.",
   );
+});
+
+it("shows an exercise's image in place of the figure, keyed in the image's colours", async () => {
+  const screen = await mount(
+    createElement(ExerciseMuscles, {
+      targets: { primaryMuscles: ["chest"], secondaryMuscles: ["triceps", "shoulders"] },
+      // Metro hands an imported image to the app as a number.
+      image: 7,
+      name: "Bench Press",
+    }),
+  );
+  try {
+    const root = screen.root;
+    const plate = root.find(
+      (n) => n.props.accessibilityLabel === "Bench Press, with the muscles it works highlighted",
+    );
+    expect(plate.findByType("img").props.source).toBe(7);
+    expect(root.findAllByType("path")).toHaveLength(0);
+    const fills = root
+      .findAllByType("div")
+      .flatMap((n) => [n.props.style].flat(2))
+      .map((style) => (style as { backgroundColor?: string } | undefined)?.backgroundColor)
+      .filter(Boolean);
+    expect(fills).toEqual(expect.arrayContaining([PLATE_PRIMARY, PLATE_SECONDARY]));
+    expect(fills).not.toContain(dark.muscle.ramp[4]);
+    expect(texts(root)).toContain("Triceps · Shoulders");
+  } finally {
+    await act(() => screen.unmount());
+    vi.unstubAllGlobals();
+  }
 });
 
 it("opens the current workout's muscles on demand and dismisses it", async () => {

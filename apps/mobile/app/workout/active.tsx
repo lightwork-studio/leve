@@ -28,6 +28,7 @@ import {
 import Animated, { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppData } from "../../src/data/app-data.tsx";
+import { exerciseImage } from "../../src/data/exercise-images.ts";
 import { workoutExerciseNotes, workoutsByExercise } from "../../src/data/exercise-notes.ts";
 import { hasUnread, useSeenComments } from "../../src/data/note-seen.ts";
 import { useLive, usePastWorkouts } from "../../src/data/queries.ts";
@@ -102,6 +103,7 @@ import { BottomSheet } from "../../src/ui/bottom-sheet.tsx";
 import { CommitButton } from "../../src/ui/commit-button.tsx";
 import { Enter, StillOnOpen } from "../../src/ui/enter.tsx";
 import { ExerciseCardNotes } from "../../src/ui/exercise-card-notes.tsx";
+import { ExercisePlate } from "../../src/ui/exercise-image.tsx";
 import { ExerciseMoveButtons } from "../../src/ui/exercise-move-buttons.tsx";
 import { ExercisePicker } from "../../src/ui/exercise-picker.tsx";
 import { lastFocusMove, moveFocus } from "../../src/ui/focus.ts";
@@ -2165,6 +2167,7 @@ function EntryCard({
   const done = entry.sets.filter((s) => s.content.completedAt !== null).length;
   const numbers = setNumbers(entry.sets);
   const name = entry.entry.content.exerciseName;
+  const plate = exerciseImage(entry.entry.content.exerciseId);
   const restSeconds = entry.entry.content.restSeconds;
   const [showDistanceError, setShowDistanceError] = useState(false);
   const invalidDistance = entry.sets.some(({ id, content, needsSyncReview }) => {
@@ -2240,6 +2243,16 @@ function EntryCard({
             scrollRef={sheetScroll}
           >
             <View style={styles.actions}>
+              {plate && (
+                <ExercisePlate
+                  source={plate}
+                  height={232}
+                  radius={18}
+                  zoom={1.08}
+                  label={`${name}, with the muscles it works highlighted`}
+                  style={styles.plate}
+                />
+              )}
               {actionProblem && (
                 <Text accessibilityRole="alert" style={styles.problem}>
                   {actionProblem}
@@ -2896,6 +2909,7 @@ const sheet = themedStyles((c) => ({
     alignItems: "center",
     justifyContent: "center",
   },
+  plate: { marginBottom: space.sm },
   actions: {
     gap: space.xs,
     paddingHorizontal: 16,
