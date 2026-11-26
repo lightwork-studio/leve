@@ -97,6 +97,7 @@ import { supersetMemberships } from "../../src/model/supersets.ts";
 import type { WorkoutPlan } from "../../src/model/types.ts";
 import { countsTowardTotals } from "../../src/model/volume.ts";
 import type { ExerciseCardNotes as CardNotes } from "../../src/model/workout-notes.ts";
+import { SyncNoteBanner } from "../../src/sync/sync-note.tsx";
 import { font, gutter, numeral, radius, space, type } from "../../src/theme.ts";
 import { DestructiveButton } from "../../src/ui/action-sheet.tsx";
 import { BottomSheet } from "../../src/ui/bottom-sheet.tsx";
@@ -1502,6 +1503,8 @@ export default function ActiveWorkoutScreen() {
   const screen = (
     <StillOnOpen>
       <View style={[styles.ground, { paddingTop: Math.max(insets.top, space.sm) }]}>
+        {/* This screen covers the app's own sync note: a question waiting, sync paused. */}
+        <SyncNoteBanner style={styles.syncNote} />
         <Animated.View style={[styles.screen, drag.style]}>
           <View {...drag.handlers} style={styles.header}>
             <View style={styles.grab} />
@@ -2781,6 +2784,7 @@ function SetStopwatch({ startedAt, onPress }: { startedAt?: number; onPress: () 
 const sheet = themedStyles((c) => ({
   // Behind the sheet: the screen it rose over, dimmed.
   ground: { flex: 1, backgroundColor: c.scrim },
+  syncNote: { paddingHorizontal: gutter.group - 2, paddingBottom: space.sm },
   screen: {
     flex: 1,
     backgroundColor: c.bg,

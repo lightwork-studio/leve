@@ -671,3 +671,67 @@ it("still asks about clashes beside a deletion a restored server never had", asy
   expect((await serverRow("workout_set", "s1"))?.state).toBe("deleted");
   expect(JSON.parse(String((await serverRow("workout_set", "s2"))?.content)).weightKg).toBe(100);
 });
+
+/** Restores the server from a backup holding the workout and the exercise, but no sets. */
+async function restoreWithoutSets() {
+  await storage.close();
+  directory = mkdtempSync(join(tmpdir(), "leve-conflicts-restored-"));
+  storage = new ServerStorage({ engine: createNodeSqliteEngine(), directory, appVersion: "test" });
+  service = new SyncService({ storage });
+  const c = await phone("c");
+  c.store.put("workout", "w1", workout("Push Day"));
+  c.store.put("workout_exercise", "e1", entry("w1"));
+  await c.sync();
+}
+
+it("brings back the account's copy from before a restore when that side is kept over a deletion", async () => {
+  const { a, b } = await twoPhones((store) => {
+    store.put("workout", "w1", workout("Push Day"));
+    store.put("workout_exercise", "e1", entry("w1"));
+    store.put("workout_set", "s1", set(80, 8));
+  });
+  a.store.put("workout_set", "s1", set(85, 8));
+  await a.sync();
+  b.store.delete("workout_set", "s1");
+  await b.sync();
+  await restoreWithoutSets();
+  await b.sync();
+  const [conflict] = conflicts(b.store);
+  expect(conflict!.records.map((row) => row.id)).toEqual(["s1"]);
+  settleConflict(b.store, conflict!, "account");
+  expect(b.store.get("workout_set", "s1")?.content).toMatchObject({ weightKg: 85 });
+  await b.sync();
+  expect(conflicts(b.store)).toEqual([]);
+  expect(JSON.parse(String((await serverRow("workout_set", "s1"))?.content)).weightKg).toBe(85);
+});
+
+it("asks about a deletion neither side has a copy of after a restore, instead of keeping it unseen", async () => {
+  const { a, b } = await twoPhones((store) => {
+    store.put("workout", "w1", workout("Push Day"));
+    store.put("workout_exercise", "e1", entry("w1"));
+    store.put("workout_set", "s1", set(80, 8));
+  });
+  // Deleted in the account while changed here; then a restore that never had the set; then
+  // deleted here too, before the clash was settled.
+  a.store.delete("workout_set", "s1");
+  await a.sync();
+  b.store.put("workout_set", "s1", set(90, 8));
+  await b.sync();
+  await restoreWithoutSets();
+  await b.sync();
+  b.store.delete("workout_set", "s1");
+  await b.sync();
+  expect(b.store.problems().map((row) => row.id)).toEqual(["s1"]);
+
+  const [conflict, ...rest] = conflicts(b.store);
+  expect(rest).toEqual([]);
+  expect(conflict).toMatchObject({
+    phone: { choosable: true, confirm: "Keep it deleted" },
+    account: { choosable: true, confirm: "Keep it deleted" },
+  });
+  // Either way the deletion is sent, so the restored server keeps a marker.
+  settleConflict(b.store, conflict!, "account");
+  await b.sync();
+  expect(b.store.problems()).toEqual([]);
+  expect((await serverRow("workout_set", "s1"))?.state).toBe("deleted");
+});

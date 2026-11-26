@@ -22,6 +22,7 @@ import { Banner } from "../ui/notice.tsx";
 import { themedStyles, useAppearance, useStyles } from "../ui/themed.ts";
 import { ConflictPrompt } from "./conflict-prompt.tsx";
 import { syncEnabled, syncServerUrl } from "./sync-config.ts";
+import { publishSyncNote, type SyncNote } from "./sync-note.tsx";
 import {
   readLastSynced,
   setSignedOutOnPurpose,
@@ -161,32 +162,6 @@ function Sync() {
 
   // This phone's data belongs to an account, so its changes are meant to sync.
   const accountData = store.syncState().account !== null;
-  // Stopped by the person: every screen says so, with the way back. Nothing is asked meanwhile.
-  if (paused && (isSignedIn || accountData))
-    return (
-      <NotSyncing
-        label="Sync paused"
-        message="New workouts and changes stay on this phone until you resume."
-        action={{
-          label: "Resume",
-          hint: "Syncs this phone with your account again",
-          onPress: () => setSyncPaused(false),
-        }}
-      />
-    );
-  if (isLoaded && !isSignedIn && accountData && signedOutOnPurpose())
-    return (
-      <NotSyncing
-        label="Signed out"
-        message="Changes stay on this phone and sync once you sign in again with your account."
-        action={{
-          label: "Sign in",
-          hint: "Opens Settings to sign in",
-          onPress: () => router.push("/settings"),
-        }}
-      />
-    );
-
   const prompt = status.prompt;
   const signOutHere = async () => {
     setSignedOutOnPurpose(true);
@@ -198,6 +173,8 @@ function Sync() {
     }
   };
   const pause = () => setSyncPaused(true);
+
+  /** The question sync needs answered now, if any. */
   const ask = (): ReactNode => {
     if (prompt?.kind === "update") return <UpdatePrompt onPause={pause} />;
     if (prompt?.kind === "combine")
@@ -255,38 +232,86 @@ function Sync() {
       />
     );
   };
-  const question = ask();
-  // Nothing covers a workout being logged here: the question waits until it ends, and says so.
-  if (question && logging)
-    return (
-      <NotSyncing
-        label="Sync"
-        message="Sync has a question for you. It comes up once this workout ends."
-      />
-    );
+
+  /** What sync shows now: a question, or a note on every screen, or nothing. */
+  const decide = (): { question: ReactNode; note: SyncNote | null } => {
+    const none = { question: null, note: null };
+    // Stopped by the person: every screen says so, with the way back. Nothing is asked meanwhile.
+    if (paused && (isSignedIn || accountData))
+      return {
+        question: null,
+        note: {
+          label: "Sync paused",
+          message: "New workouts and changes stay on this phone until you resume.",
+          action: {
+            label: "Resume",
+            hint: "Syncs this phone with your account again",
+            onPress: () => setSyncPaused(false),
+          },
+        },
+      };
+    if (isLoaded && !isSignedIn && accountData && signedOutOnPurpose())
+      return {
+        question: null,
+        note: {
+          label: "Signed out",
+          message: "Changes stay on this phone and sync once you sign in again with your account.",
+          action: {
+            label: "Sign in",
+            hint: "Opens Settings to sign in",
+            onPress: () => router.push("/settings"),
+          },
+        },
+      };
+    const question = ask();
+    // Nothing covers a workout being logged here: the question waits until it ends, and says so.
+    // So does replacing this phone's data for another account, which waits for the same workout.
+    if (logging && (question || status.heldForWorkout))
+      return {
+        question: null,
+        note: {
+          label: "Sync",
+          message: "Sync has a question for you. It comes up once this workout ends.",
+        },
+      };
+    if (question) return { question, note: null };
+    // The server is too old for this app: nothing the phone can do but wait or pause, so it says
+    // so straight away, not only after a day.
+    if (status.serverOutdated)
+      return {
+        question: null,
+        note: {
+          label: "Not syncing",
+          message:
+            "Your sync server needs an update before this phone can sync. Changes stay on this phone, and Leve checks again every hour.",
+          action: { label: "Pause", hint: "Stops syncing until you resume it", onPress: pause },
+        },
+      };
+    const since = status.lastSynced ?? status.failingSince;
+    if (
+      isSignedIn &&
+      since !== null &&
+      Date.now() - since > STALE_AFTER_MS &&
+      store.hasUnsyncedWork()
+    ) {
+      const day = new Date(since).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+      return {
+        question: null,
+        note: {
+          label: "Not syncing",
+          message: `Changes haven't synced since ${day}. They're safe on this phone, and Leve keeps trying.`,
+        },
+      };
+    }
+    return none;
+  };
+  const { question, note } = decide();
+  // Screens drawn above this one (the live workout and finishing it are native modals) show the
+  // same note themselves.
+  useEffect(() => publishSyncNote(note));
+  useEffect(() => () => publishSyncNote(null), []);
   if (question) return question;
-
-  // The server is too old for this app: nothing the phone can do but wait or pause, so it says
-  // so straight away, not only after a day.
-  if (status.serverOutdated)
-    return (
-      <NotSyncing
-        label="Not syncing"
-        message="Your sync server needs an update before this phone can sync. Changes stay on this phone, and Leve checks again every hour."
-        action={{
-          label: "Pause",
-          hint: "Stops syncing until you resume it",
-          onPress: pause,
-        }}
-      />
-    );
-
-  const now = Date.now();
-  const since = status.lastSynced ?? status.failingSince;
-  if (isSignedIn && since !== null && now - since > STALE_AFTER_MS && store.hasUnsyncedWork()) {
-    return <StaleNote since={since} />;
-  }
-  return null;
+  return note ? <NotSyncing note={note} /> : null;
 }
 
 function Body({ text }: { text: string }) {
@@ -558,34 +583,20 @@ function UpdatePrompt({ onPause }: { onPause: () => void }) {
   );
 }
 
-function StaleNote({ since }: { since: number }) {
-  const day = new Date(since).toLocaleDateString(undefined, { day: "numeric", month: "short" });
-  return (
-    <NotSyncing
-      label="Not syncing"
-      message={`Changes haven't synced since ${day}. They're safe on this phone, and Leve keeps trying.`}
-    />
-  );
-}
-
 /**
  * Sync isn't running, or is waiting on the person: a note at the top of every screen, above the
  * app, until that changes. It can't be dismissed, only acted on.
  */
-function NotSyncing({
-  label,
-  message,
-  action,
-}: {
-  label: string;
-  message: string;
-  action?: { label: string; hint: string; onPress: () => void };
-}) {
+function NotSyncing({ note }: { note: SyncNote }) {
   const styles = useStyles(sheet);
   const insets = useSafeAreaInsets();
   return (
     <View style={[styles.dock, { paddingTop: insets.top + space.sm }]}>
-      <Banner label={label} message={message} {...(action ? { action } : {})} />
+      <Banner
+        label={note.label}
+        message={note.message}
+        {...(note.action ? { action: note.action } : {})}
+      />
     </View>
   );
 }

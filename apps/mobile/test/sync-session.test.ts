@@ -77,7 +77,10 @@ const connect =
     }
     if (tooOld || serverTooOld) {
       const update = serverTooOld ? "server" : "client";
-      return { status: 400, body: { error: { code: "update_required", message: "update", update } } };
+      return {
+        status: 400,
+        body: { error: { code: "update_required", message: "update", update } },
+      };
     }
     return serviceTransport(service, account)(path, body);
   };
@@ -280,14 +283,20 @@ it("doesn't hold a switch back for a workout logged on another phone", async () 
   alice.stop();
 
   // Running on another of Alice's phones, not logged here: everything here is in her account.
-  let logging = false;
-  const { events } = start(store, "bob", { loggingHere: () => logging });
-  await until(() => events.startedOver > 0);
+  const free = start(store, "bob", { loggingHere: () => false });
+  await until(() => free.events.startedOver > 0);
+  free.session.stop();
 
-  logging = true;
+  // Logged here: held back, and the status says so, so the app can say a question waits.
+  let logging = true;
   const held = start(store, "bob", { loggingHere: () => logging });
-  await new Promise((resolve) => setTimeout(resolve, 150));
+  await until(() => held.session.status.heldForWorkout === true);
+  await new Promise((resolve) => setTimeout(resolve, 100));
   expect(held.events.startedOver).toBe(0);
+  expect(requests.filter((line) => line.startsWith("bob"))).toEqual([]);
+  logging = false;
+  await until(() => held.events.startedOver > 0);
+  expect(held.session.status.heldForWorkout).toBe(false);
 });
 
 it("sends nothing more once stopped, even from a sync already under way", async () => {

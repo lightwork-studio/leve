@@ -69,8 +69,8 @@ silently](../../docs/data-compatibility.md#sync-never-stops-silently)): anything
 for the whole app or for one record, is brought to the person to resolve. Every question below can't
 be put off. Where it can't be answered yet, the way out is pausing sync (or, for data that isn't the
 signed-in account's, signing out). While the phone's data belongs to an account but sync isn't
-running, paused or signed out on purpose, every screen says so, with Resume or Sign in. Pause and
-resume are also in Settings. A sync server that needs an update is said on every screen straight
+running, paused or signed out on purpose, every screen says so (the live workout too), with Resume
+or Sign in. Pause and resume are also in Settings while signed in. A sync server that needs an update is said on every screen straight
 away, with Pause. Questions never cover a workout being logged on this phone: they wait, with a note
 on every screen, and come up as soon as it ends. A workout running on another phone, which shows
 here as in progress too, doesn't hold them back.

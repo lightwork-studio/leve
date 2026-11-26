@@ -34,6 +34,11 @@ export interface SyncStatus {
    * keeps checking, and the app says so on every screen.
    */
   serverOutdated?: boolean;
+  /**
+   * Replacing this phone's data for another account waits for the workout being logged here to
+   * end. Nothing syncs meanwhile, so the app says a question is waiting.
+   */
+  heldForWorkout?: boolean;
 }
 
 export interface SyncSessionOptions {
@@ -371,7 +376,11 @@ export class SyncSession {
     } else if (state.account !== this.#options.account || state.server !== this.#options.server) {
       // Never take a workout being logged here away; look again once it ends.
       const logging = this.#options.loggingHere ?? (() => store.activeWorkout() !== null);
-      if (logging()) return this.#timing.busy;
+      if (logging()) {
+        if (!this.#status.heldForWorkout) this.#setStatus({ heldForWorkout: true });
+        return this.#timing.busy;
+      }
+      if (this.#status.heldForWorkout) this.#setStatus({ heldForWorkout: false });
       if (unsyncedChanges(store) > 0) {
         this.#ask({
           kind: "switch",

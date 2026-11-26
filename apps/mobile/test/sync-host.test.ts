@@ -591,3 +591,54 @@ it("asks again after leaving a review screen it was already on", async () => {
   await render();
   expect(screen()).toContain("Review it");
 });
+
+it("asks once more, with a copy offered, before deleting work kept nowhere else", async () => {
+  pending.conflicts = [
+    {
+      ...folderConflict("workout:w1|workout:w1", "Offline Day"),
+      phone: {
+        lines: [{ label: "Holds", value: "1 exercise · 3 sets" }],
+        choosable: false,
+        confirm: "Keep the workout",
+        why: "This phone's change couldn't be saved in your account.",
+      },
+      account: {
+        lines: [{ label: "Workout", value: "Not in your account" }],
+        choosable: true,
+        confirm: "Delete it",
+        warning:
+          "Your account has no copy of this phone's version, so deleting it can't be undone.",
+      },
+    },
+  ];
+  await render();
+  await tap("In your account: Workout Not in your account");
+  await tap("Delete it");
+  expect(pending.settled).toEqual([]);
+  expect(screen()).toContain("so deleting it can't be undone");
+  await tap("Save a copy first");
+  expect(data.exported).toBe(1);
+  expect(screen()).toContain("A copy is saved.");
+  await tap("Delete it for good");
+  expect(pending.settled).toEqual([["workout:w1|workout:w1", "account"]]);
+});
+
+it("shows the same note on screens drawn above the app, such as the live workout", async () => {
+  clerk.signedIn = true;
+  const { SyncNoteBanner } = await import("../src/sync/sync-note.tsx");
+  const above = document.createElement("div");
+  document.body.append(above);
+  const modal = createRoot(above);
+  await act(async () => modal.render(h(SyncNoteBanner)));
+  expect(above.textContent).toBe("");
+  data.workout = true;
+  writeDevicePreference("sync.workoutHere", "w");
+  await render();
+  await report({ prompt: { kind: "update" } });
+  expect(above.textContent).toContain("It comes up once this workout ends.");
+  data.workout = false;
+  await render();
+  expect(above.textContent).toBe("");
+  await act(async () => modal.unmount());
+  above.remove();
+});

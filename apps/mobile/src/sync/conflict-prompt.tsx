@@ -29,8 +29,11 @@ export function ConflictPrompt({
   onPause: () => void;
 }) {
   const styles = useStyles(sheet);
-  const { change } = useAppData();
+  const { change, exportData } = useAppData();
   const [picked, setPicked] = useState<Side | null>(null);
+  /** The picked side loses work kept nowhere else: its warning is showing, asking once more. */
+  const [warned, setWarned] = useState(false);
+  const [copy, setCopy] = useState<"idle" | "busy" | "done" | "failed">("idle");
   const [problem, setProblem] = useState<string | null>(null);
   const [settled, setSettled] = useState(0);
   const { height } = useWindowDimensions();
@@ -40,6 +43,7 @@ export function ConflictPrompt({
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset only when what's shown changes
   useEffect(() => {
     setPicked(null);
+    setWarned(false);
   }, [shown]);
   // Why a choice was refused stays until the next conflict, so it's seen with the fresh view.
   const key = current?.key;
@@ -51,6 +55,12 @@ export function ConflictPrompt({
 
   const keep = () => {
     if (!picked) return;
+    // Work kept nowhere else: say so and offer a copy before it goes.
+    if (current[picked].warning && !warned) {
+      setWarned(true);
+      return;
+    }
+    if (copy === "busy") return;
     try {
       change((store) => settleConflict(store, current, picked));
       haptic.success();
@@ -63,7 +73,22 @@ export function ConflictPrompt({
       change(() => undefined);
     }
   };
-  const confirm = picked ? current[picked].confirm : "Choose a version";
+  const saveCopy = async () => {
+    if (copy === "busy") return;
+    setCopy("busy");
+    try {
+      await exportData();
+      setCopy("done");
+    } catch {
+      setCopy("failed");
+    }
+  };
+  const warning = picked && warned ? current[picked].warning : undefined;
+  const confirm = picked
+    ? warning
+      ? `${current[picked].confirm} for good`
+      : current[picked].confirm
+    : "Choose a version";
   // This phone's version can't be kept now: keeping it on the phone means pausing sync.
   const stuck = !current.phone.choosable;
   if (current.review) {
@@ -132,19 +157,43 @@ export function ConflictPrompt({
           label="On this phone"
           side={current.phone}
           selected={picked === "phone"}
-          onPress={() => setPicked("phone")}
+          onPress={() => {
+            setPicked("phone");
+            setWarned(false);
+          }}
         />
         <Choice
           label="In your account"
           side={current.account}
           selected={picked === "account"}
-          onPress={() => setPicked("account")}
+          onPress={() => {
+            setPicked("account");
+            setWarned(false);
+          }}
         />
       </ScrollView>
       {problem ? (
         <Text accessibilityRole="alert" style={styles.problem}>
           {problem}
         </Text>
+      ) : null}
+      {warning ? (
+        <View style={styles.warning}>
+          <Text accessibilityRole="alert" style={styles.problem}>
+            {warning}
+          </Text>
+          <Button
+            rank="text"
+            label={copy === "busy" ? "Saving a copy…" : "Save a copy first"}
+            busy={copy === "busy"}
+            onPress={saveCopy}
+          />
+          {copy === "done" || copy === "failed" ? (
+            <Text style={styles.pauseText}>
+              {copy === "done" ? "A copy is saved." : "The copy wasn't saved. Try again."}
+            </Text>
+          ) : null}
+        </View>
       ) : null}
       <Button
         rank="primary"
@@ -258,6 +307,7 @@ const sheet = themedStyles((c) => ({
   problem: { ...type.body, fontSize: 14, lineHeight: 20, color: c.alert, marginTop: space.sm },
   confirm: { marginTop: space.md, marginRight: -4 },
   pause: { alignItems: "center", gap: 2 },
+  warning: { alignItems: "center", gap: 2 },
   pauseText: {
     ...type.body,
     fontSize: 13,
