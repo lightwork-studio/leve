@@ -414,6 +414,20 @@ describe("signing in to MCP", () => {
     expect(reached).toEqual([]);
   });
 
+  it("advertises write access only when the Worker explicitly enables it", async () => {
+    for (const value of ["false", "TRUE", "true"]) {
+      const { send } = mcpSetup({ MCP_WRITES_ENABLED: value });
+      const response = await send(null, {
+        method: "GET",
+        path: "/.well-known/oauth-protected-resource/mcp",
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        scopes_supported: value === "true" ? ["leve:read", "leve:write"] : ["leve:read"],
+      });
+    }
+  });
+
   it("refuses tokens that aren't access tokens this instance issued for this server", async () => {
     const { send, reached } = mcpSetup();
     const valid = await signAccess();

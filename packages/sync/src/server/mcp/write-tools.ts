@@ -97,7 +97,9 @@ export function registerWriteTools(
   release: ReleaseId,
 ): void {
   const { account, client } = principal;
-  const agent = [...(client.name?.trim() || client.id)].slice(0, LIMITS.agentNameLength).join("");
+  const agent = (client.name?.trim() || client.id)
+    .slice(0, LIMITS.agentNameLength)
+    .replace(/[\uD800-\uDBFF]$/, "");
   const scopeChallenge = requireScopes(SCOPES.write);
   const writeAnnotations = {
     readOnlyHint: false,
@@ -107,7 +109,11 @@ export function registerWriteTools(
   };
   const createAnnotations = { ...writeAnnotations, destructiveHint: false };
 
-  async function submit(submission: Submission, context: WriteContext, patch = false) {
+  async function submit(
+    submission: Submission,
+    context: WriteContext,
+    { patch = false, author }: { patch?: boolean; author?: string } = {},
+  ) {
     // Also enforce the scope in the handler, independently of the transport's OAuth challenge.
     if (client.kind !== "agent" || !allows(principal, SCOPES.write)) {
       return reply({ status: "insufficient_scope", scope: SCOPES.write }, true);
@@ -117,7 +123,7 @@ export function registerWriteTools(
       const [result] = await service.submit(account, release, [submission], {
         lineage: context.lineage,
         patch,
-        deleteRequiresRecord: true,
+        agent: author === undefined ? {} : { name: author },
       });
       if (!result) throw new Error("Missing sync write result");
       if (result.status === "accepted")
@@ -129,14 +135,19 @@ export function registerWriteTools(
       return reply({ ...result, kind, id, current }, true);
     } catch (error) {
       if (!(error instanceof LineageChangedError)) throw error;
-      const { record, lineage } = await service.readRecordTree(account, kind, id, release);
+      const { record, lineage } = await service.readRecordTree(account, kind, id, release, false);
       return reply({ status: "cursor_reset", kind, id, lineage, current: record }, true);
     }
   }
 
   const submissionId = ({ requestId }: WriteContext) => requestKey(client.id, requestId, "receipt");
 
-  const create = (args: WriteContext & { id?: string }, kind: string, content: JsonObject) =>
+  const create = (
+    args: WriteContext & { id?: string },
+    kind: string,
+    content: JsonObject,
+    author?: string,
+  ) =>
     submit(
       {
         op: "put",
@@ -147,6 +158,7 @@ export function registerWriteTools(
         content,
       },
       args,
+      author === undefined ? {} : { author },
     );
 
   server.registerTool(
@@ -163,16 +175,9 @@ export function registerWriteTools(
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async ({ kind, id, includeSchema }) => {
-      const { lineage, record, descendants } = await service.readRecordTree(
-        account,
-        kind,
-        id,
-        release,
-      );
+      const snapshot = await service.readRecordTree(account, kind, id, release);
       return reply({
-        lineage,
-        record,
-        descendants: descendants.map(({ kind, id, revision }) => ({ kind, id, revision })),
+        ...snapshot,
         ...(includeSchema && service.contract.hasKind(kind, release)
           ? { contentSchema: service.contract.wireSchema(kind, release).description }
           : {}),
@@ -223,7 +228,7 @@ export function registerWriteTools(
           content: args.fields,
         },
         args,
-        true,
+        { patch: true },
       ),
   );
 
@@ -290,7 +295,7 @@ export function registerWriteTools(
               workoutId: target.workoutId ?? null,
               pinned: target.pinned,
             };
-      return create(args, target.kind, { ...content, text, createdAt, agent });
+      return create(args, target.kind, { ...content, text, createdAt }, agent);
     },
   );
 
@@ -305,11 +310,15 @@ export function registerWriteTools(
       scopeChallenge,
     },
     async (args) =>
-      create(args, args.kind, {
-        noteId: args.noteId,
-        text: args.text,
-        createdAt: args.createdAt,
+      create(
+        args,
+        args.kind,
+        {
+          noteId: args.noteId,
+          text: args.text,
+          createdAt: args.createdAt,
+        },
         agent,
-      }),
+      ),
   );
 }

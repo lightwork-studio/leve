@@ -178,6 +178,12 @@ describe("MCP writes through phone sync", () => {
     const written = await call("add_comment", comment);
     expect(written).toMatchObject({ status: "accepted", revision: 3 });
     expect(await call("add_comment", comment)).toEqual(written);
+    const renamed = await connect({
+      ...agent("alice"),
+      client: { kind: "agent", id: "oauth-coach", name: "Renamed Coach" },
+    });
+    expect(await renamed.call("add_note", args)).toEqual(note);
+    expect(await renamed.call("add_comment", comment)).toEqual(written);
     await alice.sync();
     expect(alice.store.get("workout_note", String(note?.id))?.content).toMatchObject({
       agent: "Coach",
@@ -188,6 +194,65 @@ describe("MCP writes through phone sync", () => {
       text: comment.text,
     });
     expect(await server.head("alice")).toBe(3);
+  });
+
+  it("keeps an authenticated author label within the contract's text limit", async () => {
+    const { connect } = await setup();
+    const { call, get } = await connect({
+      ...agent("alice"),
+      client: { kind: "agent", id: "oauth-coach", name: "🏋".repeat(40) },
+    });
+    const { lineage } = await get();
+    const note = await call("add_note", {
+      lineage,
+      requestId: "long-label",
+      createdAt,
+      text: "A note",
+      target: { kind: "workout_note", workoutId: "workout-a" },
+    });
+    expect(note).toMatchObject({ status: "accepted" });
+    expect((await get("workout_note", String(note?.id))).record?.content.agent).toBe(
+      "🏋".repeat(30),
+    );
+  });
+
+  it("preserves built-in exercise IDs and the measurement type of a custom exercise", async () => {
+    const { connect } = await setup();
+    const { call, get } = await connect();
+    const { lineage } = await get();
+    const args = {
+      requestId: "custom",
+      lineage,
+      kind: "custom_exercise",
+      content: {
+        name: "My Press",
+        type: "weight_reps",
+        primaryMuscle: "chest",
+        secondaryMuscles: [],
+        equipment: "barbell",
+        usesBodyweight: false,
+        archived: false,
+      },
+    };
+    expect(
+      await call("create_record", { ...args, id: "builtin:barbell-bench-press" }),
+    ).toMatchObject({ status: "invalid", code: "invalid_content", current: null });
+    const created = await call("create_record", { ...args, id: "my-press" });
+    expect(created).toMatchObject({ status: "accepted" });
+    expect(
+      await call("update_record", {
+        requestId: "change-type",
+        lineage,
+        kind: args.kind,
+        id: "my-press",
+        baseRevision: created?.revision,
+        fields: { type: "duration" },
+      }),
+    ).toMatchObject({
+      status: "invalid",
+      code: "invalid_content",
+      current: { content: { type: "weight_reps" } },
+    });
   });
 
   it("denies cross-account edits, reads and deletes, even with the other record's revision", async () => {
@@ -293,6 +358,35 @@ describe("MCP writes through phone sync", () => {
     expect(response.status).toBe(403);
     expect(response.headers.get("www-authenticate")).toContain('scope="leve:write"');
     expect(response.headers.get("www-authenticate")).toContain(`resource_metadata="${metadata}"`);
+    expect(await server.row("alice", "workout", "blocked")).toBeUndefined();
+  });
+
+  it("keeps writes disabled even for a write-scoped client while reads work", async () => {
+    const { server } = await setup();
+    const endpoint = createMcpEndpoint({ service: server.service, version: "test" });
+    const client = new Client({ name: "agent", version: "1" });
+    await client.connect(
+      new StreamableHTTPClientTransport(url, {
+        fetch: (input, init) => endpoint(new Request(input, init), agent("alice")),
+      }),
+    );
+    expect((await client.listTools()).tools.map(({ name }) => name)).not.toContain("create_record");
+    const lineage = (await server.storage.account("alice")).lineage();
+    const result = await client.callTool({
+      name: "create_record",
+      arguments: {
+        requestId: "disabled",
+        lineage,
+        kind: "workout",
+        id: "blocked",
+        content: workout("Blocked"),
+      },
+    });
+    expect(result.isError).toBe(true);
+    expect(
+      (await client.callTool({ name: "get_workout", arguments: { id: "workout-a" } }))
+        .structuredContent,
+    ).toMatchObject({ workout: { title: "Push" } });
     expect(await server.row("alice", "workout", "blocked")).toBeUndefined();
   });
 });
