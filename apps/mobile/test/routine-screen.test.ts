@@ -2209,3 +2209,104 @@ it("asks before leaving a new routine that has something in it", async () => {
     vi.unstubAllGlobals();
   }
 });
+
+it("leaves without asking once changes are copied into a new routine or the routine is deleted", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  store = await openDeviceStore({
+    engine: createSqlJsEngine(await initSqlJs()),
+    path: "/routine-leave-copy-delete",
+    appVersion: "test",
+  });
+  let rendered: ReactTestRenderer | undefined;
+  const open = async () => {
+    await act(() => rendered?.unmount());
+    await act(() => {
+      rendered = create(createElement(RoutineDetails));
+    });
+    if (!rendered) throw Error("Missing routine editor");
+    const root = rendered.root;
+    await act(() =>
+      root.findByProps({ accessibilityLabel: "Routine name" }).props.onChangeText("Tuesday"),
+    );
+    return root;
+  };
+  try {
+    store.put("routine", "routine", routine);
+    leaving.left = 0;
+    let root = await open();
+    await tapText(root, "Save as new routine");
+    await act(() => root.findByType("Dialog" as never).props.confirm.onPress());
+    expect(leaveSheet(root)).toBeUndefined();
+    expect(leaving.left).toBe(1);
+    expect(store.list("routine").filter((row) => !row.deleted)).toHaveLength(2);
+
+    root = await open();
+    await tapText(root, "Delete routine");
+    await act(() =>
+      root
+        .findAll(
+          (n) => n.type === ("ActionSheet" as never) && n.props.action === "Delete routine",
+        )[0]
+        ?.props.onConfirm(),
+    );
+    expect(leaveSheet(root)).toBeUndefined();
+    expect(leaving.left).toBe(2);
+    expect(store.list("routine").filter((row) => !row.deleted && row.id === "routine")).toEqual([]);
+  } finally {
+    await act(() => rendered?.unmount());
+    store.close();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("saves a new routine from the leaving sheet, and leaves after Save routine without asking", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  store = await openDeviceStore({
+    engine: createSqlJsEngine(await initSqlJs()),
+    path: "/routine-leave-new-save",
+    appVersion: "test",
+  });
+  let rendered: ReactTestRenderer | undefined;
+  const open = async (name: string) => {
+    await act(() => rendered?.unmount());
+    await act(() => {
+      rendered = create(createElement(NewRoutine));
+    });
+    if (!rendered) throw Error("Missing routine form");
+    const root = rendered.root;
+    await act(() =>
+      root.findByProps({ accessibilityLabel: "Routine name" }).props.onChangeText(name),
+    );
+    await tapText(root, "Add exercise");
+    await act(() =>
+      root
+        .find((n) => typeof n.props.onPickMany === "function")
+        .props.onPickMany([EXERCISES.bench]),
+    );
+    return root;
+  };
+  const titles = () =>
+    store
+      .list("routine")
+      .map((row) => row.content?.title)
+      .sort();
+  try {
+    leaving.left = 0;
+    let root = await open("Legs");
+    await goBack(root);
+    expect(leaving.left).toBe(0);
+    await act(() => leaveSheet(root)?.props.choices[0].onPress());
+    expect(leaving.left).toBe(1);
+    expect(titles()).toEqual(["Legs"]);
+
+    root = await open("Arms");
+    await tapText(root, "Save routine");
+    expect(leaveSheet(root)).toBeUndefined();
+    expect(leaving.left).toBe(2);
+    expect(titles()).toEqual(["Arms", "Legs"]);
+  } finally {
+    await act(() => rendered?.unmount());
+    store.close();
+    vi.unstubAllGlobals();
+  }
+});
