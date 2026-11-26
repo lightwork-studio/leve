@@ -10,4 +10,6 @@ interface Env {
   CLERK_AUTHORIZED_PARTIES?: string;
   ADMIN_TOKEN?: string;
   MCP_RESOURCE_URL?: string;
+  MCP_WRITES_ENABLED?: string;
+  MCP_CLIENT_NAMES?: string;
 }

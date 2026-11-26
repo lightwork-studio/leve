@@ -47,6 +47,21 @@ continues. Reauthorizing the client may be needed when its audience or scopes ch
 For weekly progress, pass the lifter's IANA time zone to `get_progress` to match the phone's local
 week boundaries. The tool uses UTC when no time zone is supplied.
 
+### Enable MCP writes in development
+
+Grant the `leve:write` custom OAuth scope only to the clients you want to test, and set the
+`MCP_WRITES_ENABLED` Worker binding to the string `true`. Write access includes reads. Keep
+`leve:read` as the default for clients that don't request a scope.
+
+Sync a test account from the app first. An MCP client can then call `get_record` to get its account
+history identifier, the record's revision, and any descendant revisions. Supply a unique request
+ID for each write and reuse it with the same arguments on retry. An update sends the fields to
+change. A stale update returns the current copy for review. For names on agent notes and comments,
+optionally set `MCP_CLIENT_NAMES` to a JSON object mapping OAuth client IDs to their registered
+names. Unlisted clients are attributed by their verified OAuth client ID.
+
+Remove `MCP_WRITES_ENABLED` to disable writes while keeping reads available.
+
 [clerk-mcp]: https://clerk.com/docs/guides/ai/mcp/build-mcp-server
 
 ## Workers

@@ -210,7 +210,12 @@ export class SyncService {
     accountId: string,
     release: ReleaseId,
     submissions: readonly Submission[],
-    options: { lineage?: string; written?: Set<string> } = {},
+    options: {
+      lineage?: string;
+      written?: Set<string>;
+      patch?: boolean;
+      deleteRequiresRecord?: boolean;
+    } = {},
   ): Promise<SubmissionResult[]> {
     if (!this.releases.includes(release)) throw new Error(`Unsupported sync release ${release}`);
     const store = await this.#storage.account(accountId);
@@ -220,6 +225,12 @@ export class SyncService {
       submissions,
     });
     if (shape.length > 0) throw new Error(`invalid submissions: ${describeIssues(shape)}`);
+    if (
+      options.patch &&
+      submissions.some((submission) => submission.op !== "put" || submission.baseRevision === null)
+    ) {
+      throw new Error("patches require a put with a base revision");
+    }
     if (
       new Set(submissions.map((submission) => submission.submissionId)).size !== submissions.length
     ) {
@@ -239,7 +250,7 @@ export class SyncService {
               throw new LineageChangedError();
             }
             tx.pruneReceipts(cutoff);
-            return this.#decide(tx, release, submission, now.toISOString(), options.written);
+            return this.#decide(tx, release, submission, now.toISOString(), options);
           }),
         );
       }
@@ -269,11 +280,19 @@ export class SyncService {
     release: ReleaseId,
     submission: Submission,
     acceptedAt: string,
-    written?: Set<string>,
+    {
+      written,
+      patch,
+      deleteRequiresRecord,
+    }: {
+      written?: Set<string>;
+      patch?: boolean;
+      deleteRequiresRecord?: boolean;
+    },
   ): SubmissionResult {
     const { submissionId, kind, id } = submission;
     const digest = createHash("sha256")
-      .update(canonicalJson({ release, ...submission }))
+      .update(canonicalJson({ release, ...submission, ...(patch ? { patch: true } : {}) }))
       .digest("hex");
     const receipt = tx.receipt(submissionId);
     if (receipt) {
@@ -324,6 +343,7 @@ export class SyncService {
     const current = tx.get(kind, id);
 
     if (submission.op === "delete") {
+      if (deleteRequiresRecord && !current) return conflict("stale", null);
       const parent = definition.parent;
       // Shared-ID settings belong to the workout for its entire lifetime. A
       // device recovering a deleted workout may have only the two tombstones.
@@ -351,7 +371,18 @@ export class SyncService {
       return accept(tx.writeDeleted(kind, id));
     }
 
-    const issues = this.contract.decode(kind, submission.content, release, id);
+    let submitted = submission.content;
+    if (patch) {
+      // MCP sends only the requested fields. Apply them to the exact copy its client read
+      // inside the same transaction that checks the revision and commits the write.
+      if (current?.state === "deleted") return conflict("deleted", current);
+      if (!current || current.revision !== submission.baseRevision)
+        return conflict("stale", current);
+      const base = this.#change(current, release);
+      if (base.state !== "live") return conflict("stale", current);
+      submitted = { ...base.content, ...submitted };
+    }
+    const issues = this.contract.decode(kind, submitted, release, id);
     if (issues.length > 0) {
       return {
         status: "invalid",
@@ -361,7 +392,7 @@ export class SyncService {
       };
     }
     const stored = current?.state === "live" ? current.content : null;
-    const content = this.contract.applyOmissionRule(kind, stored, submission.content, release);
+    const content = this.contract.applyOmissionRule(kind, stored, submitted, release);
     const contentIssues = this.contract.validateContent(kind, content, id);
     if (contentIssues.length > 0) {
       return {
@@ -445,9 +476,35 @@ export class SyncService {
     if (!this.contract.releases.includes(release) || !this.contract.hasKind(kind, release))
       return null;
     if (!this.releases.includes(release)) throw new Error(`Unsupported sync release ${release}`);
-    const store = await this.#storage.account(accountId);
+    const store = await this.#existingAccount(accountId);
+    if (!store) return null;
     const record = store.transaction((tx) => tx.get(kind, id));
     return record ? this.#change(record, release) : null;
+  }
+
+  /** The current record and its live descendants, from the same history and transaction. */
+  async readRecordTree(
+    accountId: string,
+    kind: string,
+    id: string,
+    release: ReleaseId,
+  ): Promise<{ lineage: string | null; record: Change | null; descendants: Change[] }> {
+    if (!this.releases.includes(release)) throw new Error(`Unsupported sync release ${release}`);
+    const store = await this.#existingAccount(accountId);
+    if (!store) return { lineage: null, record: null, descendants: [] };
+    return store.transaction((tx) => {
+      const current = this.contract.hasKind(kind, release) ? tx.get(kind, id) : null;
+      return {
+        lineage: tx.lineage(),
+        record: current ? this.#change(current, release) : null,
+        descendants:
+          current?.state === "live"
+            ? this.#liveDescendants(tx, kind, id)
+                .filter((child) => this.contract.hasKind(child.kind, release))
+                .map((child) => this.#change(child, release))
+            : [],
+      };
+    });
   }
 
   /**

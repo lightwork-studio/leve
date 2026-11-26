@@ -7,7 +7,7 @@ import { createMcpEndpoint } from "@leve/sync/mcp";
 import { errorReply, type Principal, type Reply, SyncService } from "@leve/sync/server";
 import { openAccountDatabase, readSyncBody, startNewLineage, syncResponse } from "./account-db.ts";
 import { durableObjectConnection, type SqlMeter } from "./do-sql.ts";
-import { CLIENT_HEADER, MCP_PATH, SCOPES_HEADER } from "./gate.ts";
+import { CLIENT_HEADER, MCP_PATH, mcpResource, SCOPES_HEADER } from "./gate.ts";
 
 const ROUTES = { "/sync/hello": "hello", "/sync/push": "push", "/sync/pull": "pull" } as const;
 
@@ -16,6 +16,19 @@ const json = (status: number, body: unknown) =>
     status,
     headers: { "content-type": "application/json" },
   });
+
+function configuredClientName(clientId: string, names: string | undefined): string | undefined {
+  if (!names) return undefined;
+  try {
+    const entries: unknown = JSON.parse(names);
+    if (!entries || typeof entries !== "object" || !Object.hasOwn(entries, clientId))
+      return undefined;
+    const value = (entries as Record<string, unknown>)[clientId];
+    return typeof value === "string" ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * Remembers, outside the account's own database, that the account is being restored to an earlier
@@ -56,7 +69,12 @@ export class AccountObject extends DurableObject<Env> {
       },
     },
   });
-  readonly #mcp = createMcpEndpoint({ service: this.#service, version: "1" });
+  readonly #mcp = createMcpEndpoint({
+    service: this.#service,
+    version: "1",
+    writesEnabled: this.env.MCP_WRITES_ENABLED === "true",
+    resourceMetadataUrl: mcpResource(this.env)?.metadata,
+  });
   #requests = 0;
   /** Checked once per session, before anything else: a restore may have just happened. */
   #restoreChecked: Promise<void> | null = null;
@@ -108,11 +126,13 @@ export class AccountObject extends DurableObject<Env> {
     await this.#finishRestore(account);
     if (path === MCP_PATH) {
       // The gate checked the access token and set these; the object trusts only the gate.
+      const id = decodeURIComponent(request.headers.get(CLIENT_HEADER) ?? "");
       const principal: Principal = {
         account,
         client: {
           kind: "agent",
-          id: decodeURIComponent(request.headers.get(CLIENT_HEADER) ?? ""),
+          id,
+          name: configuredClientName(id, this.env.MCP_CLIENT_NAMES),
         },
         scopes: (request.headers.get(SCOPES_HEADER) ?? "").split(" ").filter(Boolean),
       };
