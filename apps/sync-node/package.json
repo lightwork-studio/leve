@@ -4,8 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node src/main.ts",
-    "bundle": "npx --yes esbuild@0.28.2 src/main.ts --bundle --platform=node --format=esm --target=node24 --outfile=dist/server.mjs",
+    "start": "node src/main.ts serve",
+    "admin": "node src/main.ts admin",
+    "bundle": "npx --yes esbuild@0.28.2 src/main.ts --bundle --platform=node --format=esm --target=node24 --banner:js=\"#!/usr/bin/env node\" --outfile=dist/leve-sync.mjs",
     "typecheck": "tsc -p ."
   },
   "dependencies": {

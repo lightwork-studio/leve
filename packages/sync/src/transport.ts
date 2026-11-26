@@ -38,6 +38,7 @@ export function httpTransport(
   baseUrl: string,
   headers: RequestHeaders = {},
   timeoutMs = DEFAULT_TIMEOUT_MS,
+  fetchFn: (url: URL, init: RequestInit) => Promise<Response> = fetch,
 ): Transport {
   const base = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
   return async (path, body, options = {}) => {
@@ -62,8 +63,11 @@ export function httpTransport(
     let parsed: unknown;
     try {
       try {
-        response = await fetch(new URL(path.replace(/^\/+/, ""), base), {
+        response = await fetchFn(new URL(path.replace(/^\/+/, ""), base), {
           method: "POST",
+          // Never resent elsewhere: a redirect would carry the sign-in and the person's workouts
+          // to a server nobody chose.
+          redirect: "error",
           headers: { "content-type": "application/json", ...sent },
           body: text,
           signal: controller.signal,

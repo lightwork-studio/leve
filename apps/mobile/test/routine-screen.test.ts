@@ -49,7 +49,30 @@ vi.mock("react-native-safe-area-context", () => ({
 }));
 let sourceWorkout: string | undefined;
 let folderParam: string | undefined;
-vi.mock("expo-router", () => {
+/**
+ * Leaving the screen as the navigator would: a screen that prevents its removal gets the attempt
+ * instead, to repeat once it allows it. `left` counts the times the screen actually closed.
+ */
+const leaving = vi.hoisted(() => ({
+  prevented: false,
+  attempt: null as null | ((event: { data: object; repeat: () => void }) => void),
+  left: 0,
+  go() {
+    if (!leaving.prevented || !leaving.attempt) {
+      leaving.left++;
+      return;
+    }
+    leaving.attempt({
+      data: { action: { type: "GO_BACK" } },
+      repeat: () => {
+        leaving.prevented = false;
+        leaving.left++;
+      },
+    });
+  },
+}));
+vi.mock("expo-router", async () => {
+  const { useLayoutEffect } = await import("react");
   const navigation = { isFocused: () => true, addListener: () => () => {} };
   return {
     useLocalSearchParams: () => ({
@@ -57,8 +80,23 @@ vi.mock("expo-router", () => {
       fromWorkout: sourceWorkout,
       folder: folderParam,
     }),
-    router: { canGoBack: () => true, back: vi.fn() },
+    router: { canGoBack: () => true, back: vi.fn(() => leaving.go()) },
     useNavigation: () => navigation,
+    usePreventRemove: (
+      prevent: boolean,
+      attempt: (event: { data: object; repeat: () => void }) => void,
+    ) => {
+      leaving.attempt = attempt;
+      useLayoutEffect(() => {
+        leaving.prevented = prevent;
+        return () => {
+          leaving.prevented = false;
+        };
+      }, [prevent]);
+      return () => {
+        leaving.prevented = false;
+      };
+    },
   };
 });
 vi.mock("../src/ui/screen.tsx", () => ({ ScreenHeader: "Header" }));
@@ -1979,6 +2017,294 @@ it("files a new routine in no folder when its folder goes while the form is open
     ).toMatchObject([{ title: "Push", folderId: null }]);
   } finally {
     folderParam = undefined;
+    await act(() => rendered?.unmount());
+    store.close();
+    vi.unstubAllGlobals();
+  }
+});
+
+/** The sheet asking about unsaved changes on the way out, if it is open. */
+const leaveSheet = (root: Root) =>
+  root.findAll((n) => n.type === ("ActionSheet" as never) && n.props.keep === "Keep editing", {
+    deep: false,
+  })[0];
+const goBack = (root: Root) => act(() => root.findByType("Header" as never).props.back());
+
+it("asks before leaving a routine with unsaved changes, and leaves an unchanged one at once", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  store = await openDeviceStore({
+    engine: createSqlJsEngine(await initSqlJs()),
+    path: "/routine-leave",
+    appVersion: "test",
+  });
+  let rendered: ReactTestRenderer | undefined;
+  const open = async () => {
+    await act(() => rendered?.unmount());
+    await act(() => {
+      rendered = create(createElement(RoutineDetails));
+    });
+    if (!rendered) throw Error("Missing routine editor");
+    return rendered.root;
+  };
+  const rename = (root: Root, title: string) =>
+    act(() => root.findByProps({ accessibilityLabel: "Routine name" }).props.onChangeText(title));
+  try {
+    store.put("routine", "routine", routine);
+    leaving.left = 0;
+    // Nothing changed: back closes the screen.
+    let root = await open();
+    await goBack(root);
+    expect(leaveSheet(root)).toBeUndefined();
+    expect(leaving.left).toBe(1);
+
+    // A change undone again is no change.
+    root = await open();
+    await rename(root, "Tuesday");
+    await rename(root, "Monday");
+    await goBack(root);
+    expect(leaveSheet(root)).toBeUndefined();
+    expect(leaving.left).toBe(2);
+
+    // A change asks first. Keeping it stays on the screen with the change in place.
+    root = await open();
+    await rename(root, "Tuesday");
+    await goBack(root);
+    expect(leaving.left).toBe(2);
+    expect(leaveSheet(root)?.props).toMatchObject({
+      message: "Your changes to this routine aren’t saved.",
+      action: "Discard changes",
+      choices: [{ label: "Save routine" }],
+    });
+    await act(() => leaveSheet(root)?.props.onClose());
+    expect(leaveSheet(root)).toBeUndefined();
+    expect(root.findByProps({ accessibilityLabel: "Routine name" }).props.value).toBe("Tuesday");
+    expect(leaving.left).toBe(2);
+
+    // Discarding leaves the routine as it was.
+    await goBack(root);
+    await act(() => leaveSheet(root)?.props.onConfirm());
+    expect(leaving.left).toBe(3);
+    expect(store.get("routine", "routine")?.content).toEqual(routine);
+  } finally {
+    await act(() => rendered?.unmount());
+    store.close();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("saves unsaved routine changes from the leaving sheet, and stays when they can't be saved", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  store = await openDeviceStore({
+    engine: createSqlJsEngine(await initSqlJs()),
+    path: "/routine-leave-save",
+    appVersion: "test",
+  });
+  let rendered: ReactTestRenderer | undefined;
+  try {
+    store.put("routine", "routine", routine);
+    leaving.left = 0;
+    await act(() => {
+      rendered = create(createElement(RoutineDetails));
+    });
+    if (!rendered) throw Error("Missing routine editor");
+    const root = rendered.root;
+    const name = () => root.findByProps({ accessibilityLabel: "Routine name" });
+    const saveFromSheet = () => act(() => leaveSheet(root)?.props.choices[0].onPress());
+
+    // A blank name can't be saved: the sheet closes on the problem and the screen stays.
+    await act(() => name().props.onChangeText(""));
+    await goBack(root);
+    await saveFromSheet();
+    expect(leaveSheet(root)).toBeUndefined();
+    expect(alertText(root)).toContain("Enter a name");
+    expect(leaving.left).toBe(0);
+    expect(store.get("routine", "routine")?.content).toEqual(routine);
+
+    // A plan change saves and the screen closes.
+    await act(() => name().props.onChangeText("Monday"));
+    await setRest(root, "Old press rest, 1:17. Change it", 90);
+    await goBack(root);
+    await saveFromSheet();
+    expect(leaving.left).toBe(1);
+    expect(store.get("routine", "routine")?.content).toMatchObject({
+      title: "Monday",
+      exercises: [{ id: "entry", restSeconds: 90 }],
+    });
+  } finally {
+    await act(() => rendered?.unmount());
+    store.close();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("saves with Save routine and leaves without asking again", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  store = await openDeviceStore({
+    engine: createSqlJsEngine(await initSqlJs()),
+    path: "/routine-leave-commit",
+    appVersion: "test",
+  });
+  let rendered: ReactTestRenderer | undefined;
+  try {
+    store.put("routine", "routine", routine);
+    leaving.left = 0;
+    await act(() => {
+      rendered = create(createElement(RoutineDetails));
+    });
+    if (!rendered) throw Error("Missing routine editor");
+    const root = rendered.root;
+    await act(() =>
+      root.findByProps({ accessibilityLabel: "Routine name" }).props.onChangeText("Tuesday"),
+    );
+    await tapText(root, "Save routine");
+    expect(leaveSheet(root)).toBeUndefined();
+    expect(leaving.left).toBe(1);
+    expect(store.get("routine", "routine")?.content).toMatchObject({ title: "Tuesday" });
+  } finally {
+    await act(() => rendered?.unmount());
+    store.close();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("asks before leaving a new routine that has something in it", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  store = await openDeviceStore({
+    engine: createSqlJsEngine(await initSqlJs()),
+    path: "/routine-leave-new",
+    appVersion: "test",
+  });
+  let rendered: ReactTestRenderer | undefined;
+  try {
+    leaving.left = 0;
+    await act(() => {
+      rendered = create(createElement(NewRoutine));
+    });
+    if (!rendered) throw Error("Missing routine form");
+    const root = rendered.root;
+    // A blank form closes at once.
+    await goBack(root);
+    expect(leaveSheet(root)).toBeUndefined();
+    expect(leaving.left).toBe(1);
+
+    await act(() =>
+      root.findByProps({ accessibilityLabel: "Routine name" }).props.onChangeText("Legs"),
+    );
+    await goBack(root);
+    expect(leaveSheet(root)?.props).toMatchObject({
+      message: "This routine isn’t saved yet.",
+      action: "Discard routine",
+    });
+    // Without an exercise it can't be saved yet, so the form stays with the problem.
+    await act(() => leaveSheet(root)?.props.choices[0].onPress());
+    expect(alertText(root)).toContain("Add an exercise");
+    expect(leaving.left).toBe(1);
+    await goBack(root);
+    await act(() => leaveSheet(root)?.props.onConfirm());
+    expect(leaving.left).toBe(2);
+    expect(store.list("routine")).toEqual([]);
+  } finally {
+    await act(() => rendered?.unmount());
+    store.close();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("leaves without asking once changes are copied into a new routine or the routine is deleted", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  store = await openDeviceStore({
+    engine: createSqlJsEngine(await initSqlJs()),
+    path: "/routine-leave-copy-delete",
+    appVersion: "test",
+  });
+  let rendered: ReactTestRenderer | undefined;
+  const open = async () => {
+    await act(() => rendered?.unmount());
+    await act(() => {
+      rendered = create(createElement(RoutineDetails));
+    });
+    if (!rendered) throw Error("Missing routine editor");
+    const root = rendered.root;
+    await act(() =>
+      root.findByProps({ accessibilityLabel: "Routine name" }).props.onChangeText("Tuesday"),
+    );
+    return root;
+  };
+  try {
+    store.put("routine", "routine", routine);
+    leaving.left = 0;
+    let root = await open();
+    await tapText(root, "Save as new routine");
+    await act(() => root.findByType("Dialog" as never).props.confirm.onPress());
+    expect(leaveSheet(root)).toBeUndefined();
+    expect(leaving.left).toBe(1);
+    expect(store.list("routine").filter((row) => !row.deleted)).toHaveLength(2);
+
+    root = await open();
+    await tapText(root, "Delete routine");
+    await act(() =>
+      root
+        .findAll(
+          (n) => n.type === ("ActionSheet" as never) && n.props.action === "Delete routine",
+        )[0]
+        ?.props.onConfirm(),
+    );
+    expect(leaveSheet(root)).toBeUndefined();
+    expect(leaving.left).toBe(2);
+    expect(store.list("routine").filter((row) => !row.deleted && row.id === "routine")).toEqual([]);
+  } finally {
+    await act(() => rendered?.unmount());
+    store.close();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("saves a new routine from the leaving sheet, and leaves after Save routine without asking", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  store = await openDeviceStore({
+    engine: createSqlJsEngine(await initSqlJs()),
+    path: "/routine-leave-new-save",
+    appVersion: "test",
+  });
+  let rendered: ReactTestRenderer | undefined;
+  const open = async (name: string) => {
+    await act(() => rendered?.unmount());
+    await act(() => {
+      rendered = create(createElement(NewRoutine));
+    });
+    if (!rendered) throw Error("Missing routine form");
+    const root = rendered.root;
+    await act(() =>
+      root.findByProps({ accessibilityLabel: "Routine name" }).props.onChangeText(name),
+    );
+    await tapText(root, "Add exercise");
+    await act(() =>
+      root
+        .find((n) => typeof n.props.onPickMany === "function")
+        .props.onPickMany([EXERCISES.bench]),
+    );
+    return root;
+  };
+  const titles = () =>
+    store
+      .list("routine")
+      .map((row) => row.content?.title)
+      .sort();
+  try {
+    leaving.left = 0;
+    let root = await open("Legs");
+    await goBack(root);
+    expect(leaving.left).toBe(0);
+    await act(() => leaveSheet(root)?.props.choices[0].onPress());
+    expect(leaving.left).toBe(1);
+    expect(titles()).toEqual(["Legs"]);
+
+    root = await open("Arms");
+    await tapText(root, "Save routine");
+    expect(leaveSheet(root)).toBeUndefined();
+    expect(leaving.left).toBe(2);
+    expect(titles()).toEqual(["Arms", "Legs"]);
+  } finally {
     await act(() => rendered?.unmount());
     store.close();
     vi.unstubAllGlobals();

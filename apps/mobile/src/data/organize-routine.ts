@@ -10,6 +10,29 @@ export interface RoutineLocation {
   effortScale?: EffortScale | null;
 }
 
+/** Whether saving `draft` would change anything about the routine as it was opened. */
+export function routineEdited(
+  opened: RoutineLocation,
+  draft: RoutineLocation,
+  plan?: { opened: StoredPlan; next: StoredPlan },
+): boolean {
+  const { rename, move, editPlan, editScale } = routineEdits(opened, draft, plan);
+  return rename || move || !!editPlan || editScale;
+}
+
+function routineEdits(
+  opened: RoutineLocation,
+  draft: RoutineLocation,
+  plan?: { opened: StoredPlan; next: StoredPlan },
+) {
+  return {
+    rename: draft.title !== opened.title,
+    move: draft.folderId !== opened.folderId,
+    editPlan: plan && !jsonEqual(plan.opened, plan.next),
+    editScale: draft.effortScale !== undefined && draft.effortScale !== opened.effortScale,
+  };
+}
+
 /** Apply only the fields the user changed to the latest local copy. */
 export function organizeRoutine(
   store: DeviceStore,
@@ -18,10 +41,7 @@ export function organizeRoutine(
   draft: RoutineLocation,
   plan?: { opened: StoredPlan; next: StoredPlan },
 ) {
-  const rename = draft.title !== opened.title;
-  const move = draft.folderId !== opened.folderId;
-  const editPlan = plan && !jsonEqual(plan.opened, plan.next);
-  const editScale = draft.effortScale !== undefined && draft.effortScale !== opened.effortScale;
+  const { rename, move, editPlan, editScale } = routineEdits(opened, draft, plan);
   if (!rename && !move && !editPlan && !editScale) return;
   const record = store.get("routine", id);
   if (record?.deleted || !record?.content) throw new Error("This routine is no longer available.");
@@ -42,7 +62,7 @@ export function organizeRoutine(
     )
       throw new Error("The plan changed. Reopen the routine to see the latest exercises.");
   }
-  if (editPlan) {
+  if (editPlan && plan) {
     if (!plan.next.length) throw new Error("Add an exercise to the routine.");
     next.exercises = plan.next;
   }

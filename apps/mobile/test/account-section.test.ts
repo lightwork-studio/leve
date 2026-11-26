@@ -32,6 +32,7 @@ const syncing = vi.hoisted(() => ({ on: false, unsynced: 0 }));
 vi.mock("../src/sync/sync-config.ts", () => ({
   syncEnabled: () => syncing.on,
   syncServerUrl: "",
+  ownServerAvailable: () => true,
 }));
 vi.mock("../src/data/app-data.tsx", () => ({ useAppData: () => ({ store: {} }) }));
 vi.mock("../src/sync/sync-session.ts", () => ({ unsyncedChanges: () => syncing.unsynced }));
@@ -263,4 +264,24 @@ it("words Clerk's errors for people", () => {
   expect(signInProblem(new ClerkAPIResponseError([{ message: "short" }]))).toBe("short");
   expect(signInProblem(new ClerkAPIResponseError([]))).toBe("Sign-in didn't work. Try again.");
   expect(signInProblem("odd")).toContain("Check the connection");
+});
+
+it("steps aside while the phone syncs with a server the person paired", async () => {
+  const store = await import("../src/sync/own-server-store.ts");
+  const { keychain } = await import("./support/expo-secure-store.ts");
+  keychain.reset();
+  store.forgetServerChoice();
+  await render();
+  expect(text()).toContain("Account");
+  await act(async () =>
+    store.chooseOwnServer({
+      server: "https://sync.home.example",
+      account: "a",
+      device: "d",
+      token: "t",
+    }),
+  );
+  expect(text()).toBe("");
+  await act(async () => store.chooseBuiltInServer());
+  expect(text()).toContain("Account");
 });

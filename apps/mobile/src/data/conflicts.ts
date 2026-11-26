@@ -58,6 +58,7 @@ export interface Conflict {
   subtitle: string | null;
   phone: ConflictSide;
   account: ConflictSide;
+  accountLabel?: string;
   /** The records as shown, so a choice made on an outdated view is refused. */
   records: DeviceRecord[];
   /**
@@ -133,6 +134,8 @@ function resolutionFor(row: DeviceRecord, side: Side): Resolution["choice"] | "w
     case "both":
       return "keep_mine";
     case "gone_there":
+      // Settings always uses its singleton ID, including when the destination has no copy.
+      if (row.kind === "settings" && row.server === null) return "keep_mine";
       // A record under a deleted ancestor, or sharing its parent's id, goes along with that copy.
       if (row.problem?.reason === "parent_deleted" || row.kind === "workout_rest")
         return "with_parent";
@@ -903,6 +906,12 @@ function describe(
   const ownerGoneHere = ownerCase === "gone_here";
   const goneBoth =
     ownerCase === "gone_both" || records.every((row) => recordCase(row) === "gone_nowhere");
+  const missingSettings = owner.kind === "settings" && owner.server === null;
+  const accountLabel = missingSettings
+    ? owner.keptContent
+      ? "Previous synced settings"
+      : "Default settings"
+    : null;
   const rejected = records.some((row) => recordCase(row) === "rejected");
   const refusedNew = records.some((row) => recordCase(row) === "rejected_new");
   // Only a newer Leve can show the account's version: neither side can be weighed here.
@@ -917,6 +926,7 @@ function describe(
     title,
     subtitle,
     records,
+    ...(accountLabel ? { accountLabel } : {}),
     phone: {
       lines: phone,
       choosable: phoneOk,
@@ -972,13 +982,15 @@ function describe(
                 "This phone's version goes, and this version of Leve can't show your account's. Save a copy first if you might want it back.",
             }
           : {}),
-      confirm: goneBoth
-        ? "Keep it deleted"
-        : ownerGoneThere || refusedNew
-          ? "Delete it"
-          : rejected
-            ? "Undo my change"
-            : "Keep this version",
+      confirm: accountLabel
+        ? `Use ${accountLabel.toLowerCase()}`
+        : goneBoth
+          ? "Keep it deleted"
+          : ownerGoneThere || refusedNew
+            ? "Delete it"
+            : rejected
+              ? "Undo my change"
+              : "Keep this version",
     },
   };
 }

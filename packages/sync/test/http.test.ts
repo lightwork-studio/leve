@@ -4,10 +4,10 @@ import type { AddressInfo } from "node:net";
 import { MAX_REQUEST_BYTES } from "@leve/contract";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { check } from "../../contract/history/1.0/peer.ts";
-import { createSyncHttpHandler } from "../src/server/index.ts";
+import { bearerAuthentication, createSyncHttpHandler } from "../src/server/index.ts";
 import { httpTransport, TransportError } from "../src/transport.ts";
 import { archivedContract, Peer1, workout } from "./support/content.ts";
-import { type ServerHarness, World } from "./support/harness.ts";
+import { deferred, type ServerHarness, World } from "./support/harness.ts";
 
 /* The HTTP boundary on a real node:http server on an ephemeral port. */
 
@@ -19,20 +19,38 @@ let base: string;
 /** Unexpected failures the handler reported, with the request path. */
 let reported: { error: unknown; url: string | undefined }[];
 /** Makes the onError hook itself fail: by throwing, or with a rejected promise. */
+let revoked: string | null;
+let pullWaiting: ReturnType<typeof deferred<void>>;
 let hookFails: "throws" | "rejects" | null;
 
 beforeEach(async () => {
   world = new World();
-  server = world.server();
+  pullWaiting = deferred<void>();
+  server = world.server({
+    setTimer: (fn, ms) => {
+      const timer = setTimeout(fn, ms);
+      pullWaiting.resolve();
+      return { cancel: () => clearTimeout(timer) };
+    },
+  });
+  revoked = null;
   reported = [];
   hookFails = null;
   http = createServer(
     createSyncHttpHandler({
       service: server.service,
-      authenticate: (request) => {
-        const match = /^Bearer (\w+)$/.exec(request.headers.authorization ?? "");
-        return match?.[1] ?? null;
-      },
+      // The token names the account, except for a few that act out other answers.
+      authenticate: bearerAuthentication(async (token) => {
+        if (token === revoked) return { refused: true };
+        if (token === "down") return { unavailable: true };
+        if (token === "keyless") throw new Error("the key can't be read");
+        if (token.startsWith("agent")) {
+          const client = { kind: "agent", id: "c1", name: "Coach" } as const;
+          return { principal: { account: "acc", client, scopes: ["leve:write"] } };
+        }
+        if (!/^\w+$/.test(token)) return { refused: true };
+        return { principal: { account: token, client: { kind: "device", id: "d1" } } };
+      }),
       onError: (error, request) => {
         reported.push({ error, url: request.url });
         if (hookFails === "throws") throw new Error("the error reporter is down");
@@ -136,6 +154,36 @@ it("distinguishes a written revision from an equivalent legacy create, including
 });
 
 describe("HTTP boundary", () => {
+  it("requires an active device when a waiting pull finishes", async () => {
+    const active = httpTransport(base, { authorization: "Bearer alice" });
+    const greeting = await active("/sync/hello", { releases: ["1.0"], app: "test" });
+    expect(greeting.status).toBe(200);
+    const { lineage } = greeting.body as { lineage: string };
+    const pull = active("/sync/pull", { release: "1.0", lineage, cursor: 0, waitMs: 1000 });
+    await pullWaiting.promise;
+    revoked = "alice";
+    // Another device writing to the account wakes the waiting phone.
+    const reply = await server.transport("alice")("/sync/push", {
+      release: "1.0",
+      lineage,
+      submissions: [
+        {
+          submissionId: "other-device",
+          op: "put",
+          kind: "workout",
+          id: "w1",
+          baseRevision: null,
+          content: workout("Training", { initialPlan: null }),
+        },
+      ],
+    });
+    expect(reply.status).toBe(200);
+    expect(await pull).toMatchObject({
+      status: 401,
+      body: { error: { code: "unauthorized" } },
+    });
+  });
+
   it("answers unknown routes, other methods, missing auth and bad bodies with the error envelope", async () => {
     const hello = JSON.stringify({ releases: ["1.0"], app: "x" });
     errorEnvelope(await raw("/sync/nowhere", { body: hello }), 400, "invalid_request");
@@ -148,6 +196,23 @@ describe("HTTP boundary", () => {
       await raw("/sync/hello", { body: hello, auth: `Bearer ${"x".repeat(65)}` }),
       401,
       "unauthorized",
+    );
+    // An agent's token never syncs, even one that may write the account.
+    errorEnvelope(
+      await raw("/sync/hello", { body: hello, auth: "Bearer agent" }),
+      401,
+      "unauthorized",
+    );
+    // Sign-in that can't be checked right now isn't the client's fault: no prompt to sign in.
+    errorEnvelope(
+      await raw("/sync/hello", { body: hello, auth: "Bearer down" }),
+      503,
+      "unavailable",
+    );
+    errorEnvelope(
+      await raw("/sync/hello", { body: hello, auth: "Bearer keyless" }),
+      503,
+      "unavailable",
     );
     errorEnvelope(await raw("/sync/hello", { body: "{not json" }), 400, "invalid_request");
     errorEnvelope(await raw("/sync/hello", { body: "" }), 400, "invalid_request");

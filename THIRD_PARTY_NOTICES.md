@@ -3,7 +3,7 @@
 - The built-in exercise catalog incorporates equipment and muscle metadata from
   [free-exercise-db](https://github.com/yuhonas/free-exercise-db) under the
   [Unlicense](LICENSES/Unlicense.txt). The source revision is recorded in
-  [the catalog adapter](apps/mobile/src/data/exercises.ts). Leve's original additions are
+  [the catalog adapter](packages/core/src/catalog.ts). Leve's original additions are
   covered by [MPL-2.0](LICENSES/MPL-2.0.txt).
 - The body diagram is adapted from
   [react-native-body-highlighter 3.2.0](https://github.com/HichamELBSI/react-native-body-highlighter).

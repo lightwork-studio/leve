@@ -49,6 +49,8 @@ vi.mock("expo-router", () => ({
 vi.mock("../src/sync/sync-config.ts", () => ({
   syncEnabled: () => true,
   syncServerUrl: "https://sync.test",
+  builtInServerConfigured: () => true,
+  ownServerAvailable: () => false,
 }));
 const shown = vi.hoisted(() => ({ store: null as unknown, version: 1 }));
 vi.mock("../src/data/app-data.tsx", () => ({

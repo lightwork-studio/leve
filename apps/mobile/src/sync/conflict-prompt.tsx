@@ -136,8 +136,8 @@ export function ConflictPrompt({
   }
   return (
     <Dialog
-      eyebrow="Changed in two places"
-      label={`${current.title}: changed in two places`}
+      eyebrow={current.accountLabel ? "Review settings" : "Changed in two places"}
+      label={current.accountLabel ? "Review settings" : `${current.title}: changed in two places`}
       aside={
         <Text style={styles.count}>
           {settled + 1} of {settled + items.length}
@@ -159,7 +159,12 @@ export function ConflictPrompt({
         {current.title}
       </Text>
       <Text style={styles.subtitle}>
-        {[current.subtitle, "Changed on this phone and in your account. Which should stay?"]
+        {[
+          current.subtitle,
+          current.accountLabel
+            ? "The account has no saved settings. Choose which settings to use."
+            : "Changed on this phone and in your account. Which should stay?",
+        ]
           .filter(Boolean)
           .join(" · ")}
       </Text>
@@ -179,7 +184,7 @@ export function ConflictPrompt({
           }}
         />
         <Choice
-          label="In your account"
+          label={current.accountLabel ?? "In your account"}
           side={current.account}
           selected={picked === "account"}
           onPress={() => {

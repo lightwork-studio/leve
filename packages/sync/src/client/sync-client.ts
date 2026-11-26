@@ -85,6 +85,7 @@ export class SyncClient {
   readonly releases: readonly ReleaseId[];
   readonly #options: SyncClientOptions;
   #running: Promise<SyncOutcome> | null = null;
+  #bindingVersion = 0;
   /** Every network exchange runs in this lane, one at a time. */
   #lane: Promise<unknown> = Promise.resolve();
 
@@ -143,7 +144,7 @@ export class SyncClient {
   probe(): Promise<ProbeOutcome> {
     return this.#exclusive(async () => {
       try {
-        const { hello } = await this.#greet();
+        const { hello } = await this.#greet(false);
         return { state: "ready", revision: hello.revision } as const;
       } catch (error) {
         return this.#outcome(error) as ProbeOutcome;
@@ -153,6 +154,7 @@ export class SyncClient {
 
   async #connect(): Promise<ReleaseId> {
     this.store.bindAccount(this.#options.server, this.#options.account);
+    this.#bindingVersion = this.store.bindingVersion;
     return this.#hello();
   }
 
@@ -168,6 +170,7 @@ export class SyncClient {
         pushed += await this.#push(release);
       } while (this.store.syncState().refreshFrom);
       pulled += await this.#pull(release, 0);
+      this.#requireBinding();
       if (this.store.syncState().restoring) {
         this.store.completeRestore();
         pushed += await this.#push(release);
@@ -191,8 +194,16 @@ export class SyncClient {
     throw error;
   }
 
-  async #call(path: string, body: unknown): Promise<TransportResponse> {
+  #requireBinding(): void {
+    if (this.store.bindingVersion !== this.#bindingVersion) {
+      throw new Stop({ state: "offline", error: "the device changed its sync account" });
+    }
+  }
+
+  async #call(path: string, body: unknown, checkBinding = true): Promise<TransportResponse> {
+    if (checkBinding) this.#requireBinding();
     const response = await this.#options.transport(path, body);
+    if (checkBinding) this.#requireBinding();
     if (response.status !== 200) {
       const issues = validate(errorResponseSchema, response.body);
       if (issues.length > 0) {
@@ -215,11 +226,12 @@ export class SyncClient {
   }
 
   /** Sends hello and checks the answer, without changing the device. */
-  async #greet(): Promise<{ release: ReleaseId; hello: HelloResponse }> {
-    const response = await this.#call("/sync/hello", {
-      releases: [...this.releases],
-      app: this.#options.app,
-    });
+  async #greet(checkBinding: boolean): Promise<{ release: ReleaseId; hello: HelloResponse }> {
+    const response = await this.#call(
+      "/sync/hello",
+      { releases: [...this.releases], app: this.#options.app },
+      checkBinding,
+    );
     if (response.status !== 200) {
       const error = this.#error(response.body);
       if (error.code === "update_required") {
@@ -239,7 +251,8 @@ export class SyncClient {
   }
 
   async #hello(): Promise<ReleaseId> {
-    const { release, hello } = await this.#greet();
+    const { release, hello } = await this.#greet(true);
+    this.#requireBinding();
     const before = this.store.syncState();
     const otherHistory = before.lineage !== null && before.lineage !== hello.lineage;
     if (!otherHistory && before.lineage !== null && hello.revision < before.cursor) {
@@ -255,6 +268,7 @@ export class SyncClient {
       // Reset only once the server has started the new lineage: connecting again shows it. If
       // the request failed, nothing changes here; if the server's counter caught up meanwhile,
       // connect again and look once more.
+      this.#requireBinding();
       if (reply.status === 200 || this.#error(reply.body).code === "cursor_reset") {
         throw new Restart();
       }
@@ -273,6 +287,7 @@ export class SyncClient {
   async #push(release: ReleaseId): Promise<number> {
     let pushed = 0;
     for (let round = 0; round < MAX_PUSH_ROUNDS; round++) {
+      this.#requireBinding();
       const outgoing = this.store.prepareSubmissions(release);
       if (outgoing.length === 0) return pushed;
       let progressed = false;
@@ -289,6 +304,7 @@ export class SyncClient {
           lineage: this.store.syncState().lineage,
           submissions,
         });
+        this.#requireBinding();
         if (response.status !== 200) {
           const error = this.#error(response.body);
           if (error.code === "cursor_reset") throw new Restart();
@@ -355,6 +371,7 @@ export class SyncClient {
     let pulled = 0;
     let wait = waitMs;
     for (;;) {
+      this.#requireBinding();
       const { cursor, lineage } = this.store.syncState();
       const request = {
         release,
@@ -364,6 +381,7 @@ export class SyncClient {
         ...(wait > 0 ? { waitMs: wait } : {}),
       };
       const response = await this.#call("/sync/pull", request);
+      this.#requireBinding();
       if (response.status !== 200) {
         const error = this.#error(response.body);
         if (error.code === "cursor_reset") throw new Restart();

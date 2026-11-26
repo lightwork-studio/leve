@@ -38,7 +38,8 @@ TestFlight and site deployments run separately from contributor CI.
   under `apps/mobile/src/`. Keep reusable calculations and data rules out of screen components.
 - `packages/core` contains domain rules, `packages/contract` defines the network contract,
   `packages/storage` owns persistence, and `packages/sync` coordinates synchronization.
-- `apps/site` builds the landing page. The sync apps provide development and benchmarking hosts.
+- `apps/site` builds the landing page. `apps/sync-cloudflare` is the managed sync server and
+  `apps/sync-node` the one people host themselves; both also serve benchmarks.
 
 Read the [review workflow](docs/review-and-merge.md) before submitting changes and the
 [data compatibility standard](docs/data-compatibility.md) before changing storage, sync, imports,

@@ -377,3 +377,39 @@ it.each([
     vi.unstubAllGlobals();
   }
 });
+
+it("seeds no made-up data in a build that could pair the person's own server", async () => {
+  // An iOS build that offers pairing: once paired, the made-up data would go up to the account.
+  const os = process.env.EXPO_OS;
+  process.env.EXPO_OS = "ios";
+  const files = new Map<string, Uint8Array>();
+  vi.mocked(openEngine).mockImplementation(async () => ({
+    engine: createSqlJsEngine(await initSqlJs(), { files }),
+    paths: () => [...files.keys()],
+    flush: async () => {},
+    onSaveProblem: () => {},
+    exportRecovery: async () => {},
+  }));
+  const capture = vi.fn<(data: AppData) => void>();
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  let screen: ReactTestRenderer | undefined;
+  try {
+    await act(async () => {
+      screen = create(
+        jsx(AppDataProvider, {
+          loading: null,
+          failed: () => null,
+          children: jsx(Ready, { capture }),
+        }),
+      );
+    });
+    const data = capture.mock.lastCall?.[0];
+    expect(data?.store.get("routine", "seed-routine-push")).toBeNull();
+    expect(data?.store.db.get("SELECT count(*) AS n FROM records")?.n).toBe(0);
+  } finally {
+    await act(() => screen?.unmount());
+    if (os === undefined) delete process.env.EXPO_OS;
+    else process.env.EXPO_OS = os;
+    vi.unstubAllGlobals();
+  }
+});

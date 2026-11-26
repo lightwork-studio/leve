@@ -8,7 +8,8 @@ import { useEffect, useRef, useState } from "react";
 import { Platform, Text, View } from "react-native";
 import { useAppData } from "../data/app-data.tsx";
 import { subscribeDevicePreferences } from "../data/device-preference-store.ts";
-import { syncEnabled } from "../sync/sync-config.ts";
+import { ownServer, subscribeServerChoice } from "../sync/own-server-store.ts";
+import { ownServerAvailable, syncEnabled } from "../sync/sync-config.ts";
 import { setSignedOutOnPurpose, setSyncPaused, syncPaused } from "../sync/sync-preferences.ts";
 import { unsyncedChanges } from "../sync/sync-session.ts";
 import { radius, space, type } from "../theme.ts";
@@ -38,8 +39,12 @@ const SIGN_OUT_FAILED = "Signing out didn't work. Check the connection and try a
 
 /** The account in Settings: Sign in with Apple, or who is signed in and a way to sign out. */
 export function AccountSection() {
+  const [, setChoice] = useState(0);
+  useEffect(() => subscribeServerChoice(() => setChoice((n) => n + 1)), []);
   // Sign in with Apple is native to iOS; other platforms get their sign-in later.
   if (!clerkPublishableKey || Platform.OS !== "ios") return null;
+  // It signs in to the build's own server; a paired server signs the phone in with its pairing.
+  if (ownServerAvailable() && ownServer()) return null;
   return <Account />;
 }
 

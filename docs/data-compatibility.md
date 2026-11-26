@@ -308,20 +308,21 @@ synced is not enough when there is nothing the person can do about it.
   restore or one filling in a server copy, a connection still being made, or unsynced work on its
   way to the server and back. Being offline or a server that is briefly down needs no decision:
   the app keeps trying, and a day without syncing shows a note.
-- **Every question that stops sync can't be put off.** Combining with an account, switching
-  accounts, signing in again, updating the app and each conflict are asked until answered. No
-  answer may hide a question while sync stays stopped (no "Not now", "Remind me later" or
-  "Ignore"). Where the person can't resolve the cause yet (an update, a sign-in, a change the
-  server can't take), the way out is pausing sync; for data that belongs to another account, or
-  that never synced, it is signing out, which keeps the data on the phone, and pausing sync if
-  signing out fails (offline, say).
-- **Sync not running is shown everywhere.** While this phone's data belongs to an account but
-  sync isn't running (paused, or signed out on purpose), every screen says so, with the way back:
-  resume, or sign in. Screens drawn above the app, such as the live workout, show the same note.
-  Pausing and resuming are also in Settings while signed in. Nothing is asked while paused;
-  resuming asks again whatever is still open. A sync server too old for the app is said on every
-  screen from its first answer, not after a day, with pausing as the way out; the app keeps
-  checking until the server is updated.
+- **Every question that stops sync can't be put off.** Combining with an account, switching accounts
+  or servers, signing in again (or connecting a paired server again), updating the app and each
+  conflict are asked until answered. No answer may hide a question while sync stays stopped (no "Not
+  now", "Remind me later" or "Ignore"). Where the person can't resolve the cause yet (an update, a
+  sign-in, a change the server can't take), the way out is pausing sync; for data that belongs to
+  another account or server, or that never synced, it is going back to where the data belongs or
+  signing out (disconnecting, on a paired server), which keeps the data on the phone, and pausing
+  sync where neither is possible or it fails (offline, say).
+- **Sync not running is shown everywhere.** While this phone's data belongs to an account but sync
+  isn't running (paused, or signed out on purpose), every screen says so, with the way back: resume,
+  or sign in. Screens drawn above the app, such as the live workout, show the same note. Pausing and
+  resuming are also in Settings while signed in or connected to a paired server. Nothing is asked
+  while paused; resuming asks again whatever is still open. A sync server too old for the app is
+  said on every screen from its first answer, not after a day, with pausing as the way out; the app
+  keeps checking until the server is updated.
 - **A workout being logged is never interrupted.** Questions wait while a workout is logged on
   this phone (started or logged here, or open on its live or finish screen; one already running
   when a version with this rule first opens counts too), and come up as soon as it ends;
@@ -433,19 +434,33 @@ join the frozen paths; until then the version 1 layouts may still change.
 - Connecting a device whose local data was recorded independently to a non-empty account asks once
   whether to add that data to the account or replace it with the account's data. Replacing deletes
   the local data after confirmation and an offer to export it first. Nothing is uploaded or deleted
-  until the person answers, and the question can't be put off: signing out instead keeps the data
-  on the phone, unsynced. Connecting an empty device, or connecting to an empty account, doesn't
-  ask. Connecting uploads local records through ordinary submissions.
+  until the person answers, and the question can't be put off: signing out (on a paired server,
+  disconnecting) instead keeps the data on the phone, unsynced. Connecting an empty device, or
+  connecting to an empty account, doesn't ask. Sample records left by an older build require
+  confirmation even when the account is empty. Connecting uploads local records through ordinary
+  submissions.
 - A device's data belongs to the account and server it first synced with. When a different account
-  signs in, or the app is pointed at another server, a device whose data has all synced drops its
-  copy (the old account still has it) and starts from the new account, but never while a workout
-  is being logged on it. A device with unsynced work (pending edits or kept conflicts) says how many
-  changes would be lost, offers an export, and deletes them only once the person confirms. The
-  question can't be put off: the person can instead sign the new account out and keep them for
-  the old one, and every screen then says the phone isn't syncing. Signing out never deletes local data; with unsynced work it first says
-  the changes wait for the same account. Servers never coordinate with each other.
+  signs in on the same server, a device whose data has all synced drops its copy (the old account
+  still has it) and starts from the new account, but never while a workout is being logged on it.
+  A device with unsynced work (pending edits or kept conflicts) says how many changes would be
+  lost, offers an export, and deletes them only once the person confirms. The question can't be
+  put off: the person can instead switch back to where the data belongs or sign the new account
+  out and keep them for the old one (or, where neither is possible, pause sync), and every screen
+  then says the phone isn't syncing. Signing out never deletes local data; with unsynced work it
+  first says the changes wait for the same account. Servers never coordinate with each other.
+- When the app is pointed at another server, the device asks first, whether or not all of its data
+  synced, and never while a workout is being logged on it. It can bring its data to the new
+  server, start from what the new server holds (dropping its copy, which the old server still has;
+  unsynced work only after saying how many changes would be lost and offering an export), or keep
+  it by going back to the server the data belongs to, signing out, or pausing sync. The question
+  can't be put off. Bringing it along adds it to the new account. If the phone holds records the
+  current build can't read, it needs an update before it can move them. The old server keeps its
+  copy.
 - Sync state (cursor, receipts, pending submissions) belongs to one account on one server and is never
-  reused for another.
+  reused for another. Moving rebinds the phone and resets its sync state in one transaction, even
+  if both servers report the same lineage. It then reconciles records as after a
+  [server restore](#server-restores): it offers the records it can sync to the destination,
+  compares remembered deletions with the destination, and asks the person to review conflicts.
 - Local mode offers a manual export and import of a complete backup file. The file is a copy of the
   device database made with SQLite's backup, so it carries the fixed storage metadata. Importing it
   replaces local data after confirmation and an offer to export the current state first. A backup

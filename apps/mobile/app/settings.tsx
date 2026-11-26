@@ -1,6 +1,6 @@
 import Constants from "expo-constants";
-import { router } from "expo-router";
-import { useState } from "react";
+import { router, useLocalSearchParams } from "expo-router";
+import { useMemo, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 // Without an extension, so browsers get the version without sign-in.
@@ -30,7 +30,9 @@ import {
 } from "../src/data/settings-actions.ts";
 import { saveShowTargets, useShowTargets } from "../src/data/show-targets.ts";
 import { canChangeTrackRir, useTrackRir } from "../src/data/track-rir.ts";
-import { syncEnabled } from "../src/sync/sync-config.ts";
+import { pairingLinkFrom } from "../src/sync/own-server.ts";
+import { ownServerAvailable, syncEnabled } from "../src/sync/sync-config.ts";
+import { SyncServerSection } from "../src/sync/sync-server-section.tsx";
 import { font, gutter, numeral, radius, space, type } from "../src/theme.ts";
 import { ActionSheet, useConfirmation } from "../src/ui/action-sheet.tsx";
 import { ActionRow, ChoiceRow, Stepper, ToggleRow } from "../src/ui/choice-row.tsx";
@@ -101,8 +103,9 @@ const APPEARANCE_CHOICES: readonly Choice<AppearanceSetting>[] = [
 
 export default function SettingsScreen() {
   // Builds that sync never load made-up workouts: they would go up to the signed-in account.
-  const seedsSample = buildInfo.sampleData && !syncEnabled();
-  const sampleOnRequest = buildInfo.sampleDataOnRequest && !syncEnabled();
+  // Nor builds that could pair a server of the person's own.
+  const seedsSample = buildInfo.sampleData && !syncEnabled() && !ownServerAvailable();
+  const sampleOnRequest = buildInfo.sampleDataOnRequest && !syncEnabled() && !ownServerAvailable();
   const styles = useStyles(sheet);
   const { store, change, reset } = useAppData();
   const optimistic = useOptimisticSettings(store);
@@ -110,6 +113,14 @@ export default function SettingsScreen() {
   const committed = readSettings(store);
   const settings = { ...committed, ...optimistic.patch };
   const insets = useSafeAreaInsets();
+  // A pairing link that opened the app (app/connect.tsx) arrives as these.
+  const linked = useLocalSearchParams<{ server?: string; code?: string; opened?: string }>();
+  // A new object each time a link is opened, even the same link, so the dialog asks again.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `opened` marks each opening
+  const pairing = useMemo(
+    () => pairingLinkFrom(linked.server, linked.code),
+    [linked.server, linked.code, linked.opened],
+  );
   const [problem, setProblem] = useState<string | null>(null);
   const [trackRir, setTrackRir] = useTrackRir();
   const showTargets = useShowTargets();
@@ -192,6 +203,7 @@ export default function SettingsScreen() {
 
           {/* Values shown on opening are simply there; only later changes animate. */}
           <StillOnOpen>
+            <SyncServerSection link={pairing} />
             <AccountSection />
 
             <Group

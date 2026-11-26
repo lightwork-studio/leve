@@ -1,7 +1,7 @@
 # Leve app
 
 The Expo app includes workout logging, routines, workout notes, history, and progress charts.
-Development builds start with sample data.
+The web preview starts with sample data. iOS builds that support sync start empty.
 
 ```sh
 pnpm dev:app       # Expo dev server (Expo Go, simulators, or the web on localhost)
@@ -15,17 +15,15 @@ them. The generated projects and bundle exports are ignored by Git.
 `LEVE_WEB_PORT` and `LEVE_WEB_DIR` change the port and the build the web preview serves. It only
 listens on loopback (`LEVE_WEB_HOST` accepts loopback addresses only). To open it on a phone, put it behind a private HTTPS proxy you control
 rather than exposing it on a network. `EXPO_PUBLIC_COMMIT` and `EXPO_PUBLIC_BUILD_LABEL`, set at
-export time, are shown in the app so you can tell which build is running. A new install starts with made-up
-sample data, which the reset in Settings brings back. `EXPO_PUBLIC_SAMPLE_DATA=off` turns that off,
-so the app starts empty and the reset deletes everything; TestFlight builds and their updates set it.
-TestFlight, recognised by its `preview` update channel, also offers to start again with the sample
-data from Settings.
+export time, are shown in the app so you can tell which build is running. Builds without sync or
+pairing can start with sample data, and `EXPO_PUBLIC_SAMPLE_DATA=off` starts them empty. If a
+phone still has sample records from an older build, it asks before uploading them.
 
 ## App identities
 
 | App          | iOS bundle ID         | Delivery                                      |
 | ------------ | --------------------- | --------------------------------------------- |
-| Leve Dev     | `app.leve.dev`        | Local development with sample workouts        |
+| Leve Dev     | `app.leve.dev`        | Local development                             |
 | Leve Preview | `app.leve.preview`    | TestFlight and the `preview` update channel   |
 | Leve         | `app.leve.production` | App Store and the `production` update channel |
 
@@ -57,6 +55,14 @@ Preview sync with the development Worker (`leve-sync`, see
 EAS `development` and `preview` environments, and in your shell or `.env` for a local build. The
 App Store build has no sync server yet, so it keeps everything on the phone. Browsers never sync.
 
+Development and TestFlight builds can also sync with a server the person runs
+([apps/sync-node](../sync-node/README.md)), whatever server the build has. Under Settings, Sync
+server, they paste the pairing link its operator gives them, or open it on the phone; the app
+names the server and asks before connecting. The phone then signs in with a device token of its
+own, kept in the keychain for this phone only, and Sign in with Apple steps aside. The server
+that held the phone's data before is remembered, and switching asks whether to bring the phone's
+data along, start from the new server's, or switch back.
+
 Sign in with Apple needs the capability on each bundle ID and each bundle ID registered as a native
 app on the Clerk instance; Leve Dev (`app.leve.dev`) needs both before it can sign in.
 
@@ -68,21 +74,31 @@ brief server failures show nothing. A day without syncing shows a note while cha
 silently](../../docs/data-compatibility.md#sync-never-stops-silently)): anything that stops sync,
 for the whole app or for one record, is brought to the person to resolve. Every question below can't
 be put off. Where it can't be answered yet, the way out is pausing sync (or, for data that isn't the
-signed-in account's, signing out). While the phone's data belongs to an account but sync isn't
-running, paused or signed out on purpose, every screen says so (the live workout too), with Resume
-or Sign in. Pause and resume are also in Settings while signed in. A sync server that needs an update is said on every screen straight
-away, with Pause. Questions never cover a workout being logged on this phone: they wait, with a note
-on every screen, and come up as soon as it ends. A workout running on another phone, which shows
-here as in progress too, doesn't hold them back.
+signed-in account's or server's, going back to where it belongs or signing out). While the phone's
+data belongs to an account but sync isn't running, paused or signed out on purpose, every screen
+says so (the live workout too), with Resume or Sign in. Pause and resume are also in Settings while
+signed in or connected to a paired server. A sync server that needs an update is said on every
+screen straight away, with Pause. Questions never cover a workout being logged on this phone: they
+wait, with a note on every screen, and come up as soon as it ends. A workout running on another
+phone, which shows here as in progress too, doesn't hold them back.
 
 - **Combine:** this phone has data that never synced, and the account already has data. Add it to
   the account, or replace it with the account's data (after an offer to save a copy). Signing out
-  instead keeps it on the phone, unsynced.
-- **Another account:** the phone's data belongs to another account. If all of it synced, the app
-  switches without asking. Otherwise it says how many changes would be lost, offers a copy, and
-  deletes them only on confirmation, or signs the new account out to keep them.
+  (on a paired server, disconnecting) instead keeps it on the phone, unsynced.
+- **Another account:** the phone's data belongs to another account on the same server. If all of
+  it synced, the app switches without asking. Otherwise it says how many changes would be lost,
+  offers a copy, and deletes them only on confirmation, or switches back or signs the new account
+  out to keep them (pausing sync where neither is possible).
+- **Another server:** the phone's data belongs to another server, synced or not. Bring it to this
+  server (the old one keeps its copy), start from this server's data (deleting unsynced changes
+  only on confirmation, after an offer to save a copy), or keep it by switching back to where it
+  belongs, signing out, or pausing sync. Moving adds the phone's data to the new account and asks
+  you to review conflicts. If the phone holds records this build can't read, update Leve before
+  moving them.
 - **Sign in again:** the sign-in ran out, or the server refused it. Sign in, or pause sync until
-  you can.
+  you can. On a paired server, this is **Connect again**: the server no longer accepts the phone,
+  and a new pairing link from its operator connects it again (Settings stays reachable for it), or
+  pause sync until you have one.
 - **Update Leve:** the server no longer syncs with this version. Update (TestFlight builds open
   TestFlight), or pause sync until you can.
 - **Changed in two places:** the same workout, routine, entry or setting changed on this phone and

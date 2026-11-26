@@ -1,6 +1,7 @@
 import { MAX_WAIT_MS } from "@leve/contract";
 import type { DeviceStore } from "@leve/storage";
 import {
+  DEFAULT_TIMEOUT_MS,
   httpTransport,
   type RequestHeaders,
   SyncClient,
@@ -9,13 +10,17 @@ import {
   TransportError,
 } from "@leve/sync";
 
+import { fetch as expoFetch } from "expo/fetch";
+import { hasSampleData } from "../data/seed.ts";
+
 /** What the person has to decide or do before syncing can go on. */
 export type SyncPrompt =
-  /** Data on this phone that never synced, and an account that already has data. */
-  | { kind: "combine" }
+  /** This phone has sample data or the account already holds data. */
+  | { kind: "combine"; sampleData?: true }
   /**
-   * This phone's data belongs to another account (or, after a build change, another server), and
-   * some of it hasn't synced. The app counts the changes when it asks, as they can grow meanwhile.
+   * This phone's data belongs to another account and some of it hasn't synced, or it belongs to
+   * another server (whether or not all of it synced: the person may want to bring it along). The
+   * app counts the changes when it asks, as they can grow meanwhile.
    */
   | { kind: "switch"; reason: "account" | "server" }
   /** The server no longer accepts the sign-in. */
@@ -51,8 +56,8 @@ export interface SyncSessionOptions {
   app: string;
   /** A session token for the account, or null without one. `fresh` skips a cached token. */
   token(fresh: boolean): Promise<string | null>;
-  /** Downloaded changes were applied: screens should read the store again. */
-  onPulled(): void;
+  /** Sync changed the device store, so screens should read it again. */
+  onStoreChanged(): void;
   onStatus(status: SyncStatus): void;
   /**
    * Delete this phone's data and open an empty store, which a new session then syncs. This session
@@ -139,6 +144,7 @@ export class SyncSession {
   /** Trying a refused sign-in again in the background, with its question still showing. */
   #checkingSignIn = false;
   #join = false;
+  #acceptSampleData = false;
   #status: SyncStatus;
 
   constructor(options: SyncSessionOptions) {
@@ -162,7 +168,8 @@ export class SyncSession {
       if (this.#stopped) throw new TransportError("this sync session has ended");
       return token ? { authorization: `Bearer ${token}` } : {};
     };
-    const connect = options.connect ?? ((server, h) => httpTransport(server, h));
+    const connect =
+      options.connect ?? ((server, h) => httpTransport(server, h, DEFAULT_TIMEOUT_MS, expoFetch));
     this.#client = new SyncClient({
       store: options.store,
       transport: this.#interruptible(connect(options.server, headers)),
@@ -228,6 +235,7 @@ export class SyncSession {
   /** The answer to "combine": the phone's data joins the account. */
   combine(): void {
     if (this.#status.prompt?.kind !== "combine") return;
+    if (this.#status.prompt.sampleData) this.#acceptSampleData = true;
     this.#join = true;
     this.#resume();
   }
@@ -241,6 +249,18 @@ export class SyncSession {
     if (this.#stopped || (prompt !== "combine" && prompt !== "switch")) return;
     this.stop();
     this.#options.startOver();
+  }
+
+  /**
+   * The answer to "switch" when the phone used another server: bring this phone's data to this
+   * server and account instead of deleting it. The old server keeps its copy.
+   */
+  moveLocalData(): void {
+    const prompt = this.#status.prompt;
+    if (this.#stopped || prompt?.kind !== "switch" || prompt.reason !== "server") return;
+    this.#options.store.moveTo(this.#options.server, this.#options.account);
+    this.#options.onStoreChanged();
+    this.#resume();
   }
 
   /** Try again after a sign-in prompt, for example once the person signed in again. */
@@ -368,8 +388,9 @@ export class SyncSession {
         // The server answered: a fresh-token retry that got here has done its job.
         this.#retriedSignIn = false;
         this.#checkingSignIn = false;
-        if (probe.revision > 0) {
-          this.#ask({ kind: "combine" });
+        const sampleData = hasSampleData(store);
+        if (sampleData || probe.revision > 0) {
+          this.#ask(sampleData ? { kind: "combine", sampleData: true } : { kind: "combine" });
           return null;
         }
       }
@@ -381,10 +402,13 @@ export class SyncSession {
         return this.#timing.busy;
       }
       if (this.#status.heldForWorkout) this.#setStatus({ heldForWorkout: false });
-      if (unsyncedChanges(store) > 0) {
+      const otherServer = state.server !== this.#options.server;
+      // Another server: ask, even with everything synced, since the person may want to bring the
+      // phone's data along rather than start from what the new server holds.
+      if (unsyncedChanges(store) > 0 || (otherServer && hasLocalData(store))) {
         this.#ask({
           kind: "switch",
-          reason: state.account !== this.#options.account ? "account" : "server",
+          reason: otherServer ? "server" : "account",
         });
         return null;
       }
@@ -393,12 +417,22 @@ export class SyncSession {
       this.#options.startOver();
       return null;
     }
+    if (!this.#acceptSampleData && hasSampleData(store)) {
+      this.#ask({ kind: "combine", sampleData: true });
+      return null;
+    }
     if (this.#stopped) return null;
-    return this.#handle(await this.#client.sync());
+    const restoring = store.syncState().restoring;
+    const outcome = await this.#client.sync();
+    if (this.#stopped) return null;
+    return this.#handle(outcome, restoring && !store.syncState().restoring);
   }
 
-  #handle(outcome: SyncOutcome): number | null {
+  #handle(outcome: SyncOutcome, completedRestore = false): number | null {
     if (this.#stopped) return null;
+    if (completedRestore || (outcome.state === "synced" && outcome.pulled > 0)) {
+      this.#options.onStoreChanged();
+    }
     this.#checkingSignIn = false;
     // The fresh-token retry counts only once the server has answered it.
     if (outcome.state !== "signed_out") this.#retriedSignIn = false;
@@ -412,7 +446,6 @@ export class SyncSession {
           serverOutdated: false,
           ...(this.#status.prompt?.kind === "sign_in" ? { prompt: null } : {}),
         });
-        if (outcome.pulled > 0) this.#options.onPulled();
         return null;
       case "offline": {
         const steps = this.#timing.offline;

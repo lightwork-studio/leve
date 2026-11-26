@@ -19,10 +19,11 @@ and follow the [mobile app guide](apps/mobile/README.md).
 
 ## Project status
 
-The iPhone app stores workouts on the device. The [Node sync server](apps/sync-node/README.md)
-and [Cloudflare sync server](apps/sync-cloudflare/README.md) are prototypes for development and
-benchmarks. Use disposable data in an environment you control. Production hosting needs
-account-level authentication and separate authorization for administrative operations.
-Hevy CSV import and MCP access are planned.
+The iPhone app stores workouts on the device. Sync runs on the
+[Cloudflare sync server](apps/sync-cloudflare/README.md) or on a
+[Node sync server you host yourself](apps/sync-node/README.md), which has its own accounts and
+paired phones; development and TestFlight builds pair with it under Settings. Both are development
+previews: use disposable data in an environment you control. Hevy CSV import and MCP access are
+planned.
 
 [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [Licenses](LICENSE.md) · [Branding](TRADEMARKS.md)

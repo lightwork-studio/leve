@@ -70,6 +70,7 @@ export default function RootLayout() {
               { name: "exercises", transition: "push" },
               { name: "exercise/[id]", transition: "push" },
               { name: "settings", transition: "push" },
+              { name: "connect", transition: "push" },
             ]}
           />
           <ToastHost />
