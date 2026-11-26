@@ -4,6 +4,7 @@ import { memo, useMemo, useState } from "react";
 import { FlatList, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppData } from "../../src/data/app-data.tsx";
+import { exerciseImage } from "../../src/data/exercise-images.ts";
 import { exerciseNotesByExercise } from "../../src/data/exercise-notes.ts";
 import { builtInExercise } from "../../src/data/exercises.ts";
 import { useProgress } from "../../src/data/queries.ts";
@@ -149,6 +150,17 @@ export default function ExerciseScreen() {
   const pinnedNotes = (exerciseNotesByExercise(store).get(id) ?? [])
     .filter((note) => note.pinned)
     .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt) || a.id.localeCompare(b.id));
+  // With an image, the muscles card leads the screen, since its image shows the exercise itself.
+  const image = exerciseImage(id);
+  const muscles = (
+    <Group
+      label={image ? undefined : "Muscles"}
+      aside={image ? undefined : "This exercise"}
+      style={styles.group}
+    >
+      <ExerciseMuscles targets={muscleTargets(id)} image={image} name={name} />
+    </Group>
+  );
   const sessions = history?.sessions ?? NO_SESSIONS;
   const shown = all ? sessions : sessions.slice(0, SESSIONS_SHOWN);
   const headlineMetric = history
@@ -189,6 +201,7 @@ export default function ExerciseScreen() {
           <Text style={styles.subtitle}>No workouts with this exercise.</Text>
         )}
       </View>
+      {image && muscles}
       <View style={styles.group}>
         <Text style={styles.pinnedLabel}>Pinned notes</Text>
         <ExerciseCardNotes
@@ -200,9 +213,7 @@ export default function ExerciseScreen() {
           variant="card"
         />
       </View>
-      <Group label="Muscles" aside="This exercise" style={styles.group}>
-        <ExerciseMuscles targets={muscleTargets(id)} />
-      </Group>
+      {!image && muscles}
     </View>
   );
 
