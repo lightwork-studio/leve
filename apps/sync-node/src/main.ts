@@ -82,6 +82,7 @@ async function serve(config: Config): Promise<void> {
     servers.push(
       await listenAdmin(config.socket, {
         accounts,
+        data: { storage, engine: sqlite, directory },
         ...(config.publicUrl ? { publicUrl: config.publicUrl } : {}),
         onError: (error) => console.error("admin command failed", error),
       }),

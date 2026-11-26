@@ -76,6 +76,37 @@ sync.example.com {
 }
 ```
 
+## Backups and restores
+
+```sh
+leve-sync admin backup /var/backups/leve       # every account and accounts.db, while it runs
+leve-sync admin stats Alice                    # revision, lineage, records
+leve-sync admin restore Alice /var/backups/leve/leve-<time>/account-<id>.db
+```
+
+A backup is a new folder named for its time, holding a SQLite backup of each account database,
+`accounts.db` and a `manifest.json`. It is consistent while phones keep syncing. The server
+writes it, so the folder must be writable by the server's user. Copy the folders off the machine
+with the tool you already use (restic, borg, rsync).
+
+Restoring checks the copy before replacing anything, keeps the database it replaces next to it,
+and gives the account a new lineage. Its phones notice, download everything again and offer back
+what the backup lacks; anything that differs goes to the person for review (see
+[Server restores](../../docs/data-compatibility.md#server-restores)). A restore refuses another
+account's backup unless you add `--other-account`.
+
+What a restore can't bring back:
+
+- A change made after the backup that no phone still holds.
+- A deletion made after the backup, if no phone remembers it.
+- Phones paired or signed out after the backup, if you restore `accounts.db` itself. Do that
+  only after losing it, with the server stopped, then check `devices list` again.
+
+Restoring account databases by copying files, rather than with `restore`, is noticed only once a
+phone's cursor is ahead of the restored account, so use the command. To remove an account's data
+for good, sign its phones out (`devices revoke --all`), stop the server and delete its
+`account-<id>.db`.
+
 ## Benchmark mode
 
 `LEVE_AUTH=benchmark` with `LEVE_TOKEN_FILE` replaces accounts with one shared token: every

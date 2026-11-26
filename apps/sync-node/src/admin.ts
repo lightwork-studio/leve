@@ -6,6 +6,7 @@ import { createServer, request as httpRequest, type IncomingMessage, type Server
 import { connect } from "node:net";
 import { isAbsolute } from "node:path";
 import { type Accounts, AccountsError } from "./accounts.ts";
+import { accountStats, type BackupOptions, backupAll, restoreAccount } from "./backups.ts";
 
 /*
  * Administration, on a Unix socket only the server's own user can open (mode 0600). File
@@ -16,6 +17,8 @@ import { type Accounts, AccountsError } from "./accounts.ts";
 
 export interface AdminOptions {
   accounts: Accounts;
+  /** The account databases, for stats, backups and restores. */
+  data?: Omit<BackupOptions, "accounts">;
   /** Where the server is reached from phones, for pairing links. */
   publicUrl?: string;
   onError?: (error: unknown) => void;
@@ -57,6 +60,21 @@ export function adminRoutes(options: AdminOptions): Record<string, Handler> {
       if (!revoked) throw new AccountsError(`no device ${String(body.device)}`);
       return { revoked: 1 };
     },
+    ...(options.data ? dataRoutes({ accounts, ...options.data }) : {}),
+  };
+}
+
+function dataRoutes(options: BackupOptions): Record<string, Handler> {
+  return {
+    "/stats": (body) => accountStats(options, text(body.account, "account")),
+    "/backup": (body) => backupAll(options, text(body.to, "to")),
+    "/restore": (body) =>
+      restoreAccount(
+        options,
+        text(body.account, "account"),
+        text(body.from, "from"),
+        body.otherAccount === true,
+      ),
   };
 }
 
