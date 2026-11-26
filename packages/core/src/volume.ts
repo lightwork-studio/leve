@@ -3,7 +3,7 @@ import type { WorkoutContent, WorkoutEntryContent, WorkoutSetContent } from "./r
 
 /**
  * Volume of one completed set in kilograms. Provisional rules, following the field notes in
- * @leve/core: only sets that count reps have volume; an exercise that uses bodyweight counts the
+ * workout.ts: only sets that count reps have volume; an exercise that uses bodyweight counts the
  * lifter's bodyweight, plus added load or minus assistance; dumbbell weight counts twice when the
  * entry says so.
  */
