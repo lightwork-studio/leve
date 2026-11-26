@@ -100,7 +100,11 @@ function Section({ link }: { link: PairingLink | null }) {
         <ActionRow
           label={builtIn ? "Use Leve's server" : "Disconnect"}
           divider
-          accessibilityHint="Asks first if anything on this phone hasn't synced"
+          accessibilityHint={
+            builtIn
+              ? "Asks first if anything on this phone hasn't synced"
+              : "Changes stay on this phone, and every screen says it isn't syncing"
+          }
           onPress={() => {
             try {
               chooseBuiltInServer();

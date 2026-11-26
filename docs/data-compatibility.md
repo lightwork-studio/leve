@@ -314,15 +314,16 @@ synced is not enough when there is nothing the person can do about it.
   now", "Remind me later" or "Ignore"). Where the person can't resolve the cause yet (an update, a
   sign-in, a change the server can't take), the way out is pausing sync; for data that belongs to
   another account or server, or that never synced, it is going back to where the data belongs or
-  signing out (disconnecting, on a paired server), which keeps the data on the phone, and pausing
-  sync where neither is possible or it fails (offline, say).
+  signing out, which keeps the data on the phone, and pausing sync where neither is possible (a
+  paired server has no sign-out that keeps the data here) or it fails (offline, say).
 - **Sync not running is shown everywhere.** While this phone's data belongs to an account but sync
-  isn't running (paused, or signed out on purpose), every screen says so, with the way back: resume,
-  or sign in. Screens drawn above the app, such as the live workout, show the same note. Pausing and
-  resuming are also in Settings while signed in or connected to a paired server. Nothing is asked
-  while paused; resuming asks again whatever is still open. A sync server too old for the app is
-  said on every screen from its first answer, not after a day, with pausing as the way out; the app
-  keeps checking until the server is updated.
+  isn't running (paused, signed out on purpose, or its server left in Settings), every screen says
+  so, with the way back: resume, sign in, or switch back to that server. Screens drawn above the
+  app, such as the live workout, show the same note. Pausing and resuming are also in Settings while
+  signed in or connected to a paired server. Nothing is asked while paused; resuming asks again
+  whatever is still open. A sync server too old for the app is said on every screen from its first
+  answer, not after a day, with pausing as the way out; the app keeps checking until the server is
+  updated.
 - **A workout being logged is never interrupted.** Questions wait while a workout is logged on
   this phone (started or logged here, or open on its live or finish screen; one already running
   when a version with this rule first opens counts too), and come up as soon as it ends;
@@ -435,7 +436,7 @@ join the frozen paths; until then the version 1 layouts may still change.
   whether to add that data to the account or replace it with the account's data. Replacing deletes
   the local data after confirmation and an offer to export it first. Nothing is uploaded or deleted
   until the person answers, and the question can't be put off: signing out (on a paired server,
-  disconnecting) instead keeps the data on the phone, unsynced. Connecting an empty device, or
+  pausing sync) instead keeps the data on the phone, unsynced. Connecting an empty device, or
   connecting to an empty account, doesn't ask. Sample records left by an older build require
   confirmation even when the account is empty. Connecting uploads local records through ordinary
   submissions.

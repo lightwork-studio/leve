@@ -86,10 +86,12 @@ vi.mock("expo-router", () => ({
   },
   usePathname: () => route.path,
 }));
+/** Whether the build has a sync server of its own. */
+const config = vi.hoisted(() => ({ builtIn: true }));
 vi.mock("../src/sync/sync-config.ts", () => ({
   syncEnabled: () => true,
   syncServerUrl: "https://sync.test",
-  builtInServerConfigured: () => true,
+  builtInServerConfigured: () => config.builtIn,
   ownServerAvailable: () => true,
 }));
 const data = vi.hoisted(() => ({
@@ -186,6 +188,7 @@ beforeEach(() => {
   forgetDevicePreferences();
   clerk.reset();
   clerk.signedIn = true;
+  config.builtIn = true;
   Object.assign(data, {
     account: null,
     server: null,
@@ -487,7 +490,7 @@ describe("a server the person paired", () => {
     expect(screen()).not.toContain("no longer accepts");
     await report({ prompt: { kind: "combine" } });
     expect(screen()).toContain("Your account already has data");
-    expect(screen()).toContain("Keep them here and disconnect");
+    expect(screen()).toContain("Pausing sync keeps them on this phone only.");
   });
 
   it("can't put off connecting again: leaving Settings unconnected asks again, or sync pauses", async () => {
@@ -507,6 +510,49 @@ describe("a server the person paired", () => {
     await render();
     expect(syncPaused()).toBe(true);
     expect(screen()).toContain("Sync paused");
+  });
+
+  it("keeps never-synced data on the phone by pausing, not by leaving for another server", async () => {
+    const other = { ...home, server: "https://other.example", device: "d2" };
+    chooseOwnServer(other);
+    chooseOwnServer(home);
+    await render();
+    await report({ prompt: { kind: "combine" } });
+    expect(screen()).toContain("Pausing sync keeps them on this phone only.");
+    expect(screen()).not.toContain("disconnect");
+    expect(screen()).not.toContain("sign out");
+    await tap("Pause sync");
+    await render();
+    expect(syncPaused()).toBe(true);
+    expect(ownServer()).toEqual(home);
+  });
+
+  it("says so, with a way back, when the data's server was left for Leve's without signing in", async () => {
+    chooseOwnServer(home);
+    chooseBuiltInServer();
+    clerk.signedIn = false;
+    data.server = home.server;
+    data.account = home.account;
+    await render();
+    expect(screen()).not.toContain("Your sign-in has run out");
+    expect(screen()).toContain("This phone's data belongs to sync.home.example");
+    await tap("Switch back");
+    expect(ownServer()).toEqual(home);
+  });
+
+  it("says so when a paired server was left in a build without a server of its own", async () => {
+    config.builtIn = false;
+    chooseOwnServer(home);
+    chooseBuiltInServer();
+    data.server = home.server;
+    data.account = home.account;
+    await render();
+    expect(screen()).toContain("Not syncing");
+    expect(screen()).toContain("This phone's data belongs to sync.home.example");
+    await tap("Switch back");
+    await render();
+    expect(ownServer()).toEqual(home);
+    expect(session().options).toMatchObject({ server: home.server });
   });
 
   it("offers pausing sync, not Not now, when another server's data has nowhere to go back to", async () => {
@@ -595,7 +641,7 @@ describe("a server the person paired", () => {
     data.unsyncedCount = 1;
     await report({ prompt: { kind: "switch", reason: "server" } });
     expect(screen()).toContain("Bring them to this server");
-    expect(screen()).not.toContain("Switch back");
+    expect(screen()).not.toContain("switch back");
   });
 
   it("syncs nowhere while the keychain can't be read", async () => {
@@ -640,7 +686,7 @@ describe("a server the person paired", () => {
     chooseOwnServer(home);
     await render();
     await report({ prompt: { kind: "switch", reason: "server" } });
-    expect(screen()).not.toContain("Switch back");
+    expect(screen()).not.toContain("switch back");
   });
 
   it("offers to bring the phone's data along to another server, even with all of it synced", async () => {

@@ -84,7 +84,7 @@ phone, which shows here as in progress too, doesn't hold them back.
 
 - **Combine:** this phone has data that never synced, and the account already has data. Add it to
   the account, or replace it with the account's data (after an offer to save a copy). Signing out
-  (on a paired server, disconnecting) instead keeps it on the phone, unsynced.
+  (on a paired server, pausing sync) instead keeps it on the phone, unsynced.
 - **Another account:** the phone's data belongs to another account on the same server. If all of
   it synced, the app switches without asking. Otherwise it says how many changes would be lost,
   offers a copy, and deletes them only on confirmation, or switches back or signs the new account

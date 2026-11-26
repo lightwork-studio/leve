@@ -85,9 +85,9 @@ const SETTINGS = "/settings";
 export function SyncHost() {
   const own = useOwnServer();
   // If the keychain is locked, wait before choosing which account to sync.
-  if (own === undefined || !syncEnabled()) return null;
+  if (own === undefined) return null;
   // A new pairing is a new session, even with the same account id.
-  if (own) {
+  if (own && syncEnabled()) {
     const key = `${own.server} ${own.device}`;
     return builtInServerConfigured() ? (
       <PairedSyncWithClerk key={key} own={own} />
@@ -95,8 +95,44 @@ export function SyncHost() {
       <Sync key={key} connection={ownConnection(own)} />
     );
   }
-  if (!builtInServerConfigured()) return null;
-  return <ClerkSync />;
+  if (builtInServerConfigured() && syncEnabled()) return <ClerkSync />;
+  // No server to sync with: a paired one was left in a build without one of its own. Data that
+  // belongs to an account says so, never silently.
+  return ownServerAvailable() ? <Disconnected /> : null;
+}
+
+/**
+ * This phone's data belongs to a server it isn't syncing with now (left in Settings, or the
+ * build's own server chosen without signing in): a note on every screen, with the way back.
+ */
+function elsewhereNote(bound: string, canSwitchBack: boolean): SyncNote {
+  return {
+    label: "Not syncing",
+    message: `This phone's data belongs to ${serverLabel(bound)}. Changes stay on this phone until it syncs there again.`,
+    action: canSwitchBack
+      ? {
+          label: "Switch back",
+          hint: `Syncs with ${serverLabel(bound)} again`,
+          onPress: switchBack,
+        }
+      : {
+          label: "Settings",
+          hint: "Opens Settings to connect a server",
+          onPress: () => router.push(SETTINGS),
+        },
+  };
+}
+
+function Disconnected() {
+  const { store } = useAppData();
+  const bound = store.syncState();
+  const note =
+    bound.account !== null && bound.server !== null
+      ? elsewhereNote(bound.server, switchesBackToData(bound, null))
+      : null;
+  useEffect(() => publishSyncNote(note));
+  useEffect(() => () => publishSyncNote(null), []);
+  return note ? <NotSyncing note={note} /> : null;
 }
 
 /** Who the phone syncs as, and with which server. */
@@ -212,13 +248,8 @@ function Sync({
       return current.arrived ? null : current;
     });
     // Likewise for Settings, opened to connect a paired server again.
-    setReconnecting((current) =>
-      current === "going" && pathname === SETTINGS
-        ? "there"
-        : current === "there" && pathname !== SETTINGS
-          ? null
-          : current,
-    );
+    // (Anywhere else it lands, Settings included and then left, the question comes back.)
+    setReconnecting((current) => (current !== null && pathname === SETTINGS ? "there" : null));
   }, [pathname]);
   /** When the last sync was saved: every wait for changes ends in one, every 25 s or so. */
   const lastWritten = useRef(0);
@@ -293,9 +324,6 @@ function Sync({
   const accountData = store.syncState().account !== null;
   const prompt = status.prompt;
   const signOutHere = async () => {
-    // A paired server has no sign-out: leaving it goes back to the choice before, and the data
-    // stays on this phone either way.
-    if (own) return signOut();
     setSignedOutOnPurpose(true);
     try {
       await signOut();
@@ -316,8 +344,9 @@ function Sync({
           sampleData={prompt.sampleData === true}
           onCombine={() => session.current?.combine()}
           onReplace={() => session.current?.replaceLocalData()}
-          signOutLabel={own ? "disconnect" : "sign out"}
-          onSignOut={signOutHere}
+          // A paired server has no sign-out that keeps the data here (leaving it goes back to the
+          // choice before, which may sync it): pausing sync does.
+          {...(own ? {} : { onSignOut: signOutHere })}
           onPause={pause}
           exportData={exportData}
         />
@@ -437,6 +466,13 @@ function Sync({
           },
         },
       };
+    // The data belongs to another server, and nobody is signed in to this one: left on purpose.
+    const bound = store.syncState();
+    if (!own && isLoaded && !isSignedIn && accountData && bound.server && bound.server !== server)
+      return {
+        question: null,
+        note: elsewhereNote(bound.server, switchesBackToData(bound, builtInAccount)),
+      };
     const question = ask();
     // Nothing covers a workout being logged here: the question waits until it ends, and says so.
     // So does replacing this phone's data for another account, which waits for the same workout.
@@ -526,7 +562,6 @@ function CombinePrompt({
   sampleData,
   onCombine,
   onReplace,
-  signOutLabel,
   onSignOut,
   onPause,
   exportData,
@@ -535,10 +570,12 @@ function CombinePrompt({
   sampleData: boolean;
   onCombine: () => void;
   onReplace: () => void;
-  /** Signing out of the build's own server, or disconnecting from a paired one. */
-  signOutLabel: "sign out" | "disconnect";
-  onSignOut: () => Promise<void>;
-  /** Offered once signing out failed (say, offline), so the question never traps anyone. */
+  /** Keeps the data here by signing out of the build's own server. */
+  onSignOut?: () => Promise<void>;
+  /**
+   * Keeps it here without signing out: offered on a paired server, and once signing out failed
+   * (say, offline), so the question never traps anyone.
+   */
   onPause: () => void;
   exportData: () => Promise<void>;
 }) {
@@ -591,29 +628,31 @@ function CombinePrompt({
             label="Replace with my account's data"
             onPress={() => setReplacing(true)}
           />
-          <Button
-            rank="text"
-            label={`Keep ${one ? "it" : "them"} here and ${signOutLabel}`}
-            onPress={() => {
-              setProblem(null);
-              onSignOut().catch(() =>
-                setProblem(
-                  signOutLabel === "sign out"
-                    ? "Signing out didn't work. Check the connection and try again, or pause sync until you can."
-                    : "Disconnecting didn't work. Try again, or pause sync until you can.",
-                ),
-              );
-            }}
-          />
-          {problem ? <Button rank="text" label="Pause sync" onPress={onPause} /> : null}
+          {onSignOut ? (
+            <Button
+              rank="text"
+              label={`Keep ${one ? "it" : "them"} here and sign out`}
+              onPress={() => {
+                setProblem(null);
+                onSignOut().catch(() =>
+                  setProblem(
+                    "Signing out didn't work. Check the connection and try again, or pause sync until you can.",
+                  ),
+                );
+              }}
+            />
+          ) : null}
+          {problem || !onSignOut ? (
+            <Button rank="text" label="Pause sync" onPress={onPause} />
+          ) : null}
         </View>
       }
     >
       <Body
         text={
           sampleData
-            ? `This phone has sample records from an earlier build. Adding this phone's data uploads the sample records along with anything you logged. Nothing syncs until you choose. ${signOutLabel === "sign out" ? "Signing out" : "Disconnecting"} keeps everything on this phone only.`
-            : `This phone has ${what} that ${one ? "isn't" : "aren't"} in your account yet. Add ${one ? "it" : "them"} to your account, or replace ${one ? "it" : "them"} with what's in your account. Nothing syncs until you choose. ${signOutLabel === "sign out" ? "Signing out" : "Disconnecting"} keeps ${one ? "it" : "them"} on this phone only.`
+            ? `This phone has sample records from an earlier build. Adding this phone's data uploads the sample records along with anything you logged. Nothing syncs until you choose. ${onSignOut ? "Signing out" : "Pausing sync"} keeps everything on this phone only.`
+            : `This phone has ${what} that ${one ? "isn't" : "aren't"} in your account yet. Add ${one ? "it" : "them"} to your account, or replace ${one ? "it" : "them"} with what's in your account. Nothing syncs until you choose. ${onSignOut ? "Signing out" : "Pausing sync"} keeps ${one ? "it" : "them"} on this phone only.`
         }
       />
       {problem ? <Body text={problem} /> : null}
