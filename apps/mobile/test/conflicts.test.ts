@@ -543,6 +543,34 @@ it("leads an exercise deleted in the account, with sets changed here, to the wor
   expect(conflict?.review?.target).toEqual({ pathname: "/workout/[id]", params: { id: "w1" } });
 });
 
+it("agrees on a set deleted here under an exercise deleted in the account, leaving the review first", async () => {
+  const { a, b } = await twoPhones((store) => {
+    store.put("workout", "w1", workout("Push Day"));
+    store.put("workout_exercise", "e1", entry("w1"));
+    store.put("workout_set", "s1", set(80, 8));
+    store.put("workout_set", "s2", { ...set(80, 8), position: 2 });
+  });
+  a.store.delete("workout_exercise", "e1");
+  await a.sync();
+  b.store.put("workout_set", "s1", set(85, 8));
+  b.store.put("workout_set", "s2", { ...set(85, 8), position: 2 });
+  await b.sync();
+  b.store.delete("workout_set", "s1");
+  const all = conflicts(b.store);
+  // Nothing is left that only pausing could answer, and nothing stands before the review that
+  // settles the rest.
+  expect(all.every((item) => item.review || item.phone.choosable || item.account.choosable)).toBe(
+    true,
+  );
+  const gone = all.find((item) => item.records.some((row) => row.id === "s1"))!;
+  expect(gone).toMatchObject({ account: { choosable: true, confirm: "Keep it deleted" } });
+  settleConflict(b.store, gone, "account");
+  expect(b.store.problems().map((row) => row.id)).not.toContain("s1");
+  expect(conflicts(b.store).map((item) => item.review?.target)).toEqual([
+    { pathname: "/workout/[id]", params: { id: "w1" } },
+  ]);
+});
+
 it("asks straight away about work logged under something deleted in the account", async () => {
   const { a, b } = await twoPhones((store) => {
     store.put("workout", "w1", workout("Push Day"));

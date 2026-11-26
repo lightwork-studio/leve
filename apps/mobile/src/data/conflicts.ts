@@ -104,7 +104,9 @@ function recordCase(row: DeviceRecord): RecordCase | null {
   if (row.status === "invalid") return accountContent(row) ? "rejected" : "rejected_new";
   if (row.status !== "conflict") return null;
   // Changed here under something deleted in the account: kept only by copying that ancestor.
-  if (row.problem?.reason === "parent_deleted") return row.content ? "gone_there" : null;
+  // Deleted here since, it is gone on both sides: the account's deletion is this phone's too.
+  if (row.problem?.reason === "parent_deleted")
+    return row.content && !row.deleted ? "gone_there" : "gone_both";
   // A deletion made here is weighed against the account's version: the live one, or after a
   // restore whose server never had it, its last copy from before (which keeping theirs restores).
   if (row.deleted) {
@@ -444,7 +446,10 @@ export function conflicts(store: DeviceStore): Conflict[] {
       placed && !lacking && (bothDeleted || records.every((row) => phonePlanOk(store, row, shown)));
     result.push(describe(store, key, records, phoneOk, lacking));
   }
-  return result;
+  // One the popup can't place goes last: the popup shows one at a time, and settling the others
+  // first may settle it too (a review that takes it along, say).
+  const unplaced = (item: Conflict) => item.records.some((row) => recordCase(row) === null);
+  return [...result.filter((item) => !unplaced(item)), ...result.filter(unplaced)];
 }
 
 /* ---------- settling ---------- */
@@ -924,11 +929,13 @@ function describe(
                 ? "Your account has a version made with a newer Leve. Update Leve to see both, or keep the account's version without seeing it."
                 : lacking
                   ? "Your sync server needs an update before it can take this version."
-                  : rejected || refusedNew
-                    ? "This phone's change couldn't be saved in your account."
-                    : records.some((row) => deletesAccountChildren(store, row))
-                      ? "It holds things below it in your account. Keep its version to see them, then delete it again if you want."
-                      : "This version can't be kept on its own.",
+                  : records.some((row) => row.problem?.reason === TOO_MANY_DESCENDANTS)
+                    ? "It holds too much to delete in one go. Keep the account's version, then delete what's in it a part at a time."
+                    : rejected || refusedNew
+                      ? "This phone's change couldn't be saved in your account."
+                      : records.some((row) => deletesAccountChildren(store, row))
+                        ? "It holds things below it in your account. Keep its version to see them, then delete it again if you want."
+                        : "This version can't be kept on its own.",
           }),
       ...(phoneOk && (rejected || refusedNew)
         ? {

@@ -256,8 +256,8 @@ is logged on this phone (see [Sync never stops silently](#sync-never-stops-silen
 settles every record of that conflict, and is checked for every record before any is applied. A
 workout or exercise deleted on one side while the other changed it or what's in it is reviewed where
 the app already does so, in History or on the workout: the popup says what happened, leads there,
-and asks again until it is settled. It leads there only when that screen can settle it; otherwise
-the popup settles it itself. A conflict the running sync is still answering (an upload in flight, a
+and asks again until it is settled, with pausing sync on offer while that screen can't settle it
+yet. It leads there only when that screen can settle it; otherwise the popup settles it itself. A conflict the running sync is still answering (an upload in flight, a
 server restore, a download filling in the server's copy, a connection still being made, a workout
 deleted here that is still to upload, or work below something deleted in the account that is on its
 way there and back) waits for that answer. Everything else is asked about. When this phone's version

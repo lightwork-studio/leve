@@ -108,6 +108,16 @@ export function ConflictPrompt({
             {settled + 1} of {settled + items.length}
           </Text>
         }
+        // The review can be held up (another unfinished workout in the way, say): pausing sync is
+        // the way out until it can be settled.
+        footer={
+          <View style={styles.pause}>
+            <Text style={styles.pauseText}>
+              If it can't be settled there yet, pausing sync stops all syncing until you resume it.
+            </Text>
+            <Button rank="text" label="Pause sync" onPress={onPause} />
+          </View>
+        }
       >
         <Text accessibilityRole="header" style={styles.title}>
           {current.title}

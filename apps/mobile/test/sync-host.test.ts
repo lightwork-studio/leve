@@ -499,7 +499,7 @@ it("waits for this phone's workout to end, and says why a choice was refused", a
   expect(screen()).toContain("Choose a version");
 });
 
-it("can't keep a change the server refused", async () => {
+it("can't keep a phone version that can't be kept", async () => {
   pending.conflicts = [
     {
       ...folderConflict("routine_folder:f1", "Push"),
@@ -592,8 +592,9 @@ it("leads a conflict reviewed on its screen there, stays away meanwhile, and ask
   ];
   await render();
   expect(screen()).toContain("Deleted in your account, but this phone has changes in it.");
-  // No choosing here, and no way around it but reviewing.
+  // No choosing here: reviewing, or pausing sync if the review can't settle it yet.
   expect(screen()).not.toContain("Choose a version");
+  expect(screen()).toContain("Pause sync");
   await tap("Review it");
   expect(route.pushed).toEqual([{ pathname: "/workout/[id]", params: { id: "w1" } }]);
   expect(screen()).toBe("");
