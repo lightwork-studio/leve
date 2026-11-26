@@ -3,7 +3,7 @@
 import { join } from "node:path";
 import { type DeviceStore, openDeviceStore } from "@leve/storage";
 import { createSqlJsEngine } from "@leve/storage/sqljs";
-import { act, createElement as h, type ReactNode } from "react";
+import { act, createElement as h, type ReactNode, useLayoutEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { Platform } from "react-native";
 import initSqlJs from "sql.js";
@@ -4266,6 +4266,11 @@ function PlayerProbe({ capture }: { capture: (frame: ReturnType<typeof workoutFr
   return null;
 }
 
+function WorkoutCommitProbe({ onCommit }: { onCommit: () => void }) {
+  useLayoutEffect(onCommit, [onCommit]);
+  return h(ActiveWorkoutScreen);
+}
+
 describe("the minimised workout", () => {
   it("logs a superset in turn, moving to the next exercise after each set", async () => {
     supersetWorkout();
@@ -4294,11 +4299,17 @@ describe("the minimised workout", () => {
     addExercise(store, workout, EXERCISES.bench, 0);
     const squat = addExercise(store, workout, EXERCISES.squat, 0);
     writeWorkoutNote(store, workout, null, { text: "Use rack three", pinned: false });
-    addExerciseNote(store, {
+    const cue = addExerciseNote(store, {
       exerciseId: EXERCISES.squat.id,
       workoutId: null,
       text: "Brace before unracking",
       pinned: true,
+    });
+    store.put("exercise_note_comment", "cue-reply", {
+      noteId: cue,
+      text: "Reset your brace between reps",
+      createdAt: new Date().toISOString(),
+      agent: "Coach",
     });
     for (let i = 0; i < 10; i++) addSet(store, squat);
     const mini = () => act(() => root.render(h(MiniPlayer)));
@@ -4313,7 +4324,15 @@ describe("the minimised workout", () => {
     try {
       await press("Resume Workout");
       expect(pushRoute).toHaveBeenCalledWith("/workout/active");
-      await act(() => root.render(h(ActiveWorkoutScreen)));
+      const onCommit = () => {
+        expect(host.querySelector('[aria-label="Workout notes, 1"]')).not.toBeNull();
+        expect(
+          host.querySelector('[aria-label="Pinned. Brace before unracking. 1 reply. new reply"]'),
+        ).not.toBeNull();
+        expect(host.textContent).toContain("Reset your brace between reps");
+        expect(syncState.mock.calls.length).toBeLessThanOrEqual(6);
+      };
+      await act(() => root.render(h(WorkoutCommitProbe, { onCommit })));
       expect(
         Array.from(host.querySelectorAll('button[aria-label="kg for set 1"]')).map(
           (field) => field.textContent,
@@ -4324,13 +4343,10 @@ describe("the minimised workout", () => {
         "disabled",
         false,
       );
-      expect(host.querySelector('[aria-label="Workout notes, 1"]')).not.toBeNull();
-      expect(host.querySelector('[aria-label="Pinned. Brace before unracking"]')).not.toBeNull();
       expect(list).not.toHaveBeenCalled();
-      expect(syncState.mock.calls.length).toBeLessThanOrEqual(6);
 
       settled = true;
-      await act(() => root.render(h(ActiveWorkoutScreen)));
+      await act(() => root.render(h(WorkoutCommitProbe, { onCommit })));
       expect(list.mock.calls.filter(([kind]) => kind === "workout_set")).toHaveLength(0);
     } finally {
       settled = true;
@@ -4344,26 +4360,38 @@ describe("the minimised workout", () => {
     async (entry) => {
       const workout = beginWorkout(store);
       addExercise(store, workout, EXERCISES.bench, 0);
+      const note = addExerciseNote(store, {
+        exerciseId: EXERCISES.bench.id,
+        workoutId: workout,
+        text: "Pause on the chest",
+        pinned: false,
+      });
       if (entry === "resume before the mini-player catches up") {
         await act(() => root.render(h(MiniPlayer)));
       }
       change((db) => {
         writeWorkoutNote(db, workout, null, { text: "Keep rests short", pinned: false });
-        addExerciseNote(db, {
-          exerciseId: EXERCISES.bench.id,
-          workoutId: workout,
-          text: "Pause on the chest",
-          pinned: false,
+        db.put("exercise_note_comment", "new-cue-reply", {
+          noteId: note,
+          text: "Try a two-second pause",
+          createdAt: new Date().toISOString(),
+          agent: "Coach",
         });
-      }, "active-workout");
+      });
 
       settled = false;
       onTestFinished(() => {
         settled = true;
       });
       if (entry !== "direct open") await press("Resume Workout");
-      await act(() => root.render(h(ActiveWorkoutScreen)));
-      expect(host.querySelector('[aria-label="Pause on the chest"]')).not.toBeNull();
+      const onCommit = () => {
+        expect(host.querySelector('[aria-label="Workout notes, 1"]')).not.toBeNull();
+        expect(
+          host.querySelector('[aria-label="Pause on the chest. 1 reply. new reply"]'),
+        ).not.toBeNull();
+        expect(host.textContent).toContain("Try a two-second pause");
+      };
+      await act(() => root.render(h(WorkoutCommitProbe, { onCommit })));
       await press("Workout notes, 1");
       expect(host.textContent).toContain("Keep rests short");
     },
