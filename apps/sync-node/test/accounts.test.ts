@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createNodeSqliteEngine } from "@leve/storage/node";
@@ -104,8 +104,10 @@ describe("accounts and pairing", () => {
     again.db.run("UPDATE meta SET version = 2");
     again.close();
 
-    expect(() => Accounts.open({ engine, path })).toThrow("newer Leve server");
-    // Refusing changed nothing.
+    const before = readFileSync(path);
+    expect(() => Accounts.open({ engine, path, wal: true })).toThrow("newer Leve server");
+    expect(readFileSync(path)).toEqual(before);
+    // Refusing changed nothing, even when the service requests WAL mode.
     const raw = engine.open(path, { readOnly: true });
     expect(raw.get("SELECT version FROM meta")?.version).toBe(2);
     raw.close();

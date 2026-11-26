@@ -71,17 +71,6 @@ export function createSyncHttpHandler(options: SyncHttpOptions): RequestListener
         send(errorReply("invalid_request", "unknown endpoint"));
         return;
       }
-      const outcome = await options.authenticate(request);
-      if ("unavailable" in outcome) {
-        send(errorReply("unavailable", "sync is temporarily unavailable"));
-        return;
-      }
-      // An agent's token never syncs, so an MCP client can't stand in for a phone.
-      if (!("principal" in outcome) || outcome.principal.client.kind !== "device") {
-        send(errorReply("unauthorized", "sign in again"));
-        return;
-      }
-      const accountId = outcome.principal.account;
       // JSON only: a cross-site form can't send it without the browser asking first.
       const type = request.headers["content-type"]?.split(";")[0]?.trim().toLowerCase();
       if (type !== "application/json") {
@@ -95,6 +84,19 @@ export function createSyncHttpHandler(options: SyncHttpOptions): RequestListener
         send(errorReply("invalid_request", (error as Error).message.slice(0, 200)));
         return;
       }
+      // Check the device token after receiving the full request: revocation takes effect
+      // while a request body is still arriving.
+      const outcome = await options.authenticate(request);
+      if ("unavailable" in outcome) {
+        send(errorReply("unavailable", "sync is temporarily unavailable"));
+        return;
+      }
+      // An agent's token never syncs, so an MCP client can't stand in for a phone.
+      if (!("principal" in outcome) || outcome.principal.client.kind !== "device") {
+        send(errorReply("unauthorized", "sign in again"));
+        return;
+      }
+      const accountId = outcome.principal.account;
       send(await options.service[route](accountId, body));
     } catch (error) {
       if ((error as Error)?.name === "AccountIdError") {
