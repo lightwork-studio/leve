@@ -419,10 +419,18 @@ describe("a server the person paired", () => {
     await render();
     const first = session();
     await act(async () =>
-      chooseOwnServer({ ...home, server: "https://other.example", device: "d2" }),
+      chooseOwnServer({
+        ...home,
+        server: "https://other.example",
+        device: "d2",
+        token: "other-token",
+      }),
     );
     expect(first.calls).toContain("stop");
     expect(session().options.server).toBe("https://other.example");
+    // The old session, should it still ask, gets the old server's token, never the new one's.
+    expect(await first.options.token(false)).toBe("device-token");
+    expect(await session().options.token(false)).not.toBe(await first.options.token(false));
   });
 
   it("offers switching back only to where the phone's data belongs", async () => {

@@ -75,7 +75,12 @@ beforeEach(() => {
   requests = [];
   answer = () =>
     new Response(
-      JSON.stringify({ account: "acc-1", accountName: "Alice", device: "d", token: "t" }),
+      JSON.stringify({
+        account: "acc-1",
+        accountName: "Alice",
+        device: "d",
+        token: "Zm9vYmFyYmF6cXV4cXV1eHF1dXhxdXV4cXV1eHF1dXg",
+      }),
     );
   vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
     requests.push({ url, body: JSON.parse(String(init?.body)) });

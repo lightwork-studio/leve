@@ -64,6 +64,9 @@ export function httpTransport(
       try {
         response = await fetch(new URL(path.replace(/^\/+/, ""), base), {
           method: "POST",
+          // Never resent elsewhere: a redirect would carry the sign-in and the person's workouts
+          // to a server nobody chose.
+          redirect: "error",
           headers: { "content-type": "application/json", ...sent },
           body: text,
           signal: controller.signal,

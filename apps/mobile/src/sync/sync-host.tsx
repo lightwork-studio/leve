@@ -91,6 +91,13 @@ interface Connection {
 function useOwnServer(): OwnServer | null {
   const [, setVersion] = useState(0);
   useEffect(() => subscribeServerChoice(() => setVersion((n) => n + 1)), []);
+  // A keychain that couldn't be read (a locked phone) is read again when the app comes back.
+  useEffect(() => {
+    const watch = AppState.addEventListener("change", (state) => {
+      if (state === "active") setVersion((n) => n + 1);
+    });
+    return () => watch.remove();
+  }, []);
   return ownServerAvailable() ? ownServer() : null;
 }
 

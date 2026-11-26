@@ -25,6 +25,15 @@ export const ownServerOffered =
   channel === "preview" || (!channel && process.env.EXPO_PUBLIC_BUILD_LABEL !== "App Store");
 
 /**
+ * Whether this build could ever sync: it has a server of its own, or it lets the person pair one
+ * (on iOS, known at build time from `EXPO_OS`). Such a build never seeds made-up data, which
+ * would otherwise go up to the account once it syncs.
+ */
+export function mayEverSync(): boolean {
+  return builtInServerConfigured() || (ownServerOffered && process.env.EXPO_OS === "ios");
+}
+
+/**
  * Whether the phone has a server to sync with: the build's own, or one the person paired. Apart
  * from `syncEnabled` (sync-config.ts) so the data layer can ask without loading React Native; it
  * reads the keychain and the update channel, both native modules with stand-ins in tests.

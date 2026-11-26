@@ -31,7 +31,7 @@ import {
 import { saveShowTargets, useShowTargets } from "../src/data/show-targets.ts";
 import { canChangeTrackRir, useTrackRir } from "../src/data/track-rir.ts";
 import { pairingLinkFrom } from "../src/sync/own-server.ts";
-import { syncEnabled } from "../src/sync/sync-config.ts";
+import { ownServerAvailable, syncEnabled } from "../src/sync/sync-config.ts";
 import { SyncServerSection } from "../src/sync/sync-server-section.tsx";
 import { font, gutter, numeral, radius, space, type } from "../src/theme.ts";
 import { ActionSheet, useConfirmation } from "../src/ui/action-sheet.tsx";
@@ -103,8 +103,9 @@ const APPEARANCE_CHOICES: readonly Choice<AppearanceSetting>[] = [
 
 export default function SettingsScreen() {
   // Builds that sync never load made-up workouts: they would go up to the signed-in account.
-  const seedsSample = buildInfo.sampleData && !syncEnabled();
-  const sampleOnRequest = buildInfo.sampleDataOnRequest && !syncEnabled();
+  // Nor builds that could pair a server of the person's own.
+  const seedsSample = buildInfo.sampleData && !syncEnabled() && !ownServerAvailable();
+  const sampleOnRequest = buildInfo.sampleDataOnRequest && !syncEnabled() && !ownServerAvailable();
   const styles = useStyles(sheet);
   const { store, change, reset } = useAppData();
   const optimistic = useOptimisticSettings(store);

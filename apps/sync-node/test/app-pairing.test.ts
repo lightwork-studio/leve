@@ -64,3 +64,43 @@ it("pairs the app from the operator's link, syncs, and stops once the phone is s
   accounts.revokeDevice(own.device);
   expect(await client.sync()).toMatchObject({ state: "signed_out" });
 });
+
+it("follows no redirect: the code and the workouts go only to the server confirmed", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "leve-app-pairing-"));
+  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+  const engine = createNodeSqliteEngine();
+  const accounts = Accounts.open({ engine, path: join(dir, "accounts.db") });
+  const storage = new ServerStorage({ engine, directory: dir, appVersion: "t" });
+  const real = createSyncServer({
+    storage,
+    authenticate: bearerAuthentication(deviceAuthenticator(accounts)),
+    accounts,
+  });
+  await new Promise<void>((resolve) => real.listen(0, "127.0.0.1", resolve));
+  const target = `http://localhost:${(real.address() as AddressInfo).port}`;
+  // A server (or a proxy in front of one) that sends every request on elsewhere.
+  const { createServer } = await import("node:http");
+  const forwarder = createServer((request, response) => {
+    request.resume();
+    response.writeHead(307, { location: `${target}${request.url}` }).end();
+  });
+  await new Promise<void>((resolve) => forwarder.listen(0, "127.0.0.1", resolve));
+  cleanups.push(async () => {
+    await new Promise((resolve) => forwarder.close(resolve));
+    await new Promise((resolve) => real.close(resolve));
+    await storage.close();
+    accounts.close();
+  });
+  const confirmed = `http://localhost:${(forwarder.address() as AddressInfo).port}`;
+
+  accounts.addAccount("Alice");
+  const { code } = accounts.createPairing("Alice");
+  await expect(pair({ server: confirmed, code }, "phone")).rejects.toMatchObject({
+    problem: "offline",
+  });
+  // The code never reached the other server: it still pairs there directly.
+  expect(await pair({ server: target, code }, "phone")).toMatchObject({ server: target });
+
+  const send = httpTransport(confirmed, { authorization: "Bearer x" });
+  await expect(send("/sync/hello", { releases: ["1.0"], app: "t" })).rejects.toThrow();
+});

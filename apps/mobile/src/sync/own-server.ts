@@ -40,6 +40,9 @@ export function normalizeServer(text: string): string | null {
   const local = url.hostname === "localhost" || url.hostname === "127.0.0.1";
   if (url.protocol !== "https:" && !(url.protocol === "http:" && local)) return null;
   if (url.username || url.password || url.search || url.hash) return null;
+  // A path that reads like another address ("/https://other.example", "/@other") would make the
+  // server's name, as the person checks it, look like someone else's.
+  if (/\/\/|@|:/.test(url.pathname.replace(/\/+$/, ""))) return null;
   return `${url.origin}${url.pathname}`.replace(/\/+$/, "");
 }
 
@@ -107,27 +110,49 @@ export const PAIRING_PROBLEMS: Record<PairingProblem, string> = {
   not_leve: "That address doesn't answer like a Leve sync server.",
 };
 
-/** Trades a pairing link for this phone's device token. */
+/** How long pairing waits for the server before saying it couldn't be reached. */
+export const PAIRING_TIMEOUT_MS = 20_000;
+/** What a device token and id may look like; anything else is refused as not Leve's. */
+const TOKEN = /^[A-Za-z0-9._~+/=-]{16,512}$/;
+const DEVICE_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+/**
+ * Trades a pairing link for this phone's device token. Redirects are refused: the code goes to
+ * the server the person confirmed and nowhere else.
+ */
 export async function pair(
   link: PairingLink,
   deviceName: string,
   fetchFn: typeof fetch = fetch,
+  timeoutMs = PAIRING_TIMEOUT_MS,
 ): Promise<OwnServer> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   let response: Response;
-  try {
-    response = await fetchFn(`${link.server}/auth/pair`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ code: link.code, device: deviceName }),
-    });
-  } catch {
-    throw new PairingError("offline");
-  }
   let body: unknown;
   try {
-    body = await response.json();
-  } catch {
-    throw new PairingError(response.status >= 500 ? "offline" : "not_leve");
+    try {
+      response = await fetchFn(`${link.server}/auth/pair`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code: link.code, device: deviceName }),
+        redirect: "error",
+        signal: controller.signal,
+      });
+    } catch {
+      throw new PairingError("offline");
+    }
+    // An answer from somewhere else, from a fetch that followed a redirect anyway.
+    if (response.redirected) throw new PairingError("not_leve");
+    try {
+      body = await response.json();
+    } catch {
+      throw new PairingError(
+        response.status >= 500 || controller.signal.aborted ? "offline" : "not_leve",
+      );
+    }
+  } finally {
+    clearTimeout(timer);
   }
   const code = (body as { error?: { code?: unknown } } | null)?.error?.code;
   if (response.status === 401 && code === "unauthorized") throw new PairingError("code");
@@ -139,7 +164,9 @@ export async function pair(
     typeof paired.account !== "string" ||
     typeof paired.device !== "string" ||
     typeof paired.token !== "string" ||
-    !/^[A-Za-z0-9_-]{1,64}$/.test(paired.account)
+    !/^[A-Za-z0-9_-]{1,64}$/.test(paired.account) ||
+    !DEVICE_ID.test(paired.device) ||
+    !TOKEN.test(paired.token)
   ) {
     throw new PairingError("not_leve");
   }
