@@ -271,6 +271,7 @@ function Sync({
         <MovePrompt
           server={server}
           unsynced={unsyncedChanges(store)}
+          canMove={!store.hasUnavailableRecords()}
           onMove={() => session.current?.moveLocalData()}
           onStartOver={() => session.current?.replaceLocalData()}
           {...(keep ?? {})}
@@ -522,6 +523,7 @@ function SwitchPrompt({
 function MovePrompt({
   server,
   unsynced,
+  canMove,
   onMove,
   onStartOver,
   onSwitchBack,
@@ -530,6 +532,7 @@ function MovePrompt({
 }: {
   server: string;
   unsynced: number;
+  canMove: boolean;
   onMove: () => void;
   onStartOver: () => void;
   onSwitchBack?: () => void;
@@ -539,22 +542,40 @@ function MovePrompt({
   const styles = useStyles(sheet);
   const saved = useExport(exportData);
   const [problem, setProblem] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const here = serverLabel(server);
   const one = unsynced === 1;
+  if (confirmDelete && unsynced > 0) {
+    return (
+      <Dialog
+        eyebrow="Delete unsynced changes?"
+        onClose={() => setConfirmDelete(false)}
+        confirm={{ label: "Delete and start over", onPress: onStartOver }}
+      >
+        <Body
+          text={`This deletes ${plural(unsynced, "unsynced change")} from this phone and starts from what ${here} holds.`}
+        />
+      </Dialog>
+    );
+  }
   return (
     <Dialog
       eyebrow="This phone used another server"
-      confirm={{
-        label: "Bring them to this server",
-        onPress: () => {
-          if (saved.busy) return;
-          try {
-            onMove();
-          } catch {
-            setProblem("This phone couldn't start moving them. Try again.");
+      {...(canMove
+        ? {
+            confirm: {
+              label: "Bring them to this server",
+              onPress: () => {
+                if (saved.busy) return;
+                try {
+                  onMove();
+                } catch {
+                  setProblem("This phone couldn't start moving them. Try again.");
+                }
+              },
+            },
           }
-        },
-      }}
+        : {})}
       footer={
         <View style={styles.actions}>
           <Button
@@ -584,7 +605,9 @@ function MovePrompt({
                 : `Start from ${here}'s data`
             }
             onPress={() => {
-              if (!saved.busy) onStartOver();
+              if (saved.busy) return;
+              if (unsynced > 0) setConfirmDelete(true);
+              else onStartOver();
             }}
           />
           <Button rank="text" label="Not now" onPress={onLater} />
@@ -594,8 +617,15 @@ function MovePrompt({
       <Body
         text={
           unsynced > 0
-            ? `This phone's workouts belong to the sync server it used before, and ${plural(unsynced, "change")} ${one ? "hasn't" : "haven't"} reached it. Bring everything to ${here}, or delete ${one ? "it" : "them"} from this phone and start from what ${here} holds.`
-            : `This phone's workouts are on the sync server it used before. Bring them to ${here} as well, or start from what ${here} holds. The other server keeps them either way.`
+            ? `This phone has ${plural(unsynced, "change")} that ${one ? "hasn't" : "haven't"} reached the previous server. Starting from what ${here} holds deletes those changes from this phone.`
+            : "This phone's workouts are on the sync server it used before. That server keeps its copy."
+        }
+      />
+      <Body
+        text={
+          canMove
+            ? `Bringing your data to ${here} adds it to the account there. You'll review any conflicting records.`
+            : "Update Leve before moving. This phone holds records this version can't read."
         }
       />
       {saved.note ? <Body text={saved.note} /> : null}

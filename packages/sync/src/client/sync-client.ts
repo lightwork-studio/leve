@@ -143,7 +143,7 @@ export class SyncClient {
   probe(): Promise<ProbeOutcome> {
     return this.#exclusive(async () => {
       try {
-        const { hello } = await this.#greet();
+        const { hello } = await this.#greet(false);
         return { state: "ready", revision: hello.revision } as const;
       } catch (error) {
         return this.#outcome(error) as ProbeOutcome;
@@ -191,8 +191,14 @@ export class SyncClient {
     throw error;
   }
 
-  async #call(path: string, body: unknown): Promise<TransportResponse> {
+  async #call(path: string, body: unknown, checkBinding = true): Promise<TransportResponse> {
     const response = await this.#options.transport(path, body);
+    if (checkBinding) {
+      const { server, account } = this.store.syncState();
+      if (server !== this.#options.server || account !== this.#options.account) {
+        throw new Stop({ state: "offline", error: "the device changed its sync account" });
+      }
+    }
     if (response.status !== 200) {
       const issues = validate(errorResponseSchema, response.body);
       if (issues.length > 0) {
@@ -215,11 +221,12 @@ export class SyncClient {
   }
 
   /** Sends hello and checks the answer, without changing the device. */
-  async #greet(): Promise<{ release: ReleaseId; hello: HelloResponse }> {
-    const response = await this.#call("/sync/hello", {
-      releases: [...this.releases],
-      app: this.#options.app,
-    });
+  async #greet(checkBinding: boolean): Promise<{ release: ReleaseId; hello: HelloResponse }> {
+    const response = await this.#call(
+      "/sync/hello",
+      { releases: [...this.releases], app: this.#options.app },
+      checkBinding,
+    );
     if (response.status !== 200) {
       const error = this.#error(response.body);
       if (error.code === "update_required") {
@@ -239,7 +246,7 @@ export class SyncClient {
   }
 
   async #hello(): Promise<ReleaseId> {
-    const { release, hello } = await this.#greet();
+    const { release, hello } = await this.#greet(true);
     const before = this.store.syncState();
     const otherHistory = before.lineage !== null && before.lineage !== hello.lineage;
     if (!otherHistory && before.lineage !== null && hello.revision < before.cursor) {

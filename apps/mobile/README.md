@@ -79,6 +79,8 @@ asks only when the person has to decide, and never during a workout:
 - **Another server:** the phone's data belongs to another server, synced or not. Bring it to this
   server (the old one keeps its copy), start from this server's data (deleting unsynced changes
   only on confirmation, after an offer to save a copy), or switch back to where it belongs.
+  Moving adds the phone's data to the new account and asks you to review conflicts. If the phone
+  holds records this build can't read, update Leve before moving them.
 - **Sign in again:** the sign-in ran out. It can wait a day or be ignored; changes stay on the
   phone until then. On a paired server, this is **Connect again**: the server no longer accepts
   the phone, and a new pairing link from its operator connects it again.

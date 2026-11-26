@@ -81,10 +81,12 @@ const data = vi.hoisted(() => ({
   exported: 0,
   resets: [] as boolean[],
   unsyncedCount: 0,
+  unavailableRecords: false,
   store: {
     activeWorkout: () => (data.workout ? { id: "w" } : null),
     syncState: () => ({ account: data.account, server: data.server }),
     hasUnsyncedWork: () => data.unsynced,
+    hasUnavailableRecords: () => data.unavailableRecords,
     db: { get: () => ({ n: data.workouts }) },
   },
 }));
@@ -172,6 +174,7 @@ beforeEach(() => {
     exported: 0,
     resets: [],
     unsyncedCount: 0,
+    unavailableRecords: false,
   });
   sessions.created.length = 0;
   keychain.reset();
@@ -396,7 +399,7 @@ describe("a server the person paired", () => {
     data.account = "user_1";
     data.unsyncedCount = 2;
     await report({ prompt: { kind: "switch", reason: "server" } });
-    expect(screen()).toContain("2 changes haven't reached it");
+    expect(screen()).toContain("2 changes that haven't reached the previous server");
     expect(screen()).not.toContain("Keep them and sign out");
     await tap("Switch back");
     // Back on the build's own server, signed in with Clerk.
@@ -499,8 +502,10 @@ describe("a server the person paired", () => {
     await render();
     data.unsyncedCount = 0;
     await report({ prompt: { kind: "switch", reason: "server" } });
-    expect(screen()).toContain("Bring them to sync.home.example as well");
-    expect(screen()).toContain("The other server keeps them either way");
+    expect(screen()).toContain(
+      "Bringing your data to sync.home.example adds it to the account there.",
+    );
+    expect(screen()).toContain("That server keeps its copy.");
     await tap("Bring them to this server");
     expect(session().calls).toContain("move");
     expect(session().calls).not.toContain("replace");
@@ -514,7 +519,25 @@ describe("a server the person paired", () => {
     data.unsyncedCount = 3;
     await report({ prompt: { kind: "switch", reason: "server" } });
     await tap("Delete 3 changes and start over");
+    expect(screen()).toContain("Delete unsynced changes?");
+    expect(session().calls).not.toContain("replace");
+    await tap("Delete and start over");
     expect(session().calls).toContain("replace");
     expect(session().calls).not.toContain("move");
+  });
+  it("asks for an update instead of offering to move unreadable records", async () => {
+    chooseOwnServer(home);
+    data.server = "https://sync.test";
+    data.account = "user_1";
+    data.unavailableRecords = true;
+    try {
+      await render();
+      await report({ prompt: { kind: "switch", reason: "server" } });
+      expect(screen()).toContain("Update Leve before moving");
+      expect(screen()).not.toContain("Bring them to this server");
+      expect(screen()).toContain("Save a copy first");
+    } finally {
+      data.unavailableRecords = false;
+    }
   });
 });

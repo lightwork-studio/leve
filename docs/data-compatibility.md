@@ -379,15 +379,14 @@ join the frozen paths; until then the version 1 layouts may still change.
   synced, and never while a workout is in progress. It can bring its data to the new server, start
   from what the new server holds (dropping its copy, which the old server still has; unsynced work
   only after saying how many changes would be lost and offering an export), go back to the server
-  the data belongs to, or decide later; nothing syncs meanwhile. Bringing it along rebinds the
-  device to the new server and account and resets it exactly as after a
-  [server restore](#server-restores), as the new server's lineage differs: every record it holds is
-  offered as new, remembered deletions become markers, nothing in flight is resent, and anything
-  that differs from what the new account already holds goes to the person for review. The old
-  server keeps its copy.
+  the data belongs to, or decide later; nothing syncs meanwhile. Bringing it along adds it to the
+  new account. If the phone holds records the current build can't read, it needs an update before
+  it can move them. The old server keeps its copy.
 - Sync state (cursor, receipts, pending submissions) belongs to one account on one server and is never
-  reused for another. Moving to another server keeps only the old lineage, so that the new server's
-  answer resets the rest.
+  reused for another. Moving rebinds the phone and resets its sync state in one transaction, even
+  if both servers report the same lineage. It then reconciles records as after a
+  [server restore](#server-restores): it offers the records it can sync to the destination,
+  compares remembered deletions with the destination, and asks the person to review conflicts.
 - Local mode offers a manual export and import of a complete backup file. The file is a copy of the
   device database made with SQLite's backup, so it carries the fixed storage metadata. Importing it
   replaces local data after confirmation and an offer to export the current state first. A backup

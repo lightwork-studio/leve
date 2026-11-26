@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { SyncClient } from "../src/client/sync-client.ts";
 import { entry, set, workout } from "./support/content.ts";
 import { expectSynced, type ServerHarness, World } from "./support/harness.ts";
 
@@ -58,29 +59,86 @@ describe("moving a phone's data to another server", () => {
     expect(phone.store.problems()).toEqual([]);
   });
 
-  it("adds the phone's data to an account that already has some", async () => {
-    const { phone } = await syncedPhone();
-    const next = world.server();
-    const other = await world.phone("other", {
-      account: "bob",
-      server: "new",
-      transport: next.transport("bob"),
-    });
-    other.store.put("workout", "w9", workout("Push"));
-    expectSynced(await other.sync());
+  it.each([false, true])(
+    "combines both accounts even when the destination's cursor is higher (shared lineage: %s)",
+    async (sharedLineage) => {
+      const { phone } = await syncedPhone();
+      const next = world.server();
+      const other = await world.phone("other", {
+        account: "bob",
+        server: "new",
+        transport: next.transport("bob"),
+      });
+      const before = phone.store.syncState();
+      if (sharedLineage) {
+        // A copy of an account database can leave two servers reporting the same lineage.
+        (await next.storage.account("bob")).db.run("UPDATE account SET lineage = ?", [
+          before.lineage,
+        ]);
+      }
+      const existing = ["w6", "w7", "w8", "w9"];
+      for (const id of existing) other.store.put("workout", id, workout(id));
+      expectSynced(await other.sync());
+      expect(await next.head("bob")).toBeGreaterThan(before.cursor);
 
+      phone.store.moveTo("new", "bob");
+      await phone.restart({ server: "new", account: "bob", transport: next.transport("bob") });
+      expectSynced(await phone.sync());
+      expect((await live(next, "bob")).map((row) => row[1]).sort()).toEqual([
+        "e1",
+        "s1",
+        "w1",
+        ...existing,
+      ]);
+      expect(
+        phone.store
+          .list("workout")
+          .map((w) => w.id)
+          .sort(),
+      ).toEqual(["w1", ...existing]);
+      expect(phone.store.problems()).toEqual([]);
+    },
+  );
+
+  it("keeps the old binding, cursor and records if a parent cannot be read", async () => {
+    const { phone } = await syncedPhone();
+    phone.store.applyPull([{ state: "unavailable", kind: "workout", id: "w1", revision: 4 }], 4);
+    const before = phone.store.syncState();
+    expect(phone.store.hasUnavailableRecords()).toBe(true);
+    expect(() => phone.store.moveTo("new", "bob")).toThrow("update Leve");
+    expect(phone.store.syncState()).toEqual(before);
+    expect(phone.store.get("workout", "w1")?.unavailable).toBe(true);
+    expect(phone.store.get("workout_exercise", "e1")).not.toBeNull();
+  });
+
+  it("ignores a hello from the original server that arrives after the move", async () => {
+    const { old, phone } = await syncedPhone();
+    const next = world.server();
+    const oldTransport = old.transport("alice");
+    const requested = Promise.withResolvers<void>();
+    const released = Promise.withResolvers<void>();
+    const oldClient = new SyncClient({
+      store: phone.store,
+      server: "old",
+      account: "alice",
+      app: "test",
+      transport: async (path, body) => {
+        const reply = await oldTransport(path, body);
+        requested.resolve();
+        await released.promise;
+        return reply;
+      },
+    });
+    const oldSync = oldClient.sync();
+    await requested.promise;
     phone.store.moveTo("new", "bob");
+    released.resolve();
+
+    expect(await oldSync).toMatchObject({ state: "offline" });
+    expect(phone.store.syncState()).toMatchObject({ server: "new", account: "bob", lineage: null });
     await phone.restart({ server: "new", account: "bob", transport: next.transport("bob") });
     expectSynced(await phone.sync());
-    expectSynced(await phone.sync());
-    expect((await live(next, "bob")).map((row) => row[1]).sort()).toEqual(["e1", "s1", "w1", "w9"]);
-    expect(
-      phone.store
-        .list("workout")
-        .map((w) => w.id)
-        .sort(),
-    ).toEqual(["w1", "w9"]);
-    expect(phone.store.problems()).toEqual([]);
+    expect(await live(next, "bob")).toContainEqual(["workout", "w1", "Legs"]);
   });
 
   it("brings changes that hadn't synced, without asking anything", async () => {

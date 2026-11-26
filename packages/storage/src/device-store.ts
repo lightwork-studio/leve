@@ -1209,14 +1209,14 @@ export class DeviceStore {
     });
   }
 
+  /** Whether a server copy needs a newer app to read. */
+  hasUnavailableRecords(): boolean {
+    return !!this.db.get("SELECT 1 FROM records WHERE server_state = 'unavailable' LIMIT 1");
+  }
+
   /**
-   * Moves this device's data to another server or account, when the person asks to bring it along
-   * rather than start from what the new one holds. Only the binding changes here, and the lineage
-   * of the old server stays: on connecting, the new server answers with a lineage of its own, so
-   * the device resets exactly as after a server restore (see `resetForServerRestore`). Every
-   * record it held is offered to the new server as new, deletions it remembers become markers
-   * there, nothing in flight is resent, and any difference from what the new account already
-   * holds goes to the person for review. The old server keeps its copy.
+   * Rebinds this device and discards the old account's sync state in one transaction. The same
+   * reconciliation as a restore offers records to the destination and keeps differences for review.
    */
   moveTo(server: string, account: string): void {
     this.#mutate(() => {
@@ -1225,7 +1225,15 @@ export class DeviceStore {
         throw new DeviceStoreError("this device has never synced; it connects as it is");
       }
       if (state.account === account && state.server === server) return;
-      this.db.run("UPDATE sync_state SET server = ?, account = ? WHERE id = 1", [server, account]);
+      if (this.hasUnavailableRecords()) {
+        throw new DeviceStoreError("update Leve before moving data this version cannot read");
+      }
+      this.#resetForServerRestore();
+      this.db.run(
+        `UPDATE sync_state SET server = ?, account = ?, release = NULL, features = '[]',
+         lineage = NULL, refresh_from = NULL WHERE id = 1`,
+        [server, account],
+      );
     });
   }
 
@@ -2244,89 +2252,91 @@ export class DeviceStore {
    * server has is reviewed; one of a record it doesn't have is sent, so the server keeps a marker.
    */
   resetForServerRestore(): void {
-    this.#mutate(() => {
-      // Settling an inferred cascade can retire uploads for edited descendants.
-      // Capture their field evidence before either the cascade or reset drops them.
-      for (const raw of this.db.all("SELECT * FROM submissions WHERE op = 'put'")) {
-        const submission = toSubmissionRow(raw);
-        const row = this.#row(submission.kind, submission.id);
-        if (!row) continue;
-        const kept = this.#beforeDroppingSubmission(row, submission, null);
-        if (submission.baseRevision === null && row.serverRevision === null)
-          this.#write({ ...kept, seenOnServer: true });
-        else if (kept !== row) this.#write(kept);
+    this.#mutate(() => this.#resetForServerRestore());
+  }
+
+  #resetForServerRestore(): void {
+    // Settling an inferred cascade can retire uploads for edited descendants.
+    // Capture their field evidence before either the cascade or reset drops them.
+    for (const raw of this.db.all("SELECT * FROM submissions WHERE op = 'put'")) {
+      const submission = toSubmissionRow(raw);
+      const row = this.#row(submission.kind, submission.id);
+      if (!row) continue;
+      const kept = this.#beforeDroppingSubmission(row, submission, null);
+      if (submission.baseRevision === null && row.serverRevision === null)
+        this.#write({ ...kept, seenOnServer: true });
+      else if (kept !== row) this.#write(kept);
+    }
+    this.#recoverInterruptedCascades();
+    for (const raw of this.db.all("SELECT * FROM records")) {
+      const row = toRecordRow(raw);
+      if (row.localState === null && row.serverState === "unavailable") {
+        // Records this build can't show come back with the download.
+        this.db.run("DELETE FROM records WHERE kind = ? AND id = ?", [row.kind, row.id]);
+        continue;
       }
-      this.#recoverInterruptedCascades();
-      for (const raw of this.db.all("SELECT * FROM records")) {
-        const row = toRecordRow(raw);
-        if (row.localState === null && row.serverState === "unavailable") {
-          // Records this build can't show come back with the download.
-          this.db.run("DELETE FROM records WHERE kind = ? AND id = ?", [row.kind, row.id]);
-          continue;
-        }
-        if (row.localState === null && row.serverState === "deleted") {
-          const owner = this.contract.kind(row.kind).parent;
-          if (owner?.sharedId && !this.#row(owner.kind, row.id)) {
-            // A shared-ID setting can only be deleted with its owner. A paged pull may
-            // have stopped between those two markers. Review the owner if it reappears.
-            this.#write({
-              ...this.#emptyRow(owner.kind, row.id),
-              localState: "deleted",
-              localSeq: 1,
-              status: "pending",
-              reoffered: true,
-              seenOnServer: true,
-            });
-          }
-          // The restored server may have this record again. If it does, the user reviews the
-          // deletion; if it doesn't, the deletion is sent so the server keeps a marker.
+      if (row.localState === null && row.serverState === "deleted") {
+        const owner = this.contract.kind(row.kind).parent;
+        if (owner?.sharedId && !this.#row(owner.kind, row.id)) {
+          // A shared-ID setting can only be deleted with its owner. A paged pull may
+          // have stopped between those two markers. Review the owner if it reappears.
           this.#write({
-            ...row,
-            serverRevision: null,
-            serverState: null,
-            serverContent: null,
+            ...this.#emptyRow(owner.kind, row.id),
             localState: "deleted",
-            localContent: null,
-            localBase: null,
-            localSeq: row.localSeq + 1,
+            localSeq: 1,
+            status: "pending",
             reoffered: true,
             seenOnServer: true,
-            status: "pending",
           });
-          continue;
         }
-        const keepsProblem = row.status === "conflict" || row.status === "invalid";
-        // A conflict was about the server's old state: it is rechecked against the restored
-        // server. An invalid version stays invalid.
-        const conflict = row.status === "conflict";
+        // The restored server may have this record again. If it does, the user reviews the
+        // deletion; if it doesn't, the deletion is sent so the server keeps a marker.
         this.#write({
           ...row,
           serverRevision: null,
           serverState: null,
           serverContent: null,
-          localState: row.localState ?? "live",
-          localContent: row.localState === null ? row.serverContent : row.localContent,
+          localState: "deleted",
+          localContent: null,
           localBase: null,
           localSeq: row.localSeq + 1,
-          // Offered again without any change by the user: equal copies are confirmed, any
-          // difference comes back as a conflict the user can clear with resolveRestored(). A record
-          // offered again by an earlier restore stays so.
-          reoffered: row.localState === null || row.reoffered,
-          status: keepsProblem ? row.status : "pending",
-          problem: keepsProblem ? (conflict ? "restored" : row.problem) : null,
-          problemRevision: conflict ? null : row.problemRevision,
-          // The user's version: what keeping theirs offers again if the restored server lacks
-          // the record.
-          keptContent:
-            row.localState !== null && row.serverState === "live"
-              ? row.serverContent
-              : row.keptContent,
-          seenOnServer: row.serverState !== null || row.seenOnServer,
+          reoffered: true,
+          seenOnServer: true,
+          status: "pending",
         });
+        continue;
       }
-      this.db.run("DELETE FROM submissions");
-      this.db.run("UPDATE sync_state SET cursor = 0, restoring = 1 WHERE id = 1");
-    });
+      const keepsProblem = row.status === "conflict" || row.status === "invalid";
+      // A conflict was about the server's old state: it is rechecked against the restored
+      // server. An invalid version stays invalid.
+      const conflict = row.status === "conflict";
+      this.#write({
+        ...row,
+        serverRevision: null,
+        serverState: null,
+        serverContent: null,
+        localState: row.localState ?? "live",
+        localContent: row.localState === null ? row.serverContent : row.localContent,
+        localBase: null,
+        localSeq: row.localSeq + 1,
+        // Offered again without any change by the user: equal copies are confirmed, any
+        // difference comes back as a conflict the user can clear with resolveRestored(). A record
+        // offered again by an earlier restore stays so.
+        reoffered: row.localState === null || row.reoffered,
+        status: keepsProblem ? row.status : "pending",
+        problem: keepsProblem ? (conflict ? "restored" : row.problem) : null,
+        problemRevision: conflict ? null : row.problemRevision,
+        // The user's version: what keeping theirs offers again if the restored server lacks
+        // the record.
+        keptContent:
+          row.localState !== null && row.serverState === "live"
+            ? row.serverContent
+            : row.keptContent,
+        seenOnServer: row.serverState !== null || row.seenOnServer,
+      });
+    }
+    this.db.run("DELETE FROM submissions");
+    this.db.run("UPDATE sync_state SET cursor = 0, restoring = 1 WHERE id = 1");
   }
 
   /** Called once the full download after a reset is complete. */
