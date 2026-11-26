@@ -509,6 +509,30 @@ export class SyncService {
     children("workout_rest", "workout");
     children("workout_note", "workout");
     children("workout_note_comment", "workout_note");
+    if (kinds.includes("custom_exercise")) {
+      const ids = new Set(
+        (rows.get("workout_exercise") ?? []).flatMap((entry) =>
+          typeof entry.content?.exerciseId === "string" ? [entry.content.exerciseId] : [],
+        ),
+      );
+      rows.set(
+        "custom_exercise",
+        [...ids].flatMap((id) => {
+          const exercise = tx.get("custom_exercise", id);
+          return exercise?.state === "live" ? [exercise] : [];
+        }),
+      );
+    }
+    if (kinds.includes("body_measurement")) {
+      const first = workouts.at(-1)?.content?.startedAt;
+      const last = workouts[0]?.content?.startedAt;
+      rows.set(
+        "body_measurement",
+        typeof first === "string" && typeof last === "string"
+          ? tx.liveBodyweightForWorkouts(first, last)
+          : [],
+      );
+    }
     if (kinds.includes("exercise_note")) {
       rows.set(
         "exercise_note",

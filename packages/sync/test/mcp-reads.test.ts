@@ -422,6 +422,28 @@ describe("MCP reads", () => {
     };
     expect(settings.settings.countWarmups).toBe(false);
   });
+
+  it("returns full workout details with a large comment thread", async () => {
+    const { connect, service } = await setup();
+    await write(
+      service,
+      "alice",
+      Array.from({ length: 80 }, (_, index): [string, string, JsonObject] => [
+        "workout_note_comment",
+        `long-comment-${index}`,
+        {
+          noteId: "n1",
+          text: "a".repeat(10_000),
+          createdAt: "2026-11-02T20:00:00.000Z",
+          agent: null,
+        },
+      ]),
+    );
+    const { call } = await connect(agent("alice"));
+    const result = await call("get_workout", { id: "w1" });
+    const notes = result.structuredContent?.notes as { comments: unknown[] }[];
+    expect(notes[0]?.comments).toHaveLength(81);
+  });
 });
 
 describe("MCP access is one account's", () => {

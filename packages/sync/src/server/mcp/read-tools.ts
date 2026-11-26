@@ -49,12 +49,10 @@ type ToolResult = {
   isError?: boolean;
 };
 
-const ok = (value: Record<string, unknown>): ToolResult => {
+const ok = (value: Record<string, unknown>, canNarrow = false): ToolResult => {
   const text = JSON.stringify(value);
-  if (new TextEncoder().encode(text).byteLength > MAX_PAGE_BYTES) {
-    return refuse(
-      "The result is too large. Use a smaller date range or page size where available.",
-    );
+  if (canNarrow && new TextEncoder().encode(text).byteLength > MAX_PAGE_BYTES) {
+    return refuse("The result is too large. Use a smaller date range or page size.");
   }
   return { content: [{ type: "text", text }], structuredContent: value };
 };
@@ -63,7 +61,12 @@ const refuse = (message: string): ToolResult => ({
   isError: true,
 });
 
-const isoTime = z.union([z.iso.date(), z.iso.datetime({ offset: true })]);
+const isoTime = z.union([z.iso.date(), z.iso.datetime({ offset: true })]).refine((value) => {
+  const time = new Date(value);
+  return (
+    Number.isFinite(time.getTime()) && time.getUTCFullYear() >= 0 && time.getUTCFullYear() <= 9999
+  );
+}, "Use a date or time with a four-digit year in UTC");
 const range = {
   from: isoTime.optional().describe("Only from this time on (inclusive), ISO 8601"),
   to: isoTime.optional().describe("Only before this time (exclusive), ISO 8601"),
@@ -162,8 +165,9 @@ function addWorkout(total: Totals, workout: Omit<Totals, "workouts">) {
 }
 
 const dateInZone = (timeZone: string) =>
-  new Intl.DateTimeFormat("en", {
+  new Intl.DateTimeFormat("en-US", {
     timeZone,
+    era: "short",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -182,11 +186,15 @@ function weekOf(time: number, firstWeekday: number, date: Intl.DateTimeFormat) {
   const parts = Object.fromEntries(
     date.formatToParts(time).map(({ type, value }) => [type, value]),
   );
-  const start = new Date(
-    `${parts.year?.padStart(4, "0")}-${parts.month}-${parts.day}T00:00:00.000Z`,
+  const year = Number(parts.year);
+  const start = new Date(0);
+  start.setUTCFullYear(
+    parts.era === "BC" ? 1 - year : year,
+    Number(parts.month) - 1,
+    Number(parts.day),
   );
   start.setUTCDate(start.getUTCDate() - ((start.getUTCDay() - firstWeekday + 7) % 7));
-  return start.toISOString().slice(0, 10);
+  return start.toISOString().split("T")[0];
 }
 
 export function registerReadTools(server: McpServer, load: ViewLoader): void {
@@ -230,13 +238,16 @@ export function registerReadTools(server: McpServer, load: ViewLoader): void {
       const matching = view.list("workout");
       const page = matching.slice(0, limit);
       const last = page.at(-1);
-      return ok({
-        workouts: page.map((w) => workoutFigures(view.tree(w), view, options)),
-        nextCursor:
-          matching.length > limit && last
-            ? { startedAt: String(last.content.startedAt), id: last.id }
-            : null,
-      });
+      return ok(
+        {
+          workouts: page.map((w) => workoutFigures(view.tree(w), view, options)),
+          nextCursor:
+            matching.length > limit && last
+              ? { startedAt: String(last.content.startedAt), id: last.id }
+              : null,
+        },
+        page.length > 1,
+      );
     },
   );
 
@@ -405,28 +416,31 @@ export function registerReadTools(server: McpServer, load: ViewLoader): void {
         .filter(({ sessions }) => sessions.length > 0)
         .sort((a, b) => b.sessions.length - a.sessions.length)
         .slice(0, exercises);
-      return ok({
-        totals,
-        weeks: [...weeks].map(([weekStart, totals]) => ({ weekStart, ...totals })),
-        workouts: workouts.map((w) => ({
-          id: w.id,
-          startedAt: new Date(w.time).toISOString(),
-          minutes: w.minutes,
-          volumeKg: w.volumeKg,
-          sets: w.sets,
-          reps: w.reps,
-        })),
-        exercises: byExercise.map(({ exerciseId, name, type, sessions }) => ({
-          exerciseId,
-          name,
-          type,
-          sessions: [...sessions].reverse().map((s) => ({
-            workoutId: s.workoutId,
-            startedAt: s.startedAt,
-            best: bests(s.best),
+      return ok(
+        {
+          totals,
+          weeks: [...weeks].map(([weekStart, totals]) => ({ weekStart, ...totals })),
+          workouts: workouts.map((w) => ({
+            id: w.id,
+            startedAt: new Date(w.time).toISOString(),
+            minutes: w.minutes,
+            volumeKg: w.volumeKg,
+            sets: w.sets,
+            reps: w.reps,
           })),
-        })),
-      });
+          exercises: byExercise.map(({ exerciseId, name, type, sessions }) => ({
+            exerciseId,
+            name,
+            type,
+            sessions: [...sessions].reverse().map((s) => ({
+              workoutId: s.workoutId,
+              startedAt: s.startedAt,
+              best: bests(s.best),
+            })),
+          })),
+        },
+        workouts.length > 1,
+      );
     },
   );
 

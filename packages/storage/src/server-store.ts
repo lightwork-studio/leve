@@ -384,6 +384,24 @@ export class ServerTransaction {
       .map(toStored);
   }
 
+  /** Bodyweight lookup needs measurements during the selected workouts and one preceding them. */
+  liveBodyweightForWorkouts(first: string, last: string): StoredRecord[] {
+    const time = "json_extract(content, '$.takenAt')";
+    const bodyweight =
+      "kind = 'body_measurement' AND state = 'live' AND json_extract(content, '$.bodyweightKg') IS NOT NULL";
+    return this.#db
+      .all(
+        `SELECT * FROM records WHERE ${bodyweight} AND ${time} <= ? AND (
+         ${time} >= ? OR id = (
+          SELECT id FROM records WHERE ${bodyweight} AND ${time} < ?
+          ORDER BY ${time} DESC, id DESC LIMIT 1
+         )
+       ) ORDER BY id`,
+        [last, first, first],
+      )
+      .map(toStored);
+  }
+
   liveChildren(kind: string, id: string, childKind?: string): StoredRecord[] {
     return this.#db
       .all(
