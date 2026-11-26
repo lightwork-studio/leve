@@ -127,6 +127,7 @@ export class SyncSession {
   /** Trying a refused sign-in again in the background, with its question still showing. */
   #checkingSignIn = false;
   #join = false;
+  #acceptSampleData = false;
   #status: SyncStatus;
 
   constructor(options: SyncSessionOptions) {
@@ -217,6 +218,7 @@ export class SyncSession {
   /** The answer to "combine": the phone's data joins the account. */
   combine(): void {
     if (this.#status.prompt?.kind !== "combine") return;
+    if (this.#status.prompt.sampleData) this.#acceptSampleData = true;
     this.#join = true;
     this.#resume();
   }
@@ -376,6 +378,10 @@ export class SyncSession {
       // Everything here is on the other account's server already: nothing is lost.
       this.stop();
       this.#options.startOver();
+      return null;
+    }
+    if (!this.#acceptSampleData && hasSampleData(store)) {
+      this.#ask({ kind: "combine", sampleData: true });
       return null;
     }
     if (this.#stopped) return null;
