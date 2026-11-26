@@ -32,7 +32,7 @@ SPDX-FileCopyrightText = ["Dmitry Fedorov (anatomy model)", "Leve contributors"]
 SPDX-License-Identifier = "LicenseRef-Leve-Exercise-Images"
 
 [[annotations]]
-path = "apps/mobile/src/data/exercise-catalog.json"
+path = "packages/core/src/exercise-catalog.ts"
 precedence = "closest"
 SPDX-FileCopyrightText = ["free-exercise-db contributors", "Leve contributors"]
 SPDX-License-Identifier = "Unlicense AND MPL-2.0"

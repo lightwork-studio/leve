@@ -1,4 +1,6 @@
+export * from "./catalog.ts";
 export * from "./exercise.ts";
+export * from "./exercise-catalog.ts";
 export * from "./progress.ts";
 export * from "./records.ts";
 export * from "./settings.ts";

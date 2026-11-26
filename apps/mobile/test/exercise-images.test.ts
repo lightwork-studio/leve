@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
+import { EXERCISE_CATALOG as catalog } from "@leve/core";
 import { expect, it } from "vitest";
-import catalog from "../src/data/exercise-catalog.json";
 
 const folder = new URL("../media/exercises/", import.meta.url);
 
