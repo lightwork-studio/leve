@@ -84,6 +84,7 @@ interface Connection {
   /** The build's own server with a Clerk sign-in, or a server the person paired. */
   kind: "built_in" | "own";
   server: string;
+  accountName?: string;
   isLoaded: boolean;
   isSignedIn: boolean;
   userId: string | null;
@@ -127,6 +128,7 @@ function ownConnection(own: OwnServer): Connection {
   return {
     kind: "own",
     server: own.server,
+    accountName: own.accountName ?? own.account,
     isLoaded: true,
     isSignedIn: true,
     userId: own.account,
@@ -270,6 +272,7 @@ function Sync({
       return (
         <MovePrompt
           server={server}
+          account={connection.accountName}
           unsynced={unsyncedChanges(store)}
           canMove={!store.hasUnavailableRecords()}
           onMove={() => session.current?.moveLocalData()}
@@ -522,6 +525,7 @@ function SwitchPrompt({
  */
 function MovePrompt({
   server,
+  account,
   unsynced,
   canMove,
   onMove,
@@ -531,6 +535,7 @@ function MovePrompt({
   exportData,
 }: {
   server: string;
+  account: string | undefined;
   unsynced: number;
   canMove: boolean;
   onMove: () => void;
@@ -544,6 +549,9 @@ function MovePrompt({
   const [problem, setProblem] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const here = serverLabel(server);
+  const destination = account
+    ? `account “${account}” on ${here}`
+    : `your signed-in account on ${here}`;
   const one = unsynced === 1;
   if (confirmDelete && unsynced > 0) {
     return (
@@ -624,7 +632,7 @@ function MovePrompt({
       <Body
         text={
           canMove
-            ? `Bringing your data to ${here} adds it to the account there. You'll review any conflicting records.`
+            ? `Bringing your data adds it to ${destination}. You can review conflicting records after syncing.`
             : "Update Leve before moving. This phone holds records this version can't read."
         }
       />

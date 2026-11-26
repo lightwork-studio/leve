@@ -503,7 +503,7 @@ describe("a server the person paired", () => {
     data.unsyncedCount = 0;
     await report({ prompt: { kind: "switch", reason: "server" } });
     expect(screen()).toContain(
-      "Bringing your data to sync.home.example adds it to the account there.",
+      "Bringing your data adds it to account “acc-home” on sync.home.example.",
     );
     expect(screen()).toContain("That server keeps its copy.");
     await tap("Bring them to this server");

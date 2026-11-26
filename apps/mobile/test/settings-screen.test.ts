@@ -169,6 +169,50 @@ async function press(label: string) {
   await render();
 }
 
+it.each([
+  ["Use this phone’s settings", "lbs", "pending"],
+  ["Use the account’s settings", "kg", "synced"],
+] as const)("resolves a settings conflict with %s", async (choice, unit, status) => {
+  store.bindAccount("old", "alice");
+  store.applyPull(
+    [
+      {
+        kind: "settings",
+        id: "settings",
+        state: "live",
+        revision: 1,
+        content: settingsContent(null, { weightUnit: "lbs" }),
+      },
+    ],
+    1,
+  );
+  store.moveTo("new", "bob");
+  store.setNegotiated("1.0", [], "destination");
+  const [outgoing] = store.prepareSubmissions("1.0");
+  if (!outgoing) throw new Error("expected settings ready to upload");
+  store.applyPushResults([
+    {
+      status: "conflict",
+      submissionId: outgoing.submission.submissionId,
+      reason: "exists",
+      current: {
+        kind: "settings",
+        id: "settings",
+        state: "live",
+        revision: 1,
+        content: settingsContent(null, { weightUnit: "kg" }),
+      },
+    },
+  ]);
+  store.completeRestore();
+  expect(store.get("settings", "settings")?.status).toBe("conflict");
+  await render();
+  await press(choice);
+  expect(readSettings(store).weightUnit).toBe(unit);
+  expect(store.get("settings", "settings")?.status).toBe(status);
+  expect(byLabel("Use the account’s settings")).toBeNull();
+});
+
 it("switches a unit by tapping its sample reading", async () => {
   await render();
   expect(host.textContent).toContain("82.4");

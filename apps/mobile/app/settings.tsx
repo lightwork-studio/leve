@@ -111,6 +111,9 @@ export default function SettingsScreen() {
   const optimistic = useOptimisticSettings(store);
   // The optimistic draft can settle before the provider's version update is rendered.
   const committed = readSettings(store);
+  const settingsRecord = store.get("settings", "settings");
+  const settingsConflict =
+    settingsRecord?.status === "conflict" && settingsRecord.server?.state === "live";
   const settings = { ...committed, ...optimistic.patch };
   const insets = useSafeAreaInsets();
   // A pairing link that opened the app (app/connect.tsx) arrives as these.
@@ -142,6 +145,15 @@ export default function SettingsScreen() {
     haptic.warning();
     setProblem(message);
     announce(message);
+  };
+
+  const resolveSettings = (choice: "keep_mine" | "keep_theirs") => {
+    try {
+      change((device) => device.resolve("settings", "settings", { choice }));
+      setProblem(null);
+    } catch {
+      showProblem("The settings choice couldn't be saved. Try again.");
+    }
   };
 
   const queue = (edit: Parameters<typeof optimistic.enqueue>[0]) => {
@@ -205,6 +217,24 @@ export default function SettingsScreen() {
           <StillOnOpen>
             <SyncServerSection link={pairing} />
             <AccountSection />
+            {settingsConflict && !store.syncState().restoring ? (
+              <Group
+                label="Review sync settings"
+                footnote="The settings on this phone differ from the account’s settings. Choose which version to keep."
+              >
+                <ActionRow
+                  label="Use this phone’s settings"
+                  hint="Send the settings shown here to the account"
+                  onPress={() => resolveSettings("keep_mine")}
+                  divider
+                />
+                <ActionRow
+                  label="Use the account’s settings"
+                  hint="Replace the settings shown here"
+                  onPress={() => resolveSettings("keep_theirs")}
+                />
+              </Group>
+            ) : null}
 
             <Group
               label="Reads as"
