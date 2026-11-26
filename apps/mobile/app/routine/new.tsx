@@ -1,12 +1,14 @@
-import { router, useLocalSearchParams } from "expo-router";
+import { jsonEqual } from "@leve/contract";
+import { router, useLocalSearchParams, usePreventRemove } from "expo-router";
 import { useRef, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppData } from "../../src/data/app-data.tsx";
 import { useTrain } from "../../src/data/queries.ts";
-import { createRoutine, type PlannedExercise } from "../../src/data/routine-actions.ts";
+import { createRoutine, type PlannedExercise, writePlan } from "../../src/data/routine-actions.ts";
 import { routineFromWorkout } from "../../src/data/routine-from-workout.ts";
 import { space, type } from "../../src/theme.ts";
+import { ActionSheet } from "../../src/ui/action-sheet.tsx";
 import { CommitButton } from "../../src/ui/commit-button.tsx";
 import { ErrorRow, FieldError } from "../../src/ui/field.tsx";
 import { haptic } from "../../src/ui/haptics.ts";
@@ -86,7 +88,29 @@ function RoutineForm({
       router.replace({ pathname: "/workout/[id]", params: { id: fromWorkout } });
     else router.replace("/");
   };
-  const save = () => {
+  // The form as it opened, blank or drafted from a workout. Leaving it changed asks first: the
+  // header's back, a swipe back or the browser's.
+  const [start] = useState(() => ({ name, folder, plan, effortScale }));
+  const samePlan = () => {
+    try {
+      return jsonEqual(
+        writePlan(plan, settings, effortScale),
+        writePlan(start.plan, settings, start.effortScale),
+      );
+    } catch {
+      return plan === start.plan;
+    }
+  };
+  const edited =
+    name !== start.name ||
+    folder !== start.folder ||
+    effortScale !== start.effortScale ||
+    !samePlan();
+  // Set once the routine is saved, on the way out.
+  const [left, setLeft] = useState(false);
+  const [leaving, setLeaving] = useState<(() => void) | null>(null);
+  const allowLeaving = usePreventRemove(edited && !left, ({ repeat }) => setLeaving(() => repeat));
+  const save = (then = back) => {
     if (saving.current) return;
     saving.current = true;
     try {
@@ -100,9 +124,13 @@ function RoutineForm({
       saving.current = false;
       haptic.warning();
       setProblem((error as Error).message);
+      // The problem shows below the plan, which reordering hides.
+      setReordering(false);
       return;
     }
-    back();
+    setLeft(true);
+    allowLeaving();
+    then();
   };
   const unavailable = source && "error" in source ? source.error : null;
   return (
@@ -172,11 +200,34 @@ function RoutineForm({
                 label="Save routine"
                 detail={planSummary(plan)}
                 icon={<CheckIcon color={c.commitInk} size={26} strokeWidth={2.4} />}
-                onPress={save}
+                onPress={() => save()}
               />
             </View>
           )}
         </>
+      )}
+      {leaving && (
+        <ActionSheet
+          message="This routine isn’t saved yet."
+          choices={[
+            {
+              label: "Save routine",
+              onPress: () => {
+                setLeaving(null);
+                save(leaving);
+              },
+            },
+          ]}
+          action="Discard routine"
+          keep="Keep editing"
+          onConfirm={() => {
+            setLeaving(null);
+            setLeft(true);
+            allowLeaving();
+            leaving();
+          }}
+          onClose={() => setLeaving(null)}
+        />
       )}
     </ScrollView>
   );
