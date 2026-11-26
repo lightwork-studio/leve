@@ -7,7 +7,7 @@ import { check } from "../../contract/history/1.0/peer.ts";
 import { bearerAuthentication, createSyncHttpHandler } from "../src/server/index.ts";
 import { httpTransport, TransportError } from "../src/transport.ts";
 import { archivedContract, Peer1, workout } from "./support/content.ts";
-import { type ServerHarness, World } from "./support/harness.ts";
+import { deferred, type ServerHarness, World } from "./support/harness.ts";
 
 /* The HTTP boundary on a real node:http server on an ephemeral port. */
 
@@ -20,12 +20,12 @@ let base: string;
 let reported: { error: unknown; url: string | undefined }[];
 /** Makes the onError hook itself fail: by throwing, or with a rejected promise. */
 let revoked: string | null;
-let pullWaiting: PromiseWithResolvers<void>;
+let pullWaiting: ReturnType<typeof deferred<void>>;
 let hookFails: "throws" | "rejects" | null;
 
 beforeEach(async () => {
   world = new World();
-  pullWaiting = Promise.withResolvers<void>();
+  pullWaiting = deferred<void>();
   server = world.server({
     setTimer: (fn, ms) => {
       const timer = setTimeout(fn, ms);
