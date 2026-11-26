@@ -19,7 +19,7 @@ export interface SessionKeys {
 
 /** Clerk session tokens live 60 seconds; this much clock difference is tolerated either way. */
 const LEEWAY_SECONDS = 5;
-const ACCOUNT_ID = /^[A-Za-z0-9_-]{1,64}$/;
+export const ACCOUNT_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 const keys = new Map<string, Promise<CryptoKey>>();
 
@@ -72,24 +72,23 @@ function jsonPart(part: string): Record<string, unknown> | null {
 }
 
 /**
- * The account a session token signs in, or null when the token isn't a still valid session token
- * this instance issued. Throws when the configured public key can't be used, which is the
- * operator's problem, not the client's. `now` is in milliseconds.
+ * The header and claims of a JWT signed with the instance's key, or null when it isn't one:
+ * malformed, another algorithm than RS256, a `typ` that `acceptsType` refuses, an extension this
+ * check doesn't understand, or a bad signature. Throws when the configured key can't be used.
  */
-export async function verifySessionToken(
+export async function verifiedJwt(
   token: string,
-  config: SessionKeys,
-  now = Date.now(),
-): Promise<{ account: string; session: string } | null> {
+  publicKeyPem: string,
+  acceptsType: (typ: unknown) => boolean,
+): Promise<{ header: Record<string, unknown>; claims: Record<string, unknown> } | null> {
   const parts = token.split(".");
   if (parts.length !== 3) return null;
   const [headerPart, payloadPart, signaturePart] = parts as [string, string, string];
-  const key = await importKey(config.publicKeyPem);
+  const key = await importKey(publicKeyPem);
   const header = jsonPart(headerPart);
   // Only the algorithm Clerk signs with: never "none" or a symmetric one keyed by the public key.
   if (header?.alg !== "RS256") return null;
-  // Not an access token or another typed JWT, and no extensions this check doesn't understand.
-  if (header.typ !== undefined && header.typ !== "JWT") return null;
+  if (!acceptsType(header.typ)) return null;
   if (header.crit !== undefined) return null;
   const signature = fromBase64Url(signaturePart);
   if (!signature) return null;
@@ -105,14 +104,39 @@ export async function verifySessionToken(
     return null;
   }
   if (!valid) return null;
-
   const claims = jsonPart(payloadPart);
-  if (!claims) return null;
+  return claims ? { header, claims } : null;
+}
+
+/** Whether the token's time claims hold at `now` (ms), with a few seconds of leeway. */
+export function inTime(claims: Record<string, unknown>, now: number): boolean {
   const seconds = now / 1000;
+  if (typeof claims.exp !== "number" || claims.exp + LEEWAY_SECONDS <= seconds) return false;
+  if (typeof claims.nbf === "number" && claims.nbf - LEEWAY_SECONDS > seconds) return false;
+  if (typeof claims.iat === "number" && claims.iat - LEEWAY_SECONDS > seconds) return false;
+  return true;
+}
+
+/**
+ * The account a session token signs in, or null when the token isn't a still valid session token
+ * this instance issued. Throws when the configured public key can't be used, which is the
+ * operator's problem, not the client's. `now` is in milliseconds.
+ */
+export async function verifySessionToken(
+  token: string,
+  config: SessionKeys,
+  now = Date.now(),
+): Promise<{ account: string; session: string } | null> {
+  // Not an access token or another typed JWT.
+  const verified = await verifiedJwt(
+    token,
+    config.publicKeyPem,
+    (typ) => typ === undefined || typ === "JWT",
+  );
+  if (!verified) return null;
+  const { claims } = verified;
   if (claims.iss !== config.issuer) return null;
-  if (typeof claims.exp !== "number" || claims.exp + LEEWAY_SECONDS <= seconds) return null;
-  if (typeof claims.nbf === "number" && claims.nbf - LEEWAY_SECONDS > seconds) return null;
-  if (typeof claims.iat === "number" && claims.iat - LEEWAY_SECONDS > seconds) return null;
+  if (!inTime(claims, now)) return null;
   // Only session tokens: the instance key also signs JWT templates, which can live for years and
   // are handed to other services. Session tokens name their session and its status; a session
   // with steps still to finish (for example accepting new terms) isn't signed in yet.
