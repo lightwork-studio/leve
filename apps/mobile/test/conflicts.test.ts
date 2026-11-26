@@ -18,6 +18,18 @@ vi.mock("../src/data/ids.ts", () => {
   let id = 0;
   return { newId: () => `copy-${++id}` };
 });
+/** Fields the sync server is taken not to know, standing in for one older than this app. */
+const older = vi.hoisted(() => ({ unknown: [] as string[] }));
+vi.mock("../src/data/workout-review.ts", async () => {
+  const actual = await vi.importActual<typeof import("../src/data/workout-review.ts")>(
+    "../src/data/workout-review.ts",
+  );
+  return {
+    ...actual,
+    unavailableReviewFields: (...args: Parameters<typeof actual.unavailableReviewFields>) =>
+      older.unknown.length ? older.unknown : actual.unavailableReviewFields(...args),
+  };
+});
 
 const SQL = await initSqlJs();
 let directory: string;
@@ -30,6 +42,7 @@ beforeEach(() => {
   storage = new ServerStorage({ engine: createNodeSqliteEngine(), directory, appVersion: "test" });
   service = new SyncService({ storage });
   refuse = new Set();
+  older.unknown = [];
 });
 afterEach(async () => {
   await storage.close();
@@ -169,6 +182,30 @@ it("settles a routine renamed in two places with the version chosen", async () =
   );
 });
 
+it("asks about a clash a server too old for this version can't take, with only the account's side to keep", async () => {
+  const folder = { title: "Push", position: 1 };
+  const { a, b } = await twoPhones((store) => store.put("routine_folder", "f1", folder));
+  a.store.put("routine_folder", "f1", { ...folder, title: "Push A" });
+  b.store.put("routine_folder", "f1", { ...folder, title: "Push B" });
+  await a.sync();
+  await b.sync();
+  older.unknown = ["title"];
+  // It used to wait, unsaid, until the server was updated.
+  const [conflict] = conflicts(b.store);
+  expect(conflict).toMatchObject({
+    key: "routine_folder:f1",
+    phone: {
+      choosable: false,
+      why: "Your sync server needs an update before it can take this version.",
+    },
+    account: { choosable: true },
+  });
+  expect(() => settleConflict(b.store, conflict!, "phone")).toThrow("can't be kept");
+  settleConflict(b.store, conflict!, "account");
+  expect(b.store.get("routine_folder", "f1")?.content).toMatchObject({ title: "Push A" });
+  expect(conflicts(b.store)).toEqual([]);
+});
+
 it("settles a workout as one: every set that clashes takes the chosen side", async () => {
   const { a, b } = await twoPhones((store) => {
     store.put("workout", "w1", workout("Push Day"));
@@ -243,7 +280,7 @@ it("refuses a choice made on an outdated view, and leaves out what's still synci
   );
 });
 
-it("leaves out a refused change that never reached the account, so nothing below it goes unseen", async () => {
+it("asks about a refused workout the account has no version of, showing everything that goes with it", async () => {
   const b = await phone("b");
   b.store.put("workout", "w1", workout("Offline Day"));
   b.store.put("workout_exercise", "e1", entry("w1"));
@@ -251,9 +288,29 @@ it("leaves out a refused change that never reached the account, so nothing below
   refuse = new Set(["workout:w1"]);
   await b.sync();
   expect(b.store.get("workout", "w1")?.status).toBe("invalid");
-  expect(conflicts(b.store)).toEqual([]);
-  // Nothing was dropped: the workout and what waits below it are still here.
+  // It no longer waits unseen: the popup asks, and lists what is below it.
+  const [conflict, ...rest] = conflicts(b.store);
+  expect(rest).toEqual([]);
+  expect(conflict).toMatchObject({
+    title: "Offline Day",
+    phone: {
+      choosable: false,
+      why: "This phone's change couldn't be saved in your account.",
+    },
+    account: {
+      lines: [{ label: "Workout", value: "Not in your account" }],
+      choosable: true,
+      confirm: "Delete it",
+    },
+  });
+  expect(conflict!.phone.lines).toContainEqual({ label: "Holds", value: "1 exercise · 1 set" });
+  // Nothing is dropped until the person chooses.
   expect(b.store.get("workout_set", "s1")?.content).toMatchObject({ weightKg: 60 });
+  settleConflict(b.store, conflict!, "account");
+  expect(b.store.get("workout", "w1")).toBeNull();
+  expect(b.store.get("workout_set", "s1")).toBeNull();
+  expect(conflicts(b.store)).toEqual([]);
+  expect(() => settleConflict(b.store, conflict!, "phone")).toThrow();
 });
 
 it("asks about a refused change on its own, apart from valid changes beside it", async () => {
@@ -379,8 +436,14 @@ it("still asks about other clashes in a workout that also holds a refused change
   refuse = new Set(["workout_set:new"]);
   await b.sync();
   expect(b.store.get("workout_set", "new")?.status).toBe("invalid");
-  // The refused set has no account copy, so it isn't asked about; the name clash still is.
-  expect(conflicts(b.store).map((item) => item.key)).toEqual(["workout:w1"]);
+  // The refused set is asked about on its own, and the name clash still is.
+  const all = conflicts(b.store);
+  expect(all.map((item) => item.key)).toEqual(["workout:w1", "workout:w1|workout_set:new"]);
+  expect(all[0]?.phone.choosable).toBe(true);
+  expect(all[1]).toMatchObject({
+    phone: { choosable: false },
+    account: { choosable: true, confirm: "Delete it" },
+  });
 });
 
 it("settles a set deleted in both places on its own", async () => {
@@ -591,9 +654,20 @@ it("still asks about clashes beside a deletion a restored server never had", asy
   await c.sync();
   await b.sync();
 
-  // s1's deletion can't be placed, but it no longer hides the s2 clash.
-  const keys = conflicts(b.store).map((item) => item.key);
-  expect(keys).toContain("workout:w1");
-  const s2 = conflicts(b.store).find((item) => item.key === "workout:w1")!;
-  expect(s2.records.map((row) => row.id)).toEqual(["s2"]);
+  // s1's deletion is weighed against the account's copy from before the restore, beside s2.
+  const [both, ...rest] = conflicts(b.store);
+  expect(rest).toEqual([]);
+  expect(both!.records.map((row) => row.id)).toEqual(["s1", "s2"]);
+  expect(both!.phone.lines).toContainEqual({ label: "Bench Press · Set 1", value: "Deleted" });
+  expect(both!.account.lines).toContainEqual({
+    label: "Bench Press · Set 1",
+    value: "85 kg × 8",
+  });
+  expect(both!.phone.choosable).toBe(true);
+  // Keeping this phone's side sends the deletion, so the restored server keeps a marker.
+  settleConflict(b.store, both!, "phone");
+  await b.sync();
+  expect(conflicts(b.store)).toEqual([]);
+  expect((await serverRow("workout_set", "s1"))?.state).toBe("deleted");
+  expect(JSON.parse(String((await serverRow("workout_set", "s2"))?.content)).weightKg).toBe(100);
 });

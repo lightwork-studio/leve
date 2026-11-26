@@ -62,23 +62,37 @@ app on the Clerk instance; Leve Dev (`app.leve.dev`) needs both before it can si
 
 Syncing runs while the app is open: when it starts, shortly after each change, when it comes back
 to the front, and otherwise waiting on the server for changes from other devices. Being offline and
-brief server failures show nothing. A day without syncing shows a note while changes wait. The app
-asks only when the person has to decide, and never during a workout:
+brief server failures show nothing. A day without syncing shows a note while changes wait.
+
+**Sync never stops silently.** This is a binding rule (see [Sync never stops
+silently](../../docs/data-compatibility.md#sync-never-stops-silently)): anything that stops sync,
+for the whole app or for one record, is brought to the person to resolve. Every question below can't
+be put off. Where it can't be answered yet, the way out is pausing sync (or, for data that isn't the
+signed-in account's, signing out). While the phone's data belongs to an account but sync isn't
+running, paused or signed out on purpose, every screen says so, with Resume or Sign in. Pause and
+resume are also in Settings. A sync server that needs an update is said on every screen straight
+away, with Pause. Questions never cover a workout being logged on this phone: they wait, with a note
+on every screen, and come up as soon as it ends. A workout running on another phone, which shows
+here as in progress too, doesn't hold them back.
 
 - **Combine:** this phone has data that never synced, and the account already has data. Add it to
-  the account, or replace it with the account's data (after an offer to save a copy).
+  the account, or replace it with the account's data (after an offer to save a copy). Signing out
+  instead keeps it on the phone, unsynced.
 - **Another account:** the phone's data belongs to another account. If all of it synced, the app
   switches without asking. Otherwise it says how many changes would be lost, offers a copy, and
   deletes them only on confirmation, or signs the new account out to keep them.
-- **Sign in again:** the sign-in ran out. It can wait a day or be ignored; changes stay on the
-  phone until then.
-- **Update Leve:** the server no longer syncs with this version. "Not now" puts it aside until the
-  app next comes to the front; logging carries on meanwhile, unsynced.
+- **Sign in again:** the sign-in ran out, or the server refused it. Sign in, or pause sync until
+  you can.
+- **Update Leve:** the server no longer syncs with this version. Update (TestFlight builds open
+  TestFlight), or pause sync until you can.
 - **Changed in two places:** the same workout, routine, entry or setting changed on this phone and
   in the account before they synced. The app shows what differs on each side, one conflict at a
-  time, and asks which to keep. Nothing is chosen in advance and it can't be put off. A workout or
-  exercise deleted on one side while the other changed what's in it leads to the workout's own
-  review (History or the workout), and the popup asks again until that is done.
+  time, and asks which to keep. Nothing is chosen in advance. A workout or exercise deleted on one
+  side while the other changed what's in it leads to the workout's own review (History or the
+  workout), and the popup asks again until that is done. When this phone's version can't be kept
+  yet (the server needs an update, it refused the change, or only a newer Leve can show the
+  account's version), the popup says why and offers the account's version or pausing sync. Only a
+  conflict the running sync is still answering waits, and only until that answer arrives.
 
 ## TestFlight
 

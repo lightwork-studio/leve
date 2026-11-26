@@ -12,16 +12,21 @@ import { themedStyles, useStyles } from "../ui/themed.ts";
 /**
  * Goes through conflicts one at a time: the same thing changed on this phone and in the account
  * before they synced. It shows only what differs on each side, nothing chosen in advance, and
- * can't be put off: each is settled before the app goes on (but never during a workout; see
- * SyncHost).
+ * can't be put off: each is settled before the app goes on (but never during a workout logged on
+ * this phone; see SyncHost). When this phone's version can't be kept yet (a server that needs an
+ * update, a change it refused), pausing sync is the other way out: it keeps this phone's version
+ * here, and every screen says sync is paused until it is resumed.
  */
 export function ConflictPrompt({
   items,
   onReview,
+  onPause,
 }: {
   items: Conflict[];
   /** Opens the screen a conflict is reviewed on (see Conflict.review). */
   onReview: (item: Conflict) => void;
+  /** Pauses sync, for a conflict whose phone version can't be kept yet. */
+  onPause: () => void;
 }) {
   const styles = useStyles(sheet);
   const { change } = useAppData();
@@ -59,6 +64,8 @@ export function ConflictPrompt({
     }
   };
   const confirm = picked ? current[picked].confirm : "Choose a version";
+  // This phone's version can't be kept now: keeping it on the phone means pausing sync.
+  const stuck = !current.phone.choosable;
   if (current.review) {
     // Settled on the workout's own review: the popup says what happened and leads there.
     return (
@@ -94,6 +101,17 @@ export function ConflictPrompt({
         <Text style={styles.count}>
           {settled + 1} of {settled + items.length}
         </Text>
+      }
+      footer={
+        stuck ? (
+          <View style={styles.pause}>
+            <Text style={styles.pauseText}>
+              Or keep this phone's version here for now: pausing sync stops all syncing until you
+              resume it.
+            </Text>
+            <Button rank="text" label="Pause sync" onPress={onPause} />
+          </View>
+        ) : undefined
       }
     >
       <Text accessibilityRole="header" style={styles.title}>
@@ -239,4 +257,13 @@ const sheet = themedStyles((c) => ({
   refused: { ...type.body, fontSize: 13, lineHeight: 18, color: c.fg3 },
   problem: { ...type.body, fontSize: 14, lineHeight: 20, color: c.alert, marginTop: space.sm },
   confirm: { marginTop: space.md, marginRight: -4 },
+  pause: { alignItems: "center", gap: 2 },
+  pauseText: {
+    ...type.body,
+    fontSize: 13,
+    lineHeight: 18,
+    color: c.fg3,
+    textAlign: "center",
+    marginTop: space.xs,
+  },
 }));

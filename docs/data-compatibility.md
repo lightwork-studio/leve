@@ -22,6 +22,9 @@ and needs the maintainer's explicit approval of the final diff.
   fixed count or minimum support period.
 - **Simple, visible conflicts.** An edit based on an outdated copy is rejected, never merged
   automatically. The phone keeps its version, shows it with a warning and lets the user decide.
+- **Sync never stops silently.** Anything that stops sync, for the whole app or for one record, is
+  brought to the person for direct resolution (see
+  [Sync never stops silently](#sync-never-stops-silently)).
 - **MCP clients use the same rules.** MCP writes go through the same validation and revision checks
   as phones.
 
@@ -249,20 +252,25 @@ conflicts one at a time, each as the person thinks of it: a whole workout with i
 notes and rest; a routine; a folder; a bodyweight entry; a note with its comments; a custom
 exercise; the settings. It shows only what differs on each side (or, where one side is gone, all of
 the other), chooses nothing in advance, and can't be put off, except that it waits while a workout
-is in progress. One choice settles every record of that conflict, and is checked for every record
-before any is applied. A workout or exercise deleted on one side while the other changed it or
-what's in it is reviewed where the app already does so, in History or on the workout: the popup says
-what happened, leads there, and asks again until it is settled. It leads there only when that screen
-can settle it; otherwise the popup settles it itself. A conflict that can't be settled yet (a sync
-still running, a server restore, fields this server or app doesn't know, a workout deleted here that
-is still to upload, or work below something deleted in the account that is still on its way there
-and back) waits until it can; a deletion a restored server never had is left out without holding
-back anything else. Letting go of something the account deleted first shows what this phone holds
-below it and what changed there. Keeping a deletion made here is offered only when the account holds
-nothing below it, after showing the account's version. Work recorded entirely offline is flagged on
-the start screen. A conflicted record is not resubmitted automatically. An `invalid` answer is
-handled the same way, unless the user already edited the record again, in which case the newer
-version is sent. The kept version is the newest local one. The user can:
+is logged on this phone (see [Sync never stops silently](#sync-never-stops-silently)). One choice
+settles every record of that conflict, and is checked for every record before any is applied. A
+workout or exercise deleted on one side while the other changed it or what's in it is reviewed where
+the app already does so, in History or on the workout: the popup says what happened, leads there,
+and asks again until it is settled. It leads there only when that screen can settle it; otherwise
+the popup settles it itself. A conflict the running sync is still answering (an upload in flight, a
+server restore, a download filling in the server's copy, a connection still being made, a workout
+deleted here that is still to upload, or work below something deleted in the account that is on its
+way there and back) waits for that answer. Everything else is asked about. When this phone's version
+can't be kept yet (the server needs an update to take its fields or features, or it refused the
+version, or only a newer Leve can show the account's version), the popup says why and offers the
+account's version where it can be shown, or pausing sync instead. A deletion made here that a
+restored server never had is weighed against the account's copy from before the restore. Letting go
+of something the account deleted first shows what this phone holds below it and what changed there.
+Keeping a deletion made here is offered only when the account holds nothing below it, after showing
+the account's version. Work recorded entirely offline is flagged on the start screen. A conflicted
+record is not resubmitted automatically. An `invalid` answer is handled the same way, unless the
+user already edited the record again, in which case the newer version is sent. The kept version is
+the newest local one. The user can:
 
 - **Keep mine:** resubmit the local version based on the server's current revision. It can be
   rejected again if the record changed once more.
@@ -278,9 +286,39 @@ version is sent. The kept version is the newest local one. The user can:
   again against it. Otherwise only the account's version can be kept, to be looked at first.
 - A refused (`invalid`) change is decided on its own, so undoing it never undoes valid changes made
   beside it. The popup offers only undoing it (keep theirs), since the server won't take it as it
-  is. One with no account copy (never reached the account, or deleted there since) isn't asked
-  about in the popup, since undoing it would also drop what waits below it unseen; it is edited
-  again where it is shown.
+  is. One with no account copy (never reached the account, or deleted there since) can only be
+  deleted, together with what this phone holds below it, which the popup lists first. To keep it,
+  the person pauses sync and edits it again where it is shown; the edited version is sent once
+  sync resumes.
+
+## Sync never stops silently
+
+This rule binds the app wherever it syncs. The phone never stops syncing, or stops uploading a
+record, without the person being told and given a way to resolve it. A note that changes haven't
+synced is not enough when there is nothing the person can do about it.
+
+- **Only waits that end by themselves go unsaid.** A wait may pass without a question only when
+  the sync that is running ends it: an upload waiting for its answer, the download after a server
+  restore or one filling in a server copy, a connection still being made, or unsynced work on its
+  way to the server and back. Being offline or a server that is briefly down needs no decision:
+  the app keeps trying, and a day without syncing shows a note.
+- **Every question that stops sync can't be put off.** Combining with an account, switching
+  accounts, signing in again, updating the app and each conflict are asked until answered. No
+  answer may hide a question while sync stays stopped (no "Not now", "Remind me later" or
+  "Ignore"). Where the person can't resolve the cause yet (an update, a sign-in, a change the
+  server can't take), the way out is pausing sync; for data that belongs to another account, or
+  that never synced, it is signing out, which keeps the data on the phone.
+- **Sync not running is shown everywhere.** While this phone's data belongs to an account but
+  sync isn't running (paused, or signed out on purpose), every screen says so, with the way back:
+  resume, or sign in. Pausing and resuming are also in Settings. Nothing is asked while paused;
+  resuming asks again whatever is still open. A sync server too old for the app is said on every
+  screen from its first answer, not after a day, with pausing as the way out; the app keeps
+  checking until the server is updated.
+- **A workout being logged is never interrupted.** Questions wait while a workout is logged on
+  this phone (started or logged here, or open on its live screen), and come up as soon as it ends;
+  meanwhile every screen says a question is waiting. A workout running on another phone, which
+  syncs here and shows as in progress, doesn't hold questions back. Replacing this phone's data for
+  another account waits for the same workout only.
 
 ## Downloading
 
@@ -386,15 +424,16 @@ join the frozen paths; until then the version 1 layouts may still change.
 - Connecting a device whose local data was recorded independently to a non-empty account asks once
   whether to add that data to the account or replace it with the account's data. Replacing deletes
   the local data after confirmation and an offer to export it first. Nothing is uploaded or deleted
-  until the person answers. Connecting an empty device, or connecting to an empty account, doesn't
+  until the person answers, and the question can't be put off: signing out instead keeps the data
+  on the phone, unsynced. Connecting an empty device, or connecting to an empty account, doesn't
   ask. Connecting uploads local records through ordinary submissions.
 - A device's data belongs to the account and server it first synced with. When a different account
   signs in, or the app is pointed at another server, a device whose data has all synced drops its
   copy (the old account still has it) and starts from the new account, but never while a workout
-  is in progress. A device with unsynced work (pending edits or kept conflicts) says how many
+  is being logged on it. A device with unsynced work (pending edits or kept conflicts) says how many
   changes would be lost, offers an export, and deletes them only once the person confirms. The
-  person can instead sign the new account out and keep them for the old one, or decide later;
-  nothing syncs meanwhile. Signing out never deletes local data; with unsynced work it first says
+  question can't be put off: the person can instead sign the new account out and keep them for
+  the old one, and every screen then says the phone isn't syncing. Signing out never deletes local data; with unsynced work it first says
   the changes wait for the same account. Servers never coordinate with each other.
 - Sync state (cursor, receipts, pending submissions) belongs to one account on one server and is never
   reused for another.

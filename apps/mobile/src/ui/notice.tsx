@@ -17,11 +17,14 @@ export function Banner({
   label,
   message,
   onDismiss,
+  action,
   style,
 }: {
   label: string;
   message: string;
   onDismiss?: () => void;
+  /** A way out of what the banner says, in place of OK: "Resume", "Sign in". */
+  action?: { label: string; hint: string; onPress: () => void };
   style?: StyleProp<ViewStyle>;
 }) {
   const styles = useStyles(sheet);
@@ -32,7 +35,19 @@ export function Banner({
         <Text style={styles.bannerLabel}>{label}</Text>
         <Text style={styles.bannerMessage}>{message}</Text>
       </View>
-      {onDismiss ? (
+      {action ? (
+        <Tap
+          accessibilityRole="button"
+          accessibilityLabel={action.label}
+          accessibilityHint={action.hint}
+          onPress={action.onPress}
+          scaleTo={0.94}
+          hitSlop={4}
+          style={styles.ok}
+        >
+          <Text style={styles.okLabel}>{action.label.toUpperCase()}</Text>
+        </Tap>
+      ) : onDismiss ? (
         <Tap
           accessibilityRole="button"
           accessibilityLabel="OK"
