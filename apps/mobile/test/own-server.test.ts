@@ -88,7 +88,7 @@ describe("pairing", () => {
       new Response(typeof body === "string" ? body : JSON.stringify(body), { status });
 
   it("trades the code for this phone's token", async () => {
-    let sent: { url: string; body: unknown } | null = null;
+    let sent: { url: string; body: unknown; redirect: RequestRedirect | undefined } | null = null;
     const fetchFn: typeof fetch = async (url, init) => {
       sent = { url: String(url), body: JSON.parse(String(init?.body)), redirect: init?.redirect };
       return new Response(
