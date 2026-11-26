@@ -372,17 +372,18 @@ describe("MCP writes through phone sync", () => {
     );
     expect((await client.listTools()).tools.map(({ name }) => name)).not.toContain("create_record");
     const lineage = (await server.storage.account("alice")).lineage();
-    const result = await client.callTool({
-      name: "create_record",
-      arguments: {
-        requestId: "disabled",
-        lineage,
-        kind: "workout",
-        id: "blocked",
-        content: workout("Blocked"),
-      },
-    });
-    expect(result.isError).toBe(true);
+    await expect(
+      client.callTool({
+        name: "create_record",
+        arguments: {
+          requestId: "disabled",
+          lineage,
+          kind: "workout",
+          id: "blocked",
+          content: workout("Blocked"),
+        },
+      }),
+    ).rejects.toThrow("Tool create_record not found");
     expect(
       (await client.callTool({ name: "get_workout", arguments: { id: "workout-a" } }))
         .structuredContent,
