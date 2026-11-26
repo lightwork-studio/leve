@@ -411,6 +411,23 @@ export class ServerTransaction {
       .map(toStored);
   }
 
+  liveChildRefs(
+    kind: string,
+    id: string,
+    limit: number,
+  ): { kind: string; id: string; revision: number }[] {
+    return this.#db
+      .all(
+        "SELECT kind, id, revision FROM records WHERE parent_kind = ? AND parent_id = ? AND state = 'live' LIMIT ?",
+        [kind, id, limit],
+      )
+      .map((row) => ({
+        kind: String(row.kind),
+        id: String(row.id),
+        revision: Number(row.revision),
+      }));
+  }
+
   #nextRevision(): number {
     this.#db.run("UPDATE account SET revision = revision + 1 WHERE id = 1");
     return this.headRevision();

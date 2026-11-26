@@ -28,6 +28,8 @@ export interface GateEnv {
    * Access tokens must name it as their audience. Without it MCP is off.
    */
   MCP_RESOURCE_URL?: string;
+  /** Only the string "true" enables MCP writes. */
+  MCP_WRITES_ENABLED?: string;
 }
 
 /** Where MCP lives, and where its protected-resource metadata (RFC 9728) is published. */
@@ -139,7 +141,7 @@ async function forward(
 }
 
 /** The MCP resource, when MCP is configured: its canonical URL and where its metadata is. */
-function mcpResource(env: GateEnv): { resource: string; metadata: string } | null {
+export function mcpResource(env: GateEnv): { resource: string; metadata: string } | null {
   if (!env.CLERK_ISSUER || !env.CLERK_JWT_KEY || !env.MCP_RESOURCE_URL) return null;
   let url: URL;
   try {
@@ -170,7 +172,8 @@ function protectedResourceMetadata(request: Request, env: GateEnv): Response {
     JSON.stringify({
       resource: mcp.resource,
       authorization_servers: [env.CLERK_ISSUER],
-      scopes_supported: [SCOPES.read],
+      scopes_supported:
+        env.MCP_WRITES_ENABLED === "true" ? [SCOPES.read, SCOPES.write] : [SCOPES.read],
       bearer_methods_supported: ["header"],
       resource_name: "Leve",
     }),

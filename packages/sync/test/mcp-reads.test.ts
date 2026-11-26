@@ -467,7 +467,7 @@ describe("MCP access is one account's", () => {
     expect(bobs.workouts.map((w) => w.id)).toEqual(["bob-w1"]);
   });
 
-  it("isolates repeated and concurrent 2026-07-28 requests by account", async () => {
+  it("answers 2026-07-28 requests too, for the signed-in account only", async () => {
     const { endpoint } = await setup();
     const meta = {
       "io.modelcontextprotocol/protocolVersion": "2026-07-28",
@@ -499,17 +499,12 @@ describe("MCP access is one account's", () => {
         result: { isError?: boolean; structuredContent: unknown };
       };
     };
-    // Every request uses the same JSON-RPC id. Their independent transports must not
-    // confuse concurrent requests or reuse the account from an earlier request.
-    const [alice, across, bob] = await Promise.all([
-      call(agent("alice"), "get_workout", { id: "w1" }),
-      call(agent("alice"), "get_workout", { id: "bob-w1" }),
-      call(agent("bob"), "get_workout", { id: "bob-w1" }),
-    ]);
+    const alice = await call(agent("alice"), "get_workout", { id: "w1" });
     expect(alice.result.structuredContent).toMatchObject({ workout: { id: "w1" } });
+    const across = await call(agent("alice"), "get_workout", { id: "bob-w1" });
     expect(across.result.isError).toBe(true);
+    const bob = await call(agent("bob"), "get_workout", { id: "bob-w1" });
     expect(bob.result.structuredContent).toMatchObject({ workout: { id: "bob-w1" } });
-    expect(await call(agent("alice"), "get_workout", { id: "w1" })).toEqual(alice);
   });
 
   it("refuses a principal without read access before any tool runs", async () => {

@@ -7,6 +7,7 @@ import { allows, type Principal, SCOPES } from "../auth.ts";
 import type { SyncService } from "../service.ts";
 import { AccountView } from "./account-view.ts";
 import { registerReadTools } from "./read-tools.ts";
+import { registerWriteTools } from "./write-tools.ts";
 
 export interface McpEndpointOptions {
   /** The account-scoped service the tools read through, the same one phones sync with. */
@@ -15,6 +16,10 @@ export interface McpEndpointOptions {
   version: string;
   /** The release records are read in; the server's newest by default. */
   release?: ReleaseId;
+  /** Whether this host offers write tools to MCP clients. Defaults to false. */
+  writesEnabled?: boolean;
+  /** Verified OAuth resource metadata URL for per-tool scope challenges. */
+  resourceMetadataUrl?: string;
 }
 
 /** Answered by the endpoint itself when a principal without read access gets this far. */
@@ -47,6 +52,7 @@ export function createMcpEndpoint(options: McpEndpointOptions) {
         registerReadTools(server, (kinds, workouts) =>
           AccountView.load(options.service, account, release, kinds, workouts),
         );
+        if (options.writesEnabled) registerWriteTools(server, options.service, principal, release);
         return server;
       },
       { maxRequestBodySize: MAX_REQUEST_BYTES },
@@ -57,6 +63,9 @@ export function createMcpEndpoint(options: McpEndpointOptions) {
           token: "",
           clientId: principal.client.id,
           scopes: [...(principal.scopes ?? [])],
+          ...(options.resourceMetadataUrl
+            ? { resourceMetadataUrl: options.resourceMetadataUrl }
+            : {}),
         },
       });
     } finally {
