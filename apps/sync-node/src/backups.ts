@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: Leve contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { basename, isAbsolute, join } from "node:path";
+import { chmodSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { basename, isAbsolute, join, resolve } from "node:path";
 import {
   type SqlConnection,
   type SqlEngine,
@@ -36,6 +36,11 @@ export interface BackupManifest {
   accounts: { id: string; name: string; file: string; revision: number; lineage: string }[];
   /** Accounts that couldn't be copied, for example a database that fails to open. */
   failed: { id: string; name: string; error: string }[];
+  /**
+   * Account databases in the data directory that no account names, for example after accounts.db
+   * was restored from an older backup. Not copied: the operator decides what they are.
+   */
+  unknown: string[];
   accountsFile: string;
 }
 
@@ -89,6 +94,7 @@ export async function backupAll(
     createdAt,
     accounts: [],
     failed: [],
+    unknown: [],
     accountsFile: "accounts.db",
   };
   for (const account of accounts.listAccounts()) {
@@ -111,6 +117,12 @@ export async function backupAll(
       manifest.failed.push({ id: account.id, name: account.name, error: (error as Error).message });
     }
   }
+  const known = new Set(
+    accounts.listAccounts().map((a) => basename(accountDatabasePath(directory, a.id))),
+  );
+  manifest.unknown = readdirSync(directory)
+    .filter((name) => /^account-[A-Za-z0-9_-]{1,64}\.db$/.test(name) && !known.has(name))
+    .sort();
   // Last, so every account in the copies has its row: a backup of accounts.db taken first could
   // miss an account created meanwhile.
   await engine.backup(accounts.db, join(folder, manifest.accountsFile));
@@ -138,7 +150,16 @@ export async function restoreAccount(
   const source = absolute(file, "the backup file");
   const expected = basename(accountDatabasePath(options.directory, account.id));
   // The account's own backups, and the copy a restore kept of the database it replaced.
-  const own = basename(source) === expected || basename(source).startsWith(`${expected}.replaced-`);
+  // The account's own backups, the copies restores keep of what they replaced, and the snapshots
+  // storage upgrades keep (a server rollback restores those).
+  const name = basename(source);
+  const own =
+    name === expected ||
+    name.startsWith(`${expected}.replaced-`) ||
+    new RegExp(`^${expected.replace(/[.]/g, "\\.")}\\.snapshot-v\\d+$`).test(name);
+  if (resolve(source) === resolve(accountDatabasePath(options.directory, account.id))) {
+    throw new AccountsError(`${name} is ${account.name}'s live database, not a backup`);
+  }
   if (!own && !otherAccount) {
     throw new AccountsError(
       `${basename(source)} isn't a backup of ${account.name} (${expected}); add --other-account to restore it anyway`,

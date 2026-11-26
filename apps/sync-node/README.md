@@ -93,7 +93,8 @@ noticed. The server writes the folder, so it must be writable by the server's us
 folders off the machine with the tool you already use (restic, borg, rsync).
 
 Restoring checks the copy before replacing anything, keeps the database it replaces next to it
-(`account-<id>.db.replaced-<time>`, which `restore` also accepts, to undo), and gives the account
+(`account-<id>.db.replaced-<time>`, which `restore` also accepts, to undo, as it does the
+`account-<id>.db.snapshot-v<N>` a storage upgrade keeps), and gives the account
 a new lineage. Its phones notice, download everything again and offer back what the backup lacks;
 anything that differs goes to the person for review (see
 [Server restores](../../docs/data-compatibility.md#server-restores)). A restore refuses another
@@ -110,17 +111,20 @@ phone's cursor is ahead of the restored account, so use the command.
 ### Restoring accounts.db
 
 `accounts.db` has no restore command, because it holds the server's sign-ins rather than
-anyone's workouts. If it is lost or damaged, stop the server, delete `accounts.db` together with
+anyone's workouts. If it is lost or damaged, first note `accounts list` if you still can. Then stop the server, delete `accounts.db` together with
 any `accounts.db-journal`, `accounts.db-wal` and `accounts.db-shm` next to it (an old journal
 would be applied to the copy), copy the backup's `accounts.db` in and start the server. Phones
 paired after that backup have to pair again. **Phones signed out after the backup can sign in
-again**, so run `devices list` and revoke them once more.
+again**, so run `devices list` and revoke them once more. Accounts created after that backup are
+missing from it, though their databases are still there: the next `backup` lists them as not
+copied. Add each account again (it gets a new id), then, before pairing any phone with it, put
+its data back with `restore <name> <data>/account-<old id>.db --other-account`.
 
 ### Removing an account's data
 
 There is no command for it yet. Sign its phones out (`devices revoke --all <account>`), stop the
-server, and delete from the data directory its `account-<id>.db`, any `account-<id>.db-wal` and
-`-shm`, and every `account-<id>.db.replaced-*` that restores kept. Its data also stays in every
+server, and delete every file in the data directory whose name starts with `account-<id>.db`:
+the database, its journals, the copies restores kept and the snapshots storage upgrades kept. Its data also stays in every
 backup folder, and in whatever copies them off the machine, until those are pruned. The account's
 name stays in `accounts.db`.
 

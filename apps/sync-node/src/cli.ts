@@ -114,19 +114,22 @@ export async function runAdmin(socket: string, args: readonly string[]): Promise
     // The server writes the copies, so it needs the folder as an absolute path.
     const result = (await call("/backup", { to: resolve(action) })) as {
       folder: string;
-      manifest: { failed: { name: string; error: string }[] };
+      manifest: { failed: { name: string; error: string }[]; unknown: string[] };
     };
     // A backup that missed accounts fails the command, so a scheduled run is noticed.
-    const { failed } = result.manifest;
+    const { failed, unknown } = result.manifest;
+    const strays = unknown.length
+      ? `\nNot copied, as no account names them: ${unknown.join(", ")}`
+      : "";
     if (failed.length > 0) {
       throw new Error(
-        `backed up to ${result.folder}, but ${failed.length} account${failed.length === 1 ? "" : "s"} couldn't be copied: ${failed.map((f) => `${f.name} (${f.error})`).join("; ")}`,
+        `backed up to ${result.folder}, but ${failed.length} account${failed.length === 1 ? "" : "s"} couldn't be copied: ${failed.map((f) => `${f.name} (${f.error})`).join("; ")}${strays}`,
       );
     }
     return show(
       result,
       (b: { folder: string; manifest: { accounts: unknown[] } }) =>
-        `Backed up ${b.manifest.accounts.length} account${b.manifest.accounts.length === 1 ? "" : "s"} and accounts.db to ${b.folder}`,
+        `Backed up ${b.manifest.accounts.length} account${b.manifest.accounts.length === 1 ? "" : "s"} and accounts.db to ${b.folder}${strays}`,
     );
   }
   if (group === "restore") {

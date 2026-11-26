@@ -222,6 +222,11 @@ describe("backups and restores", () => {
   });
 
   it("copies consistently while a phone syncs, into files only their owner reads", async () => {
+    // With a permissive umask, so only the server's own modes keep the copies private.
+    const umask = process.umask(0o022);
+    cleanups.push(() => {
+      process.umask(umask);
+    });
     const { dir, socket, phone, engine } = await start();
     const alice = await phone("Alice");
     for (let i = 0; i < 20; i++) {
@@ -246,5 +251,29 @@ describe("backups and restores", () => {
     copy.close();
     expect(backup.manifest.accounts[0].revision).toBe(held);
     expect([20, 21]).toContain(held);
+  });
+
+  it("takes the account's upgrade snapshots, refuses its live file, and lists strays", async () => {
+    const { dir, data, socket, phone, serverTitles } = await start();
+    const alice = await phone("Alice");
+    alice.store.put("workout", "w-a", workout("Before", { initialPlan: null }));
+    await alice.sync();
+    const backup = JSON.parse(await runAdmin(socket, ["backup", join(dir, "b"), "--json"]));
+    // A storage upgrade's snapshot, as a server rollback restores it.
+    const { copyFileSync } = await import("node:fs");
+    const snapshot = join(dir, `account-${alice.account}.db.snapshot-v3`);
+    copyFileSync(join(backup.folder, `account-${alice.account}.db`), snapshot);
+    alice.store.put("workout", "w-b", workout("After", { initialPlan: null }));
+    await alice.sync();
+    await runAdmin(socket, ["restore", "Alice", snapshot]);
+    expect(await serverTitles(alice.token)).toEqual(["Before"]);
+
+    await expect(
+      runAdmin(socket, ["restore", "Alice", join(data, `account-${alice.account}.db`)]),
+    ).rejects.toThrow("live database");
+
+    writeFileSync(join(data, "account-0000-stray.db"), "");
+    const output = await runAdmin(socket, ["backup", join(dir, "c")]);
+    expect(output).toContain("Not copied, as no account names them: account-0000-stray.db");
   });
 });
