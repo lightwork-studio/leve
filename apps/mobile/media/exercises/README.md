@@ -1,10 +1,13 @@
 # Exercise images
 
 One still per exercise, showing a key position of the movement on its equipment. These are the
-first 40, chosen from the most common gym exercises. They aren't shown in the app yet.
+first 40, chosen from the most common gym exercises. The app shows an exercise's image at the top
+of its screen and of its sheet in the current workout. Exercises without one keep the body figure.
 
 - **Names:** each file is named after the built-in exercise it shows, without the `builtin:`
-  prefix: `barbell-bench-press.webp` is `builtin:barbell-bench-press`.
+  prefix: `barbell-bench-press.webp` is `builtin:barbell-bench-press`. A new image also needs its
+  line in [`src/data/exercise-images.ts`](../../src/data/exercise-images.ts), which the app
+  bundles the images from.
 - **Highlights** show the exercise's muscles as the catalog lists them: primary muscles in burnt
   orange, secondary muscles in a lighter orange, and nothing else. The primary material colour is
   `#B73F22`; the studio lighting makes it look brighter in the renders. Within a listed group,
@@ -24,6 +27,6 @@ first 40, chosen from the most common gym exercises. They aren't shown in the ap
   from the maintainers.
 
 [`apps/mobile/test/exercise-images.test.ts`](../../test/exercise-images.test.ts) checks the names
-against the catalog. The images use the
+and that list against the catalog. The images use the
 [Leve exercise image terms](../../../../LICENSES/LicenseRef-Leve-Exercise-Images.txt); see the
 [third-party notices](../../../../THIRD_PARTY_NOTICES.md) for the figure's credit.

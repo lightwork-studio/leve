@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 import catalog from "../src/data/exercise-catalog.json";
+import { exerciseImage } from "../src/data/exercise-images.ts";
 
 const folder = new URL("../media/exercises/", import.meta.url);
 
@@ -23,4 +24,17 @@ it("stores every exercise image as WebP", () => {
     expect(head.toString("latin1", 0, 4), file).toBe("RIFF");
     expect(head.toString("latin1", 8, 12), file).toBe("WEBP");
   }
+});
+
+it("shows each image for its own exercise and no image for the rest", () => {
+  // In tests an imported image is its file's path, so each entry can be traced to its file.
+  const files = new Set(images.map((file) => file.slice(0, -".webp".length)));
+  for (const { id } of catalog) {
+    const name = id.slice("builtin:".length);
+    const source = exerciseImage(id);
+    if (files.has(name)) expect(String(source), id).toMatch(new RegExp(`/${name}\\.webp$`));
+    else expect(source, id).toBeNull();
+  }
+  expect(exerciseImage("custom:barbell-bench-press")).toBeNull();
+  expect(exerciseImage("toString")).toBeNull();
 });
