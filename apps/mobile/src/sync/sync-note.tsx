@@ -13,18 +13,20 @@ export interface SyncNote {
 // SyncHost decides the note above the app. Screens the system draws above it (the live workout and
 // finishing it, which are native modals) read it from here and show it themselves.
 let current: SyncNote | null = null;
+/** The latest handler for the note's action: the published note calls through it. */
+let press: () => void = () => {};
 const listeners = new Set<() => void>();
 
 const same = (a: SyncNote | null, b: SyncNote | null) =>
   a?.label === b?.label && a?.message === b?.message && a?.action?.label === b?.action?.label;
 
 export function publishSyncNote(note: SyncNote | null): void {
-  if (same(current, note)) {
-    // The same note: keep its action current without drawing it again.
-    if (current?.action && note?.action) current.action.onPress = note.action.onPress;
-    return;
-  }
-  current = note ? { ...note, ...(note.action ? { action: { ...note.action } } : {}) } : null;
+  // The same note keeps its snapshot (nothing draws again) but always acts with the latest handler.
+  press = note?.action?.onPress ?? (() => {});
+  if (same(current, note)) return;
+  current = note
+    ? { ...note, ...(note.action ? { action: { ...note.action, onPress: () => press() } } : {}) }
+    : null;
   for (const listener of listeners) listener();
 }
 

@@ -295,6 +295,11 @@ it("can't put off the account question, and says so when signing out fails", asy
   // Still asking: nothing was decided.
   expect(screen()).toContain("Delete and switch");
   expect(session().calls).not.toContain("replace");
+  // Offline, signing out may keep failing: pausing sync is the way out, deleting nothing.
+  await tap("Pause sync");
+  expect(syncPaused()).toBe(true);
+  expect(screen()).toContain("Sync paused");
+  expect(session().calls).not.toContain("replace");
 });
 
 it("says on every screen that changes kept for another account aren't syncing", async () => {
@@ -306,13 +311,15 @@ it("says on every screen that changes kept for another account aren't syncing", 
   await tap("Keep them and sign out");
   await render();
   expect(screen()).toContain("Signed out");
-  expect(screen()).toContain("Changes stay on this phone and sync once you sign in again");
+  expect(screen()).toContain("New workouts and changes stay on this phone until you sign in.");
   await tap("Sign in");
   expect(route.pushed).toEqual(["/settings"]);
 });
 
 it("holds questions back only for a workout logged on this phone, and says one is waiting", async () => {
   clerk.signedIn = true;
+  // This phone has noted that no workout of its own runs.
+  writeDevicePreference("sync.workoutHere", "");
   // A workout started on another phone synced here: it doesn't hold anything back.
   data.workout = true;
   await render();
@@ -616,9 +623,13 @@ it("asks once more, with a copy offered, before deleting work kept nowhere else"
   await tap("Delete it");
   expect(pending.settled).toEqual([]);
   expect(screen()).toContain("so deleting it can't be undone");
+  // A double tap doesn't count as the second confirm.
+  await tap("Delete it for good");
+  expect(pending.settled).toEqual([]);
   await tap("Save a copy first");
   expect(data.exported).toBe(1);
   expect(screen()).toContain("A copy is saved.");
+  await act(() => new Promise((resolve) => setTimeout(resolve, 650)));
   await tap("Delete it for good");
   expect(pending.settled).toEqual([["workout:w1|workout:w1", "account"]]);
 });

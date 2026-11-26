@@ -195,6 +195,9 @@ it("asks about a routine changed on both phones while a workout started on the o
   a.store.put("routine", "r1", routine([30, 35, 40]));
   await a.sync();
   await b.sync();
+  // Open on this phone, with no workout running.
+  await show(b.store);
+  expect(screen()).toBe("");
 
   // The other phone starts a workout from the routine; it syncs here and runs here too.
   const running = beginWorkout(a.store, "r1");
@@ -243,4 +246,23 @@ it("holds the popup back while that workout is logged on this phone, says so, an
   expect(b.store.activeWorkout()).toBeNull();
   await show(b.store);
   expect(screen()).toContain("Changed in two places");
+});
+
+it("takes a workout already running when this version first opens as this phone's, and says a question waits", async () => {
+  const a = await phone("a");
+  const b = await phone("b");
+  a.store.put("routine", "r1", routine([30, 35, 40]));
+  await a.sync();
+  await b.sync();
+  beginWorkout(a.store, "r1");
+  await a.sync();
+  await b.sync();
+  a.store.put("routine", "r1", routine([35, 40, 45]));
+  b.store.put("routine", "r1", routine([55, 55, 55]));
+  await a.sync();
+  await b.sync();
+  // Nothing noted yet (this version just arrived): it may be logged here, so it isn't covered.
+  await show(b.store);
+  expect(screen()).not.toContain("Changed in two places");
+  expect(screen()).toContain("It comes up once this workout ends.");
 });

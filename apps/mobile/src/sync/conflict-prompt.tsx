@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { useAppData } from "../data/app-data.tsx";
 import { type Conflict, type ConflictSide, type Side, settleConflict } from "../data/conflicts.ts";
@@ -50,16 +50,21 @@ export function ConflictPrompt({
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset only for another conflict
   useEffect(() => {
     setProblem(null);
+    setCopy("idle");
   }, [key]);
+  /** When the warning came up: a press right after (a double tap) doesn't count as the second. */
+  const warnedAt = useRef(0);
   if (!current) return null;
 
   const keep = () => {
     if (!picked) return;
     // Work kept nowhere else: say so and offer a copy before it goes.
     if (current[picked].warning && !warned) {
+      warnedAt.current = Date.now();
       setWarned(true);
       return;
     }
+    if (warned && Date.now() - warnedAt.current < 600) return;
     if (copy === "busy") return;
     try {
       change((store) => settleConflict(store, current, picked));

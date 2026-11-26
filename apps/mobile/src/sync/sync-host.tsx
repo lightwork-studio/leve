@@ -14,7 +14,7 @@ import { buildInfo } from "../build-info.ts";
 import { useAppData } from "../data/app-data.tsx";
 import { conflicts, type ReviewTarget } from "../data/conflicts.ts";
 import { subscribeDevicePreferences } from "../data/device-preference-store.ts";
-import { workoutHere } from "../data/workout-here.ts";
+import { startNotingWorkoutHere, workoutHere } from "../data/workout-here.ts";
 import { gutter, radius, space, type } from "../theme.ts";
 import { Button } from "../ui/buttons.tsx";
 import { Dialog } from "../ui/dialog.tsx";
@@ -53,8 +53,8 @@ function workoutCount(store: ReturnType<typeof useAppData>["store"]): number {
   return Number(store.db.get("SELECT count(*) AS n FROM records WHERE kind = 'workout'")?.n ?? 0);
 }
 
-/** The path of the live workout screen, where nothing may cover the logging. */
-const LOGGING_PATH = "/workout/active";
+/** Paths of the workout's own screens, where nothing may cover the logging. */
+const LOGGING_PATHS = new Set(["/workout/active", "/workout/finish"]);
 
 /**
  * Syncs this phone with the signed-in account while the app runs. It never stops silently:
@@ -102,7 +102,7 @@ function Sync() {
   // A workout runs on every phone of the account once it syncs. Only one logged here (or open on
   // its live screen here) holds questions back; another phone's never does.
   const logging =
-    !!store.activeWorkout() && (workoutHere(store) !== null || pathname === LOGGING_PATH);
+    !!store.activeWorkout() && (workoutHere(store) !== null || LOGGING_PATHS.has(pathname));
   // The session outlives renders: it reaches these through refs, and restarts only for another
   // account or store, or when sync is paused or resumed.
   const latest = useRef({ getToken, change, reset, userId, logging });
@@ -158,7 +158,8 @@ function Sync() {
   // Every change to the data passes here; the session sends it shortly, if there is any to send.
   useEffect(() => {
     if (version > 0) session.current?.nudge();
-  }, [version]);
+    startNotingWorkoutHere(store);
+  }, [version, store]);
 
   // This phone's data belongs to an account, so its changes are meant to sync.
   const accountData = store.syncState().account !== null;
@@ -184,6 +185,7 @@ function Sync() {
           onCombine={() => session.current?.combine()}
           onReplace={() => session.current?.replaceLocalData()}
           onSignOut={signOutHere}
+          onPause={pause}
           exportData={exportData}
         />
       );
@@ -195,6 +197,7 @@ function Sync() {
           unsynced={unsyncedChanges(store)}
           onSwitch={() => session.current?.replaceLocalData()}
           onSignOut={signOutHere}
+          onPause={pause}
           exportData={exportData}
         />
       );
@@ -255,7 +258,7 @@ function Sync() {
         question: null,
         note: {
           label: "Signed out",
-          message: "Changes stay on this phone and sync once you sign in again with your account.",
+          message: "New workouts and changes stay on this phone until you sign in.",
           action: {
             label: "Sign in",
             hint: "Opens Settings to sign in",
@@ -271,7 +274,9 @@ function Sync() {
         question: null,
         note: {
           label: "Sync",
-          message: "Sync has a question for you. It comes up once this workout ends.",
+          message: question
+            ? "Sync has a question for you. It comes up once this workout ends."
+            : "Sync is waiting for this workout to end.",
         },
       };
     if (question) return { question, note: null };
@@ -350,12 +355,15 @@ function CombinePrompt({
   onCombine,
   onReplace,
   onSignOut,
+  onPause,
   exportData,
 }: {
   workouts: number;
   onCombine: () => void;
   onReplace: () => void;
   onSignOut: () => Promise<void>;
+  /** Offered once signing out failed (say, offline), so the question never traps anyone. */
+  onPause: () => void;
   exportData: () => Promise<void>;
 }) {
   const styles = useStyles(sheet);
@@ -413,10 +421,13 @@ function CombinePrompt({
             onPress={() => {
               setProblem(null);
               onSignOut().catch(() =>
-                setProblem("Signing out didn't work. Check the connection and try again."),
+                setProblem(
+                  "Signing out didn't work. Check the connection and try again, or pause sync until you can.",
+                ),
               );
             }}
           />
+          {problem ? <Button rank="text" label="Pause sync" onPress={onPause} /> : null}
         </View>
       }
     >
@@ -437,12 +448,15 @@ function SwitchPrompt({
   unsynced,
   onSwitch,
   onSignOut,
+  onPause,
   exportData,
 }: {
   reason: "account" | "server";
   unsynced: number;
   onSwitch: () => void;
   onSignOut: () => Promise<void>;
+  /** Offered once signing out failed (say, offline), so the question never traps anyone. */
+  onPause: () => void;
   exportData: () => Promise<void>;
 }) {
   const styles = useStyles(sheet);
@@ -475,10 +489,13 @@ function SwitchPrompt({
             onPress={() => {
               setProblem(null);
               onSignOut().catch(() =>
-                setProblem("Signing out didn't work. Check the connection and try again."),
+                setProblem(
+                  "Signing out didn't work. Check the connection and try again, or pause sync until you can.",
+                ),
               );
             }}
           />
+          {problem ? <Button rank="text" label="Pause sync" onPress={onPause} /> : null}
         </View>
       }
     >

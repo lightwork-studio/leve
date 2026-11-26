@@ -263,16 +263,17 @@ deleted here that is still to upload, or work below something deleted in the acc
 way there and back) waits for that answer. Everything else is asked about. When this phone's version
 can't be kept yet (the server needs an update to take its fields or features, or it refused the
 version, or only a newer Leve can show the account's version), the popup says why and offers the
-account's version where it can be shown, or pausing sync instead. A deletion made here that a
-restored server never had is weighed against the account's copy from before the restore; one neither
-side has a copy of is agreed on, and sent so the server keeps a marker. A record in a state the
-popup can't settle is still shown, with pausing sync as the way out. Letting go of something the
-account deleted first shows what this phone holds below it and what changed there. Keeping a
-deletion made here is offered only when the account holds nothing below it, after showing the
-account's version. Work recorded entirely offline is flagged on the start screen. A conflicted
-record is not resubmitted automatically. An `invalid` answer is handled the same way, unless the
-user already edited the record again, in which case the newer version is sent. The kept version is
-the newest local one. The user can:
+account's version (one only a newer Leve can show is kept unseen, after a second confirm with an
+offer to save a copy), or pausing sync instead. A deletion made here that a restored server never
+had is weighed against the account's copy from before the restore; one neither side has a copy of is
+agreed on, and sent so the server keeps a marker. A record in a state the popup can't settle is
+still shown, with pausing sync as the way out. Letting go of something the account deleted first
+shows what this phone holds below it and what changed there. Keeping a deletion made here is offered
+only when the account holds nothing below it, after showing the account's version. Work recorded
+entirely offline is flagged on the start screen. A conflicted record is not resubmitted
+automatically. An `invalid` answer is handled the same way, unless the user already edited the
+record again, in which case the newer version is sent. The kept version is the newest local one. The
+user can:
 
 - **Keep mine:** resubmit the local version based on the server's current revision. It can be
   rejected again if the record changed once more.
@@ -310,7 +311,8 @@ synced is not enough when there is nothing the person can do about it.
   answer may hide a question while sync stays stopped (no "Not now", "Remind me later" or
   "Ignore"). Where the person can't resolve the cause yet (an update, a sign-in, a change the
   server can't take), the way out is pausing sync; for data that belongs to another account, or
-  that never synced, it is signing out, which keeps the data on the phone.
+  that never synced, it is signing out, which keeps the data on the phone, and pausing sync if
+  signing out fails (offline, say).
 - **Sync not running is shown everywhere.** While this phone's data belongs to an account but
   sync isn't running (paused, or signed out on purpose), every screen says so, with the way back:
   resume, or sign in. Screens drawn above the app, such as the live workout, show the same note.
@@ -319,7 +321,8 @@ synced is not enough when there is nothing the person can do about it.
   screen from its first answer, not after a day, with pausing as the way out; the app keeps
   checking until the server is updated.
 - **A workout being logged is never interrupted.** Questions wait while a workout is logged on
-  this phone (started or logged here, or open on its live screen), and come up as soon as it ends;
+  this phone (started or logged here, or open on its live or finish screen; one already running
+  when a version with this rule first opens counts too), and come up as soon as it ends;
   meanwhile every screen says a question is waiting. A workout running on another phone, which
   syncs here and shows as in progress, doesn't hold questions back. Replacing this phone's data for
   another account waits for the same workout only, with the same note.

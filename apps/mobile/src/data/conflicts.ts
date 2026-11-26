@@ -825,6 +825,7 @@ function describe(
           [count("workout_set"), "set"],
           [count("workout_note"), "note"],
           [count("workout_note_comment", "exercise_note_comment"), "comment"],
+          [count("workout_rest"), "rest setting"],
         ] as const
       )
         .filter(([n]) => n > 0)
@@ -881,13 +882,14 @@ function describe(
   const ownerCase = recordCase(owner);
   const ownerGoneThere = ownerCase === "gone_there";
   const ownerGoneHere = ownerCase === "gone_here";
-  const goneBoth = ownerCase === "gone_both" || ownerCase === "gone_nowhere";
+  const goneBoth =
+    ownerCase === "gone_both" || records.every((row) => recordCase(row) === "gone_nowhere");
   const rejected = records.some((row) => recordCase(row) === "rejected");
   const refusedNew = records.some((row) => recordCase(row) === "rejected_new");
   // Only a newer Leve can show the account's version: neither side can be weighed here.
   // A state no sync answer should leave a record in: shown, but only pausing sync is offered.
   const unplaced = records.some((row) => recordCase(row) === null);
-  const newer = unplaced || records.some((row) => recordCase(row) === "newer_there");
+  const newer = records.some((row) => recordCase(row) === "newer_there");
   // Named after the topmost record that clashes, not the group: an exercise deleted in the
   // account leaves its workout in place either way.
   const noun = owner.kind === "workout" ? "workout" : "it";
@@ -903,9 +905,9 @@ function describe(
         ? {}
         : {
             why: unplaced
-              ? "This version of Leve can't settle this one. Update Leve, or pause sync until you can."
+              ? "This version of Leve can't settle this one. Pause sync until it is fixed."
               : newer
-                ? "Your account has a version made with a newer Leve. Update Leve to see both and choose."
+                ? "Your account has a version made with a newer Leve. Update Leve to see both, or keep the account's version without seeing it."
                 : lacking
                   ? "Your sync server needs an update before it can take this version."
                   : rejected || refusedNew
@@ -926,14 +928,20 @@ function describe(
     },
     account: {
       lines: account,
-      choosable: !newer,
-      ...(newer ? { why: "This version of Leve can't show it." } : {}),
+      choosable: !unplaced,
+      ...(unplaced ? { why: "This version of Leve can't settle it." } : {}),
+      // Work kept nowhere else goes with this choice: asked once more, with a copy offered.
       ...(refusedNew
         ? {
             warning:
               "Your account has no copy of this phone's version, so deleting it can't be undone. Save a copy first if you might want it back.",
           }
-        : {}),
+        : newer
+          ? {
+              warning:
+                "This phone's version goes, and this version of Leve can't show your account's. Save a copy first if you might want it back.",
+            }
+          : {}),
       confirm: goneBoth
         ? "Keep it deleted"
         : ownerGoneThere || refusedNew

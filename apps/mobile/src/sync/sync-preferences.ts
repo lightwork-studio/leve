@@ -2,7 +2,11 @@ import { readDevicePreference, writeDevicePreference } from "../data/device-pref
 
 // Sync's own notes on this phone, kept beside the other device preferences and never synced.
 
-/** Kept under its old name: "off" has always meant signed out from Settings on purpose. */
+/**
+ * Kept under its old name. "off" means signed out from Settings on purpose; an earlier version
+ * also wrote it for "Ignore" on the sign-in question, which now reads the same: every screen says
+ * the phone isn't syncing, with Sign in.
+ */
 const SIGNED_OUT = "sync.signInReminder";
 const PAUSED = "sync.paused";
 const LAST_SYNCED = "sync.lastSynced";
