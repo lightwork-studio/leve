@@ -4,6 +4,7 @@
 import type { IncomingMessage, RequestListener } from "node:http";
 import { MAX_REQUEST_BYTES } from "@leve/contract";
 import { WRITTEN_REVISIONS_HEADER } from "../transport.ts";
+import { type Authenticator, type AuthOutcome, authenticateBearer } from "./auth.ts";
 import { errorReply, type Reply, type SyncService } from "./service.ts";
 
 const MAX_BODY_BYTES = MAX_REQUEST_BYTES;
@@ -11,10 +12,11 @@ const MAX_BODY_BYTES = MAX_REQUEST_BYTES;
 export interface SyncHttpOptions {
   service: SyncService;
   /**
-   * Returns the account a request belongs to, or null to reject it. Real authentication is not
-   * part of the sync layer; this is the seam it plugs into.
+   * Who a request acts as, usually `bearerAuthentication(authenticator)`. The sync layer doesn't
+   * sign anyone in itself; this is the seam sign-in plugs into. Only a device principal syncs:
+   * an agent (an MCP client) is refused here whatever its scopes.
    */
-  authenticate(request: IncomingMessage): string | null | Promise<string | null>;
+  authenticate(request: IncomingMessage): AuthOutcome | Promise<AuthOutcome>;
   /** Told about every unexpected failure, which the client only sees as `unavailable`. */
   onError?: (error: unknown, request: IncomingMessage) => void | Promise<void>;
 }
@@ -39,6 +41,14 @@ async function readJson(request: IncomingMessage): Promise<unknown> {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
+/** Signs requests in with the bearer token of their `Authorization` header. */
+export function bearerAuthentication(
+  authenticator: Authenticator,
+  onError?: (error: unknown) => void,
+): (request: IncomingMessage) => Promise<AuthOutcome> {
+  return (request) => authenticateBearer(authenticator, request.headers.authorization, onError);
+}
+
 /** The sync HTTP endpoints. It only parses, authenticates and routes; the service decides. */
 export function createSyncHttpHandler(options: SyncHttpOptions): RequestListener {
   return async (request, response) => {
@@ -61,11 +71,17 @@ export function createSyncHttpHandler(options: SyncHttpOptions): RequestListener
         send(errorReply("invalid_request", "unknown endpoint"));
         return;
       }
-      const accountId = await options.authenticate(request);
-      if (!accountId) {
+      const outcome = await options.authenticate(request);
+      if ("unavailable" in outcome) {
+        send(errorReply("unavailable", "sync is temporarily unavailable"));
+        return;
+      }
+      // An agent's token never syncs, so an MCP client can't stand in for a phone.
+      if (!("principal" in outcome) || outcome.principal.client.kind !== "device") {
         send(errorReply("unauthorized", "sign in again"));
         return;
       }
+      const accountId = outcome.principal.account;
       // JSON only: a cross-site form can't send it without the browser asking first.
       const type = request.headers["content-type"]?.split(";")[0]?.trim().toLowerCase();
       if (type !== "application/json") {

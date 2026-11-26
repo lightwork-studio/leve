@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import { MAX_REQUEST_BYTES } from "@leve/contract";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { check } from "../../contract/history/1.0/peer.ts";
-import { createSyncHttpHandler } from "../src/server/index.ts";
+import { bearerAuthentication, createSyncHttpHandler } from "../src/server/index.ts";
 import { httpTransport, TransportError } from "../src/transport.ts";
 import { archivedContract, Peer1, workout } from "./support/content.ts";
 import { type ServerHarness, World } from "./support/harness.ts";
@@ -29,10 +29,17 @@ beforeEach(async () => {
   http = createServer(
     createSyncHttpHandler({
       service: server.service,
-      authenticate: (request) => {
-        const match = /^Bearer (\w+)$/.exec(request.headers.authorization ?? "");
-        return match?.[1] ?? null;
-      },
+      // The token names the account, except for a few that act out other answers.
+      authenticate: bearerAuthentication(async (token) => {
+        if (token === "down") return { unavailable: true };
+        if (token === "keyless") throw new Error("the key can't be read");
+        if (token.startsWith("agent")) {
+          const client = { kind: "agent", id: "c1", name: "Coach" } as const;
+          return { principal: { account: "acc", client, scopes: ["leve:write"] } };
+        }
+        if (!/^\w+$/.test(token)) return { refused: true };
+        return { principal: { account: token, client: { kind: "device", id: "d1" } } };
+      }),
       onError: (error, request) => {
         reported.push({ error, url: request.url });
         if (hookFails === "throws") throw new Error("the error reporter is down");
@@ -148,6 +155,23 @@ describe("HTTP boundary", () => {
       await raw("/sync/hello", { body: hello, auth: `Bearer ${"x".repeat(65)}` }),
       401,
       "unauthorized",
+    );
+    // An agent's token never syncs, even one that may write the account.
+    errorEnvelope(
+      await raw("/sync/hello", { body: hello, auth: "Bearer agent" }),
+      401,
+      "unauthorized",
+    );
+    // Sign-in that can't be checked right now isn't the client's fault: no prompt to sign in.
+    errorEnvelope(
+      await raw("/sync/hello", { body: hello, auth: "Bearer down" }),
+      503,
+      "unavailable",
+    );
+    errorEnvelope(
+      await raw("/sync/hello", { body: hello, auth: "Bearer keyless" }),
+      503,
+      "unavailable",
     );
     errorEnvelope(await raw("/sync/hello", { body: "{not json" }), 400, "invalid_request");
     errorEnvelope(await raw("/sync/hello", { body: "" }), 400, "invalid_request");
