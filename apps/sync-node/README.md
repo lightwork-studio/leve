@@ -183,14 +183,23 @@ What a restore can't bring back:
 Restoring account databases by copying files, rather than with `restore`, is noticed only once a
 phone's cursor is ahead of the restored account, so use the command.
 
+If the live workout database is damaged and the command cannot save the copy it would replace,
+stop the service. Move the live `account-<id>.db` and any matching `-journal`, `-wal` and
+`-shm` files together to a private recovery directory. Restart the service and use `restore`
+with a verified backup. Keep the moved files until you confirm the result.
+
 ### Restoring accounts.db
 
-`accounts.db` has no restore command, because it holds the server's sign-ins rather than
-anyone's workouts. If it is lost or damaged, first note `accounts list` if you still can. Then stop the server, delete `accounts.db` together with
-any `accounts.db-journal`, `accounts.db-wal` and `accounts.db-shm` next to it (an old journal
-would be applied to the copy), copy the backup's `accounts.db` in and start the server. Phones
-paired after that backup have to pair again. **Phones signed out after the backup can sign in
-again**, so run `devices list` and revoke them once more. Accounts created after that backup are
+`accounts.db` contains sign-ins. If it is lost or damaged, record `accounts list` if you can.
+Stop the server and stage the backup copy as a separate, owner-readable file on the data disk.
+Move the current `accounts.db` and any `-journal`, `-wal` and `-shm` sidecars together to a
+private recovery directory. Rename the staged copy to `accounts.db` and start the service.
+Keep the recovery files until you confirm the result.
+
+Phones paired after the backup need a new pairing. Tokens revoked after the backup may work again,
+so list and revoke them before reopening the public listener. A recent backup can also reinstate
+unexpired pairing codes. Start with `LEVE_PAIRING=off` until any restored codes expire.
+Accounts created after that backup are
 missing from it, though their databases are still there: the next `backup` lists them as not
 copied. Add each account again (it gets a new id), then, before pairing any phone with it, put
 its data back with `restore <name> <data>/account-<old id>.db --other-account`.

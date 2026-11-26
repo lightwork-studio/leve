@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import type { SqlConnection, SqlEngine } from "@leve/storage";
+import { recoverInterruptedWrite, type SqlConnection, type SqlEngine } from "@leve/storage";
 import type { Authenticator } from "@leve/sync/server";
 
 /*
@@ -89,6 +89,7 @@ const secret = (bytes: number) => randomBytes(bytes).toString("base64url");
 export interface AccountsOptions {
   engine: SqlEngine;
   path: string;
+  wal?: boolean;
   now?: () => Date;
 }
 
@@ -106,23 +107,35 @@ export class Accounts {
   /** Opens the database, creating it on first start. Refuses one from a newer server. */
   static open(options: AccountsOptions): Accounts {
     const { engine, path } = options;
-    const fresh = !engine.exists(path);
+    const exists = engine.exists(path);
+    let version: number | null = null;
+    if (exists) {
+      recoverInterruptedWrite(engine, path);
+      const inspection = engine.open(path, { readOnly: true, exclusiveInspection: true });
+      try {
+        if (inspection.get("SELECT 1 FROM sqlite_master WHERE name = 'meta'")) {
+          version = Number(inspection.get("SELECT version FROM meta WHERE id = 1")?.version);
+          if (version !== ACCOUNTS_VERSION) {
+            throw new AccountsError(
+              version > ACCOUNTS_VERSION
+                ? `${path} was written by a newer Leve server (version ${version}); update this one`
+                : `${path} has an unknown version ${version}`,
+            );
+          }
+        }
+      } finally {
+        inspection.close();
+      }
+    }
     const db = engine.open(path);
     try {
+      if (options.wal) db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL");
       db.exec("PRAGMA foreign_keys = ON");
-      if (fresh || !db.get("SELECT 1 FROM sqlite_master WHERE name = 'meta'")) {
+      if (version === null) {
         transaction(db, () => {
           db.exec(SCHEMA);
           db.run("INSERT INTO meta (id, version) VALUES (1, ?)", [ACCOUNTS_VERSION]);
         });
-      }
-      const version = Number(db.get("SELECT version FROM meta WHERE id = 1")?.version);
-      if (version !== ACCOUNTS_VERSION) {
-        throw new AccountsError(
-          version > ACCOUNTS_VERSION
-            ? `${path} was written by a newer Leve server (version ${version}); update this one`
-            : `${path} has an unknown version ${version}`,
-        );
       }
     } catch (error) {
       db.close();
