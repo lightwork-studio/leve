@@ -365,7 +365,8 @@ join the frozen paths; until then the version 1 layouts may still change.
   whether to add that data to the account or replace it with the account's data. Replacing deletes
   the local data after confirmation and an offer to export it first. Nothing is uploaded or deleted
   until the person answers. Connecting an empty device, or connecting to an empty account, doesn't
-  ask. Connecting uploads local records through ordinary submissions.
+  ask. Sample records left by an older build require confirmation even when the account is empty.
+  Connecting uploads local records through ordinary submissions.
 - A device's data belongs to the account and server it first synced with. When a different account
   signs in, or the app is pointed at another server, a device whose data has all synced drops its
   copy (the old account still has it) and starts from the new account, but never while a workout

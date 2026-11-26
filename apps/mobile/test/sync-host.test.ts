@@ -466,4 +466,26 @@ describe("a server the person paired", () => {
     expect(sessions.created).toEqual([]);
     keychain.failReads = false;
   });
+  it("never falls back to Leve if the keychain unlocks between reads", async () => {
+    chooseOwnServer(home);
+    forgetServerChoice();
+    keychain.failNextRead = true;
+
+    await render();
+    expect(sessions.created).toEqual([]);
+    await act(async () => {
+      for (const listener of appState.listeners) listener("active");
+    });
+    expect(sessions.created.map((entry) => entry.options.server)).toEqual([home.server]);
+  });
+
+  it("doesn't offer to switch back into a different Clerk account", async () => {
+    data.server = "https://sync.test";
+    data.account = "user_0";
+    data.unsyncedCount = 1;
+    chooseOwnServer(home);
+    await render();
+    await report({ prompt: { kind: "switch", reason: "server" } });
+    expect(screen()).not.toContain("Keep them and switch back");
+  });
 });

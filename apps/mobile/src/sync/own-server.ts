@@ -123,7 +123,7 @@ const DEVICE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 export async function pair(
   link: PairingLink,
   deviceName: string,
-  fetchFn: typeof fetch = fetch,
+  fetchFn: (url: string, init: RequestInit) => Promise<Response> = fetch,
   timeoutMs = PAIRING_TIMEOUT_MS,
 ): Promise<OwnServer> {
   const controller = new AbortController();
@@ -161,6 +161,7 @@ export async function pair(
   const paired = body as Partial<Record<"account" | "accountName" | "device" | "token", unknown>>;
   if (
     response.status !== 200 ||
+    !paired ||
     typeof paired.account !== "string" ||
     typeof paired.device !== "string" ||
     typeof paired.token !== "string" ||

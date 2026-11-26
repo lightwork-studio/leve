@@ -8,6 +8,7 @@ export default defineProject({
     alias: [
       { find: "node:sqlite", replacement: support("node-sqlite.ts") },
       // Native-only modules get Node stand-ins in tests.
+      { find: "expo/fetch", replacement: support("expo-fetch.ts") },
       { find: "expo-crypto", replacement: support("expo-crypto.ts") },
       { find: "expo-file-system", replacement: support("expo-file-system.ts") },
       { find: "expo-updates", replacement: support("expo-updates.ts") },

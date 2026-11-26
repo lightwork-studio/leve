@@ -1,3 +1,4 @@
+import { fetch as expoFetch } from "expo/fetch";
 import Constants from "expo-constants";
 import { useEffect, useRef, useState } from "react";
 import { Text } from "react-native";
@@ -127,7 +128,7 @@ function ConnectDialog({ initial, onClose }: { initial: PairingLink | null; onCl
     setProblem(null);
     let paired: OwnServer | null = null;
     try {
-      paired = await pair(parsed, Constants.deviceName ?? "iPhone");
+      paired = await pair(parsed, Constants.deviceName ?? "iPhone", expoFetch);
       chooseOwnServer(paired);
       haptic.success();
       announce(`Connected to ${serverLabel(paired.server)}`);

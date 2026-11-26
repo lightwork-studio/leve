@@ -11,15 +11,20 @@ export const keychain = {
   items: new Map<string, { value: string; options: SecureStoreOptions | undefined }>(),
   failWrites: false,
   failReads: false,
+  failNextRead: false,
   reset() {
     keychain.items.clear();
     keychain.failWrites = false;
     keychain.failReads = false;
+    keychain.failNextRead = false;
   },
 };
 
 export function getItem(key: string, _options?: SecureStoreOptions): string | null {
-  if (keychain.failReads) throw new Error("the keychain is locked");
+  if (keychain.failReads || keychain.failNextRead) {
+    keychain.failNextRead = false;
+    throw new Error("the keychain is locked");
+  }
   return keychain.items.get(key)?.value ?? null;
 }
 

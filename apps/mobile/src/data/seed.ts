@@ -117,6 +117,13 @@ export function wantsSampleData(store: DeviceStore, sampleData: boolean): boolea
   );
 }
 
+/** Recognizes sample records left on a device by an older preview or development build. */
+export function hasSampleData(store: DeviceStore): boolean {
+  return !!store.db.get(
+    "SELECT 1 FROM records WHERE id GLOB 'seed-*' AND local_state = 'live' LIMIT 1",
+  );
+}
+
 export function seedSyntheticData(store: DeviceStore, now: Date = new Date()): void {
   store.put("routine_folder", "seed-folder-ppl", { title: "Push · Pull · Legs", position: 1 });
   store.put("routine_folder", "seed-folder-mobility", { title: "Mobility", position: 2 });

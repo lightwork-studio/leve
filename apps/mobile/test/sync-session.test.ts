@@ -165,6 +165,22 @@ it("connects a phone with data to an empty account without asking, and uploads i
   expect(await serverFolders("alice")).toEqual(["f-phone"]);
 });
 
+it("asks before uploading sample records from an older build, even to an empty account", async () => {
+  const store = await phone();
+  folder(store, "seed-folder-ppl", "Push · Pull · Legs");
+  folder(store, "f-phone", "My routines");
+  const { session } = start(store, "alice");
+  await until(() => session.status.prompt !== null);
+  expect(session.status.prompt).toEqual({ kind: "combine", sampleData: true });
+  expect(store.syncState().account).toBeNull();
+  expect(await serverFolders("alice")).toEqual([]);
+  expect(store.get("routine_folder", "f-phone")).not.toBeNull();
+
+  session.combine();
+  await until(() => session.status.lastSynced !== null);
+  expect(await serverFolders("alice")).toEqual(["f-phone", "seed-folder-ppl"]);
+});
+
 it("downloads an account onto an empty phone without asking", async () => {
   await otherPhone("alice", "f-other");
   const store = await phone();

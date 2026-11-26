@@ -24,8 +24,6 @@ interface Stored {
 }
 
 let cached: Stored | null = null;
-/** The last read failed: the choice is unknown, not "none". */
-let unreadable = false;
 const listeners = new Set<() => void>();
 
 function isOwnServer(value: unknown): value is OwnServer {
@@ -39,7 +37,7 @@ function isOwnServer(value: unknown): value is OwnServer {
   );
 }
 
-function read(): Stored {
+function read(): Stored | null {
   if (cached) return cached;
   let stored: Stored = { current: null, previous: null };
   try {
@@ -52,12 +50,8 @@ function read(): Stored {
   } catch (error) {
     // A damaged value counts as none. A keychain that can't be read (a locked phone) is unknown:
     // nothing is cached, so the next read tries again.
-    if (!(error instanceof SyntaxError)) {
-      unreadable = true;
-      return stored;
-    }
+    if (!(error instanceof SyntaxError)) return null;
   }
-  unreadable = false;
   cached = stored;
   return stored;
 }
@@ -70,35 +64,40 @@ function write(next: Stored): void {
 
 /** The server this phone syncs with, if it is one of the person's own. */
 export function ownServer(): OwnServer | null {
-  return read().current;
+  return read()?.current ?? null;
 }
 
-/** Whether the choice could be read; while it can't, the phone shouldn't sync anywhere. */
-export function serverChoiceReadable(): boolean {
-  read();
-  return !unreadable;
+/** Undefined means the keychain is unreadable and syncing must wait. */
+export function readServerChoice(): ServerChoice | undefined {
+  return read()?.current;
 }
 
 /** The choice before the current one, for switching back. */
 export function previousServer(): ServerChoice {
-  return read().previous;
+  return read()?.previous ?? null;
+}
+
+function editableChoice(): Stored {
+  const choice = read();
+  if (!choice) throw new Error("the keychain is unavailable");
+  return choice;
 }
 
 /** Use this paired server from now on. Throws when the keychain refuses it; nothing changes then. */
 export function chooseOwnServer(server: OwnServer): void {
-  const { current } = read();
+  const { current } = editableChoice();
   write({ current: server, previous: current });
 }
 
 /** Go back to the build's own server. The paired server is remembered for switching back. */
 export function chooseBuiltInServer(): void {
-  const { current } = read();
+  const { current } = editableChoice();
   write({ current: null, previous: current });
 }
 
 /** Swap the current and the previous choice. */
 export function switchBack(): void {
-  const { current, previous } = read();
+  const { current, previous } = editableChoice();
   write({ current: previous, previous: current });
 }
 
@@ -112,5 +111,4 @@ export function subscribeServerChoice(listener: () => void): () => void {
 /** Tests start from nothing. */
 export function forgetServerChoice(): void {
   cached = null;
-  unreadable = false;
 }

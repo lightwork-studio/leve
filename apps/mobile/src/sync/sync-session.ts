@@ -1,6 +1,7 @@
 import { MAX_WAIT_MS } from "@leve/contract";
 import type { DeviceStore } from "@leve/storage";
 import {
+  DEFAULT_TIMEOUT_MS,
   httpTransport,
   type RequestHeaders,
   SyncClient,
@@ -9,10 +10,13 @@ import {
   TransportError,
 } from "@leve/sync";
 
+import { fetch as expoFetch } from "expo/fetch";
+import { hasSampleData } from "../data/seed.ts";
+
 /** What the person has to decide or do before syncing can go on. */
 export type SyncPrompt =
-  /** Data on this phone that never synced, and an account that already has data. */
-  | { kind: "combine" }
+  /** This phone has sample data or the account already holds data. */
+  | { kind: "combine"; sampleData?: true }
   /**
    * This phone's data belongs to another account (or, after a build change, another server), and
    * some of it hasn't synced. The app counts the changes when it asks, as they can grow meanwhile.
@@ -146,7 +150,8 @@ export class SyncSession {
       if (this.#stopped) throw new TransportError("this sync session has ended");
       return token ? { authorization: `Bearer ${token}` } : {};
     };
-    const connect = options.connect ?? ((server, h) => httpTransport(server, h));
+    const connect =
+      options.connect ?? ((server, h) => httpTransport(server, h, DEFAULT_TIMEOUT_MS, expoFetch));
     this.#client = new SyncClient({
       store: options.store,
       transport: this.#interruptible(connect(options.server, headers)),
@@ -352,8 +357,9 @@ export class SyncSession {
         // The server answered: a fresh-token retry that got here has done its job.
         this.#retriedSignIn = false;
         this.#checkingSignIn = false;
-        if (probe.revision > 0) {
-          this.#ask({ kind: "combine" });
+        const sampleData = hasSampleData(store);
+        if (sampleData || probe.revision > 0) {
+          this.#ask(sampleData ? { kind: "combine", sampleData: true } : { kind: "combine" });
           return null;
         }
       }

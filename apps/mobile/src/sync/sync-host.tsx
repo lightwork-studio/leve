@@ -20,9 +20,8 @@ import { Banner } from "../ui/notice.tsx";
 import { themedStyles, useAppearance, useStyles } from "../ui/themed.ts";
 import { type OwnServer, serverLabel } from "./own-server.ts";
 import {
-  ownServer,
   previousServer,
-  serverChoiceReadable,
+  readServerChoice,
   subscribeServerChoice,
   switchBack,
 } from "./own-server-store.ts";
@@ -65,12 +64,17 @@ function workoutCount(store: ReturnType<typeof useAppData>["store"]): number {
  */
 export function SyncHost() {
   const own = useOwnServer();
-  if (!syncEnabled()) return null;
-  // The keychain couldn't be read (say before the first unlock): syncing with the build's own
-  // server instead could start this phone over. Wait until the choice can be read.
-  if (ownServerAvailable() && !serverChoiceReadable()) return null;
+  // If the keychain is locked, wait before choosing which account to sync.
+  if (own === undefined || !syncEnabled()) return null;
   // A new pairing is a new session, even with the same account id.
-  if (own) return <Sync key={`${own.server} ${own.device}`} connection={ownConnection(own)} />;
+  if (own) {
+    const key = `${own.server} ${own.device}`;
+    return builtInServerConfigured() ? (
+      <PairedSyncWithClerk key={key} own={own} />
+    ) : (
+      <Sync key={key} connection={ownConnection(own)} />
+    );
+  }
   if (!builtInServerConfigured()) return null;
   return <ClerkSync />;
 }
@@ -88,7 +92,7 @@ interface Connection {
 }
 
 /** The paired server, while it is the phone's choice; follows changes made in Settings. */
-function useOwnServer(): OwnServer | null {
+function useOwnServer(): OwnServer | null | undefined {
   const [, setVersion] = useState(0);
   useEffect(() => subscribeServerChoice(() => setVersion((n) => n + 1)), []);
   // A keychain that couldn't be read (a locked phone) is read again when the app comes back.
@@ -98,19 +102,24 @@ function useOwnServer(): OwnServer | null {
     });
     return () => watch.remove();
   }, []);
-  return ownServerAvailable() ? ownServer() : null;
+  return ownServerAvailable() ? readServerChoice() : null;
 }
 
 /**
  * Whether switching back to the choice before reaches the server and account this phone's data
  * belongs to. Anything else would only move the question to another server.
  */
-function switchesBackToData(bound: { server: string | null; account: string | null }): boolean {
+function switchesBackToData(
+  bound: { server: string | null; account: string | null },
+  builtInAccount: string | null,
+): boolean {
   if (!ownServerAvailable()) return false;
   const previous = previousServer();
   if (previous) return previous.server === bound.server && previous.account === bound.account;
   // The build's own server, if the current choice is a paired one.
-  return ownServer() !== null && builtInServerConfigured() && bound.server === syncServerUrl;
+  return (
+    builtInAccount !== null && bound.server === syncServerUrl && bound.account === builtInAccount
+  );
 }
 
 /** A paired server: always signed in, with the device token it gave this phone. */
@@ -124,6 +133,13 @@ function ownConnection(own: OwnServer): Connection {
     getToken: async () => own.token,
     signOut: async () => switchBack(),
   };
+}
+
+function PairedSyncWithClerk({ own }: { own: OwnServer }) {
+  const { isSignedIn, userId } = useAuth();
+  return (
+    <Sync connection={ownConnection(own)} builtInAccount={isSignedIn ? (userId ?? null) : null} />
+  );
 }
 
 function ClerkSync() {
@@ -143,7 +159,13 @@ function ClerkSync() {
   );
 }
 
-function Sync({ connection }: { connection: Connection }) {
+function Sync({
+  connection,
+  builtInAccount = null,
+}: {
+  connection: Connection;
+  builtInAccount?: string | null;
+}) {
   const { isLoaded, isSignedIn, userId, getToken, signOut, server } = connection;
   const own = connection.kind === "own";
   const { store, version, change, reset, exportData } = useAppData();
@@ -232,6 +254,7 @@ function Sync({ connection }: { connection: Connection }) {
     return (
       <CombinePrompt
         workouts={workoutCount(store)}
+        sampleData={prompt.sampleData === true}
         onCombine={() => session.current?.combine()}
         onReplace={() => session.current?.replaceLocalData()}
         onLater={() => setLater(true)}
@@ -248,7 +271,7 @@ function Sync({ connection }: { connection: Connection }) {
         onSwitch={() => session.current?.replaceLocalData()}
         // Keeping them means going back, when the choice before is where they belong; on the
         // build's own server, otherwise, signing this account out.
-        {...(switchesBackToData(store.syncState())
+        {...(switchesBackToData(store.syncState(), builtInAccount)
           ? { onSwitchBack: () => switchBack() }
           : own
             ? {}
@@ -324,12 +347,14 @@ function useExport(exportData: () => Promise<void>) {
 
 function CombinePrompt({
   workouts,
+  sampleData,
   onCombine,
   onReplace,
   onLater,
   exportData,
 }: {
   workouts: number;
+  sampleData: boolean;
   onCombine: () => void;
   onReplace: () => void;
   onLater: () => void;
@@ -374,7 +399,7 @@ function CombinePrompt({
   }
   return (
     <Dialog
-      eyebrow="Your account already has data"
+      eyebrow={sampleData ? "This phone has sample data" : "Your account already has data"}
       confirm={{ label: "Add to my account", onPress: onCombine }}
       footer={
         <View style={styles.actions}>
@@ -388,7 +413,11 @@ function CombinePrompt({
       }
     >
       <Body
-        text={`This phone has ${what} that ${one ? "isn't" : "aren't"} in your account yet. Add ${one ? "it" : "them"} to your account, or replace ${one ? "it" : "them"} with what's in your account.`}
+        text={
+          sampleData
+            ? "This phone has sample records from an earlier build. Adding this phone's data uploads the sample records along with anything you logged."
+            : `This phone has ${what} that ${one ? "isn't" : "aren't"} in your account yet. Add ${one ? "it" : "them"} to your account, or replace ${one ? "it" : "them"} with what's in your account.`
+        }
       />
     </Dialog>
   );

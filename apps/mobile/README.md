@@ -1,7 +1,7 @@
 # Leve app
 
 The Expo app includes workout logging, routines, workout notes, history, and progress charts.
-Development builds start with sample data.
+The web preview starts with sample data. iOS builds that support sync start empty.
 
 ```sh
 pnpm dev:app       # Expo dev server (Expo Go, simulators, or the web on localhost)
@@ -15,17 +15,15 @@ them. The generated projects and bundle exports are ignored by Git.
 `LEVE_WEB_PORT` and `LEVE_WEB_DIR` change the port and the build the web preview serves. It only
 listens on loopback (`LEVE_WEB_HOST` accepts loopback addresses only). To open it on a phone, put it behind a private HTTPS proxy you control
 rather than exposing it on a network. `EXPO_PUBLIC_COMMIT` and `EXPO_PUBLIC_BUILD_LABEL`, set at
-export time, are shown in the app so you can tell which build is running. A new install starts with made-up
-sample data, which the reset in Settings brings back. `EXPO_PUBLIC_SAMPLE_DATA=off` turns that off,
-so the app starts empty and the reset deletes everything; TestFlight builds and their updates set it.
-TestFlight, recognised by its `preview` update channel, also offers to start again with the sample
-data from Settings.
+export time, are shown in the app so you can tell which build is running. Builds without sync or
+pairing can start with sample data, and `EXPO_PUBLIC_SAMPLE_DATA=off` starts them empty. If a
+phone still has sample records from an older build, it asks before uploading them.
 
 ## App identities
 
 | App          | iOS bundle ID         | Delivery                                      |
 | ------------ | --------------------- | --------------------------------------------- |
-| Leve Dev     | `app.leve.dev`        | Local development with sample workouts        |
+| Leve Dev     | `app.leve.dev`        | Local development                             |
 | Leve Preview | `app.leve.preview`    | TestFlight and the `preview` update channel   |
 | Leve         | `app.leve.production` | App Store and the `production` update channel |
 

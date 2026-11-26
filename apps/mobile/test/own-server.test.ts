@@ -117,6 +117,7 @@ describe("pairing", () => {
       );
     expect(await problem(answer(401, { error: { code: "unauthorized" } }))).toBe("code");
     expect(await problem(answer(403, { error: { code: "pairing_off" } }))).toBe("off");
+    expect(await problem(answer(200, null))).toBe("not_leve");
     expect(await problem(answer(503, { error: { code: "unavailable" } }))).toBe("offline");
     expect(await problem(answer(502, "<html>Bad gateway</html>"))).toBe("offline");
     expect(
