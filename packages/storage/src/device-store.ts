@@ -235,6 +235,7 @@ export class DeviceStore {
   readonly #now: () => string;
   readonly #randomId: () => string;
   readonly #tracksFieldEvidence: boolean;
+  #bindingVersion = 0;
 
   constructor(db: SqlConnection, contract: Contract, now: () => string, randomId: () => string) {
     this.db = db;
@@ -1209,6 +1210,11 @@ export class DeviceStore {
     });
   }
 
+  /** Changes when the binding changes, even if the device moves back to the same account. */
+  get bindingVersion(): number {
+    return this.#bindingVersion;
+  }
+
   /** Whether a server copy needs a newer app to read. */
   hasUnavailableRecords(): boolean {
     return !!this.db.get("SELECT 1 FROM records WHERE server_state = 'unavailable' LIMIT 1");
@@ -1219,12 +1225,12 @@ export class DeviceStore {
    * reconciliation as a restore offers records to the destination and keeps differences for review.
    */
   moveTo(server: string, account: string): void {
-    this.#mutate(() => {
+    const moved = this.#mutate(() => {
       const state = this.syncState();
       if (state.account === null) {
         throw new DeviceStoreError("this device has never synced; it connects as it is");
       }
-      if (state.account === account && state.server === server) return;
+      if (state.account === account && state.server === server) return false;
       if (this.hasUnavailableRecords()) {
         throw new DeviceStoreError("update Leve before moving data this version cannot read");
       }
@@ -1234,7 +1240,9 @@ export class DeviceStore {
          lineage = NULL, refresh_from = NULL WHERE id = 1`,
         [server, account],
       );
+      return true;
     });
+    if (moved) this.#bindingVersion += 1;
   }
 
   /** Records the negotiated release; partially synced records the release can now carry resend. */

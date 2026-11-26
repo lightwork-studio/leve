@@ -1,4 +1,4 @@
-import { useAuth } from "@clerk/expo";
+import { useAuth, useUser } from "@clerk/expo";
 import {
   AppleAuthenticationButton,
   AppleAuthenticationButtonStyle,
@@ -84,7 +84,7 @@ interface Connection {
   /** The build's own server with a Clerk sign-in, or a server the person paired. */
   kind: "built_in" | "own";
   server: string;
-  accountName?: string;
+  accountName?: string | undefined;
   isLoaded: boolean;
   isSignedIn: boolean;
   userId: string | null;
@@ -146,11 +146,13 @@ function PairedSyncWithClerk({ own }: { own: OwnServer }) {
 
 function ClerkSync() {
   const { isLoaded, isSignedIn, userId, getToken, signOut } = useAuth();
+  const { user } = useUser();
   return (
     <Sync
       connection={{
         kind: "built_in",
         server: syncServerUrl,
+        accountName: user?.primaryEmailAddress?.emailAddress ?? userId ?? undefined,
         isLoaded,
         isSignedIn: !!isSignedIn,
         userId: userId ?? null,

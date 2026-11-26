@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SyncClient } from "../src/client/sync-client.ts";
+import type { TransportResponse } from "../src/transport.ts";
 import { entry, set, workout } from "./support/content.ts";
-import { expectSynced, type ServerHarness, World } from "./support/harness.ts";
+import { deferred, expectSynced, type ServerHarness, World } from "./support/harness.ts";
 
 /*
  * Bringing a phone's data along to another server (or account) instead of starting from what the
- * new one holds: the move only rebinds the phone, and the new server's lineage makes it reset as
- * after a server restore. Expected results are written out literally.
+ * new one holds: the phone rebinds and resets as after a server restore in one transaction.
+ * Expected results are written out literally.
  */
 
 let world: World;
@@ -111,35 +112,47 @@ describe("moving a phone's data to another server", () => {
     expect(phone.store.get("workout_exercise", "e1")).not.toBeNull();
   });
 
-  it("ignores a hello from the original server that arrives after the move", async () => {
-    const { old, phone } = await syncedPhone();
-    const next = world.server();
-    const oldTransport = old.transport("alice");
-    const requested = Promise.withResolvers<void>();
-    const released = Promise.withResolvers<void>();
-    const oldClient = new SyncClient({
-      store: phone.store,
-      server: "old",
-      account: "alice",
-      app: "test",
-      transport: async (path, body) => {
-        const reply = await oldTransport(path, body);
-        requested.resolve();
-        await released.promise;
-        return reply;
-      },
-    });
-    const oldSync = oldClient.sync();
-    await requested.promise;
-    phone.store.moveTo("new", "bob");
-    released.resolve();
+  it.each([false, true])(
+    "discards replies from before a move (returned to original server: %s)",
+    async (back) => {
+      const { old, phone } = await syncedPhone();
+      const next = world.server();
+      const oldTransport = old.transport("alice");
+      const requested = deferred<void>();
+      const reply = deferred<TransportResponse>();
+      const paths: string[] = [];
+      const oldClient = new SyncClient({
+        store: phone.store,
+        server: "old",
+        account: "alice",
+        app: "test",
+        transport: (path, body) => {
+          paths.push(path);
+          if (path !== "/sync/hello") return oldTransport(path, body);
+          requested.resolve();
+          return reply.promise;
+        },
+      });
+      const greeting = await oldTransport("/sync/hello", { releases: ["1.0"], app: "test" });
+      const oldSync = oldClient.sync();
+      await requested.promise;
+      reply.resolve(greeting);
+      // Let the transport settle before the move, while the sync client is still resuming.
+      await Promise.resolve();
+      phone.store.moveTo("new", "bob");
+      if (back) phone.store.moveTo("old", "alice");
 
-    expect(await oldSync).toMatchObject({ state: "offline" });
-    expect(phone.store.syncState()).toMatchObject({ server: "new", account: "bob", lineage: null });
-    await phone.restart({ server: "new", account: "bob", transport: next.transport("bob") });
-    expectSynced(await phone.sync());
-    expect(await live(next, "bob")).toContainEqual(["workout", "w1", "Legs"]);
-  });
+      expect(await oldSync).toMatchObject({ state: "offline" });
+      expect(paths).toEqual(["/sync/hello"]);
+      const [server, account, destination] = back
+        ? (["old", "alice", old] as const)
+        : (["new", "bob", next] as const);
+      expect(phone.store.syncState()).toMatchObject({ server, account, lineage: null });
+      await phone.restart({ server, account, transport: destination.transport(account) });
+      expectSynced(await phone.sync());
+      expect(await live(destination, account)).toContainEqual(["workout", "w1", "Legs"]);
+    },
+  );
 
   it("brings changes that hadn't synced, without asking anything", async () => {
     const { old, phone } = await syncedPhone();

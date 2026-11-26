@@ -113,7 +113,9 @@ export default function SettingsScreen() {
   const committed = readSettings(store);
   const settingsRecord = store.get("settings", "settings");
   const settingsConflict =
-    settingsRecord?.status === "conflict" && settingsRecord.server?.state === "live";
+    settingsRecord?.status === "conflict" && settingsRecord.server?.state !== "unavailable";
+  const serverHasSettings = settingsRecord?.server?.state === "live";
+  const priorSettings = settingsRecord?.keptContent;
   const settings = { ...committed, ...optimistic.patch };
   const insets = useSafeAreaInsets();
   // A pairing link that opened the app (app/connect.tsx) arrives as these.
@@ -220,7 +222,11 @@ export default function SettingsScreen() {
             {settingsConflict && !store.syncState().restoring ? (
               <Group
                 label="Review sync settings"
-                footnote="The settings on this phone differ from the account’s settings. Choose which version to keep."
+                footnote={
+                  serverHasSettings
+                    ? "The settings on this phone differ from the account’s settings."
+                    : "This phone has a settings conflict from the previous server."
+                }
               >
                 <ActionRow
                   label="Use this phone’s settings"
@@ -229,8 +235,18 @@ export default function SettingsScreen() {
                   divider
                 />
                 <ActionRow
-                  label="Use the account’s settings"
-                  hint="Replace the settings shown here"
+                  label={
+                    serverHasSettings
+                      ? "Use the account’s settings"
+                      : priorSettings
+                        ? "Use the previous server’s settings"
+                        : "Use default settings"
+                  }
+                  hint={
+                    priorSettings && !serverHasSettings
+                      ? "Send that copy to the account"
+                      : "Replace the settings shown here"
+                  }
                   onPress={() => resolveSettings("keep_theirs")}
                 />
               </Group>

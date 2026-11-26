@@ -213,6 +213,36 @@ it.each([
   expect(byLabel("Use the account’s settings")).toBeNull();
 });
 
+it("offers the previous server's settings when the destination has no copy", async () => {
+  store.bindAccount("old", "alice");
+  store.setNegotiated("1.0", [], "source");
+  const previous = {
+    kind: "settings",
+    id: "settings",
+    state: "live",
+    revision: 1,
+    content: settingsContent(null, { weightUnit: "kg" }),
+  } as const;
+  store.applyPull([previous], 1);
+  saveSettings(store, { weightUnit: "lbs" });
+  const [outgoing] = store.prepareSubmissions("1.0");
+  if (!outgoing) throw new Error("expected settings ready to upload");
+  store.applyPushResults([
+    {
+      status: "conflict",
+      submissionId: outgoing.submission.submissionId,
+      reason: "stale",
+      current: { ...previous, revision: 2 },
+    },
+  ]);
+  store.moveTo("new", "bob");
+  store.completeRestore();
+  await render();
+  await press("Use the previous server’s settings");
+  expect(readSettings(store).weightUnit).toBe("kg");
+  expect(store.get("settings", "settings")?.status).toBe("pending");
+});
+
 it("switches a unit by tapping its sample reading", async () => {
   await render();
   expect(host.textContent).toContain("82.4");
