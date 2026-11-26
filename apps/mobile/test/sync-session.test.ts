@@ -113,15 +113,15 @@ function start(
     server?: string;
   } = {},
 ) {
-  const events = { pulled: 0, startedOver: 0, statuses: [] as SyncStatus[] };
+  const events = { storeChanges: 0, startedOver: 0, statuses: [] as SyncStatus[] };
   const session = new SyncSession({
     store,
     server: options.server ?? SERVER,
     account,
     app: "app-test",
     token: options.token ?? (async () => `${account}-token`),
-    onPulled: () => {
-      events.pulled += 1;
+    onStoreChanged: () => {
+      events.storeChanges += 1;
     },
     onStatus: (status) => events.statuses.push(status),
     startOver: () => {
@@ -193,7 +193,7 @@ it("downloads an account onto an empty phone without asking", async () => {
   await until(() => session.status.lastSynced !== null);
   expect(session.status.prompt).toBeNull();
   expect(store.get("routine_folder", "f-other")).toMatchObject({ status: "synced" });
-  expect(events.pulled).toBe(1);
+  expect(events.storeChanges).toBe(1);
 });
 
 it("asks before combining a phone's data with an account that has data, and combines on yes", async () => {
@@ -480,7 +480,7 @@ it("sends an edit soon after it is made, and hears about changes made elsewhere"
 
   await otherPhone("alice", "f-other");
   await until(() => store.get("routine_folder", "f-other") !== null, 2_000);
-  expect(events.pulled).toBeGreaterThan(0);
+  expect(events.storeChanges).toBeGreaterThan(0);
   expect(session.status.prompt).toBeNull();
 });
 
@@ -509,6 +509,40 @@ it("asks on another server even when everything synced, and brings the data alon
   expect(await serverFolders("alice")).toEqual(["f-alice"]);
   expect(store.syncState()).toMatchObject({ server: OTHER, account: "bob" });
   expect(store.problems()).toEqual([]);
+});
+
+it("refreshes screens when an empty destination finishes reconciling a carried conflict", async () => {
+  const store = await phone();
+  store.bindAccount(SERVER, "alice");
+  store.setNegotiated("1.0", [], "source");
+  folder(store, "f-alice", "This phone's version");
+  const [outgoing] = store.prepareSubmissions("1.0");
+  if (!outgoing) throw new Error("expected a folder ready to upload");
+  store.applyPushResults([
+    {
+      status: "conflict",
+      submissionId: outgoing.submission.submissionId,
+      reason: "exists",
+      current: {
+        kind: "routine_folder",
+        id: "f-alice",
+        state: "live",
+        revision: 1,
+        content: { title: "The original account's version", position: 0 },
+      },
+    },
+  ]);
+
+  const { session, events } = start(store, "bob", { server: OTHER });
+  await until(() => session.status.prompt?.kind === "switch");
+  session.moveLocalData();
+  expect(events.storeChanges).toBe(1);
+  expect(store.syncState().restoring).toBe(true);
+  await until(() => session.status.lastSynced !== null);
+  expect(events.storeChanges).toBe(2);
+  expect(store.syncState().restoring).toBe(false);
+  expect(store.get("routine_folder", "f-alice")?.status).toBe("conflict");
+  expect(await serverFolders("bob")).toEqual([]);
 });
 
 it("still starts over on another server when the person chooses that", async () => {

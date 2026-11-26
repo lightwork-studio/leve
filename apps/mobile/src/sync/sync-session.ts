@@ -46,8 +46,8 @@ export interface SyncSessionOptions {
   app: string;
   /** A session token for the account, or null without one. `fresh` skips a cached token. */
   token(fresh: boolean): Promise<string | null>;
-  /** Downloaded changes were applied: screens should read the store again. */
-  onPulled(): void;
+  /** Sync changed the device store, so screens should read it again. */
+  onStoreChanged(): void;
   onStatus(status: SyncStatus): void;
   /**
    * Delete this phone's data and open an empty store, which a new session then syncs. This session
@@ -243,6 +243,7 @@ export class SyncSession {
     const prompt = this.#status.prompt;
     if (this.#stopped || prompt?.kind !== "switch" || prompt.reason !== "server") return;
     this.#options.store.moveTo(this.#options.server, this.#options.account);
+    this.#options.onStoreChanged();
     this.#resume();
   }
 
@@ -400,11 +401,17 @@ export class SyncSession {
       return null;
     }
     if (this.#stopped) return null;
-    return this.#handle(await this.#client.sync());
+    const restoring = store.syncState().restoring;
+    const outcome = await this.#client.sync();
+    if (this.#stopped) return null;
+    return this.#handle(outcome, restoring && !store.syncState().restoring);
   }
 
-  #handle(outcome: SyncOutcome): number | null {
+  #handle(outcome: SyncOutcome, completedRestore = false): number | null {
     if (this.#stopped) return null;
+    if (completedRestore || (outcome.state === "synced" && outcome.pulled > 0)) {
+      this.#options.onStoreChanged();
+    }
     this.#checkingSignIn = false;
     // The fresh-token retry counts only once the server has answered it.
     if (outcome.state !== "signed_out") this.#retriedSignIn = false;
@@ -417,7 +424,6 @@ export class SyncSession {
           failingSince: null,
           ...(this.#status.prompt?.kind === "sign_in" ? { prompt: null } : {}),
         });
-        if (outcome.pulled > 0) this.#options.onPulled();
         return null;
       case "offline": {
         const steps = this.#timing.offline;

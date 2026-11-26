@@ -211,7 +211,7 @@ function Sync({
         if (!token) throw new Error("no session token");
         return token;
       },
-      onPulled: () => latest.current.change(() => undefined),
+      onStoreChanged: () => latest.current.change(() => undefined),
       onStatus: (next) => {
         setStatus(next);
         if (next.lastSynced !== null && next.lastSynced - lastWritten.current > SAVE_SYNCED_MS) {
