@@ -19,7 +19,10 @@ leve-sync admin pair Alice                # one-time pairing link, valid 15 minu
 leve-sync admin devices list Alice        # paired phones and when each was last seen
 leve-sync admin devices revoke <id>       # sign one phone out for good
 leve-sync admin devices revoke --all Alice
+leve-sync admin devices revoke --everyone # the off switch: every phone of every account
 ```
+
+Run it as the server's user with the same `LEVE_ADMIN_SOCKET` (or `LEVE_DATA`) as the server.
 
 A pairing link opens a page on the server that hands the code to the app. The code is in the
 link's fragment, which browsers don't send, so it stays out of access logs. To show it as a QR code
@@ -41,8 +44,8 @@ pnpm --filter @leve/sync-node admin accounts add Alice
 | `HOST`, `PORT`      | The public listener (default `127.0.0.1:8787`); put HTTPS in front of it |
 | `LEVE_SQLITE_WAL=1` | Write-ahead logging for account databases: one disk sync per commit      |
 
-To cut every phone off at once, run `devices revoke --all` for each account. Phones keep their
-data, and sync stops until they pair again.
+To cut every phone off at once, run `devices revoke --everyone`. Phones keep their data, and sync
+stops until they pair again.
 
 `pnpm --filter @leve/sync-node bundle` builds one file, `dist/server.mjs`, that runs with Node 24
 and nothing else. The benchmark server ran it under systemd behind Caddy, which serves HTTPS:
@@ -51,7 +54,7 @@ and nothing else. The benchmark server ran it under systemd behind Caddy, which 
 [Service]
 User=leve
 Environment=LEVE_DATA=/var/lib/leve/accounts PORT=8787 LEVE_SQLITE_WAL=1
-Environment=LEVE_PUBLIC_URL=https://sync.example.com
+Environment=LEVE_PUBLIC_URL=https://sync.example.com LEVE_ADMIN_SOCKET=/run/leve/admin.sock
 ExecStart=/usr/local/bin/node /opt/leve/server.mjs serve
 RuntimeDirectory=leve
 RuntimeDirectoryMode=0700
@@ -59,6 +62,12 @@ Restart=always
 LimitNOFILE=65536
 ProtectSystem=strict
 ReadWritePaths=/var/lib/leve
+```
+
+Administer it as the same user, with the same socket:
+
+```sh
+sudo -u leve LEVE_ADMIN_SOCKET=/run/leve/admin.sock node /opt/leve/server.mjs admin accounts list
 ```
 
 ```text
@@ -72,7 +81,8 @@ sync.example.com {
 `LEVE_AUTH=benchmark` with `LEVE_TOKEN_FILE` replaces accounts with one shared token: every
 request names its account in the `x-leve-account` header, so anyone with the token reaches every
 account. It exists so the Cloudflare load script runs against this server too, and serves a stats
-route on the public listener. Never use it for real data.
+route on the public listener. It refuses to start on a data directory that holds `accounts.db`.
+Never use it for real data.
 
 ```sh
 openssl rand -hex 32 > token

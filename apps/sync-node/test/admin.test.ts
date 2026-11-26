@@ -103,3 +103,33 @@ describe("administration", () => {
     expect(pairingLink("https://h.example", "abc")).toBe("https://h.example/connect#code=abc");
   });
 });
+
+describe("the admin socket's guards", () => {
+  it("won't take over a socket another server still answers on", async () => {
+    const first = await start();
+    await expect(listenAdmin(first.socket, { accounts: first.accounts })).rejects.toThrow(
+      "another leve-sync server is running",
+    );
+    // The first server still answers.
+    expect(await adminRequest(first.socket, "/accounts/list")).toEqual([]);
+  });
+
+  it("listens only on an absolute path, never on a port", async () => {
+    const { accounts } = await start();
+    for (const path of ["38917", "admin.sock", "./admin.sock"]) {
+      await expect(listenAdmin(path, { accounts })).rejects.toThrow("absolute path");
+    }
+  });
+
+  it("signs every phone out with one command", async () => {
+    const { socket, accounts } = await start();
+    accounts.addAccount("Alice");
+    accounts.addAccount("Bob");
+    accounts.pair(accounts.createPairing("Alice").code, "a");
+    accounts.pair(accounts.createPairing("Bob").code, "b");
+    expect(await runAdmin(socket, ["devices", "revoke", "--everyone"])).toBe(
+      "Signed out 2 phones.",
+    );
+    expect(accounts.listDevices()).toEqual([]);
+  });
+});

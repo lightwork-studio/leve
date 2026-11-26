@@ -13,6 +13,7 @@ export const ADMIN_USAGE = `leve-sync admin <command>
   devices revoke <device-id>   sign one phone out for good
   devices revoke --all <account>
                                sign every phone of an account out
+  devices revoke --everyone    sign every phone of every account out
 
 Options: --json prints the server's answer as JSON.
 The command talks to the running server through LEVE_ADMIN_SOCKET.`;
@@ -79,10 +80,12 @@ export async function runAdmin(socket: string, args: readonly string[]): Promise
     );
   }
   if (group === "devices" && action === "revoke") {
-    const all = rest[0] === "--all";
-    const result = all
-      ? await call("/devices/revoke", { all: true, account: rest.slice(1).join(" ") })
-      : await call("/devices/revoke", { device: one("device id") });
+    const result =
+      rest[0] === "--everyone"
+        ? await call("/devices/revoke", { everyone: true })
+        : rest[0] === "--all"
+          ? await call("/devices/revoke", { all: true, account: rest.slice(1).join(" ") })
+          : await call("/devices/revoke", { device: one("device id") });
     return show(
       result,
       (r: { revoked: number }) => `Signed out ${r.revoked} phone${r.revoked === 1 ? "" : "s"}.`,

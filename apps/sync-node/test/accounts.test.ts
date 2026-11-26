@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createNodeSqliteEngine } from "@leve/storage/node";
 import { afterAll, describe, expect, it } from "vitest";
-import { Accounts, deviceAuthenticator, PAIRING_MS } from "../src/accounts.ts";
+import { Accounts, cleanDeviceName, deviceAuthenticator, PAIRING_MS } from "../src/accounts.ts";
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -109,5 +109,40 @@ describe("accounts and pairing", () => {
     const raw = engine.open(path, { readOnly: true });
     expect(raw.get("SELECT version FROM meta")?.version).toBe(2);
     raw.close();
+  });
+});
+
+describe("names", () => {
+  it("cleans what a phone calls itself before the operator's terminal shows it", () => {
+    const { accounts } = open();
+    accounts.addAccount("Alice");
+    const evil = "\u001b]0;pwned\u0007\u001b[2Jevil\nphone";
+    const paired = accounts.pair(accounts.createPairing("Alice").code, evil);
+    const [device] = accounts.listDevices("Alice");
+    expect(device?.id).toBe(paired?.device);
+    expect(device?.name).toBe("]0;pwned [2Jevil phone");
+    expect(cleanDeviceName("😀".repeat(70))).toBe("😀".repeat(64));
+    expect(cleanDeviceName(" ​\t")).toBe("Phone");
+  });
+
+  it("never mistakes a name for an id", () => {
+    const { accounts } = open();
+    const alice = accounts.addAccount("Alice");
+    expect(() => accounts.addAccount(alice.id)).toThrow("account name");
+    expect(accounts.findAccount(alice.id)?.name).toBe("Alice");
+  });
+
+  it("signs every phone of every account out at once", async () => {
+    const { accounts } = open();
+    accounts.addAccount("Alice");
+    accounts.addAccount("Bob");
+    const a = accounts.pair(accounts.createPairing("Alice").code, "a");
+    const b = accounts.pair(accounts.createPairing("Bob").code, "b");
+    const pending = accounts.createPairing("Bob");
+    expect(accounts.revokeEveryDevice()).toBe(2);
+    const auth = deviceAuthenticator(accounts);
+    expect(await auth(a?.token ?? "")).toEqual({ refused: true });
+    expect(await auth(b?.token ?? "")).toEqual({ refused: true });
+    expect(accounts.pair(pending.code, "c")).toBeNull();
   });
 });

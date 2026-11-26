@@ -11,7 +11,7 @@ import { workout } from "../../../packages/sync/test/support/content.ts";
 import { Accounts, deviceAuthenticator } from "../src/accounts.ts";
 import { sharedTokenAuth } from "../src/auth.ts";
 import { CONNECT_PAGE } from "../src/connect-page.ts";
-import { createSyncServer, PAIRING_FAILURES_PER_MINUTE } from "../src/server.ts";
+import { createSyncServer } from "../src/server.ts";
 
 const TOKEN = "t".repeat(64);
 const dirs: string[] = [];
@@ -44,7 +44,6 @@ async function start(
   options.prepare?.(dir);
   const errors: unknown[] = [];
   const storage = new ServerStorage({ engine, directory: dir, appVersion: "t" });
-  const minute = { t: 0 };
   let server: Server;
   if (options.benchmark) {
     server = createSyncServer({
@@ -61,7 +60,6 @@ async function start(
       accounts,
       ...(options.pairingOff ? { pairingOff: true } : {}),
       onError: (error) => errors.push(error),
-      now: () => minute.t,
     });
   }
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -88,7 +86,7 @@ async function start(
     const { token, device } = (await reply.json()) as { token: string; device: string };
     return { account: account.id, token, device };
   };
-  return { base, post, accounts, phone, errors, minute };
+  return { base, post, accounts, phone, errors };
 }
 
 type Started = Awaited<ReturnType<typeof start>>;
@@ -143,9 +141,19 @@ async function checkAccountsStaySeparate(server: Started) {
   // nothing: Alice's token still reaches Alice only.
   const aliceClaimingBob = client(server.post, alice.token, { "x-leve-account": bob.account });
   expect((await aliceClaimingBob.push("w-sneaky", "Written by Alice")).status).toBe(200);
-  expect(await aliceClaimingBob.titles()).toEqual(["Alice's workout", "Written by Alice"]);
-  expect(await asBob.titles()).toEqual(["Bob's workout"]);
-  expect(await asAlice.titles()).toEqual(["Alice's workout", "Written by Alice"]);
+  const seen = {
+    "Alice naming Bob": await aliceClaimingBob.titles(),
+    Alice: await asAlice.titles(),
+    Bob: await asBob.titles(),
+  };
+  const expected = {
+    "Alice naming Bob": ["Alice's workout", "Written by Alice"],
+    Alice: ["Alice's workout", "Written by Alice"],
+    Bob: ["Bob's workout"],
+  };
+  if (JSON.stringify(seen) !== JSON.stringify(expected)) {
+    throw new Error(`accounts mixed: ${JSON.stringify(seen)}`);
+  }
 }
 
 describe("a self-hosted server with accounts", () => {
@@ -165,7 +173,7 @@ describe("a self-hosted server with accounts", () => {
     };
     await expect(
       checkAccountsStaySeparate(await start({ authenticate: trustsHeader })),
-    ).rejects.toThrow();
+    ).rejects.toThrow("accounts mixed");
   });
 
   it("refuses requests without a token of a paired phone, and phones signed out", async () => {
@@ -202,22 +210,21 @@ describe("a self-hosted server with accounts", () => {
     expect(server.accounts.listDevices("Alice")).toHaveLength(1);
   });
 
-  it("answers bad pairing requests, and slows down guessing", async () => {
+  it("answers bad pairing requests, and lets a good code in however many bad ones came first", async () => {
     const server = await start();
     server.accounts.addAccount("Alice");
     expect((await server.post("/auth/pair", { device: "x" })).status).toBe(400);
     expect((await server.post("/auth/pair", { code: 5 })).status).toBe(400);
     const notJson = await fetch(`${server.base}/auth/pair`, { method: "POST", body: "code=x" });
     expect(notJson.status).toBe(400);
-    for (let i = 0; i < PAIRING_FAILURES_PER_MINUTE; i++) {
+    const tooLarge = await server.post("/auth/pair", { code: "x", device: "y".repeat(5000) });
+    expect(tooLarge.status).toBe(400);
+    // Codes have 128 random bits, so nothing limits guesses: a shared limit would let anyone
+    // keep every new phone from pairing.
+    for (let i = 0; i < 50; i++) {
       expect((await server.post("/auth/pair", { code: `guess${i}` })).status).toBe(401);
     }
-    // Even the right code waits until the next minute: guesses can't be told from it.
     const { code } = server.accounts.createPairing("Alice");
-    const limited = await server.post("/auth/pair", { code });
-    expect(limited.status).toBe(429);
-    expect(await limited.json()).toMatchObject({ error: { code: "rate_limited" } });
-    server.minute.t += 60_000;
     expect((await server.post("/auth/pair", { code })).status).toBe(200);
   });
 

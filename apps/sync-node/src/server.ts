@@ -20,11 +20,12 @@ export interface SyncServerOptions {
    */
   benchmark?: boolean;
   onError?: (error: unknown) => void;
-  now?: () => number;
 }
 
-/** Failed pairing attempts allowed per minute, across all clients. */
-export const PAIRING_FAILURES_PER_MINUTE = 10;
+/**
+ * A pairing request is tiny. Pairing codes have 128 random bits, so guessing one needs no rate
+ * limit, and a limit shared by all clients would let anyone keep every new phone from pairing.
+ */
 const MAX_PAIR_BODY = 4096;
 
 const json = (response: ServerResponse, status: number, body: unknown) => {
@@ -34,14 +35,16 @@ const json = (response: ServerResponse, status: number, body: unknown) => {
 const failure = (response: ServerResponse, status: number, code: string, message: string) =>
   json(response, status, { error: { code, message } });
 
+/** Reads a small JSON body, giving up as soon as it is larger than `limit`. */
 async function readSmallJson(request: IncomingMessage, limit: number): Promise<unknown> {
+  if (Number(request.headers["content-length"] ?? 0) > limit) throw new Error("too large");
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of request) {
     size += (chunk as Buffer).length;
-    if (size <= limit) chunks.push(chunk as Buffer);
+    if (size > limit) throw new Error("too large");
+    chunks.push(chunk as Buffer);
   }
-  if (size > limit) throw new Error("request body too large");
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
@@ -52,26 +55,17 @@ async function readSmallJson(request: IncomingMessage, limit: number): Promise<u
 export function createSyncServer(options: SyncServerOptions): Server {
   const { storage, authenticate, accounts } = options;
   const onError = options.onError ?? ((error) => console.error("request failed", error));
-  const now = options.now ?? Date.now;
   const sync = createSyncHttpHandler({
     service: new SyncService({ storage }),
     authenticate,
     onError,
   });
-  /** Failed pairing attempts in the current minute. Codes are 128-bit; this keeps logs quiet. */
-  let failures = { minute: 0, count: 0 };
 
   const pair = async (request: IncomingMessage, response: ServerResponse) => {
     if (!accounts) return failure(response, 400, "invalid_request", "unknown endpoint");
     if (options.pairingOff) {
       request.resume();
       return failure(response, 403, "pairing_off", "This server doesn't pair new phones now.");
-    }
-    const minute = Math.floor(now() / 60_000);
-    if (failures.minute !== minute) failures = { minute, count: 0 };
-    if (failures.count >= PAIRING_FAILURES_PER_MINUTE) {
-      request.resume();
-      return failure(response, 429, "rate_limited", "Too many tries. Wait a minute.");
     }
     const type = request.headers["content-type"]?.split(";")[0]?.trim().toLowerCase();
     if (type !== "application/json") {
@@ -82,6 +76,8 @@ export function createSyncServer(options: SyncServerOptions): Server {
     try {
       body = await readSmallJson(request, MAX_PAIR_BODY);
     } catch {
+      // Unread bytes may follow; the connection closes after the answer.
+      response.setHeader("connection", "close");
       return failure(response, 400, "invalid_request", "send {code, device}");
     }
     const { code, device } = (body ?? {}) as { code?: unknown; device?: unknown };
@@ -90,7 +86,6 @@ export function createSyncServer(options: SyncServerOptions): Server {
     }
     const paired = accounts.pair(code, device ?? "");
     if (!paired) {
-      failures.count += 1;
       return failure(response, 401, "unauthorized", "This code doesn't work. Ask for a new one.");
     }
     return json(response, 200, paired);

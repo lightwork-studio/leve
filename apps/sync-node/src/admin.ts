@@ -3,6 +3,8 @@
 
 import { chmodSync, lstatSync, rmSync } from "node:fs";
 import { createServer, request as httpRequest, type IncomingMessage, type Server } from "node:http";
+import { connect } from "node:net";
+import { isAbsolute } from "node:path";
 import { type Accounts, AccountsError } from "./accounts.ts";
 
 /*
@@ -48,6 +50,7 @@ export function adminRoutes(options: AdminOptions): Record<string, Handler> {
     "/devices/list": (body) =>
       accounts.listDevices(body.account === undefined ? undefined : text(body.account, "account")),
     "/devices/revoke": (body) => {
+      if (body.everyone === true) return { revoked: accounts.revokeEveryDevice() };
       if (body.all === true)
         return { revoked: accounts.revokeAllDevices(text(body.account, "account")) };
       const revoked = accounts.revokeDevice(text(body.device, "device"));
@@ -67,9 +70,21 @@ async function readJson(request: IncomingMessage): Promise<Record<string, unknow
   return value as Record<string, unknown>;
 }
 
+/** Whether a server still answers on the socket. */
+function answers(socketPath: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const probe = connect({ path: socketPath });
+    probe.once("connect", () => {
+      probe.destroy();
+      resolve(true);
+    });
+    probe.once("error", () => resolve(false));
+  });
+}
+
 /**
  * Listens on `socketPath`, replacing a socket a stopped server left behind. Refuses to replace
- * anything that isn't a socket.
+ * anything that isn't a socket, or a socket another server still answers on.
  */
 export async function listenAdmin(socketPath: string, options: AdminOptions): Promise<Server> {
   const routes = adminRoutes(options);
@@ -98,12 +113,18 @@ export async function listenAdmin(socketPath: string, options: AdminOptions): Pr
         },
       );
   });
+  // A relative path or a bare number would be taken for something else (a port, say).
+  if (!isAbsolute(socketPath))
+    throw new Error(`the admin socket must be an absolute path: ${socketPath}`);
   let existing: ReturnType<typeof lstatSync> | null = null;
   try {
     existing = lstatSync(socketPath);
   } catch {}
   if (existing) {
     if (!existing.isSocket()) throw new Error(`${socketPath} exists and isn't a socket`);
+    if (await answers(socketPath)) {
+      throw new Error(`another leve-sync server is running on ${socketPath}`);
+    }
     rmSync(socketPath);
   }
   // Created without group or other access from the start, not only after the chmod below.
@@ -111,7 +132,7 @@ export async function listenAdmin(socketPath: string, options: AdminOptions): Pr
   try {
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
-      server.listen(socketPath, () => {
+      server.listen({ path: socketPath }, () => {
         server.off("error", reject);
         resolve();
       });

@@ -47,6 +47,20 @@ CREATE TABLE pairings (
 const NAME = /^[\p{L}\p{N}][\p{L}\p{N} ._'-]{0,63}$/u;
 /** What a phone calls itself; shown in the device list. */
 const MAX_DEVICE_NAME = 64;
+/** Account ids look like this; a name never does, so a name can never be mistaken for an id. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * A phone chooses its own name, and the operator reads it in a terminal: control characters and
+ * other invisible ones go, and it is cut by characters, not UTF-16 units.
+ */
+export function cleanDeviceName(name: string): string {
+  const visible = name
+    .replace(/[\p{C}\p{Zl}\p{Zp}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return [...visible].slice(0, MAX_DEVICE_NAME).join("").trim() || "Phone";
+}
 
 export class AccountsError extends Error {
   override name = "AccountsError";
@@ -127,7 +141,7 @@ export class Accounts {
 
   addAccount(name: string): Account {
     const trimmed = name.trim();
-    if (!NAME.test(trimmed)) {
+    if (!NAME.test(trimmed) || UUID.test(trimmed)) {
       throw new AccountsError(
         "an account name is 1 to 64 letters, digits, spaces or . _ ' -, starting with a letter or digit",
       );
@@ -161,9 +175,10 @@ export class Accounts {
       }));
   }
 
-  /** An account by its name or id. */
+  /** An account by its id or its name. */
   findAccount(nameOrId: string): Account | null {
-    return this.listAccounts().find((a) => a.name === nameOrId || a.id === nameOrId) ?? null;
+    const all = this.listAccounts();
+    return all.find((a) => a.id === nameOrId) ?? all.find((a) => a.name === nameOrId) ?? null;
   }
 
   #account(nameOrId: string): Account {
@@ -201,7 +216,7 @@ export class Accounts {
     deviceName: string,
   ): { account: string; device: string; token: string } | null {
     if (typeof code !== "string" || code.length === 0 || code.length > 64) return null;
-    const name = deviceName.trim().slice(0, MAX_DEVICE_NAME) || "Phone";
+    const name = cleanDeviceName(deviceName);
     const now = this.#now().toISOString();
     const token = secret(32);
     const device = randomUUID();
@@ -252,6 +267,15 @@ export class Accounts {
     return transaction(this.#db, () => {
       this.#db.run("DELETE FROM pairings WHERE account_id = ?", [account.id]);
       return this.#db.run("DELETE FROM devices WHERE account_id = ?", [account.id]).changes;
+    });
+  }
+
+  /** Signs every device of every account out and drops all pairing codes: the off switch. */
+  revokeEveryDevice(): number {
+    this.#touched.clear();
+    return transaction(this.#db, () => {
+      this.#db.run("DELETE FROM pairings");
+      return this.#db.run("DELETE FROM devices").changes;
     });
   }
 
