@@ -183,6 +183,10 @@ it.each([false, true])(
     session.combine();
     await until(() => session.status.lastSynced !== null);
     expect(await serverFolders("alice")).toEqual(["f-phone", "seed-folder-ppl"]);
+    session.stop();
+    const resumed = start(store, "alice").session;
+    await until(() => resumed.status.lastSynced !== null);
+    expect(resumed.status.prompt).toBeNull();
   },
 );
 
