@@ -100,6 +100,9 @@ const describeIssues = (issues: readonly { path: string; message: string }[]) =>
  * `push`, and future MCP tools directly. It validates content for the sender's release, checks
  * the base revision, and stores the change with its receipt in one transaction.
  */
+/** HTTP adapters can revalidate a device after the request has waited. */
+type CheckAccess = () => Promise<void>;
+
 export class SyncService {
   readonly contract: Contract;
   readonly releases: readonly ReleaseId[];
@@ -128,7 +131,11 @@ export class SyncService {
     }
   }
 
-  async hello(accountId: string, body: unknown): Promise<Reply<HelloResponse>> {
+  async hello(
+    accountId: string,
+    body: unknown,
+    checkAccess?: CheckAccess,
+  ): Promise<Reply<HelloResponse>> {
     const issues = validate(helloRequestSchema, body);
     if (issues.length > 0) return errorReply("invalid_request", describeIssues(issues));
     const request = body as { releases: string[] };
@@ -141,6 +148,7 @@ export class SyncService {
       });
     }
     const store = await this.#storage.account(accountId);
+    if (checkAccess) await checkAccess();
     return {
       status: 200,
       body: {
@@ -163,7 +171,11 @@ export class SyncService {
     return release as ReleaseId;
   }
 
-  async push(accountId: string, body: unknown): Promise<Reply<PushResponse>> {
+  async push(
+    accountId: string,
+    body: unknown,
+    checkAccess?: CheckAccess,
+  ): Promise<Reply<PushResponse>> {
     const release = this.#release(body);
     if (typeof release !== "string") return release;
     const issues = validate(releaseMessages(this.contract, release).pushRequest, body);
@@ -174,11 +186,18 @@ export class SyncService {
       return errorReply("invalid_request", "submission ids must be unique within a request");
     }
     const store = await this.#storage.account(accountId);
-    if (lineage !== store.lineage()) return restoredReply();
+    if (lineage !== store.lineage()) {
+      if (checkAccess) await checkAccess();
+      return restoredReply();
+    }
     const written = new Set<string>();
     let results: SubmissionResult[];
     try {
-      results = await this.submit(accountId, release, submissions, { lineage, written });
+      results = await this.submit(accountId, release, submissions, {
+        lineage,
+        written,
+        checkAccess,
+      });
     } catch (error) {
       if (error instanceof LineageChangedError) return restoredReply();
       throw error;
@@ -198,7 +217,11 @@ export class SyncService {
     accountId: string,
     release: ReleaseId,
     submissions: readonly Submission[],
-    options: { lineage?: string; written?: Set<string> } = {},
+    options: {
+      lineage?: string;
+      written?: Set<string>;
+      checkAccess?: CheckAccess | undefined;
+    } = {},
   ): Promise<SubmissionResult[]> {
     if (!this.releases.includes(release)) throw new Error(`Unsupported sync release ${release}`);
     const store = await this.#storage.account(accountId);
@@ -213,6 +236,7 @@ export class SyncService {
     ) {
       throw new Error("submission ids must be unique within a request");
     }
+    if (options.checkAccess) await options.checkAccess();
     const now = this.#now();
     const cutoff = new Date(now.getTime() - this.#receiptDays * DAY_MS).toISOString();
     const results: SubmissionResult[] = [];
@@ -380,13 +404,18 @@ export class SyncService {
     return accept(tx.writeLive(kind, id, content), true);
   }
 
-  async pull(accountId: string, body: unknown): Promise<Reply<PullResponse>> {
+  async pull(
+    accountId: string,
+    body: unknown,
+    checkAccess?: CheckAccess,
+  ): Promise<Reply<PullResponse>> {
     const release = this.#release(body);
     if (typeof release !== "string") return release;
     const issues = validate(releaseMessages(this.contract, release).pullRequest, body);
     if (issues.length > 0) return errorReply("invalid_request", describeIssues(issues));
     const request = body as { cursor: number; limit?: number; waitMs?: number; lineage: string };
     const store = await this.#storage.account(accountId);
+    if (checkAccess) await checkAccess();
     if (request.lineage !== store.lineage()) return restoredReply();
     if (request.cursor > store.headRevision()) {
       // The account went back in time without the restore command (for example a copied file).
@@ -397,6 +426,8 @@ export class SyncService {
     const waitMs = Math.min(request.waitMs ?? 0, MAX_WAIT_MS);
     if (waitMs > 0 && store.headRevision() === request.cursor) {
       await this.#waitForChange(accountId, waitMs);
+      if (checkAccess) await checkAccess();
+      if (request.lineage !== store.lineage()) return restoredReply();
     }
     const page = store.changesAfter(request.cursor, request.limit ?? DEFAULT_PAGE);
     // Keep pages small enough for a phone; at least one record always goes out.
