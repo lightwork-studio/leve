@@ -110,12 +110,13 @@ function start(
   options: {
     token?: (fresh: boolean) => Promise<string | null>;
     timing?: Partial<SyncTiming>;
+    server?: string;
   } = {},
 ) {
   const events = { pulled: 0, startedOver: 0, statuses: [] as SyncStatus[] };
   const session = new SyncSession({
     store,
-    server: SERVER,
+    server: options.server ?? SERVER,
     account,
     app: "app-test",
     token: options.token ?? (async () => `${account}-token`),
@@ -481,4 +482,62 @@ it("sends an edit soon after it is made, and hears about changes made elsewhere"
   await until(() => store.get("routine_folder", "f-other") !== null, 2_000);
   expect(events.pulled).toBeGreaterThan(0);
   expect(session.status.prompt).toBeNull();
+});
+
+/** Another server, here the same service under another address and account. */
+const OTHER = "https://sync.home.example";
+
+it("asks on another server even when everything synced, and brings the data along", async () => {
+  const store = await phone();
+  folder(store, "f-alice", "Alice's");
+  const alice = start(store, "alice").session;
+  await until(() => alice.status.lastSynced !== null);
+  alice.stop();
+
+  const { session, events } = start(store, "bob", { server: OTHER });
+  await until(() => session.status.prompt !== null);
+  expect(session.status.prompt).toEqual({ kind: "switch", reason: "server" });
+  expect(unsyncedChanges(store)).toBe(0);
+  // Nothing was deleted or sent while it asks.
+  expect(events.startedOver).toBe(0);
+  expect(requests.filter((line) => line.startsWith("bob"))).toEqual([]);
+
+  session.moveLocalData();
+  await until(() => session.status.lastSynced !== null);
+  expect(await serverFolders("bob")).toEqual(["f-alice"]);
+  // The old server keeps its copy.
+  expect(await serverFolders("alice")).toEqual(["f-alice"]);
+  expect(store.syncState()).toMatchObject({ server: OTHER, account: "bob" });
+  expect(store.problems()).toEqual([]);
+});
+
+it("still starts over on another server when the person chooses that", async () => {
+  const store = await phone();
+  folder(store, "f-alice", "Alice's");
+  const alice = start(store, "alice").session;
+  await until(() => alice.status.lastSynced !== null);
+  alice.stop();
+
+  const { session, events } = start(store, "bob", { server: OTHER });
+  await until(() => session.status.prompt !== null);
+  // Moving is only for another server, never for another account on the same one.
+  session.replaceLocalData();
+  expect(events.startedOver).toBe(1);
+  expect(await serverFolders("bob")).toEqual([]);
+});
+
+it("doesn't offer to move another account's data on the same server", async () => {
+  const store = await phone();
+  folder(store, "f-alice", "Alice's");
+  const alice = start(store, "alice").session;
+  await until(() => alice.status.lastSynced !== null);
+  alice.stop();
+  folder(store, "f-alice", "Alice's, edited");
+
+  const { session } = start(store, "bob");
+  await until(() => session.status.prompt !== null);
+  expect(session.status.prompt).toEqual({ kind: "switch", reason: "account" });
+  session.moveLocalData();
+  expect(store.syncState()).toMatchObject({ server: SERVER, account: "alice" });
+  expect(session.status.prompt).toEqual({ kind: "switch", reason: "account" });
 });

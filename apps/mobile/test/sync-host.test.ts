@@ -52,6 +52,9 @@ vi.mock("../src/sync/sync-session.ts", () => ({
     replaceLocalData() {
       this.calls.push("replace");
     }
+    moveLocalData() {
+      this.calls.push("move");
+    }
     retry() {
       this.calls.push("retry");
     }
@@ -393,9 +396,9 @@ describe("a server the person paired", () => {
     data.account = "user_1";
     data.unsyncedCount = 2;
     await report({ prompt: { kind: "switch", reason: "server" } });
-    expect(screen()).toContain("Switching back keeps them for the other server");
+    expect(screen()).toContain("2 changes haven't reached it");
     expect(screen()).not.toContain("Keep them and sign out");
-    await tap("Keep them and switch back");
+    await tap("Switch back");
     // Back on the build's own server, signed in with Clerk.
     expect(ownServer()).toBeNull();
     expect(session().options).toMatchObject({ server: "https://sync.test", account: "user_1" });
@@ -409,7 +412,7 @@ describe("a server the person paired", () => {
     data.account = home.account;
     data.unsyncedCount = 1;
     await report({ prompt: { kind: "switch", reason: "server" } });
-    await tap("Keep them and switch back");
+    await tap("Switch back");
     expect(ownServer()).toEqual(home);
     expect(session().options).toMatchObject({ server: home.server });
   });
@@ -446,7 +449,7 @@ describe("a server the person paired", () => {
     expect(screen()).not.toContain("switch back");
   });
 
-  it("offers nothing but waiting when the data belongs to a server neither choice is", async () => {
+  it("offers no way back when the data belongs to a server neither choice is", async () => {
     chooseOwnServer({ ...home, server: "https://third.example", device: "d3" });
     chooseOwnServer(home);
     data.server = "https://sync.test";
@@ -454,8 +457,8 @@ describe("a server the person paired", () => {
     await render();
     data.unsyncedCount = 1;
     await report({ prompt: { kind: "switch", reason: "server" } });
-    expect(screen()).toContain("Not now keeps it here, unsynced");
-    expect(screen()).not.toContain("Keep them and");
+    expect(screen()).toContain("Bring them to this server");
+    expect(screen()).not.toContain("Switch back");
   });
 
   it("syncs nowhere while the keychain can't be read", async () => {
@@ -486,6 +489,32 @@ describe("a server the person paired", () => {
     chooseOwnServer(home);
     await render();
     await report({ prompt: { kind: "switch", reason: "server" } });
-    expect(screen()).not.toContain("Keep them and switch back");
+    expect(screen()).not.toContain("Switch back");
+  });
+
+  it("offers to bring the phone's data along to another server, even with all of it synced", async () => {
+    chooseOwnServer(home);
+    data.server = "https://sync.test";
+    data.account = "user_1";
+    await render();
+    data.unsyncedCount = 0;
+    await report({ prompt: { kind: "switch", reason: "server" } });
+    expect(screen()).toContain("Bring them to sync.home.example as well");
+    expect(screen()).toContain("The other server keeps them either way");
+    await tap("Bring them to this server");
+    expect(session().calls).toContain("move");
+    expect(session().calls).not.toContain("replace");
+  });
+
+  it("starts from the new server's data only when asked", async () => {
+    chooseOwnServer(home);
+    data.server = "https://sync.test";
+    data.account = "user_1";
+    await render();
+    data.unsyncedCount = 3;
+    await report({ prompt: { kind: "switch", reason: "server" } });
+    await tap("Delete 3 changes and start over");
+    expect(session().calls).toContain("replace");
+    expect(session().calls).not.toContain("move");
   });
 });

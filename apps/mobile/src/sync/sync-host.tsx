@@ -263,16 +263,31 @@ function Sync({
     );
   }
   if (prompt?.kind === "switch" && !later) {
+    const keep = switchesBackToData(store.syncState(), builtInAccount)
+      ? { onSwitchBack: () => switchBack() }
+      : null;
+    if (prompt.reason === "server") {
+      return (
+        <MovePrompt
+          server={server}
+          unsynced={unsyncedChanges(store)}
+          onMove={() => session.current?.moveLocalData()}
+          onStartOver={() => session.current?.replaceLocalData()}
+          {...(keep ?? {})}
+          onLater={() => setLater(true)}
+          exportData={exportData}
+        />
+      );
+    }
     return (
       <SwitchPrompt
-        reason={prompt.reason}
         // Counted now, not when sync asked: work done meanwhile is lost too.
         unsynced={unsyncedChanges(store)}
         onSwitch={() => session.current?.replaceLocalData()}
         // Keeping them means going back, when the choice before is where they belong; on the
         // build's own server, otherwise, signing this account out.
-        {...(switchesBackToData(store.syncState(), builtInAccount)
-          ? { onSwitchBack: () => switchBack() }
+        {...(keep
+          ? keep
           : own
             ? {}
             : {
@@ -423,8 +438,8 @@ function CombinePrompt({
   );
 }
 
+/** The phone's unsynced changes belong to another account on this server. */
 function SwitchPrompt({
-  reason,
   unsynced,
   onSwitch,
   onSignOut,
@@ -432,7 +447,6 @@ function SwitchPrompt({
   onLater,
   exportData,
 }: {
-  reason: "account" | "server";
   unsynced: number;
   onSwitch: () => void;
   /** Keeps the changes by signing this account out (the build's own server)... */
@@ -449,9 +463,7 @@ function SwitchPrompt({
   const it = one ? "it" : "them";
   return (
     <Dialog
-      eyebrow={
-        reason === "account" ? "Signed in with another account" : "This phone used another server"
-      }
+      eyebrow="Signed in with another account"
       confirm={{
         label: "Delete and switch",
         onPress: () => {
@@ -494,14 +506,96 @@ function SwitchPrompt({
       }
     >
       <Body
+        text={`${plural(unsynced, "change")} on this phone ${one ? "belongs" : "belong"} to the account that was signed in before and ${one ? "hasn't" : "haven't"} synced. Switching to this account deletes ${it} from this phone. ${onSwitchBack ? `To keep ${it}, switch back to the account it used before.` : onSignOut ? `To keep ${it}, sign out and sign in again with the other account.` : `Not now keeps ${it} on this phone, unsynced.`}`}
+      />
+      {saved.note ? <Body text={saved.note} /> : null}
+      {problem ? <Body text={problem} /> : null}
+    </Dialog>
+  );
+}
+
+/**
+ * The phone's data belongs to another server than the one it now syncs with. Bringing it along is
+ * the first choice: the old server keeps its copy either way, and nothing here is deleted unless
+ * the person says so.
+ */
+function MovePrompt({
+  server,
+  unsynced,
+  onMove,
+  onStartOver,
+  onSwitchBack,
+  onLater,
+  exportData,
+}: {
+  server: string;
+  unsynced: number;
+  onMove: () => void;
+  onStartOver: () => void;
+  onSwitchBack?: () => void;
+  onLater: () => void;
+  exportData: () => Promise<void>;
+}) {
+  const styles = useStyles(sheet);
+  const saved = useExport(exportData);
+  const [problem, setProblem] = useState<string | null>(null);
+  const here = serverLabel(server);
+  const one = unsynced === 1;
+  return (
+    <Dialog
+      eyebrow="This phone used another server"
+      confirm={{
+        label: "Bring them to this server",
+        onPress: () => {
+          if (saved.busy) return;
+          try {
+            onMove();
+          } catch {
+            setProblem("This phone couldn't start moving them. Try again.");
+          }
+        },
+      }}
+      footer={
+        <View style={styles.actions}>
+          <Button
+            rank="text"
+            label={saved.busy ? "Saving a copy…" : "Save a copy first"}
+            busy={saved.busy}
+            onPress={saved.run}
+          />
+          {onSwitchBack ? (
+            <Button
+              rank="text"
+              label="Switch back"
+              onPress={() => {
+                try {
+                  onSwitchBack();
+                } catch {
+                  setProblem("Switching back didn't work. Try again.");
+                }
+              }}
+            />
+          ) : null}
+          <Button
+            rank="text"
+            label={
+              unsynced > 0
+                ? `Delete ${plural(unsynced, "change")} and start over`
+                : `Start from ${here}'s data`
+            }
+            onPress={() => {
+              if (!saved.busy) onStartOver();
+            }}
+          />
+          <Button rank="text" label="Not now" onPress={onLater} />
+        </View>
+      }
+    >
+      <Body
         text={
-          reason === "account"
-            ? `${plural(unsynced, "change")} on this phone ${one ? "belongs" : "belong"} to the account that was signed in before and ${one ? "hasn't" : "haven't"} synced. Switching to this account deletes ${it} from this phone. ${onSwitchBack ? `To keep ${it}, switch back to the account it used before.` : onSignOut ? `To keep ${it}, sign out and sign in again with the other account.` : `Not now keeps ${it} on this phone, unsynced.`}`
-            : onSwitchBack
-              ? `${plural(unsynced, "change")} on this phone ${one ? "hasn't" : "haven't"} reached the sync server this phone used before. Switching to this server deletes ${it} from this phone. Switching back keeps ${it} for the other server.`
-              : onSignOut
-                ? `${plural(unsynced, "change")} on this phone ${one ? "hasn't" : "haven't"} reached the sync server this phone used before, which this version of Leve doesn't use. Switching deletes ${it} from this phone. Signing out keeps ${it} here, unsynced.`
-                : `${plural(unsynced, "change")} on this phone ${one ? "hasn't" : "haven't"} reached the sync server this phone used before. Switching to this server deletes ${it} from this phone. Not now keeps ${it} here, unsynced.`
+          unsynced > 0
+            ? `This phone's workouts belong to the sync server it used before, and ${plural(unsynced, "change")} ${one ? "hasn't" : "haven't"} reached it. Bring everything to ${here}, or delete ${one ? "it" : "them"} from this phone and start from what ${here} holds.`
+            : `This phone's workouts are on the sync server it used before. Bring them to ${here} as well, or start from what ${here} holds. The other server keeps them either way.`
         }
       />
       {saved.note ? <Body text={saved.note} /> : null}

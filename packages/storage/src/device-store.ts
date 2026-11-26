@@ -1209,6 +1209,26 @@ export class DeviceStore {
     });
   }
 
+  /**
+   * Moves this device's data to another server or account, when the person asks to bring it along
+   * rather than start from what the new one holds. Only the binding changes here, and the lineage
+   * of the old server stays: on connecting, the new server answers with a lineage of its own, so
+   * the device resets exactly as after a server restore (see `resetForServerRestore`). Every
+   * record it held is offered to the new server as new, deletions it remembers become markers
+   * there, nothing in flight is resent, and any difference from what the new account already
+   * holds goes to the person for review. The old server keeps its copy.
+   */
+  moveTo(server: string, account: string): void {
+    this.#mutate(() => {
+      const state = this.syncState();
+      if (state.account === null) {
+        throw new DeviceStoreError("this device has never synced; it connects as it is");
+      }
+      if (state.account === account && state.server === server) return;
+      this.db.run("UPDATE sync_state SET server = ?, account = ? WHERE id = 1", [server, account]);
+    });
+  }
+
   /** Records the negotiated release; partially synced records the release can now carry resend. */
   setNegotiated(release: ReleaseId, features: readonly string[], lineage?: string): void {
     this.#mutate(() => {
