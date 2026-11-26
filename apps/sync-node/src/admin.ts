@@ -78,7 +78,9 @@ function answers(socketPath: string): Promise<boolean> {
       probe.destroy();
       resolve(true);
     });
-    probe.once("error", () => resolve(false));
+    // Only a refused connection means nobody listens. Anything else (no permission, a full
+    // backlog) may be a live server, which must not lose its socket.
+    probe.once("error", (error: NodeJS.ErrnoException) => resolve(error.code !== "ECONNREFUSED"));
   });
 }
 

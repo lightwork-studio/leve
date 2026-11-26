@@ -123,6 +123,11 @@ describe("names", () => {
     expect(device?.name).toBe("]0;pwned [2Jevil phone");
     expect(cleanDeviceName("😀".repeat(70))).toBe("😀".repeat(64));
     expect(cleanDeviceName(" ​\t")).toBe("Phone");
+    // Joiners hold emoji sequences and many scripts together.
+    expect(cleanDeviceName("\u{1F468}\u200d\u{1F4BB} phone")).toBe(
+      "\u{1F468}\u200d\u{1F4BB} phone",
+    );
+    expect(cleanDeviceName("a\u0007\u200db")).toBe("a \u200db");
   });
 
   it("never mistakes a name for an id", () => {

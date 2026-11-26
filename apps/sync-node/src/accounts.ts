@@ -56,7 +56,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  */
 export function cleanDeviceName(name: string): string {
   const visible = name
-    .replace(/[\p{C}\p{Zl}\p{Zp}]+/gu, " ")
+    // Joiners stay: emoji sequences and many scripts need them, and they can't steer a terminal.
+    .replace(/(?:[^\P{C}\u200c\u200d]|[\p{Zl}\p{Zp}])+/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
   return [...visible].slice(0, MAX_DEVICE_NAME).join("").trim() || "Phone";

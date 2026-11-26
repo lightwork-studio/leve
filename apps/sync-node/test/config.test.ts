@@ -63,3 +63,8 @@ describe("the server's settings", () => {
     expect(() => readConfig({ PORT: "http" }, cwd)).toThrow("PORT");
   });
 });
+
+it("falls back to the default port for a blank PORT, never to a random one", () => {
+  expect(readConfig({ PORT: "  " }, "/").port).toBe(8787);
+  expect(() => readConfig({ PORT: "-1" }, "/")).toThrow("PORT");
+});

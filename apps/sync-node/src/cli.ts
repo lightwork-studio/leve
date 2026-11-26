@@ -22,6 +22,10 @@ export class UsageError extends Error {
   override name = "UsageError";
 }
 
+const refuse = (message: string): never => {
+  throw new UsageError(message);
+};
+
 /** Runs one admin command and returns what to print. */
 export async function runAdmin(socket: string, args: readonly string[]): Promise<string> {
   const asJson = args.includes("--json");
@@ -82,7 +86,9 @@ export async function runAdmin(socket: string, args: readonly string[]): Promise
   if (group === "devices" && action === "revoke") {
     const result =
       rest[0] === "--everyone"
-        ? await call("/devices/revoke", { everyone: true })
+        ? rest.length === 1
+          ? await call("/devices/revoke", { everyone: true })
+          : refuse("--everyone signs out every phone of every account; give nothing else")
         : rest[0] === "--all"
           ? await call("/devices/revoke", { all: true, account: rest.slice(1).join(" ") })
           : await call("/devices/revoke", { device: one("device id") });

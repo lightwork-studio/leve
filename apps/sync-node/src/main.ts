@@ -13,6 +13,7 @@ import { listenAdmin } from "./admin.ts";
 import { sharedTokenAuth } from "./auth.ts";
 import { ADMIN_USAGE, runAdmin, UsageError } from "./cli.ts";
 import { type Config, readConfig } from "./config.ts";
+import { lockDataDirectory } from "./lock.ts";
 import { createSyncServer } from "./server.ts";
 
 /*
@@ -56,6 +57,7 @@ async function serve(config: Config): Promise<void> {
   const { directory } = config;
   for (const warning of config.warnings) console.warn(warning);
   mkdirSync(directory, { recursive: true, mode: 0o700 });
+  const unlock = lockDataDirectory(directory);
   const sqlite = engine(config.wal);
   const storage = new ServerStorage({ engine: sqlite, directory, appVersion: "sync-node" });
   const servers: Server[] = [];
@@ -100,6 +102,7 @@ async function serve(config: Config): Promise<void> {
       for (const s of servers) s.close();
       void storage.close().then(() => {
         accounts?.close();
+        unlock();
         process.exit(0);
       });
     });

@@ -24,8 +24,8 @@ const PUBLIC_URL = /^https?:\/\/[^/?#\s]+(\/[^?#\s]*)?$/;
 
 export function readConfig(env: NodeJS.ProcessEnv, cwd = process.cwd()): Config {
   const directory = resolve(cwd, env.LEVE_DATA || "data");
-  // Absolute, so the server and `leve-sync admin` started elsewhere agree, and a bare number is
-  // never taken for a TCP port.
+  // Absolute, so a bare number is never taken for a TCP port. A relative setting resolves against
+  // each process's own directory, so give the server and `leve-sync admin` absolute paths.
   const runtime = env.RUNTIME_DIRECTORY?.split(":")[0];
   const socket = resolve(cwd, env.LEVE_ADMIN_SOCKET || join(runtime || directory, "admin.sock"));
   const warnings: string[] = [];
@@ -58,8 +58,9 @@ export function readConfig(env: NodeJS.ProcessEnv, cwd = process.cwd()): Config 
   if (env.LEVE_PAIRING !== undefined && env.LEVE_PAIRING !== "off" && env.LEVE_PAIRING !== "on") {
     throw new UsageError(`LEVE_PAIRING is "on" or "off", not ${env.LEVE_PAIRING}`);
   }
-  const port = Number(env.PORT || 8787);
-  if (!Number.isInteger(port) || port < 0 || port > 65535) {
+  const portText = env.PORT?.trim() || "8787";
+  const port = Number(portText);
+  if (!/^\d+$/.test(portText) || port > 65535) {
     throw new UsageError(`PORT must be a port number, not ${env.PORT}`);
   }
   return {

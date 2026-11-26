@@ -1,6 +1,6 @@
 import { chmodSync, mkdtempSync, rmSync } from "node:fs";
 import type { IncomingMessage, Server } from "node:http";
-import type { AddressInfo } from "node:net";
+import { type AddressInfo, connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createNodeSqliteEngine } from "@leve/storage/node";
@@ -90,6 +90,28 @@ async function start(
 }
 
 type Started = Awaited<ReturnType<typeof start>>;
+
+/** Announces a megabyte and sends none of it: only an early answer arrives. */
+function announcedTooLarge(base: string): Promise<string> {
+  const { port } = new URL(base);
+  return new Promise((resolve, reject) => {
+    const socket = connect(Number(port), "127.0.0.1", () => {
+      socket.write(
+        "POST /auth/pair HTTP/1.1\r\nhost: x\r\ncontent-type: application/json\r\ncontent-length: 1000000\r\n\r\n",
+      );
+    });
+    const timer = setTimeout(() => {
+      socket.destroy();
+      reject(new Error("no early answer"));
+    }, 2000);
+    socket.once("data", (data) => {
+      clearTimeout(timer);
+      socket.destroy();
+      resolve(data.toString("latin1"));
+    });
+    socket.once("error", reject);
+  });
+}
 const hello = { releases: ["1.0"], app: "t" };
 
 /** A sync client of one token, speaking the wire protocol directly. */
@@ -219,6 +241,8 @@ describe("a self-hosted server with accounts", () => {
     expect(notJson.status).toBe(400);
     const tooLarge = await server.post("/auth/pair", { code: "x", device: "y".repeat(5000) });
     expect(tooLarge.status).toBe(400);
+    // A body announced as too large is refused before it arrives.
+    expect(await announcedTooLarge(server.base)).toMatch(/^HTTP\/1\.1 400/);
     // Codes have 128 random bits, so nothing limits guesses: a shared limit would let anyone
     // keep every new phone from pairing.
     for (let i = 0; i < 50; i++) {
