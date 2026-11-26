@@ -1,6 +1,5 @@
-import { EXERCISE_TYPES, MUSCLE_GROUPS } from "@leve/core";
+import { EXERCISE_CATALOG as catalog, EXERCISE_TYPES, MUSCLE_GROUPS } from "@leve/core";
 import { describe, expect, it } from "vitest";
-import catalog from "../src/data/exercise-catalog.json";
 import {
   builtInExercise,
   EXERCISES,

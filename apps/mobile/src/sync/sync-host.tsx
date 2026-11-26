@@ -4,7 +4,7 @@ import {
   AppleAuthenticationButtonStyle,
   AppleAuthenticationButtonType,
 } from "expo-apple-authentication";
-import { router } from "expo-router";
+import { router, usePathname } from "expo-router";
 import { channel } from "expo-updates";
 import { useEffect, useRef, useState } from "react";
 import { AppState, Linking, Text, View } from "react-native";
@@ -12,12 +12,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { signInProblem, useAppleSignIn } from "../account/apple-sign-in.ts";
 import { buildInfo } from "../build-info.ts";
 import { useAppData } from "../data/app-data.tsx";
+import { conflicts, type ReviewTarget } from "../data/conflicts.ts";
 import { subscribeDevicePreferences } from "../data/device-preference-store.ts";
 import { gutter, radius, space, type } from "../theme.ts";
 import { Button } from "../ui/buttons.tsx";
 import { Dialog } from "../ui/dialog.tsx";
 import { Banner } from "../ui/notice.tsx";
 import { themedStyles, useAppearance, useStyles } from "../ui/themed.ts";
+import { ConflictPrompt } from "./conflict-prompt.tsx";
 import { type OwnServer, serverLabel } from "./own-server.ts";
 import {
   previousServer,
@@ -39,6 +41,11 @@ import {
   writeLastSynced,
 } from "./sync-preferences.ts";
 import { SyncSession, type SyncStatus, unsyncedChanges } from "./sync-session.ts";
+
+/** The path expo-router reports while `target` is open. */
+function reviewPath(target: ReviewTarget): string {
+  return target.pathname === "/workout/[id]" ? `/workout/${target.params.id}` : "/history";
+}
 
 /** How long sync may fail before the app says that changes aren't syncing. */
 export const STALE_AFTER_MS = 24 * 60 * 60_000;
@@ -178,6 +185,22 @@ function Sync({
   const [later, setLater] = useState(false);
   /** "Not now" on the update question: hidden until the app next comes to the front. */
   const [updateLater, setUpdateLater] = useState(false);
+  /** A conflict being reviewed on its own screen, and whether that screen has opened yet. */
+  const [reviewing, setReviewing] = useState<{
+    key: string;
+    path: string;
+    arrived: boolean;
+  } | null>(null);
+  const pathname = usePathname();
+  useEffect(() => {
+    setReviewing((current) => {
+      if (!current) return current;
+      if (pathname === current.path)
+        return current.arrived ? current : { ...current, arrived: true };
+      // Left the review screen: the popup asks again if it's still unsettled.
+      return current.arrived ? null : current;
+    });
+  }, [pathname]);
   useEffect(() => {
     const watch = AppState.addEventListener("change", (state) => {
       if (state === "active") setUpdateLater(false);
@@ -331,6 +354,29 @@ function Sync({
       />
     );
   }
+
+  // Conflicts are settled here and now: one at a time, before the app goes on.
+  const bound = store.syncState();
+  const switching =
+    isSignedIn && bound.account !== null && (bound.server !== server || bound.account !== userId);
+  const pending = switching ? [] : conflicts(store);
+  // While the person is on the screen a conflict sent them to, nothing covers it. Leaving it with
+  // the conflict unsettled brings the popup back.
+  if (reviewing && pending.some((item) => item.key === reviewing.key)) return null;
+  if (pending.length > 0)
+    return (
+      <ConflictPrompt
+        items={pending}
+        onReview={(item) => {
+          if (!item.review) return;
+          const path = reviewPath(item.review.target);
+          // Already there (History is a tab): it counts as arrived, so leaving asks again.
+          setReviewing({ key: item.key, path, arrived: pathname === path });
+          // Already there: no second copy of the screen.
+          if (pathname !== path) router.push(item.review.target);
+        }}
+      />
+    );
 
   const since = status.lastSynced ?? status.failingSince;
   if (isSignedIn && since !== null && now - since > STALE_AFTER_MS && store.hasUnsyncedWork()) {

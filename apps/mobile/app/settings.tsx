@@ -111,11 +111,6 @@ export default function SettingsScreen() {
   const optimistic = useOptimisticSettings(store);
   // The optimistic draft can settle before the provider's version update is rendered.
   const committed = readSettings(store);
-  const settingsRecord = store.get("settings", "settings");
-  const settingsConflict =
-    settingsRecord?.status === "conflict" && settingsRecord.server?.state !== "unavailable";
-  const serverHasSettings = settingsRecord?.server?.state === "live";
-  const priorSettings = settingsRecord?.keptContent;
   const settings = { ...committed, ...optimistic.patch };
   const insets = useSafeAreaInsets();
   // A pairing link that opened the app (app/connect.tsx) arrives as these.
@@ -147,15 +142,6 @@ export default function SettingsScreen() {
     haptic.warning();
     setProblem(message);
     announce(message);
-  };
-
-  const resolveSettings = (choice: "keep_mine" | "keep_theirs") => {
-    try {
-      change((device) => device.resolve("settings", "settings", { choice }));
-      setProblem(null);
-    } catch {
-      showProblem("The settings choice couldn't be saved. Try again.");
-    }
   };
 
   const queue = (edit: Parameters<typeof optimistic.enqueue>[0]) => {
@@ -219,38 +205,6 @@ export default function SettingsScreen() {
           <StillOnOpen>
             <SyncServerSection link={pairing} />
             <AccountSection />
-            {settingsConflict && !store.syncState().restoring ? (
-              <Group
-                label="Review sync settings"
-                footnote={
-                  serverHasSettings
-                    ? "The settings on this phone differ from the account’s settings."
-                    : "This phone has a settings conflict from the previous server."
-                }
-              >
-                <ActionRow
-                  label="Use this phone’s settings"
-                  hint="Send the settings shown here to the account"
-                  onPress={() => resolveSettings("keep_mine")}
-                  divider
-                />
-                <ActionRow
-                  label={
-                    serverHasSettings
-                      ? "Use the account’s settings"
-                      : priorSettings
-                        ? "Use the previous server’s settings"
-                        : "Use default settings"
-                  }
-                  hint={
-                    priorSettings && !serverHasSettings
-                      ? "Send that copy to the account"
-                      : "Replace the settings shown here"
-                  }
-                  onPress={() => resolveSettings("keep_theirs")}
-                />
-              </Group>
-            ) : null}
 
             <Group
               label="Reads as"

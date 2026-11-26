@@ -3,6 +3,7 @@
 import { act, createElement as h, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Conflict } from "../src/data/conflicts.ts";
 import { forgetDevicePreferences } from "../src/data/device-preference-store.ts";
 import {
   chooseBuiltInServer,
@@ -60,15 +61,33 @@ vi.mock("../src/sync/sync-session.ts", () => ({
     }
   },
 }));
+const pending = vi.hoisted(() => ({
+  conflicts: [] as Conflict[],
+  settled: [] as [string, string][],
+  refuse: null as string | null,
+}));
+vi.mock("../src/data/conflicts.ts", () => ({
+  conflicts: () => pending.conflicts,
+  settleConflict: (_store: unknown, shown: Conflict, side: string) => {
+    if (pending.refuse) throw Error(pending.refuse);
+    pending.settled.push([shown.key, side]);
+    pending.conflicts = pending.conflicts.filter((item) => item.key !== shown.key);
+  },
+}));
+const route = vi.hoisted(() => ({ path: "/", pushed: [] as unknown[] }));
+vi.mock("expo-router", () => ({
+  router: {
+    push: (target: unknown) => {
+      route.pushed.push(target);
+    },
+  },
+  usePathname: () => route.path,
+}));
 vi.mock("../src/sync/sync-config.ts", () => ({
   syncEnabled: () => true,
   syncServerUrl: "https://sync.test",
   builtInServerConfigured: () => true,
   ownServerAvailable: () => true,
-}));
-const navigation = vi.hoisted(() => ({ pushed: [] as string[] }));
-vi.mock("expo-router", () => ({
-  router: { push: (path: string) => navigation.pushed.push(path) },
 }));
 const data = vi.hoisted(() => ({
   account: null as string | null,
@@ -176,10 +195,11 @@ beforeEach(() => {
     unsyncedCount: 0,
     unavailableRecords: false,
   });
+  Object.assign(pending, { conflicts: [], settled: [], refuse: null });
+  Object.assign(route, { path: "/", pushed: [] });
   sessions.created.length = 0;
   keychain.reset();
   forgetServerChoice();
-  navigation.pushed.length = 0;
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -201,7 +221,9 @@ async function report(status: Partial<SyncStatus>) {
   await act(async () => session().report(status));
 }
 async function tap(label: string) {
-  const target = [...document.querySelectorAll<HTMLElement>("button, [role=button]")].find(
+  const target = [
+    ...document.querySelectorAll<HTMLElement>("button, [role=button], [role=radio]"),
+  ].find(
     (element) =>
       element.textContent?.includes(label) || element.getAttribute("aria-label") === label,
   );
@@ -387,7 +409,7 @@ describe("a server the person paired", () => {
     expect(screen()).toContain("sync.home.example no longer accepts this phone");
     expect(screen()).not.toContain("Sign in again");
     await tap("Open Settings");
-    expect(navigation.pushed).toEqual(["/settings"]);
+    expect(route.pushed).toEqual(["/settings"]);
     expect(screen()).not.toContain("no longer accepts");
   });
 
@@ -485,6 +507,20 @@ describe("a server the person paired", () => {
     expect(sessions.created.map((entry) => entry.options.server)).toEqual([home.server]);
   });
 
+  it("shows conflicts for the paired account after a server switch is settled", async () => {
+    chooseOwnServer(home);
+    data.account = "user_1";
+    data.server = "https://sync.test";
+    pending.conflicts = [folderConflict("folder", "Training")];
+    await render();
+    expect(screen()).not.toContain("Training");
+
+    data.account = home.account;
+    data.server = home.server;
+    await report({ lastSynced: Date.now() });
+    expect(screen()).toContain("Training");
+  });
+
   it("doesn't offer to switch back into a different Clerk account", async () => {
     data.server = "https://sync.test";
     data.account = "user_0";
@@ -540,4 +576,148 @@ describe("a server the person paired", () => {
       data.unavailableRecords = false;
     }
   });
+});
+
+const folderConflict = (key: string, title: string): Conflict => ({
+  key,
+  title,
+  subtitle: "Folder",
+  records: [],
+  phone: {
+    lines: [{ label: "Name", value: `${title} B` }],
+    choosable: true,
+    confirm: "Keep this version",
+  },
+  account: {
+    lines: [{ label: "Name", value: `${title} A` }],
+    choosable: true,
+    confirm: "Keep this version",
+  },
+});
+
+it("goes through conflicts one at a time, with nothing chosen in advance", async () => {
+  pending.conflicts = [
+    folderConflict("routine_folder:f1", "Push"),
+    folderConflict("routine_folder:f2", "Pull"),
+  ];
+  await render();
+  expect(screen()).toContain("Changed in two places");
+  expect(screen()).toContain("1 of 2");
+  expect(screen()).toContain("Push B");
+  expect(screen()).toContain("Push A");
+  // Nothing chosen yet: the confirm can't be pressed, and there is no way to put it off.
+  await tap("Choose a version");
+  expect(pending.settled).toEqual([]);
+  expect(document.querySelector("[aria-label=Cancel]")).toBeNull();
+  expect(screen()).not.toContain("Not now");
+
+  await tap("In your account: Name Push A");
+  await tap("Keep this version");
+  expect(pending.settled).toEqual([["routine_folder:f1", "account"]]);
+  await render();
+  expect(screen()).toContain("2 of 2");
+  expect(screen()).toContain("Pull B");
+  // The next one starts with nothing chosen again.
+  await tap("Choose a version");
+  expect(pending.settled).toHaveLength(1);
+  await tap("On this phone: Name Pull B");
+  await tap("Keep this version");
+  expect(pending.settled).toEqual([
+    ["routine_folder:f1", "account"],
+    ["routine_folder:f2", "phone"],
+  ]);
+  await render();
+  expect(screen()).toBe("");
+});
+
+it("waits for the workout to end, and says why a choice was refused", async () => {
+  pending.conflicts = [folderConflict("routine_folder:f1", "Push")];
+  data.workout = true;
+  await render();
+  expect(screen()).toBe("");
+  data.workout = false;
+  await render();
+  pending.refuse = "This changed in the meantime. Have a look at the latest versions.";
+  await tap("On this phone: Name Push B");
+  await tap("Keep this version");
+  expect(screen()).toContain("This changed in the meantime.");
+  expect(pending.settled).toEqual([]);
+  // Nothing stays picked: the person looks again before choosing.
+  expect(screen()).toContain("Choose a version");
+});
+
+it("can't keep a change the server refused", async () => {
+  pending.conflicts = [
+    {
+      ...folderConflict("routine_folder:f1", "Push"),
+      phone: {
+        lines: [{ label: "Name", value: "Couldn't be saved" }],
+        choosable: false,
+        confirm: "",
+        why: "This phone's change couldn't be saved in your account.",
+      },
+      account: {
+        lines: [{ label: "Name", value: "Push" }],
+        choosable: true,
+        confirm: "Undo my change",
+      },
+    },
+  ];
+  await render();
+  expect(screen()).toContain("couldn't be saved in your account");
+  await tap("On this phone: Name Couldn't be saved");
+  await tap("Choose a version");
+  expect(pending.settled).toEqual([]);
+  await tap("In your account: Name Push");
+  await tap("Undo my change");
+  expect(pending.settled).toEqual([["routine_folder:f1", "account"]]);
+});
+
+it("leads a conflict reviewed on its screen there, stays away meanwhile, and asks again on leaving", async () => {
+  pending.conflicts = [
+    {
+      ...folderConflict("workout:w1", "Pull Day"),
+      subtitle: null,
+      review: {
+        target: { pathname: "/workout/[id]", params: { id: "w1" } },
+        message: "Deleted in your account, but this phone has changes in it.",
+      },
+    },
+  ];
+  await render();
+  expect(screen()).toContain("Deleted in your account, but this phone has changes in it.");
+  // No choosing here, and no way around it but reviewing.
+  expect(screen()).not.toContain("Choose a version");
+  await tap("Review it");
+  expect(route.pushed).toEqual([{ pathname: "/workout/[id]", params: { id: "w1" } }]);
+  expect(screen()).toBe("");
+  route.path = "/workout/w1";
+  await render();
+  expect(screen()).toBe("");
+  // Left the review with the conflict still there: the popup asks again.
+  route.path = "/history";
+  await render();
+  await render();
+  expect(screen()).toContain("Review it");
+});
+
+it("asks again after leaving a review screen it was already on", async () => {
+  route.path = "/history";
+  pending.conflicts = [
+    {
+      ...folderConflict("workout:w1", "Leg Day"),
+      subtitle: null,
+      review: {
+        target: { pathname: "/(tabs)/history" },
+        message: "Deleted on this phone, but changed in your account since.",
+      },
+    },
+  ];
+  await render();
+  await tap("Review it");
+  expect(screen()).toBe("");
+  route.path = "/";
+  await render();
+  await render();
+  expect(screen()).toContain("Review it");
 });
