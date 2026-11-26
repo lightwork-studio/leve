@@ -4,5 +4,11 @@
     "allowImportingTsExtensions": true,
     "jsx": "react-jsx"
   },
-  "include": ["scripts", "src/data/sqljs-browser.d.ts", "src/images.d.ts", "test", "vitest.config.mts"]
+  "include": [
+    "scripts",
+    "src/data/sqljs-browser.d.ts",
+    "src/images.d.ts",
+    "test",
+    "vitest.config.mts"
+  ]
 }
