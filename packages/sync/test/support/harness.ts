@@ -15,6 +15,14 @@ import { type Transport, TransportError } from "../../src/transport.ts";
  * only persisted state survives.
  */
 
+export function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 export const engine = createNodeSqliteEngine();
 
 export class Clock {
