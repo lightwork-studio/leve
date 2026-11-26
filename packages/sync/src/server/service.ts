@@ -26,7 +26,13 @@ import {
   type SubmissionResult,
   validate,
 } from "@leve/contract";
-import type { ServerStorage, ServerTransaction, StoredRecord } from "@leve/storage/server";
+import type {
+  ServerAccountStore,
+  ServerStorage,
+  ServerTransaction,
+  StoredRecord,
+  WorkoutReadQuery,
+} from "@leve/storage/server";
 
 export const RECEIPT_DAYS = 90;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -41,6 +47,8 @@ export interface Reply<T> {
 export interface SyncServiceOptions {
   /** Opens account databases: files on a server, or the database of an account's Durable Object. */
   storage: Pick<ServerStorage, "account">;
+  /** Optional non-creating lookup for hosts exposing read-only tools. */
+  existingAccount?: (accountId: string) => Promise<ServerAccountStore | null>;
   contract?: Contract;
   /** Releases this server accepts, oldest first. */
   releases?: readonly ReleaseId[];
@@ -51,6 +59,8 @@ export interface SyncServiceOptions {
   /** Test seam for long polling. */
   setTimer?: (fn: () => void, ms: number) => { cancel(): void };
 }
+
+export type WorkoutReadSelection = { id: string } | WorkoutReadQuery;
 
 const STATUS: Record<ErrorCode, number> = {
   invalid_request: 400,
@@ -104,6 +114,7 @@ export class SyncService {
   readonly contract: Contract;
   readonly releases: readonly ReleaseId[];
   readonly #storage: Pick<ServerStorage, "account">;
+  readonly #existingAccount: (accountId: string) => Promise<ServerAccountStore | null>;
   readonly #now: () => Date;
   readonly #receiptDays: number;
   readonly #setTimer: NonNullable<SyncServiceOptions["setTimer"]>;
@@ -112,6 +123,7 @@ export class SyncService {
 
   constructor(options: SyncServiceOptions) {
     this.#storage = options.storage;
+    this.#existingAccount = options.existingAccount ?? ((id) => this.#storage.account(id));
     this.contract = options.contract ?? leveContract;
     this.releases = options.releases ?? SERVER_RELEASES;
     this.#now = options.now ?? (() => new Date());
@@ -436,6 +448,99 @@ export class SyncService {
     const store = await this.#storage.account(accountId);
     const record = store.transaction((tx) => tx.get(kind, id));
     return record ? this.#change(record, release) : null;
+  }
+
+  /**
+   * Every live record of each kind for `release`, read in one transaction so they are consistent
+   * with each other, for readers such as MCP tools. Kinds the release lacks come back empty; a
+   * record the release can't represent comes back `unavailable`.
+   */
+  async readKinds(
+    accountId: string,
+    kinds: readonly string[],
+    release: ReleaseId,
+    workouts?: WorkoutReadSelection,
+  ): Promise<Map<string, Change[]>> {
+    if (!this.releases.includes(release)) throw new Error(`Unsupported sync release ${release}`);
+    const store = await this.#existingAccount(accountId);
+    if (!store) return new Map();
+    const rows = store.transaction((tx) => {
+      const selected = workouts ? this.#workoutRows(tx, kinds, workouts) : null;
+      return kinds.map((kind) =>
+        this.contract.hasKind(kind, release) ? (selected?.get(kind) ?? tx.live(kind)) : [],
+      );
+    });
+    return new Map(
+      kinds.map((kind, i) => [
+        kind,
+        (rows[i] ?? []).map((record) => this.#change(record, release)),
+      ]),
+    );
+  }
+
+  #workoutRows(
+    tx: ServerTransaction,
+    kinds: readonly string[],
+    selection: WorkoutReadSelection,
+  ): Map<string, StoredRecord[]> {
+    const single = "id" in selection;
+    const detail = single ? tx.get("workout", selection.id) : null;
+    const workouts = single
+      ? detail?.state === "live"
+        ? [detail]
+        : []
+      : tx.liveWorkouts(selection);
+    const exerciseId = single ? undefined : selection.exerciseId;
+    const rows = new Map<string, StoredRecord[]>([["workout", workouts]]);
+    const children = (kind: string, parentKind: string) => {
+      if (!kinds.includes(kind)) return;
+      const found = (rows.get(parentKind) ?? []).flatMap((parent) =>
+        tx.liveChildren(parentKind, parent.id, kind),
+      );
+      rows.set(
+        kind,
+        kind === "workout_exercise" && exerciseId !== undefined
+          ? found.filter((entry) => entry.content?.exerciseId === exerciseId)
+          : found,
+      );
+    };
+    children("workout_exercise", "workout");
+    children("workout_set", "workout_exercise");
+    children("workout_rest", "workout");
+    children("workout_note", "workout");
+    children("workout_note_comment", "workout_note");
+    if (kinds.includes("custom_exercise")) {
+      const ids = new Set(
+        (rows.get("workout_exercise") ?? []).flatMap((entry) =>
+          typeof entry.content?.exerciseId === "string" ? [entry.content.exerciseId] : [],
+        ),
+      );
+      rows.set(
+        "custom_exercise",
+        [...ids].flatMap((id) => {
+          const exercise = tx.get("custom_exercise", id);
+          return exercise?.state === "live" ? [exercise] : [];
+        }),
+      );
+    }
+    if (kinds.includes("body_measurement")) {
+      const first = workouts.at(-1)?.content?.startedAt;
+      const last = workouts[0]?.content?.startedAt;
+      rows.set(
+        "body_measurement",
+        typeof first === "string" && typeof last === "string"
+          ? tx.liveBodyweightForWorkouts(first, last)
+          : [],
+      );
+    }
+    if (kinds.includes("exercise_note")) {
+      rows.set(
+        "exercise_note",
+        workouts.flatMap((workout) => tx.liveExerciseNotesForWorkout(workout.id)),
+      );
+    }
+    children("exercise_note_comment", "exercise_note");
+    return rows;
   }
 
   #waitForChange(accountId: string, ms: number): Promise<void> {

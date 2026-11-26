@@ -5,13 +5,20 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./server": "./src/server/index.ts"
+    "./server": "./src/server/index.ts",
+    "./mcp": "./src/server/mcp/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p ."
   },
   "dependencies": {
     "@leve/contract": "workspace:*",
-    "@leve/storage": "workspace:*"
+    "@leve/core": "workspace:*",
+    "@leve/storage": "workspace:*",
+    "@modelcontextprotocol/server": "2.4.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.4.0"
   }
 }

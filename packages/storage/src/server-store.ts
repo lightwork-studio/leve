@@ -331,12 +331,83 @@ export class ServerTransaction {
     return revision;
   }
 
-  liveChildren(kind: string, id: string): StoredRecord[] {
+  /** Every live record of a kind, in id order (the primary key's order). */
+  live(kind: string): StoredRecord[] {
     return this.#db
-      .all("SELECT * FROM records WHERE parent_kind = ? AND parent_id = ? AND state = 'live'", [
-        kind,
-        id,
-      ])
+      .all("SELECT * FROM records WHERE kind = ? AND state = 'live' ORDER BY id", [kind])
+      .map(toStored);
+  }
+
+  /** Select workout roots before reading their children. Sync timestamps use canonical UTC. */
+  liveWorkouts(query: WorkoutReadQuery): StoredRecord[] {
+    const start = "json_extract(w.content, '$.startedAt')";
+    const clauses = ["w.kind = 'workout'", "w.state = 'live'"];
+    const args: string[] = [];
+    if (query.from) {
+      clauses.push(`${start} >= ?`);
+      args.push(query.from);
+    }
+    if (query.to) {
+      clauses.push(`${start} < ?`);
+      args.push(query.to);
+    }
+    if (query.cursor) {
+      clauses.push(`(${start} < ? OR (${start} = ? AND w.id > ?))`);
+      args.push(query.cursor.startedAt, query.cursor.startedAt, query.cursor.id);
+    }
+    if (query.finished) clauses.push("json_extract(w.content, '$.endedAt') IS NOT NULL");
+    if (query.exerciseId) {
+      clauses.push(`EXISTS (
+        SELECT 1 FROM records e
+        WHERE e.parent_kind = 'workout' AND e.parent_id = w.id
+          AND e.kind = 'workout_exercise' AND e.state = 'live'
+          AND json_extract(e.content, '$.exerciseId') = ?
+      )`);
+      args.push(query.exerciseId);
+    }
+    return this.#db
+      .all(
+        `SELECT w.* FROM records w WHERE ${clauses.join(" AND ")}
+       ORDER BY ${start} DESC, w.id ASC LIMIT ?`,
+        [...args, query.limit ?? -1],
+      )
+      .map(toStored);
+  }
+
+  /** Exercise notes use a soft reference, so they're outside the indexed workout tree. */
+  liveExerciseNotesForWorkout(workoutId: string): StoredRecord[] {
+    return this.#db
+      .all(
+        "SELECT * FROM records WHERE kind = 'exercise_note' AND state = 'live' AND json_extract(content, '$.workoutId') = ?",
+        [workoutId],
+      )
+      .map(toStored);
+  }
+
+  /** Bodyweight lookup needs measurements during the selected workouts and one preceding them. */
+  liveBodyweightForWorkouts(first: string, last: string): StoredRecord[] {
+    const time = "json_extract(content, '$.takenAt')";
+    const bodyweight =
+      "kind = 'body_measurement' AND state = 'live' AND json_extract(content, '$.bodyweightKg') IS NOT NULL";
+    return this.#db
+      .all(
+        `SELECT * FROM records WHERE ${bodyweight} AND ${time} <= ? AND (
+         ${time} >= ? OR id = (
+          SELECT id FROM records WHERE ${bodyweight} AND ${time} < ?
+          ORDER BY ${time} DESC, id DESC LIMIT 1
+         )
+       ) ORDER BY id`,
+        [last, first, first],
+      )
+      .map(toStored);
+  }
+
+  liveChildren(kind: string, id: string, childKind?: string): StoredRecord[] {
+    return this.#db
+      .all(
+        `SELECT * FROM records WHERE parent_kind = ? AND parent_id = ? AND state = 'live'${childKind === undefined ? "" : " AND kind = ?"}`,
+        childKind === undefined ? [kind, id] : [kind, id, childKind],
+      )
       .map(toStored);
   }
 
@@ -397,6 +468,15 @@ export class ServerTransaction {
   pruneReceipts(cutoff: string): number {
     return this.#db.run("DELETE FROM receipts WHERE accepted_at < ?", [cutoff]).changes;
   }
+}
+
+export interface WorkoutReadQuery {
+  from?: string;
+  to?: string;
+  cursor?: { startedAt: string; id: string };
+  finished?: boolean;
+  exerciseId?: string;
+  limit?: number;
 }
 
 /** One account's database. */

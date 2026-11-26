@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { describe, expect, it } from "vitest";
-import { ACCOUNT_HEADER, type GateEnv, handleRequest } from "./gate.ts";
+import {
+  ACCOUNT_HEADER,
+  CLIENT_HEADER,
+  type GateEnv,
+  handleRequest,
+  SCOPES_HEADER,
+} from "./gate.ts";
 import { verifySessionToken } from "./session-token.ts";
 
 const ISSUER = "https://leve-test.clerk.accounts.dev";
@@ -282,4 +288,245 @@ it("answers only POST to known paths", async () => {
   expect((await send("/sync/hello", await sign({}), {}, "GET")).status).toBe(400);
   expect((await send("/other", await sign({}))).status).toBe(400);
   expect(reached).toEqual([]);
+});
+
+// ——— MCP ———
+
+const RESOURCE = "https://sync.test/mcp";
+const METADATA = "https://sync.test/.well-known/oauth-protected-resource/mcp";
+
+/** An OAuth access token as Clerk issues it to an MCP client (RFC 9068). */
+function signAccess(
+  claims: Record<string, unknown> = {},
+  {
+    key = trusted.privateKey,
+    header = { alg: "RS256", typ: "at+jwt" } as Record<string, unknown>,
+  } = {},
+) {
+  return sign(
+    {
+      sid: undefined,
+      sts: undefined,
+      v: undefined,
+      aud: [RESOURCE],
+      client_id: "https://client.test/meta.json",
+      scp: ["leve:read"],
+      jti: "oat_1",
+      ...claims,
+    },
+    { key, header: header as { alg: string; typ: string } },
+  );
+}
+
+function mcpSetup(overrides: Partial<GateEnv> = {}) {
+  const reached: { account: string; headers: Record<string, string>; body: string }[] = [];
+  const env: GateEnv = {
+    ACCOUNTS: {
+      idFromName: (name: string) => ({ name }) as unknown as DurableObjectId,
+      get: (id: DurableObjectId) =>
+        ({
+          fetch: async (request: Request) => {
+            reached.push({
+              account: (id as unknown as { name: string }).name,
+              headers: Object.fromEntries(request.headers),
+              body: await request.text(),
+            });
+            return new Response("{}", { headers: { "content-type": "application/json" } });
+          },
+        }) as unknown as DurableObjectStub,
+    },
+    CLERK_ISSUER: ISSUER,
+    CLERK_JWT_KEY: trusted.pem,
+    ADMIN_TOKEN,
+    MCP_RESOURCE_URL: RESOURCE,
+    ...overrides,
+  };
+  const send = (
+    token: string | null,
+    {
+      path = "/mcp",
+      headers = {},
+      method = "POST",
+    }: { path?: string; headers?: Record<string, string>; method?: string } = {},
+  ) =>
+    handleRequest(
+      new Request(`https://sync.test${path}`, {
+        method,
+        headers: {
+          "content-type": "application/json",
+          ...(token === null ? {} : { authorization: `Bearer ${token}` }),
+          ...headers,
+        },
+        ...(method === "POST" ? { body: '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' } : {}),
+      }),
+      env,
+    );
+  return { send, reached, env };
+}
+
+describe("signing in to MCP", () => {
+  it("reaches the token's user's account as an agent with its scopes, whatever the client names", async () => {
+    const { send, reached } = mcpSetup();
+    const response = await send(await signAccess({ sub: "user_alice" }), {
+      headers: {
+        [ACCOUNT_HEADER]: "user_bob",
+        [CLIENT_HEADER]: "phone",
+        [SCOPES_HEADER]: "leve:write",
+        "X-Leve-Account": "user_carol",
+      },
+    });
+    expect(response.status).toBe(200);
+    expect(reached).toHaveLength(1);
+    const [forwarded] = reached;
+    expect(forwarded?.account).toBe("user_alice");
+    expect(forwarded?.headers[ACCOUNT_HEADER]).toBe("user_alice");
+    expect(decodeURIComponent(forwarded?.headers[CLIENT_HEADER] ?? "")).toBe(
+      "https://client.test/meta.json",
+    );
+    expect(forwarded?.headers[SCOPES_HEADER]).toBe("leve:read");
+    expect(forwarded?.headers.authorization).toBeUndefined();
+    expect(forwarded?.body).toContain("tools/list");
+  });
+
+  it("reads scopes from a space-separated scope claim too", async () => {
+    const { send, reached } = mcpSetup();
+    const token = await signAccess({ scp: undefined, scope: "profile leve:write" });
+    expect((await send(token)).status).toBe(200);
+    expect(reached[0]?.headers[SCOPES_HEADER]).toBe("leve:write");
+  });
+
+  it("forwards only exact Leve scopes and refuses other browser origins", async () => {
+    const { send, reached } = mcpSetup();
+    const token = await signAccess({ scp: ["leve:read", "profile leve:write"] });
+    expect((await send(token, { headers: { origin: "https://other.test" } })).status).toBe(403);
+    expect(reached).toEqual([]);
+    expect((await send(token, { headers: { origin: new URL(RESOURCE).origin } })).status).toBe(200);
+    expect(reached[0]?.headers[SCOPES_HEADER]).toBe("leve:read");
+  });
+
+  it("challenges a client without a token to sign in, naming the metadata and scope", async () => {
+    const { send, reached } = mcpSetup();
+    const response = await send(null);
+    expect(response.status).toBe(401);
+    expect(response.headers.get("www-authenticate")).toBe(
+      `Bearer scope="leve:read", resource_metadata="${METADATA}"`,
+    );
+    expect(reached).toEqual([]);
+  });
+
+  it("refuses tokens that aren't access tokens this instance issued for this server", async () => {
+    const { send, reached } = mcpSetup();
+    const valid = await signAccess();
+    const [header, payload, signature] = valid.split(".");
+    const refused = [
+      // A phone's session token is not an MCP token.
+      await sign({}),
+      await sign({}, { header: { alg: "RS256", typ: "JWT" } }),
+      // Issued for another resource, or for none.
+      await signAccess({ aud: ["https://other.test/mcp"] }),
+      await signAccess({ aud: "https://sync.test/mcp/" }),
+      await signAccess({ aud: undefined }),
+      await signAccess({ aud: [] }),
+      // Wrong issuer, signer, time, type or algorithm.
+      await signAccess({ iss: `${ISSUER}/` }),
+      await signAccess({}, { key: stranger.privateKey }),
+      await signAccess({ exp: now() - 60 }),
+      await signAccess({ nbf: now() + 600 }),
+      await signAccess({}, { header: { alg: "RS256", typ: "JWT" } }),
+      await signAccess({}, { header: { alg: "RS256" } }),
+      await signAccess({}, { header: { alg: "RS256", typ: { toString: null } } }),
+      await signAccess({}, { header: { alg: "RS256", typ: "at+jwt", crit: ["x"] } }),
+      `${encode({ alg: "none", typ: "at+jwt" })}.${payload}.`,
+      `${encode({ alg: "HS256", typ: "at+jwt" })}.${payload}.${signature}`,
+      `${header}.${payload}.${signature?.slice(0, -4)}AAAA`,
+      // No client, an account id storage would refuse, malformed scopes.
+      await signAccess({ client_id: undefined }),
+      await signAccess({ client_id: "" }),
+      await signAccess({ sub: "../user_bob" }),
+      await signAccess({ scp: "leve:read" }),
+      await signAccess({ scp: undefined, scope: ["leve:read"] }),
+      "not-a-token",
+    ];
+    for (const token of refused) {
+      const response = await send(token);
+      expect(response.status, token).toBe(401);
+      expect(response.headers.get("www-authenticate")).toBe(
+        `Bearer error="invalid_token", scope="leve:read", resource_metadata="${METADATA}"`,
+      );
+    }
+    expect(reached).toEqual([]);
+  });
+
+  it("refuses a token without a Leve scope with a step-up challenge", async () => {
+    const { send, reached } = mcpSetup();
+    for (const scp of [[], ["profile", "email"], ["leve:reader"]]) {
+      const response = await send(await signAccess({ scp }));
+      expect(response.status).toBe(403);
+      expect(response.headers.get("www-authenticate")).toBe(
+        `Bearer error="insufficient_scope", scope="leve:read", resource_metadata="${METADATA}"`,
+      );
+    }
+    expect(reached).toEqual([]);
+    // Writing includes reading.
+    expect((await send(await signAccess({ scp: ["leve:write"] }))).status).toBe(200);
+  });
+
+  it("keeps sync for phones: an MCP access token can't sync", async () => {
+    const { send, reached } = mcpSetup();
+    const response = await send(await signAccess(), { path: "/sync/hello" });
+    expect(response.status).toBe(401);
+    expect(reached).toEqual([]);
+  });
+
+  it("publishes where to sign in and which scopes exist", async () => {
+    const { send } = mcpSetup();
+    for (const path of [
+      "/.well-known/oauth-protected-resource/mcp",
+      "/.well-known/oauth-protected-resource",
+    ]) {
+      const response = await send(null, { path, method: "GET" });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({
+        resource: RESOURCE,
+        authorization_servers: [ISSUER],
+        scopes_supported: ["leve:read"],
+        bearer_methods_supported: ["header"],
+        resource_name: "Leve",
+      });
+    }
+  });
+
+  it("is off, and sync unaffected, without a resource URL or with a bad one", async () => {
+    for (const MCP_RESOURCE_URL of [
+      undefined,
+      "",
+      "http://sync.test/mcp",
+      "https://sync.test/",
+      "https://sync.test/mcp#x",
+      "not a url",
+    ]) {
+      const { send, reached } = mcpSetup({ MCP_RESOURCE_URL });
+      expect((await send(await signAccess())).status, String(MCP_RESOURCE_URL)).toBe(503);
+      const metadata = await send(null, {
+        path: "/.well-known/oauth-protected-resource/mcp",
+        method: "GET",
+      });
+      expect(metadata.status).toBe(503);
+      expect(reached).toEqual([]);
+      expect((await send(await sign({}), { path: "/sync/hello" })).status).toBe(200);
+    }
+  });
+
+  it("is unavailable, not open, when the key is broken or sign-in isn't configured", async () => {
+    const broken = "-----BEGIN PUBLIC KEY-----\nbm90IGEga2V5\n-----END PUBLIC KEY-----";
+    for (const overrides of [
+      { CLERK_JWT_KEY: broken },
+      { CLERK_JWT_KEY: undefined },
+      { CLERK_ISSUER: undefined },
+    ]) {
+      const { send, reached } = mcpSetup(overrides);
+      expect((await send(await signAccess())).status).toBe(503);
+      expect(reached).toEqual([]);
+    }
+  });
 });

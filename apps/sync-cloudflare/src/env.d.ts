@@ -9,4 +9,5 @@ interface Env {
   CLERK_JWT_KEY?: string;
   CLERK_AUTHORIZED_PARTIES?: string;
   ADMIN_TOKEN?: string;
+  MCP_RESOURCE_URL?: string;
 }
