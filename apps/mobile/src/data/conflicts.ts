@@ -29,12 +29,17 @@ export interface ConflictLine {
 export interface ConflictSide {
   /** What differs on this side, in plain words. */
   lines: ConflictLine[];
-  /** Whether this side can be kept. A change the server refused can't be. */
+  /** Whether this side can be kept. */
   choosable: boolean;
   /** What keeping this side does, for the confirm button. */
   confirm: string;
   /** Why this side can't be kept, when it can't. */
   why?: string;
+  /**
+   * Keeping this side sends a version the server refused once more, which it may refuse again:
+   * said under it, and pausing sync stays on offer.
+   */
+  retry?: string;
   /**
    * Keeping this side loses work that exists nowhere else: said, with an offer to save a copy,
    * before a second confirm.
@@ -138,10 +143,19 @@ function resolutionFor(row: DeviceRecord, side: Side): Resolution["choice"] | "w
       return "keep_theirs";
     case "rejected":
     case "rejected_new":
+      // Sent again unchanged: it can get through once Leve or the server has been fixed. Not one
+      // the account deleted (only saving it as new could keep that), nor one this phone holds
+      // back itself, which no server would take.
+      return row.server?.state === "deleted" || row.problem?.reason === TOO_MANY_DESCENDANTS
+        ? null
+        : "keep_mine";
     case "newer_there":
       return null;
   }
 }
+
+/** A deletion this phone holds back itself: the server would refuse the request whole. */
+const TOO_MANY_DESCENDANTS = "invalid:too_many_descendants";
 
 /**
  * Whether a record can't be settled until the sync running now answers: its upload is on its way,
@@ -916,15 +930,24 @@ function describe(
                       ? "It holds things below it in your account. Keep its version to see them, then delete it again if you want."
                       : "This version can't be kept on its own.",
           }),
-      confirm: goneBoth
-        ? "Keep it deleted"
-        : ownerGoneThere
-          ? noun === "it"
-            ? "Keep it"
-            : `Keep the ${noun}`
-          : ownerGoneHere
-            ? "Delete it"
-            : "Keep this version",
+      ...(phoneOk && (rejected || refusedNew)
+        ? {
+            retry:
+              "Your account didn't take this change. Trying again sends it unchanged: it gets through once Leve or your sync server is fixed, and if not, this comes back.",
+          }
+        : {}),
+      confirm:
+        phoneOk && (rejected || refusedNew)
+          ? "Try again"
+          : goneBoth
+            ? "Keep it deleted"
+            : ownerGoneThere
+              ? noun === "it"
+                ? "Keep it"
+                : `Keep the ${noun}`
+              : ownerGoneHere
+                ? "Delete it"
+                : "Keep this version",
     },
     account: {
       lines: account,

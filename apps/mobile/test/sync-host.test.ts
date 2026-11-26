@@ -374,8 +374,11 @@ it("can't put off an update: pausing sync is the way out, and every screen says 
 it("asks to sign in again whenever the sign-in ran out, with pausing as the way out", async () => {
   data.account = "user_1";
   clerk.signedIn = false;
-  // A "Remind me later" an earlier version saved no longer holds the question back.
+  // What an earlier version's "Remind me later" or "Ignore" saved no longer holds the question back.
   writeDevicePreference("sync.signInReminder", new Date(Date.now() + 60 * 60_000).toISOString());
+  await render();
+  expect(screen()).toContain("Until you sign in again, new workouts and changes stay only on this");
+  writeDevicePreference("sync.signInReminder", "off");
   await render();
   expect(screen()).toContain("Until you sign in again, new workouts and changes stay only on this");
   expect(screen()).not.toContain("Remind me later");
@@ -521,6 +524,32 @@ it("can't keep a change the server refused", async () => {
   await tap("In your account: Name Push");
   await tap("Undo my change");
   expect(pending.settled).toEqual([["routine_folder:f1", "account"]]);
+});
+
+it("offers trying a refused change again, saying so, with pausing still on offer", async () => {
+  clerk.signedIn = true;
+  pending.conflicts = [
+    {
+      ...folderConflict("routine_folder:f1", "Push"),
+      phone: {
+        lines: [{ label: "Name", value: "Push B (couldn't be saved)" }],
+        choosable: true,
+        confirm: "Try again",
+        retry: "Your account didn't take this change. Trying again sends it unchanged.",
+      },
+      account: {
+        lines: [{ label: "Name", value: "Push" }],
+        choosable: true,
+        confirm: "Undo my change",
+      },
+    },
+  ];
+  await render();
+  expect(screen()).toContain("Trying again sends it unchanged.");
+  expect(screen()).toContain("Pause sync");
+  await tap("On this phone: Name Push B (couldn't be saved)");
+  await tap("Try again");
+  expect(pending.settled).toEqual([["routine_folder:f1", "phone"]]);
 });
 
 it("offers pausing sync for a conflict whose phone version can't be kept yet", async () => {

@@ -3,26 +3,25 @@ import { readDevicePreference, writeDevicePreference } from "../data/device-pref
 // Sync's own notes on this phone, kept beside the other device preferences and never synced.
 
 /**
- * Kept under its old name. "off" means signed out from Settings on purpose; an earlier version
- * also wrote it for "Ignore" on the sign-in question, which now reads the same: every screen says
- * the phone isn't syncing, with Sign in.
+ * Written only by a deliberate sign-out. Earlier versions kept "sync.signInReminder" instead, which
+ * "Ignore" and "Remind me later" on the sign-in question wrote too. It is no longer read, so
+ * whatever it holds, a lapsed sign-in asks again (once, for someone who had signed out on purpose).
  */
-const SIGNED_OUT = "sync.signInReminder";
+const SIGNED_OUT = "sync.signedOut";
 const PAUSED = "sync.paused";
 const LAST_SYNCED = "sync.lastSynced";
 
 /**
- * Whether the person signed out from Settings on purpose. Then the app doesn't ask them to sign in
- * again: it says, on every screen, that this phone's data isn't syncing. A sign-in that ran out by
- * itself always asks. (Values an earlier version left here, such as a "Remind me later" time, read
- * as false, so the question comes back.)
+ * Whether the person signed out on purpose (from Settings, or to keep data that isn't the signed-in
+ * account's). Then the app doesn't ask them to sign in again: it says, on every screen, that this
+ * phone's data isn't syncing. A sign-in that ran out by itself always asks.
  */
 export function signedOutOnPurpose(): boolean {
-  return readDevicePreference(SIGNED_OUT) === "off";
+  return readDevicePreference(SIGNED_OUT) === true;
 }
 
 export function setSignedOutOnPurpose(value: boolean): void {
-  writeDevicePreference(SIGNED_OUT, value ? "off" : "");
+  writeDevicePreference(SIGNED_OUT, value);
 }
 
 /**

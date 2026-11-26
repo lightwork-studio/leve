@@ -293,10 +293,7 @@ it("asks about a refused workout the account has no version of, showing everythi
   expect(rest).toEqual([]);
   expect(conflict).toMatchObject({
     title: "Offline Day",
-    phone: {
-      choosable: false,
-      why: "This phone's change couldn't be saved in your account.",
-    },
+    phone: { choosable: true, confirm: "Try again" },
     account: {
       lines: [{ label: "Workout", value: "Not in your account" }],
       choosable: true,
@@ -332,7 +329,7 @@ it("asks about a refused change on its own, apart from valid changes beside it",
   const refused = all.find((item) => item.key !== "workout:w1")!;
   expect(title.phone.choosable).toBe(true);
   expect(refused).toMatchObject({
-    phone: { choosable: false },
+    phone: { choosable: true, confirm: "Try again" },
     account: { confirm: "Undo my change" },
   });
 
@@ -424,7 +421,7 @@ it("settles a record deleted in both places", async () => {
   expect(b.store.problems()).toEqual([]);
 });
 
-it("still asks about other clashes in a workout that also holds a refused change it can't settle", async () => {
+it("still asks about other clashes in a workout that also holds a refused change", async () => {
   const { a, b } = await twoPhones((store) => {
     store.put("workout", "w1", workout("Push"));
     store.put("workout_exercise", "e1", entry("w1"));
@@ -441,9 +438,41 @@ it("still asks about other clashes in a workout that also holds a refused change
   expect(all.map((item) => item.key)).toEqual(["workout:w1", "workout:w1|workout_set:new"]);
   expect(all[0]?.phone.choosable).toBe(true);
   expect(all[1]).toMatchObject({
-    phone: { choosable: false },
+    phone: { choosable: true, confirm: "Try again" },
     account: { choosable: true, confirm: "Delete it" },
   });
+});
+
+it("tries a refused change again: refused again it comes back, and it gets through once the server takes it", async () => {
+  const b = await phone("b");
+  b.store.put("workout", "w1", workout("Offline Day"));
+  b.store.put("workout_exercise", "e1", entry("w1"));
+  b.store.put("workout_set", "s1", set(60, 10));
+  refuse = new Set(["workout:w1"]);
+  await b.sync();
+  const [first] = conflicts(b.store);
+  expect(first!.phone.retry).toContain("Trying again sends it unchanged");
+  settleConflict(b.store, first!, "phone");
+  expect(b.store.get("workout", "w1")?.status).toBe("pending");
+  expect(conflicts(b.store)).toEqual([]);
+
+  // Still refused: asked again, nothing lost.
+  await b.sync();
+  const [again, ...rest] = conflicts(b.store);
+  expect(rest).toEqual([]);
+  expect(again).toMatchObject({ key: first!.key, phone: { confirm: "Try again" } });
+  expect(b.store.get("workout_set", "s1")?.content).toMatchObject({ weightKg: 60 });
+
+  // Fixed: trying again saves it, with what's below it, in the account.
+  refuse = new Set();
+  settleConflict(b.store, again!, "phone");
+  await b.sync();
+  expect(conflicts(b.store)).toEqual([]);
+  expect(b.store.problems()).toEqual([]);
+  const c = await phone("c");
+  await c.sync();
+  expect(c.store.get("workout", "w1")?.content).toMatchObject({ title: "Offline Day" });
+  expect(c.store.get("workout_set", "s1")?.content).toMatchObject({ weightKg: 60 });
 });
 
 it("settles a set deleted in both places on its own", async () => {

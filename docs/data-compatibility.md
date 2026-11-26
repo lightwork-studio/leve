@@ -261,10 +261,10 @@ the popup settles it itself. A conflict the running sync is still answering (an 
 server restore, a download filling in the server's copy, a connection still being made, a workout
 deleted here that is still to upload, or work below something deleted in the account that is on its
 way there and back) waits for that answer. Everything else is asked about. When this phone's version
-can't be kept yet (the server needs an update to take its fields or features, or it refused the
-version, or only a newer Leve can show the account's version), the popup says why and offers the
-account's version (one only a newer Leve can show is kept unseen, after a second confirm with an
-offer to save a copy), or pausing sync instead. A deletion made here that a restored server never
+can't be kept yet (the server needs an update to take its fields or features, or only a newer Leve
+can show the account's version), the popup says why and offers the account's version (one only a
+newer Leve can show is kept unseen, after a second confirm with an offer to save a copy), or pausing
+sync instead. A version the server refused can also be tried again (see below). A deletion made here that a restored server never
 had is weighed against the account's copy from before the restore; one neither side has a copy of is
 agreed on, and sent so the server keeps a marker. A record in a state the popup can't settle is
 still shown, with pausing sync as the way out. Letting go of something the account deleted first
@@ -288,12 +288,14 @@ user can:
   the account holds nothing below it: it shows the account's version, then sends the deletion
   again against it. Otherwise only the account's version can be kept, to be looked at first.
 - A refused (`invalid`) change is decided on its own, so undoing it never undoes valid changes made
-  beside it. The popup offers only undoing it (keep theirs), since the server won't take it as it
-  is. One with no account copy (never reached the account, or deleted there since) can only be
-  deleted, together with what this phone holds below it, which the popup lists first; since
-  nothing else holds it, the popup asks once more and offers to save a copy first. To keep it,
-  the person pauses sync and edits it again where it is shown; the edited version is sent once
-  sync resumes.
+  beside it. The popup offers undoing it (keep theirs) or trying again (keep mine), which sends it
+  unchanged: it gets through once Leve or the server is fixed, and if it is refused again the
+  popup asks again. Pausing sync stays on offer. Trying again isn't offered for a change to a record
+  deleted in the account, nor for a deletion this phone holds back itself because the server would
+  refuse it whole. One with no account copy (never reached the account, or deleted there since) is
+  undone by deleting it, together with what this phone holds below it, which the popup lists first;
+  since nothing else holds it, the popup asks once more and offers to save a copy first. Editing it
+  again while sync is paused also sends the edited version once sync resumes.
 
 ## Sync never stops silently
 

@@ -94,8 +94,9 @@ export function ConflictPrompt({
       ? `${current[picked].confirm} for good`
       : current[picked].confirm
     : "Choose a version";
-  // This phone's version can't be kept now: keeping it on the phone means pausing sync.
-  const stuck = !current.phone.choosable;
+  // This phone's version can't be kept now, or only tried again: keeping it on the phone means
+  // pausing sync.
+  const stuck = !current.phone.choosable || !!current.phone.retry;
   if (current.review) {
     // Settled on the workout's own review: the popup says what happened and leads there.
     return (
@@ -258,6 +259,7 @@ function Choice({
         </View>
       ))}
       {!enabled && side.why ? <Text style={styles.refused}>{side.why}</Text> : null}
+      {enabled && side.retry ? <Text style={styles.refused}>{side.retry}</Text> : null}
     </Tap>
   );
 }

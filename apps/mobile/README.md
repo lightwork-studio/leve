@@ -90,8 +90,9 @@ here as in progress too, doesn't hold them back.
   time, and asks which to keep. Nothing is chosen in advance. A workout or exercise deleted on one
   side while the other changed what's in it leads to the workout's own review (History or the
   workout), and the popup asks again until that is done. When this phone's version can't be kept
-  yet (the server needs an update, it refused the change, or only a newer Leve can show the
-  account's version), the popup says why and offers the account's version or pausing sync. Only a
+  yet (the server needs an update, or only a newer Leve can show the account's version), the popup
+  says why and offers the account's version or pausing sync. A change the server refused can be
+  undone, tried again (it comes back if refused again) or kept on the phone by pausing sync. Only a
   conflict the running sync is still answering waits, and only until that answer arrives.
 
 ## TestFlight
