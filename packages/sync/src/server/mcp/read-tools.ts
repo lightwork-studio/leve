@@ -194,7 +194,8 @@ function weekOf(time: number, firstWeekday: number, date: Intl.DateTimeFormat) {
     Number(parts.day),
   );
   start.setUTCDate(start.getUTCDate() - ((start.getUTCDay() - firstWeekday + 7) % 7));
-  return start.toISOString().split("T")[0];
+  const stamp = start.toISOString();
+  return stamp.slice(0, stamp.indexOf("T"));
 }
 
 export function registerReadTools(server: McpServer, load: ViewLoader): void {
