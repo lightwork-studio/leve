@@ -49,6 +49,23 @@ export function bearerAuthentication(
   return (request) => authenticateBearer(authenticator, request.headers.authorization, onError);
 }
 
+class AccessDenied extends Error {
+  readonly code: "unauthorized" | "unavailable";
+  constructor(code: AccessDenied["code"]) {
+    super(code);
+    this.code = code;
+  }
+}
+
+async function device(options: SyncHttpOptions, request: IncomingMessage) {
+  const outcome = await options.authenticate(request);
+  if ("unavailable" in outcome) throw new AccessDenied("unavailable");
+  if (!("principal" in outcome) || outcome.principal.client.kind !== "device") {
+    throw new AccessDenied("unauthorized");
+  }
+  return outcome.principal;
+}
+
 /** The sync HTTP endpoints. It only parses, authenticates and routes; the service decides. */
 export function createSyncHttpHandler(options: SyncHttpOptions): RequestListener {
   return async (request, response) => {
@@ -71,6 +88,7 @@ export function createSyncHttpHandler(options: SyncHttpOptions): RequestListener
         send(errorReply("invalid_request", "unknown endpoint"));
         return;
       }
+      const principal = await device(options, request);
       // JSON only: a cross-site form can't send it without the browser asking first.
       const type = request.headers["content-type"]?.split(";")[0]?.trim().toLowerCase();
       if (type !== "application/json") {
@@ -84,21 +102,22 @@ export function createSyncHttpHandler(options: SyncHttpOptions): RequestListener
         send(errorReply("invalid_request", (error as Error).message.slice(0, 200)));
         return;
       }
-      // Check the device token after receiving the full request: revocation takes effect
-      // while a request body is still arriving.
-      const outcome = await options.authenticate(request);
-      if ("unavailable" in outcome) {
-        send(errorReply("unavailable", "sync is temporarily unavailable"));
-        return;
-      }
-      // An agent's token never syncs, so an MCP client can't stand in for a phone.
-      if (!("principal" in outcome) || outcome.principal.client.kind !== "device") {
-        send(errorReply("unauthorized", "sign in again"));
-        return;
-      }
-      const accountId = outcome.principal.account;
-      send(await options.service[route](accountId, body));
+      const recheck = async () => {
+        const current = await device(options, request);
+        if (current.account !== principal.account || current.client.id !== principal.client.id) {
+          throw new AccessDenied("unauthorized");
+        }
+      };
+      send(await options.service[route](principal.account, body, recheck));
     } catch (error) {
+      if (error instanceof AccessDenied) {
+        send(
+          error.code === "unavailable"
+            ? errorReply("unavailable", "sync is temporarily unavailable")
+            : errorReply("unauthorized", "sign in again"),
+        );
+        return;
+      }
       if ((error as Error)?.name === "AccountIdError") {
         send(errorReply("unauthorized", "sign in again"));
         return;

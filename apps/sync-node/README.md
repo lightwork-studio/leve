@@ -57,7 +57,9 @@ stops until they pair again.
 `pnpm --filter @leve/sync-node bundle` builds one file, `dist/leve-sync.mjs`, that runs with Node 24
 and nothing else. Run it in one of these ways, and put HTTPS in front of it. Keep the data
 directory on a local disk: one server uses it at a time, held by a file lock that network
-filesystems may not honour.
+filesystems may not honour. When reusing a data directory, verify it is owned by the service
+user and has mode 0700. Correct ownership and permissions on existing databases and journals
+before starting the service. New files are private by default.
 
 ### systemd
 
@@ -118,6 +120,9 @@ sudo -u leve LEVE_ADMIN_SOCKET=/run/leve/admin.sock leve-sync admin accounts lis
 sudo -u leve LEVE_ADMIN_SOCKET=/run/leve/admin.sock leve-sync admin backup /var/backups/leve
 ```
 
+If `node` is unavailable on the admin user's PATH, invoke the wrapper's bundle directly with
+`sudo -u leve LEVE_ADMIN_SOCKET=/run/leve/admin.sock /path/to/node /usr/local/bin/leve-sync admin accounts list`.
+
 ### Container
 
 The [Containerfile](Containerfile) packages the bundle on `node:24-slim`, running as user and group
@@ -176,7 +181,8 @@ Restoring checks the copy before replacing anything, keeps the database it repla
 a new lineage. Its phones notice, download everything again and offer back what the backup lacks;
 anything that differs goes to the person for review (see
 [Server restores](../../docs/data-compatibility.md#server-restores)). A restore refuses another
-account's backup unless you add `--other-account`.
+account's backup unless you add `--other-account`. This safeguard uses the backup's original
+filename. Preserve that filename and confirm the account in the manifest before restoring.
 
 What a restore can't bring back:
 
@@ -194,13 +200,13 @@ with a verified backup. Keep the moved files until you confirm the result.
 ### Restoring accounts.db
 
 `accounts.db` contains sign-ins. If it is lost or damaged, record `accounts list` if you can.
-Stop the server and stage the backup copy as a separate, owner-readable file on the data disk.
-Move the current `accounts.db` and any `-journal`, `-wal` and `-shm` sidecars together to a
+Take the public HTTPS route offline and stop the server. Stage the backup copy as a separate file
+on the data disk, owned by the service user with mode 0600. Move the current `accounts.db` and any `-journal`, `-wal` and `-shm` sidecars together to a
 private recovery directory. Rename the staged copy to `accounts.db` and start the service.
 Keep the recovery files until you confirm the result.
 
 Phones paired after the backup need a new pairing. Tokens revoked after the backup may work again,
-so list and revoke them before reopening the public listener. A recent backup can also reinstate
+so list and revoke them before reopening the HTTPS route. A recent backup can also reinstate
 unexpired pairing codes. Start with `LEVE_PAIRING=off` until any restored codes expire.
 Accounts created after that backup are
 missing from it, though their databases are still there: the next `backup` lists them as not

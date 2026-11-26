@@ -19,11 +19,21 @@ let base: string;
 /** Unexpected failures the handler reported, with the request path. */
 let reported: { error: unknown; url: string | undefined }[];
 /** Makes the onError hook itself fail: by throwing, or with a rejected promise. */
+let revoked: string | null;
+let pullWaiting: PromiseWithResolvers<void>;
 let hookFails: "throws" | "rejects" | null;
 
 beforeEach(async () => {
   world = new World();
-  server = world.server();
+  pullWaiting = Promise.withResolvers<void>();
+  server = world.server({
+    setTimer: (fn, ms) => {
+      const timer = setTimeout(fn, ms);
+      pullWaiting.resolve();
+      return { cancel: () => clearTimeout(timer) };
+    },
+  });
+  revoked = null;
   reported = [];
   hookFails = null;
   http = createServer(
@@ -31,6 +41,7 @@ beforeEach(async () => {
       service: server.service,
       // The token names the account, except for a few that act out other answers.
       authenticate: bearerAuthentication(async (token) => {
+        if (token === revoked) return { refused: true };
         if (token === "down") return { unavailable: true };
         if (token === "keyless") throw new Error("the key can't be read");
         if (token.startsWith("agent")) {
@@ -143,6 +154,36 @@ it("distinguishes a written revision from an equivalent legacy create, including
 });
 
 describe("HTTP boundary", () => {
+  it("requires an active device when a waiting pull finishes", async () => {
+    const active = httpTransport(base, { authorization: "Bearer alice" });
+    const greeting = await active("/sync/hello", { releases: ["1.0"], app: "test" });
+    expect(greeting.status).toBe(200);
+    const { lineage } = greeting.body as { lineage: string };
+    const pull = active("/sync/pull", { release: "1.0", lineage, cursor: 0, waitMs: 1000 });
+    await pullWaiting.promise;
+    revoked = "alice";
+    // Another device writing to the account wakes the waiting phone.
+    const reply = await server.transport("alice")("/sync/push", {
+      release: "1.0",
+      lineage,
+      submissions: [
+        {
+          submissionId: "other-device",
+          op: "put",
+          kind: "workout",
+          id: "w1",
+          baseRevision: null,
+          content: workout("Training", { initialPlan: null }),
+        },
+      ],
+    });
+    expect(reply.status).toBe(200);
+    expect(await pull).toMatchObject({
+      status: 401,
+      body: { error: { code: "unauthorized" } },
+    });
+  });
+
   it("answers unknown routes, other methods, missing auth and bad bodies with the error envelope", async () => {
     const hello = JSON.stringify({ releases: ["1.0"], app: "x" });
     errorEnvelope(await raw("/sync/nowhere", { body: hello }), 400, "invalid_request");
