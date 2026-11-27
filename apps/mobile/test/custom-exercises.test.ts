@@ -21,6 +21,7 @@ vi.mock("react-native-svg", () => ({ default: "Svg", Path: "Path" }));
 vi.mock("react-native", () => ({
   useColorScheme: () => "dark",
   View: "View",
+  Image: "Image",
   Text: "Text",
   TextInput: "Input",
   ScrollView: "Scroll",

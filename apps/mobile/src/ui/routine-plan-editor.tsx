@@ -21,6 +21,7 @@ import { Button } from "./buttons.tsx";
 import { ChoiceRow, MenuRow } from "./choice-row.tsx";
 import { Dialog } from "./dialog.tsx";
 import { DragBlock } from "./drag-block.tsx";
+import { ExerciseThumb } from "./exercise-image.tsx";
 import { ExercisePicker } from "./exercise-picker.tsx";
 import { TitleField } from "./field.tsx";
 import { announce } from "./focus.ts";
@@ -436,7 +437,11 @@ function ExerciseBlock({
     <View style={styles.block}>
       {group ? <View style={styles.rail} /> : null}
       <View style={styles.head}>
-        <Text style={styles.index}>{twoDigits(index + 1)}</Text>
+        <ExerciseThumb
+          exerciseId={entry.exercise.id}
+          size={44}
+          fallback={<Text style={styles.index}>{twoDigits(index + 1)}</Text>}
+        />
         <View style={styles.names}>
           <Text accessibilityRole="header" style={styles.name} numberOfLines={1}>
             {name}
@@ -841,7 +846,11 @@ function ReorderList({
                       group && styles.reorderSuperset,
                     ]}
                   >
-                    <Text style={styles.index}>{twoDigits(index + 1)}</Text>
+                    <ExerciseThumb
+                      exerciseId={entry.exercise.id}
+                      size={44}
+                      fallback={<Text style={styles.index}>{twoDigits(index + 1)}</Text>}
+                    />
                     <View style={styles.names}>
                       <Text style={styles.reorderName} numberOfLines={1}>
                         {entry.exercise.name}
@@ -911,9 +920,9 @@ const sheet = themedStyles((c) => ({
     paddingTop: 14,
     paddingRight: 12,
     paddingBottom: 8,
-    paddingLeft: 16,
+    paddingLeft: 12,
   },
-  index: { ...font.mono, fontSize: 12, color: c.fg3, width: 18 },
+  index: { ...font.mono, fontSize: 12, color: c.fg3 },
   names: { flex: 1, minWidth: 0 },
   name: { ...font.bodyBold, fontSize: 17, lineHeight: 20, letterSpacing: -0.17, color: c.fg },
   metaRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 5 },

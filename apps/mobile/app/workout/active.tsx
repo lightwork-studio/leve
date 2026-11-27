@@ -102,7 +102,7 @@ import { BottomSheet } from "../../src/ui/bottom-sheet.tsx";
 import { CommitButton } from "../../src/ui/commit-button.tsx";
 import { Enter, StillOnOpen } from "../../src/ui/enter.tsx";
 import { ExerciseCardNotes } from "../../src/ui/exercise-card-notes.tsx";
-import { ExercisePlate } from "../../src/ui/exercise-image.tsx";
+import { ExercisePlate, ExerciseThumb } from "../../src/ui/exercise-image.tsx";
 import { ExerciseMoveButtons } from "../../src/ui/exercise-move-buttons.tsx";
 import { ExercisePicker } from "../../src/ui/exercise-picker.tsx";
 import { lastFocusMove, moveFocus } from "../../src/ui/focus.ts";
@@ -2170,34 +2170,47 @@ function EntryCard({
     <Enter style={styles.card}>
       <StillOnOpen>
         <View style={styles.cardHead}>
-          <Text style={[styles.cardIndex, complete && styles.cardIndexDone]}>
-            {String(index + 1).padStart(2, "0")}
-          </Text>
-          <Tap
-            ref={headingRef}
-            accessibilityRole="button"
-            accessibilityLabel={name}
-            accessibilityState={{ expanded }}
-            onPress={() => interact(() => setExpanded(!expanded))}
-            scaleTo={1}
-            style={styles.cardTitle}
-          >
-            <Text style={styles.exercise} numberOfLines={1}>
-              {name}
-            </Text>
-            <Text style={styles.exerciseLine} numberOfLines={1}>
-              {[`${done} of ${setCount(entry.sets.length)}`, group].filter(Boolean).join(" · ")}
-            </Text>
-          </Tap>
-          <Tap
-            accessibilityRole="button"
-            accessibilityLabel={`Rest ${restSeconds > 0 ? clock(restSeconds) : "off"} for ${name}. Change it`}
-            onPress={() => interact(onRest)}
-            style={styles.chip}
-          >
-            <TimerIcon color={c.fg2} size={15} />
-            <Text style={styles.chipText}>{restSeconds > 0 ? clock(restSeconds) : "Off"}</Text>
-          </Tap>
+          {/* The exercise's picture; without one, its number. A finished exercise shows a check. */}
+          <ExerciseThumb
+            exerciseId={entry.entry.content.exerciseId}
+            done={complete}
+            fallback={
+              <Text style={[styles.cardIndex, complete && styles.cardIndexDone]}>
+                {complete ? "" : String(index + 1).padStart(2, "0")}
+              </Text>
+            }
+          />
+          <View style={styles.cardTitle}>
+            <Tap
+              ref={headingRef}
+              accessibilityRole="button"
+              accessibilityLabel={name}
+              accessibilityState={{ expanded }}
+              onPress={() => interact(() => setExpanded(!expanded))}
+              hitSlop={{ top: 12, bottom: 4 }}
+              scaleTo={1}
+            >
+              <Text style={styles.exercise} numberOfLines={1}>
+                {name}
+              </Text>
+            </Tap>
+            {/* The rest time sits under the name, so the name keeps the width of the card. */}
+            <View style={styles.cardMeta}>
+              <Text style={styles.exerciseLine} numberOfLines={1}>
+                {[`${done} of ${setCount(entry.sets.length)}`, group].filter(Boolean).join(" · ")}
+              </Text>
+              <Tap
+                accessibilityRole="button"
+                accessibilityLabel={`Rest ${restSeconds > 0 ? clock(restSeconds) : "off"} for ${name}. Change it`}
+                onPress={() => interact(onRest)}
+                hitSlop={{ top: 9, bottom: 9, left: 4, right: 4 }}
+                style={styles.chip}
+              >
+                <TimerIcon color={c.fg2} size={13} />
+                <Text style={styles.chipText}>{restSeconds > 0 ? clock(restSeconds) : "Off"}</Text>
+              </Tap>
+            </View>
+          </View>
           <Tap
             accessibilityRole="button"
             accessibilityLabel={`Manage ${name}`}
@@ -2862,28 +2875,29 @@ const sheet = themedStyles((c) => ({
   cardHead: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: 12,
     paddingTop: 10,
-    paddingBottom: 4,
-    paddingLeft: 16,
+    paddingBottom: 6,
+    paddingLeft: 10,
     paddingRight: 10,
   },
-  cardIndex: { ...font.mono, fontSize: 12, color: c.fg3, width: 18 },
+  cardIndex: { ...font.mono, fontSize: 12, color: c.fg3 },
   cardIndexDone: { color: c.fg },
   cardTitle: { flex: 1, minWidth: 0, minHeight: 48, justifyContent: "center" },
   exercise: { ...type.cardTitle, color: c.fg },
-  exerciseLine: { ...type.label, color: c.fg3, marginTop: 5 },
+  cardMeta: { flexDirection: "row", alignItems: "center", gap: space.sm, marginTop: 6 },
+  exerciseLine: { ...type.label, color: c.fg3, flexShrink: 1 },
   chip: {
-    minHeight: 44,
-    paddingHorizontal: 10,
-    borderRadius: radius.chip,
+    minHeight: 26,
+    paddingHorizontal: 8,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: c.line2,
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: 5,
   },
-  chipText: { ...font.mono, fontSize: 12, color: c.fg2 },
+  chipText: { ...font.mono, fontSize: 11, color: c.fg2 },
   chipIcon: {
     width: 44,
     minHeight: 44,

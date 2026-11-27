@@ -421,7 +421,9 @@ describe("fields, search and notices", () => {
     expect(byLabel("Clear exercise search")).not.toBeNull();
     await press("Muscle filter, All muscles");
     const bench = (muscle = "") => byLabel(`Add Bench Press, Weight and reps${muscle}`);
-    const thumbnail = bench()?.querySelector('[aria-label=""]');
+    // Bench Press has an image, so its thumbnail is that image rather than the muscle figure.
+    const picture = (muscle = "") => bench(muscle)?.querySelector("img");
+    const thumbnail = picture();
     expect(thumbnail).toBeInstanceOf(HTMLElement);
     const select = async (muscle: string) => {
       const chip = Array.from(document.querySelectorAll<HTMLElement>('[role="radio"]')).find(
@@ -433,11 +435,11 @@ describe("fields, search and notices", () => {
     };
 
     expect((await select("Chest")).getAttribute("aria-checked")).toBe("true");
-    expect(bench(", Chest (primary)")?.querySelector('[aria-label=""]')).toBe(thumbnail);
+    expect(picture(", Chest (primary)")).toBe(thumbnail);
     expect((await select("Triceps")).getAttribute("aria-checked")).toBe("true");
-    expect(bench(", Triceps (secondary)")?.querySelector('[aria-label=""]')).toBe(thumbnail);
+    expect(picture(", Triceps (secondary)")).toBe(thumbnail);
     expect((await select("Triceps")).getAttribute("aria-checked")).toBe("false");
-    expect(bench()?.querySelector('[aria-label=""]')).toBe(thumbnail);
+    expect(picture()).toBe(thumbnail);
   });
 
   it("shows a toast for a while, the newest replacing the last", async () => {
