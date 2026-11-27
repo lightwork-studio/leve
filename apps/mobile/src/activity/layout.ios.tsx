@@ -102,6 +102,9 @@ function workoutLayout(p: WorkoutContent, env: LiveActivityEnvironment) {
     />
   );
   const restTicket = p.restKey ? `leveRest.${p.restKey}` : p.token;
+  // Native timer actions can change the deadline without changing the set's ticket.
+  const logTicket = p.token.split(".");
+  if (logTicket.length === 5 && logTicket[0] === "leve1") logTicket[3] = String(p.restEnd);
   const controls = !p.interactive ? (
     open
   ) : resting ? (
@@ -111,7 +114,7 @@ function workoutLayout(p: WorkoutContent, env: LiveActivityEnvironment) {
       {control("Skip", `${restTicket}:skip`, "#383D46")}
     </HStack>
   ) : p.canLog ? (
-    control("Log", `${p.token}:log`, orange)
+    control("Log", `${logTicket.join(".")}:log`, orange)
   ) : (
     open
   );

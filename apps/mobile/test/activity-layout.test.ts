@@ -222,3 +222,9 @@ it("uses rest-specific intent targets for lock-screen and island buttons", () =>
     vi.useRealTimers();
   }
 });
+
+it("uses the actual countdown deadline in Log after a native skip", () => {
+  const env = { colorScheme: "dark", isStale: false } as const;
+  const display = layout({ ...content, token: "leve1.epoch.2.120000.digest", restEnd: 0 }, env);
+  expect(targets(display.banner)).toEqual(["leve1.epoch.2.0.digest:log"]);
+});

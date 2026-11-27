@@ -6,6 +6,9 @@ import {
   type WorkoutContent,
   workoutSession,
 } from "../src/activity/session.ts";
+import { readLiveActivityRest } from "../src/data/live-activity-rest";
+
+vi.mock("../src/data/live-activity-rest", () => ({ readLiveActivityRest: vi.fn(() => null) }));
 
 function frame(): ActivityFrame {
   return {
@@ -172,6 +175,42 @@ describe("workout Live Activity", () => {
         expect(session.interact(handle.getId(), `${token}:log`)).toBe(true);
         expect(next.act).toHaveBeenCalledExactlyOnceWith("log");
       } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+  it.each(["suspended", "restarted"])(
+    "accepts Log after native Skip with the app %s",
+    async (mode) => {
+      vi.useFakeTimers();
+      try {
+        vi.setSystemTime(100_000);
+        const { session, handle, factory, memory } = harness();
+        const next = frame();
+        await session.publish({
+          ...next,
+          display: { ...next.display, restKey: "rest", restStart: 90_000, restEnd: 115_000 },
+        });
+        const shown = handle.update.mock.calls[0]?.[0].token;
+        if (!shown) throw Error("Missing rest ticket");
+        const parts = shown.split(".");
+        parts[3] = "0";
+        const log = `${parts.join(".")}:log`;
+        const receiver =
+          mode === "restarted" ? workoutSession(factory, "leve-preview", memory) : session;
+        if (mode === "restarted") await receiver.publish(next);
+
+        expect(receiver.interact(handle.getId(), `${shown}:log`)).toBe(false);
+        if (mode === "suspended") {
+          vi.mocked(readLiveActivityRest).mockImplementation((key) =>
+            key === "rest" ? { start: 0, end: 0 } : null,
+          );
+        }
+        expect(receiver.interact(handle.getId(), log)).toBe(true);
+        expect(receiver.interact(handle.getId(), log)).toBe(true);
+        expect(next.act).toHaveBeenCalledExactlyOnceWith("log");
+      } finally {
+        vi.mocked(readLiveActivityRest).mockReset();
         vi.useRealTimers();
       }
     },
