@@ -1,7 +1,7 @@
 import { type DeviceStore, openDeviceStore } from "@leve/storage";
 import { createSqlJsEngine } from "@leve/storage/sqljs";
 import initSqlJs from "sql.js";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { previewContract } from "../../../packages/contract/test/support/preview-contract.ts";
 import { FaultyTransport, World } from "../../../packages/sync/test/support/harness.ts";
 import {
@@ -278,7 +278,9 @@ describe("exercise notes on the device", () => {
 
   it("writes, pins, edits and deletes notes, with their comments", async () => {
     db = await openStore("/exercise-notes.db");
+    vi.useFakeTimers({ toFake: ["Date"] });
     try {
+      vi.setSystemTime(at(1));
       const id = beginWorkout(db);
       bench(db, id);
       const seat = addExerciseNote(db, {
@@ -287,6 +289,7 @@ describe("exercise notes on the device", () => {
         text: " Seat 3 ",
         pinned: true,
       });
+      vi.setSystemTime(at(1, 10, 1));
       const today = addExerciseNote(db, {
         exerciseId: "bench",
         workoutId: id,
@@ -312,6 +315,7 @@ describe("exercise notes on the device", () => {
       expect(commentsByNote(db, "exercise_note").get(seat)).toBeUndefined();
       expect(card()?.pinned.map((n) => n.text)).toEqual(["Left shoulder twinged"]);
     } finally {
+      vi.useRealTimers();
       db.close();
     }
   });
