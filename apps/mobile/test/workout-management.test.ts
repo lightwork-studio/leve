@@ -110,6 +110,8 @@ vi.mock("../src/data/app-data.tsx", () => ({
 vi.mock("expo-router", () => ({
   useSegments: () => ["(tabs)", "index"],
   useNavigation: () => navigation,
+  // The tab screens offer their week bar action while focused.
+  useIsFocused: () => true,
   usePreventRemove: (enabled: boolean) => {
     preventRemoval = enabled;
     return () => {

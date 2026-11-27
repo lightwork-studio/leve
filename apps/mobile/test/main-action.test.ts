@@ -8,7 +8,7 @@ vi.mock("expo-router", () => ({
 }));
 let current = "Train";
 
-const { MainAction, MainActionProvider, MainActionSlot } = await import(
+const { BarAction, MainAction, MainActionProvider, MainActionSlot, useBarAction } = await import(
   "../src/ui/main-action.tsx"
 );
 
@@ -59,6 +59,55 @@ it("shows the focused screen's action, follows changes, and gives way to a runni
     expect(shown()).toEqual(["running"]);
   } finally {
     await act(() => tree?.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+/** A tab screen offering a main action and a week bar action. */
+function BarScreen({ name, main, bar }: { name: string; main: ReactNode; bar: ReactNode }) {
+  current = name;
+  return h("screen", null, h(MainAction, null, main), h(BarAction, null, bar));
+}
+
+function Bar() {
+  return h("bar", null, useBarAction());
+}
+
+it("keeps the week bar's action apart from the main action, and follows the focused tab", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  focus.Train = true;
+  focus.History = false;
+  running = false;
+  const tabs = (history: ReactNode) =>
+    h(
+      MainActionProvider,
+      null,
+      h(BarScreen, { name: "Train", main: h("start", null), bar: h("settings", null) }),
+      h(BarScreen, { name: "History", main: null, bar: history }),
+      h(Bar),
+      h(MainActionSlot, { render: (offered: ReactNode) => h("slot", null, offered) }),
+    );
+  let tree: ReactTestRenderer | undefined;
+  try {
+    const inside = (type: string) =>
+      tree?.root.findByType(type as never).children.map((c) => (c as { type: string }).type);
+    await act(() => {
+      tree = create(tabs(h("search", null)));
+    });
+    expect(inside("bar")).toEqual(["settings"]);
+    expect(inside("slot")).toEqual(["start"]);
+    focus.Train = false;
+    focus.History = true;
+    await act(() => tree?.update(tabs(h("search", null))));
+    expect(inside("bar")).toEqual(["search"]);
+    expect(inside("slot")).toEqual([]);
+    // A tab with no action of its own leaves the bar's place empty.
+    await act(() => tree?.update(tabs(null)));
+    expect(inside("bar")).toEqual([]);
+  } finally {
+    await act(() => tree?.unmount());
+    focus.Train = true;
+    focus.History = false;
     vi.unstubAllGlobals();
   }
 });

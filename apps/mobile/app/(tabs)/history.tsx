@@ -1,9 +1,16 @@
 import type { WeightUnit } from "@leve/core";
 import { Link, useLocalSearchParams, useNavigation } from "expo-router";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FlatList, Platform, SectionList, StyleSheet, Text, View } from "react-native";
+import { type ComponentRef, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  FlatList,
+  Platform,
+  SectionList,
+  StyleSheet,
+  Text,
+  type TextInput,
+  View,
+} from "react-native";
 import { useReducedMotion } from "react-native-reanimated";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHistory, useProgress } from "../../src/data/queries.ts";
 import {
   displayedWorkoutTitle,
@@ -27,9 +34,15 @@ import {
   workoutMinutesLabel,
 } from "../../src/ui/format.ts";
 import { ChevronIcon, CloseIcon, SearchIcon } from "../../src/ui/icons.tsx";
+import { BarAction } from "../../src/ui/main-action.tsx";
 import { MonthCard } from "../../src/ui/month-odometer.tsx";
 import { RecordMark } from "../../src/ui/record-mark.tsx";
-import { TabTitle, tabContentStyle, useTabBottomPadding } from "../../src/ui/screen.tsx";
+import {
+  HeaderButton,
+  tabContentStyle,
+  tabTopPadding,
+  useTabBottomPadding,
+} from "../../src/ui/screen.tsx";
 import { SearchField } from "../../src/ui/search-field.tsx";
 import { Tap } from "../../src/ui/tap.tsx";
 import { themedStyles, useColors, useStyles } from "../../src/ui/themed.ts";
@@ -58,7 +71,13 @@ export default function HistoryScreen() {
   const lit = useJustSaved(saved, months, setQuery);
   const { index } = useProgress();
   const styles = useStyles(sheet);
-  const insets = useSafeAreaInsets();
+  const c = useColors();
+  const search = useRef<ComponentRef<typeof TextInput>>(null);
+  // The field heads the list: scroll back to it, then open it for typing.
+  const openSearch = useCallback(() => {
+    list.current?.getScrollResponder()?.scrollTo({ y: 0, animated: !reduced });
+    search.current?.focus();
+  }, [reduced]);
   const paddingBottom = useTabBottomPadding();
   const records = useMemo(() => recordsByWorkout(index), [index]);
   // A virtualised list: only the rows near the screen are rendered, so years of workouts open as
@@ -121,13 +140,11 @@ export default function HistoryScreen() {
     ),
     [unit],
   );
-  const total = months.reduce((sum, month) => sum + month.workouts.length, 0);
-  const oldest = months.at(-1);
   return (
     <SectionList
       ref={list}
       style={styles.scroll}
-      contentContainerStyle={[tabContentStyle, { paddingTop: insets.top + 20, paddingBottom }]}
+      contentContainerStyle={[tabContentStyle, { paddingTop: tabTopPadding, paddingBottom }]}
       sections={sections}
       keyboardShouldPersistTaps="handled"
       keyExtractor={(workout) => workout.id}
@@ -147,14 +164,12 @@ export default function HistoryScreen() {
       }}
       ListHeaderComponent={
         <View style={styles.head}>
-          <TabTitle
-            title="History"
-            {...(oldest
-              ? {
-                  eyebrow: `${total} ${total === 1 ? "session" : "sessions"} since ${monthLabel(oldest.year, oldest.month)}`,
-                }
-              : {})}
-          />
+          {/* Search sits beside the week over the tabs: it brings the field into view and opens it. */}
+          <BarAction>
+            <HeaderButton label="Search workouts or exercises" onPress={openSearch}>
+              <SearchIcon color={c.fg2} size={19} />
+            </HeaderButton>
+          </BarAction>
           {rejectedDeletions.map((record) => (
             <WorkoutSyncReview
               key={record.id}
@@ -171,6 +186,7 @@ export default function HistoryScreen() {
             records={records}
           />
           <SearchField
+            ref={search}
             label="Search workouts or exercises"
             placeholder="Search workouts or exercises"
             value={query}

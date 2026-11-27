@@ -50,11 +50,18 @@ function createSlotStore(): SlotStore {
 }
 
 const SlotContext = createContext<SlotStore | null>(null);
+/** The week bar's slot, for the button beside "This week" (settings on Train, say). */
+const BarSlotContext = createContext<SlotStore | null>(null);
 
-/** Holds the slot for the screens inside it (the tabs). */
+/** Holds the slots for the screens inside it (the tabs). */
 export function MainActionProvider({ children }: { children: ReactNode }) {
   const [store] = useState(createSlotStore);
-  return <SlotContext.Provider value={store}>{children}</SlotContext.Provider>;
+  const [bar] = useState(createSlotStore);
+  return (
+    <SlotContext.Provider value={store}>
+      <BarSlotContext.Provider value={bar}>{children}</BarSlotContext.Provider>
+    </SlotContext.Provider>
+  );
 }
 
 /**
@@ -62,7 +69,15 @@ export function MainActionProvider({ children }: { children: ReactNode }) {
  * written; pass `null` to offer nothing.
  */
 export function MainAction({ children }: { children: ReactNode | null }) {
-  const store = useContext(SlotContext);
+  return <Offer store={useContext(SlotContext)}>{children}</Offer>;
+}
+
+/** Offers `children` as the week bar's action while this screen is focused, as MainAction does. */
+export function BarAction({ children }: { children: ReactNode | null }) {
+  return <Offer store={useContext(BarSlotContext)}>{children}</Offer>;
+}
+
+function Offer({ store, children }: { store: SlotStore | null; children: ReactNode | null }) {
   const focused = useIsFocused();
   const owner = useId();
   // Every render offers the latest content, so the slot always shows the screen's current action.
@@ -78,13 +93,20 @@ export function MainAction({ children }: { children: ReactNode | null }) {
  * decides what fills the slot, so something more pressing can take its place.
  */
 export function MainActionSlot({ render }: { render: (offered: ReactNode | null) => ReactNode }) {
-  const store = useContext(SlotContext);
-  const offered = useSyncExternalStore(
+  return render(useOffered(useContext(SlotContext)));
+}
+
+/** What the focused screen offers for the week bar, or null. */
+export function useBarAction(): ReactNode | null {
+  return useOffered(useContext(BarSlotContext));
+}
+
+function useOffered(store: SlotStore | null): ReactNode | null {
+  return useSyncExternalStore(
     store?.subscribe ?? noSubscribe,
     store?.current ?? nothing,
     store?.current ?? nothing,
   );
-  return render(offered);
 }
 
 const noSubscribe = () => () => {};

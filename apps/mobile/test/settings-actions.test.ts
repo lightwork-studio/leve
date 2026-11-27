@@ -4,7 +4,7 @@ import { createSqlJsEngine } from "@leve/storage/sqljs";
 import initSqlJs from "sql.js";
 import { describe, expect, it } from "vitest";
 import { EXERCISES } from "../src/data/exercises.ts";
-import { historyData, liveData, readSettings, trainData } from "../src/data/read.ts";
+import { historyData, liveData, readSettings, weekBarData } from "../src/data/read.ts";
 import { seedSyntheticData } from "../src/data/seed.ts";
 import {
   choiceLabel,
@@ -367,7 +367,7 @@ it("changes what the screens read", { timeout: 60_000 }, async () => {
   const store = await open();
   const now = new Date(2026, 10, 12, 20); // Thursday 12 November 2026
   seedSyntheticData(store, now);
-  expect(trainData(store, now.getTime()).week.days.map((d) => d.letter)).toEqual([
+  expect(weekBarData(store, now.getTime(), null).days.map((d) => d.letter)).toEqual([
     "M",
     "T",
     "W",
@@ -377,7 +377,7 @@ it("changes what the screens read", { timeout: 60_000 }, async () => {
     "S",
   ]);
   saveSettings(store, { firstWeekday: 0 });
-  expect(trainData(store, now.getTime()).week.days.map((d) => d.name)).toEqual([
+  expect(weekBarData(store, now.getTime(), null).days.map((d) => d.name)).toEqual([
     "Sunday",
     "Monday",
     "Tuesday",

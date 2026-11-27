@@ -165,7 +165,7 @@ export default function ProgressScreen() {
   const weekTime = readoutMinutes(week.minutes);
 
   return (
-    <TabScreen title="Progress" eyebrow="All exercises" hasTextInput>
+    <TabScreen hasTextInput>
       <Group label="This week" aside={weekLabel(week.start)} style={styles.group}>
         <Readouts
           size={34}

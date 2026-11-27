@@ -9,15 +9,18 @@ import Animated, {
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
+import { useWeekBar } from "../../src/data/queries.ts";
 import { gutter, space, touch, type } from "../../src/theme.ts";
 import { haptic } from "../../src/ui/haptics.ts";
 import { HistoryIcon, ProgressIcon, TrainIcon } from "../../src/ui/icons.tsx";
 import { MiniPlayer } from "../../src/ui/live/mini-player.tsx";
-import { MainActionProvider, MainActionSlot } from "../../src/ui/main-action.tsx";
+import { MainActionProvider, MainActionSlot, useBarAction } from "../../src/ui/main-action.tsx";
 import { spring } from "../../src/ui/motion.ts";
 import { MainActionHeight } from "../../src/ui/screen.tsx";
 import { Tap } from "../../src/ui/tap.tsx";
 import { themedStyles, useColors, useStyles } from "../../src/ui/themed.ts";
+import { useToday } from "../../src/ui/use-now.ts";
+import { WeekBar, type WeekBarMode } from "../../src/ui/week-bar.tsx";
 
 const TABS: {
   name: string;
@@ -52,6 +55,8 @@ export default function TabsLayout() {
       {/* Tab screens scroll clear of the floating tabs, and of the main action when there is one. */}
       <MainActionHeight.Provider value={tabHeight + (slotHeight > 0 ? slotHeight + space.sm : 0)}>
         <View style={styles.flex}>
+          {/* One week over every tab: it stays put while the tabs change under it. */}
+          <TabsWeekBar tab={focus} />
           <Tabs
             screenOptions={({ route }) => ({
               headerShown: false,
@@ -100,6 +105,22 @@ export default function TabsLayout() {
       </MainActionHeight.Provider>
     </MainActionProvider>
   );
+}
+
+const BAR_MODES: Record<string, WeekBarMode> = {
+  index: "train",
+  history: "history",
+  progress: "progress",
+};
+
+/** The week bar, with the marks and the action of the tab on show. */
+function TabsWeekBar({ tab }: { tab: string }) {
+  const today = useToday();
+  // Records read the whole history, so they join once the first screen is up.
+  const [withRecords, setWithRecords] = useState(false);
+  useEffect(() => whenIdle(() => setWithRecords(true)), []);
+  const week = useWeekBar(today, withRecords);
+  return <WeekBar week={week} mode={BAR_MODES[tab] ?? "train"} action={useBarAction()} />;
 }
 
 function TabBar({

@@ -10,6 +10,7 @@ import {
   readSettings,
   sharedProgress,
   trainData,
+  weekBarData,
   workoutDetail,
 } from "./read.ts";
 import { heldSet } from "./set-removal.ts";
@@ -116,6 +117,20 @@ export function usePastWorkouts(allowRead: boolean) {
 export function useProgress() {
   const { store, historyVersion } = useAppData();
   return useWhileFocused(() => sharedProgress(store, historyVersion), [store, historyVersion]);
+}
+
+/**
+ * The week bar over the tabs, read again when finished workouts change or the day does. Records
+ * need the whole history read, so they wait for `withRecords` (once the app is idle) and the bar
+ * opens without them.
+ */
+export function useWeekBar(today: number, withRecords: boolean) {
+  const { store, historyVersion } = useAppData();
+  return useWhileFocused(
+    () =>
+      weekBarData(store, today, withRecords ? sharedProgress(store, historyVersion).index : null),
+    [store, historyVersion, today, withRecords],
+  );
 }
 
 export function useSettings() {

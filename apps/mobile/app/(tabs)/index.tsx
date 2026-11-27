@@ -10,7 +10,6 @@ import {
 } from "react";
 import { Platform, type ScrollView, Text, View } from "react-native";
 import { useReducedMotion } from "react-native-reanimated";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppData } from "../../src/data/app-data.tsx";
 import {
   deleteFolder,
@@ -27,14 +26,8 @@ import {
 } from "../../src/data/workout-review.ts";
 import { setProgress } from "../../src/model/live.ts";
 import { dropPlace } from "../../src/model/plan-order.ts";
-import {
-  lastDoneLabel,
-  type RoutineCard,
-  type RoutineGroup,
-  type WeekSummary,
-} from "../../src/model/train.ts";
-import type { Settings } from "../../src/model/types.ts";
-import { font, numeral, radius, space, touch, type } from "../../src/theme.ts";
+import { lastDoneLabel, type RoutineCard, type RoutineGroup } from "../../src/model/train.ts";
+import { font, radius, space, touch, type } from "../../src/theme.ts";
 import { ActionSheet } from "../../src/ui/action-sheet.tsx";
 import { afterFeedback } from "../../src/ui/after-feedback.ts";
 import { Button } from "../../src/ui/buttons.tsx";
@@ -42,7 +35,6 @@ import { DragBlock } from "../../src/ui/drag-block.tsx";
 import { EmptyState } from "../../src/ui/empty-state.tsx";
 import { Enter } from "../../src/ui/enter.tsx";
 import { announce } from "../../src/ui/focus.ts";
-import { dayLabel, minutesLabel, readoutWeight } from "../../src/ui/format.ts";
 import { haptic } from "../../src/ui/haptics.ts";
 import {
   ChevronIcon,
@@ -52,7 +44,7 @@ import {
   PlusIcon,
   TrayIcon,
 } from "../../src/ui/icons.tsx";
-import { MainAction } from "../../src/ui/main-action.tsx";
+import { BarAction, MainAction } from "../../src/ui/main-action.tsx";
 import { ModeTile } from "../../src/ui/mode-tile.tsx";
 import { NewFolderDialog } from "../../src/ui/new-folder-dialog.tsx";
 import { showToast } from "../../src/ui/notice.tsx";
@@ -65,11 +57,10 @@ import { useNow } from "../../src/ui/use-now.ts";
 
 export default function TrainScreen() {
   const now = useNow();
-  const insets = useSafeAreaInsets();
   const reduced = useReducedMotion();
   const styles = useStyles(sheet);
   const c = useColors();
-  const { week, groups, upNext, active, settings, reviews } = useTrain(now);
+  const { groups, upNext, active, reviews } = useTrain(now);
   const { change, store } = useAppData();
   // The routine tapped while another workout runs, and that workout as it was then: discarding it
   // is refused if it changed while the sheet was open.
@@ -202,18 +193,13 @@ export default function TrainScreen() {
   const folderCount = groups.filter((group) => group.folder).length;
 
   return (
-    <TabScreen
-      scrollRef={scroll}
-      scrollEnabled={!gripHeld}
-      title="Train"
-      eyebrow={dayLabel(new Date(now).toISOString(), undefined, now)}
-      action={
+    <TabScreen scrollRef={scroll} scrollEnabled={!gripHeld}>
+      {/* Settings sit beside the week over the tabs while Train is on show. */}
+      <BarAction>
         <HeaderButton label="Settings" onPress={openSettings}>
           <GearIcon color={c.fg2} size={19} />
         </HeaderButton>
-      }
-    >
-      <WeekCard week={week} unit={settings?.weightUnit ?? "kg"} />
+      </BarAction>
       {/* Starting sits in the main-action slot above the tabs, offering the routine next in
           rotation beside an empty workout. While a workout runs, the slot shows that workout
           instead, so Train offers nothing; nor does it while the routines are being edited. */}
@@ -330,7 +316,7 @@ export default function TrainScreen() {
                     if (reveal.current !== key) return;
                     reveal.current = null;
                     scroll.current?.scrollTo({
-                      y: Math.max(0, routinesY.current + y - insets.top - space.sm),
+                      y: Math.max(0, routinesY.current + y - space.sm),
                       animated: !reduced,
                     });
                   });
@@ -443,84 +429,6 @@ const newRoutine = (folderId?: string) =>
   router.push(
     folderId ? { pathname: "/routine/new", params: { folder: folderId } } : "/routine/new",
   );
-
-/** The tallest a day's bar is, in points; an untrained day is a stub. */
-const DAY_BAR = 34;
-
-/**
- * This week at a glance: how many workouts, a bar per day as tall as its volume against the
- * week's biggest day (today ringed until trained), and the week's volume, time and sets.
- */
-function WeekCard({ week, unit }: { week: WeekSummary; unit: Settings["weightUnit"] }) {
-  const styles = useStyles(sheet);
-  const most = Math.max(0, ...week.days.map((day) => day.volumeKg));
-  const today = week.days.findIndex((day) => day.today);
-  return (
-    <View style={styles.card}>
-      <View style={styles.week}>
-        <View
-          accessible
-          accessibilityLabel={`${week.workouts} ${week.workouts === 1 ? "workout" : "workouts"} this week`}
-          style={styles.weekCount}
-        >
-          <Text style={styles.weekNumber}>{week.workouts}</Text>
-          <View style={styles.weekKey}>
-            <Text style={[styles.label, styles.strong]}>This week</Text>
-            <Text style={styles.label}>{week.workouts === 1 ? "workout" : "workouts"}</Text>
-          </View>
-        </View>
-        <View style={styles.days}>
-          {week.days.map((day, i) => {
-            const height = day.trained
-              ? Math.max(8, most > 0 ? (day.volumeKg / most) * DAY_BAR : DAY_BAR)
-              : day.today
-                ? 30
-                : 3;
-            return (
-              <View
-                key={day.name}
-                accessible
-                accessibilityLabel={`${day.name}${day.trained ? ", trained" : ""}${day.today ? ", today" : ""}`}
-                style={styles.day}
-              >
-                <View
-                  style={[
-                    styles.dayBar,
-                    { height },
-                    day.trained
-                      ? styles.dayTrained
-                      : day.today
-                        ? styles.dayToday
-                        : today >= 0 && i > today && styles.dayAhead,
-                  ]}
-                />
-                <Text style={[styles.label, day.today && styles.strong]}>{day.letter}</Text>
-              </View>
-            );
-          })}
-        </View>
-      </View>
-      <View style={styles.weekFoot}>
-        <WeekFigure label="Vol" value={`${readoutWeight(week.volumeKg, unit)} ${unit}`} />
-        <WeekFigure label="Time" value={minutesLabel(week.minutes)} />
-        <WeekFigure label="Sets" value={String(week.sets)} />
-      </View>
-    </View>
-  );
-}
-
-function WeekFigure({ label, value }: { label: string; value: string }) {
-  const styles = useStyles(sheet);
-  return (
-    <Text
-      accessibilityLabel={`${label === "Vol" ? "Volume" : label} ${value}`}
-      style={styles.label}
-    >
-      {label}
-      <Text style={styles.weekValue}> {value}</Text>
-    </Text>
-  );
-}
 
 const groupKey = (group: RoutineGroup) => group.folder?.id ?? "unfiled";
 const groupTitle = (group: RoutineGroup) => group.folder?.content.title ?? "Not in a folder";
@@ -936,7 +844,6 @@ const sheet = themedStyles((c) => ({
   flex: { flex: 1 },
   flexShrink: { flexShrink: 1 },
   label: { ...type.label, color: c.fg3 },
-  strong: { color: c.fg },
   card: {
     backgroundColor: c.s1,
     borderRadius: radius.card,
@@ -958,42 +865,6 @@ const sheet = themedStyles((c) => ({
   },
   bannerText: { ...font.mono, fontSize: 11, lineHeight: 16.5, color: c.fg3 },
   bannerStrong: { color: c.fg2 },
-  week: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    gap: space.xl,
-    paddingTop: 14,
-    paddingHorizontal: space.lg,
-  },
-  weekCount: { flexDirection: "row", alignItems: "flex-end", gap: 10 },
-  weekNumber: { ...numeral(54), color: c.fg },
-  weekKey: { gap: 5, paddingBottom: 6 },
-  days: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "flex-end", gap: 6, height: 52 },
-  day: { flex: 1, alignItems: "center", justifyContent: "flex-end", gap: 5, height: "100%" },
-  dayBar: {
-    width: "100%",
-    maxWidth: 16,
-    borderTopLeftRadius: 4,
-    borderTopRightRadius: 4,
-    borderBottomLeftRadius: 2,
-    borderBottomRightRadius: 2,
-    backgroundColor: c.s3,
-  },
-  dayTrained: { backgroundColor: c.fg },
-  dayToday: { backgroundColor: "transparent", borderWidth: 1.5, borderColor: c.fg2 },
-  dayAhead: { opacity: 0.45 },
-  weekFoot: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: space.sm,
-    marginTop: 10,
-    marginHorizontal: space.lg,
-    paddingTop: 10,
-    paddingBottom: space.md,
-    borderTopWidth: 1,
-    borderTopColor: c.line,
-  },
-  weekValue: { ...type.meta, color: c.fg, letterSpacing: 0, textTransform: "none" },
   routines: { gap: space.md },
   sectionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   sectionTitle: { flexDirection: "row", alignItems: "baseline", gap: space.md, flexShrink: 1 },

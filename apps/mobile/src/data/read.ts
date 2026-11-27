@@ -7,7 +7,7 @@ import { type TargetLookup, workoutMuscleSets } from "../model/muscle-map.ts";
 import { groupByMonth, summarize, type WorkoutTree } from "../model/past-workouts.ts";
 import { buildProgress, recordsByWorkout, workoutRecords } from "../model/progress.ts";
 import { compareBarcodes, versusLastTime } from "../model/session-compare.ts";
-import { routineGroups, startOfWeek, upNextRoutine, weekSummary } from "../model/train.ts";
+import { routineGroups, upNextRoutine } from "../model/train.ts";
 import type {
   Folder,
   Routine,
@@ -18,6 +18,7 @@ import type {
   WorkoutNote,
   WorkoutSet,
 } from "../model/types.ts";
+import { weekBar } from "../model/week-bar.ts";
 import { bestSet, loggedExercises } from "../model/workout-done.ts";
 import { carriedWorkoutNotes, journalSessionNumbers } from "../model/workout-notes.ts";
 import { commentsByNote } from "./exercise-notes.ts";
@@ -249,30 +250,60 @@ export function trainData(store: DeviceStore, now: number) {
   const workouts = records<Workout>(store, "workout");
   const routines = records<Routine>(store, "routine");
   const folders = records<Folder>(store, "routine_folder");
-  // Only this week's finished workouts are read in full, for the week's volume and sets.
-  const weekStart = startOfWeek(now, settings.firstWeekday);
-  const bodyweightAt = bodyweightLookup(store);
-  const usesBodyweight = bodyweightFlags(store);
-  const figures = new Map<string, { volumeKg: number; sets: number }>();
-  for (const w of workouts) {
-    if (w.content.endedAt === null || Date.parse(w.content.startedAt) < weekStart) continue;
-    const tree = readWorkoutTree(store, w.id);
-    if (!tree) continue;
-    const { volumeKg, sets } = summarize(tree, {
-      countWarmups: settings.countWarmups,
-      bodyweightKg: bodyweightAt(Date.parse(w.content.startedAt)),
-      usesBodyweight,
-    });
-    figures.set(w.id, { volumeKg, sets });
-  }
   return {
     settings,
-    week: weekSummary(workouts, now, settings.firstWeekday, (id) => figures.get(id)),
     groups: routineGroups(routines, folders, workouts, now),
     upNext: upNextRoutine(routines, folders, workouts),
     active: store.activeWorkout(),
     reviews: trainReviews(store),
   };
+}
+
+/**
+ * The week bar over the tabs: this week's days with their workouts, and the weekdays trained in the
+ * weeks before. Records come from the progress index the tabs already share.
+ */
+export function weekBarData(store: DeviceStore, now: number, index: ProgressData["index"] | null) {
+  const settings = readSettings(store);
+  const workouts = records<Workout>(store, "workout");
+  const routines = records<Routine>(store, "routine");
+  const bodyweightAt = bodyweightLookup(store);
+  const usesBodyweight = bodyweightFlags(store);
+  const held = index ? recordsByWorkout(index) : new Map<string, unknown[]>();
+  // Each volume is worked out once, and only for the workouts the bar shows.
+  const volumes = new Map<string, number>();
+  const volumeOf = (w: WithId<Workout>) => {
+    const known = volumes.get(w.id);
+    if (known !== undefined) return known;
+    const tree = readWorkoutTree(store, w.id);
+    const volumeKg = tree
+      ? summarize(tree, {
+          countWarmups: settings.countWarmups,
+          bodyweightKg: bodyweightAt(Date.parse(w.content.startedAt)),
+          usesBodyweight,
+        }).volumeKg
+      : 0;
+    volumes.set(w.id, volumeKg);
+    return volumeKg;
+  };
+  const byId = new Map(workouts.map((w) => [w.id, w]));
+  return weekBar(
+    { workouts, routines, now, firstWeekday: settings.firstWeekday },
+    (id) => {
+      const w = byId.get(id);
+      return { volumeKg: w ? volumeOf(w) : 0, records: held.get(id)?.length ?? 0 };
+    },
+    (routineId, before, workoutId) => {
+      let latest: WithId<Workout> | null = null;
+      for (const w of workouts) {
+        const { routineId: other, endedAt, startedAt } = w.content;
+        if (w.id === workoutId || other !== routineId || endedAt === null) continue;
+        const at = Date.parse(startedAt);
+        if (at < before && (!latest || at > Date.parse(latest.content.startedAt))) latest = w;
+      }
+      return latest ? volumeOf(latest) : null;
+    },
+  );
 }
 
 /** History: every finished workout by month. */

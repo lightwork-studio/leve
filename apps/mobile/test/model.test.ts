@@ -9,13 +9,7 @@ import {
   type WorkoutTree,
 } from "../src/model/past-workouts.ts";
 import { workoutMinutes } from "../src/model/time.ts";
-import {
-  lastDoneLabel,
-  routineGroups,
-  startOfWeek,
-  upNextRoutine,
-  weekSummary,
-} from "../src/model/train.ts";
+import { lastDoneLabel, routineGroups, startOfWeek, upNextRoutine } from "../src/model/train.ts";
 import type { Routine, Workout, WorkoutEntry, WorkoutSet } from "../src/model/types.ts";
 import { setVolumeKg } from "../src/model/volume.ts";
 import { historySetLabel, wholeWeight } from "../src/ui/format.ts";
@@ -241,58 +235,6 @@ describe("train", () => {
     expect(startOfWeek(now, 0)).toBe(local(2026, 11, 8, 0));
   });
 
-  it("counts this week's finished workouts and marks the days trained", () => {
-    const summary = weekSummary(
-      [
-        workout("mon", local(2026, 11, 9), 60),
-        workout("wed", local(2026, 11, 11), 45),
-        workout("running", local(2026, 11, 12), null),
-        workout("last-week", local(2026, 11, 6), 50),
-      ],
-      now,
-      1,
-    );
-    expect(summary.workouts).toBe(2);
-    expect(summary.minutes).toBe(105);
-    expect(
-      summary.days.map((d) => `${d.letter}${d.trained ? "+" : ""}${d.today ? "!" : ""}`),
-    ).toEqual(["M+", "T", "W+", "T!", "F", "S", "S"]);
-  });
-
-  it("adds up the week's volume and sets by day, from this week's finished workouts only", () => {
-    const figures: Record<string, { volumeKg: number; sets: number }> = {
-      mon: { volumeKg: 1200, sets: 9 },
-      mon2: { volumeKg: 300.25, sets: 3 },
-      wed: { volumeKg: 0, sets: 4 },
-      "last-week": { volumeKg: 5000, sets: 20 },
-      running: { volumeKg: 800, sets: 6 },
-    };
-    const summary = weekSummary(
-      [
-        workout("mon", local(2026, 11, 9, 8), 60),
-        workout("mon2", local(2026, 11, 9, 18), 20),
-        workout("wed", local(2026, 11, 11), 45),
-        workout("running", local(2026, 11, 12), null),
-        workout("last-week", local(2026, 11, 6), 50),
-      ],
-      now,
-      1,
-      (id) => figures[id],
-    );
-    expect(summary.volumeKg).toBe(1500.3);
-    expect(summary.sets).toBe(16);
-    expect(summary.days.map((d) => d.volumeKg)).toEqual([1500.25, 0, 0, 0, 0, 0, 0]);
-    expect(summary.days.map((d) => d.trained)).toEqual([
-      true,
-      false,
-      true,
-      false,
-      false,
-      false,
-      false,
-    ]);
-  });
-
   it("groups routines by folder and says when each was last done", () => {
     const routine = (id: string, folderId: string | null, position: number) => ({
       id,
@@ -344,37 +286,9 @@ describe("train", () => {
 });
 
 describe("time zones and odd data", () => {
-  const withZone = (zone: string, fn: () => void) => {
-    const previous = process.env.TZ;
-    process.env.TZ = zone;
-    try {
-      fn();
-    } finally {
-      if (previous === undefined) delete process.env.TZ;
-      else process.env.TZ = previous;
-    }
-  };
-
-  it("marks the right days in a week whose first midnight doesn't exist", () => {
-    // Santiago skips from 00:00 to 01:00 on Sunday 6 September 2026.
-    withZone("America/Santiago", () => {
-      const summary = weekSummary(
-        [workout("mon", local(2026, 9, 7), 50), workout("tue", local(2026, 9, 8), 40)],
-        local(2026, 9, 8, 20),
-        0,
-      );
-      expect(
-        summary.days.map((d) => `${d.letter}${d.trained ? "+" : ""}${d.today ? "!" : ""}`),
-      ).toEqual(["S", "M+", "T+!", "W", "T", "F", "S"]);
-    });
-  });
-
   it("never shows negative durations or days", () => {
     const backwards = workout("odd", local(2026, 11, 12), -60).content;
     expect(workoutMinutes(backwards)).toBe(0);
-    expect(
-      weekSummary([workout("odd", local(2026, 11, 12), -60)], local(2026, 11, 12, 20), 1).minutes,
-    ).toBe(0);
     const ahead = workout("ahead", local(2026, 11, 13), 30, "push");
     const [group] = routineGroups(
       [

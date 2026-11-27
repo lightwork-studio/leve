@@ -133,7 +133,13 @@ export function useTabBottomPadding() {
 
 export const tabContentStyle = { paddingHorizontal: space.lg, paddingBottom: space.xxl } as const;
 
-/** A tab screen: the large title, an optional action beside it, then scrolling content. */
+/** The space above a tab's content, under the week bar (which keeps clear of the status bar). */
+export const tabTopPadding = space.lg;
+
+/**
+ * A screen's scrolling content under a large title with an optional action beside it. Without a
+ * title it is a tab under the week bar, which leads it instead.
+ */
 export function TabScreen({
   title,
   eyebrow,
@@ -143,7 +149,7 @@ export function TabScreen({
   scrollEnabled = true,
   scrollRef,
 }: {
-  title: string;
+  title?: string;
   eyebrow?: string;
   action?: ReactNode;
   children: ReactNode;
@@ -162,9 +168,12 @@ export function TabScreen({
       scrollEnabled={scrollEnabled}
       automaticallyAdjustKeyboardInsets={hasTextInput}
       keyboardShouldPersistTaps={hasTextInput ? "handled" : "never"}
-      contentContainerStyle={[styles.content, { paddingTop: insets.top + 20, paddingBottom }]}
+      contentContainerStyle={[
+        styles.content,
+        { paddingTop: title === undefined ? tabTopPadding : insets.top + 20, paddingBottom },
+      ]}
     >
-      <TabTitle title={title} eyebrow={eyebrow} action={action} />
+      {title !== undefined && <TabTitle title={title} eyebrow={eyebrow} action={action} />}
       {/* Content shown on opening is simply there; only later changes animate. */}
       <StillOnOpen>{children}</StillOnOpen>
     </ScrollView>

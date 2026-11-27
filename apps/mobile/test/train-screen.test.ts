@@ -13,7 +13,6 @@ let upNext: { id: string; title: string } | null = null;
 // Replaces the two folders of twenty routines each, for the cases that need other groups.
 let groupsOverride: unknown[] | null = null;
 let reviews: unknown[] = [];
-const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 vi.mock("react-native-reanimated", () => ({ useReducedMotion: () => reduced }));
 const push = vi.fn();
 const change = vi.fn();
@@ -28,7 +27,7 @@ vi.mock("react-native", () => ({
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 30 }) }));
 vi.mock("../src/ui/screen.tsx", () => ({ TabScreen: "Screen", HeaderButton: "HeaderButton" }));
 // The slot draws what a screen offers elsewhere; here the offer stays in the tree to be inspected.
-vi.mock("../src/ui/main-action.tsx", () => ({ MainAction: "MainAction" }));
+vi.mock("../src/ui/main-action.tsx", () => ({ MainAction: "MainAction", BarAction: "BarAction" }));
 vi.mock("../src/ui/commit-button.tsx", () => ({ CommitButton: "CommitButton" }));
 vi.mock("../src/ui/enter.tsx", () => ({ Enter: "Enter" }));
 vi.mock("../src/ui/tap.tsx", () => ({ Tap: "Tap" }));
@@ -126,19 +125,6 @@ vi.mock("../src/data/queries.ts", () => ({
       activeTitle === null
         ? null
         : { id: activeId, content: { title: activeTitle, routineId: activeRoutine } },
-    week: {
-      workouts: 2,
-      minutes: 75,
-      volumeKg: 12_480,
-      sets: 21,
-      days: weekdays.map((name, index) => ({
-        name,
-        letter: name[0],
-        today: index === 3,
-        trained: index === 0 || index === 3,
-        volumeKg: index === 0 ? 8000 : index === 3 ? 4480 : 0,
-      })),
-    },
     groups:
       groupsOverride ??
       ["Home", "Gym"].map((id) => ({
@@ -186,7 +172,7 @@ it.each([false, true])(
       if (!screen) throw new Error("Train did not mount");
       const root = screen.root;
       const scrollTo = vi.fn();
-      root.find((n) => n.props.title === "Train").props.scrollRef.current = { scrollTo };
+      root.findByType("Screen" as never).props.scrollRef.current = { scrollTo };
       const layouts = () =>
         root.findAll((n) => n.type === View && typeof n.props.onLayout === "function");
       const layout = (y: number, height: number) => ({ nativeEvent: { layout: { y, height } } });
@@ -207,7 +193,7 @@ it.each([false, true])(
       layouts().at(-1)?.props.onLayout(layout(1050, 1300));
       expect(scrollTo).not.toHaveBeenCalled();
       nextFrame?.();
-      expect(scrollTo).toHaveBeenCalledWith({ y: 1282, animated: !preference });
+      expect(scrollTo).toHaveBeenCalledWith({ y: 1312, animated: !preference });
       await act(() => press(root, "Edit routines"));
       await act(() => press(root, "Edit Gym folder"));
       expect(root.findByProps({ initialName: "Gym" })).toBeDefined();
@@ -229,7 +215,7 @@ it.each([false, true])(
 );
 
 it.each([null, "Strength and conditioning with a long accessory circuit"])(
-  "exposes the full weekly strip and offers a start only when no workout runs (%s)",
+  "offers settings beside the week, and a start only when no workout runs (%s)",
   async (title) => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     activeTitle = title;
@@ -241,22 +227,14 @@ it.each([null, "Strength and conditioning with a long accessory circuit"])(
         screen = create(createElement(TrainScreen));
       });
       if (!screen) throw new Error("Train did not mount");
-      const days = screen.root.findAll(
-        (n) =>
-          n.type === View &&
-          n.props.accessible &&
-          /this week|day\b/.test(n.props.accessibilityLabel),
-      );
-      expect(days.map((day) => day.props.accessibilityLabel)).toEqual([
-        "2 workouts this week",
-        "Monday, trained",
-        "Tuesday",
-        "Wednesday",
-        "Thursday, trained, today",
-        "Friday",
-        "Saturday",
-        "Sunday",
-      ]);
+      // The week itself is drawn over the tabs; Train offers settings beside it.
+      const settings = screen.root
+        .findByType("BarAction" as never)
+        .findByType("HeaderButton" as never);
+      expect(settings.props.label).toBe("Settings");
+      settings.props.onPress();
+      expect(push).toHaveBeenCalledWith("/settings");
+      push.mockClear();
       const offered = screen.root.findByType("MainAction" as never).props.children;
       if (title) {
         expect(offered).toBeNull();
@@ -342,7 +320,7 @@ it("edits routines in edit mode: a tap opens one, its grip reorders the folder, 
     const slot = () => root.findByType("MainAction" as never).props.children;
     const banner = () =>
       root.findAll((n) => n.type === Text && n.props.children === "Drag ⠿ to reorder.");
-    const scrolls = () => root.find((n) => n.props.title === "Train").props.scrollEnabled;
+    const scrolls = () => root.findByType("Screen" as never).props.scrollEnabled;
     expect(slot()).not.toBeNull();
     expect(banner()).toHaveLength(0);
     // Edit is a small pill beside the heading, the word alone.
@@ -623,7 +601,7 @@ it("drops against the folder as it was grabbed, lets go when the routine goes, a
           nativeEvent: { layout: { height: 80 } },
         });
     };
-    const scrolls = () => root.find((n) => n.props.title === "Train").props.scrollEnabled;
+    const scrolls = () => root.findByType("Screen" as never).props.scrollEnabled;
     await act(() => press(root, "Edit routines"));
     measure();
 
@@ -674,35 +652,6 @@ it("drops against the folder as it was grabbed, lets go when the routine goes, a
     activeTitle = "Bench";
     groupsOverride = null;
     change.mockReset();
-    await act(() => screen?.unmount());
-    vi.unstubAllGlobals();
-  }
-});
-
-it("draws each day's bar against the week's biggest day and totals the week underneath", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  let screen: ReactTestRenderer | undefined;
-  try {
-    await act(() => {
-      screen = create(createElement(TrainScreen));
-    });
-    if (!screen) throw Error("Train did not mount");
-    const days = screen.root.findAll(
-      (n) => n.type === View && n.props.accessible && /day/.test(n.props.accessibilityLabel),
-    );
-    const heights = days.map((day) => {
-      const bar = day.findAllByType(View)[1];
-      const styles = [bar?.props.style].flat(2);
-      return styles.find((style) => style && "height" in style)?.height;
-    });
-    // Monday holds the most (8,000 kg) and fills the bar; Thursday's 4,480 kg is 56% of it.
-    // Days without a workout are stubs, except today, which is ringed at its own height.
-    expect(heights).toEqual([34, 3, 3, (4480 / 8000) * 34, 3, 3, 3]);
-    const totals = screen.root
-      .findAll((n) => n.type === Text && /^(Volume|Time|Sets) /.test(n.props.accessibilityLabel))
-      .map((n) => n.props.accessibilityLabel);
-    expect(totals).toEqual(["Volume 12.4k kg", "Time 1 h 15 min", "Sets 21"]);
-  } finally {
     await act(() => screen?.unmount());
     vi.unstubAllGlobals();
   }

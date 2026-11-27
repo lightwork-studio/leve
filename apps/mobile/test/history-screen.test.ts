@@ -72,11 +72,14 @@ vi.mock("../src/ui/icons.tsx", () => ({
   SearchIcon: "Search",
   CloseIcon: "Close",
 }));
+// The week bar draws what History offers; here the offer stays in the tree to be pressed.
+vi.mock("../src/ui/main-action.tsx", () => ({ BarAction: "BarAction" }));
 vi.mock("../src/ui/flash.tsx", () => ({ Flash: "Flash", flashDuration: 2400 }));
 vi.mock("../src/ui/screen.tsx", () => ({
-  TabTitle: "Title",
+  HeaderButton: "HeaderButton",
   BackButton: "BackButton",
   tabContentStyle: {},
+  tabTopPadding: 16,
   useTabBottomPadding: () => 0,
 }));
 vi.mock("../src/ui/workout-sync-review.tsx", () => ({ WorkoutSyncReview: "WorkoutSyncReview" }));
@@ -591,7 +594,12 @@ it("finds a workout by its fourth movement, shows the match on its card, and cle
 
 it("keeps the month controls on screen, greyed out, while there is only one month", async () => {
   historyMonths = [];
-  const { screen, root, layout } = await mountHistory();
+  const focus = vi.fn();
+  const scrollTo = vi.fn();
+  sessionList.getScrollResponder.mockReturnValue({ scrollTo });
+  const { screen, root, layout } = await mountHistory({
+    createNodeMock: (node) => (node.type === TextInput ? { focus } : null),
+  });
   try {
     await layout(362);
     for (const label of ["Show newer month", "Show older month"]) {
@@ -599,8 +607,13 @@ it("keeps the month controls on screen, greyed out, while there is only one mont
       expect(control.props.disabled).toBe(true);
       expect(control.props.accessibilityState).toEqual({ disabled: true });
     }
-    // The month card is the calendar: History's title offers no separate one.
-    expect(root.findByType("Title" as never).props.action).toBeUndefined();
+    // The week bar's only History action is search: it scrolls back to the field and opens it.
+    const search = root.findByType("BarAction" as never).findByType("HeaderButton" as never);
+    expect(search.props.label).toBe("Search workouts or exercises");
+    expect(focus).not.toHaveBeenCalled();
+    await act(() => search.props.onPress());
+    expect(scrollTo).toHaveBeenCalledWith({ y: 0, animated: true });
+    expect(focus).toHaveBeenCalledOnce();
   } finally {
     await act(() => screen.unmount());
     vi.unstubAllGlobals();
