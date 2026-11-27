@@ -153,14 +153,20 @@ async function phone(name: string) {
   return { store, sync };
 }
 
-function exercise(id: string, exerciseId: string, exerciseName: string, loads: number[]) {
+function exercise(
+  id: string,
+  exerciseId: string,
+  exerciseName: string,
+  loads: number[],
+  restSeconds = 90,
+) {
   return {
     id,
     exerciseId,
     exerciseName,
     exerciseType: "weight_reps",
     supersetId: null,
-    restSeconds: 90,
+    restSeconds,
     useRepRange: false,
     sets: loads.map((weightKg, index) => ({
       id: `${id}-s${index + 1}`,
@@ -177,13 +183,13 @@ function exercise(id: string, exerciseId: string, exerciseName: string, loads: n
   };
 }
 
-const routine = (bench: number[], squat?: number[]): JsonObject => ({
+const routine = (bench: number[], squat?: number[], benchRest = 90): JsonObject => ({
   title: "Test Routine A",
   folderId: null,
   position: 1,
   effortScale: "rpe",
   exercises: [
-    exercise("x1", "bench-press-barbell", "Bench Press", bench),
+    exercise("x1", "bench-press-barbell", "Bench Press", bench, benchRest),
     ...(squat ? [exercise("x2", "squat-barbell", "Squat", squat)] : []),
   ],
 });
@@ -219,11 +225,11 @@ it("syncs independent routine exercise changes together without a popup", async 
 });
 
 it.each([
-  { side: "On this phone", mine: [60], theirs: [70], bench: [55] },
-  { side: "In your account", mine: [70], theirs: [60], bench: [35] },
+  { side: "On this phone", mine: [60], theirs: [70], bench: [55], rest: 120 },
+  { side: "In your account", mine: [70], theirs: [60], bench: [35], rest: 90 },
 ])(
   "keeps the independent squat edit when choosing $side for bench",
-  async ({ side, mine, theirs, bench }) => {
+  async ({ side, mine, theirs, bench, rest }) => {
     const a = await phone("a");
     const b = await phone("b");
     a.store.put("routine", "r1", routine([30], [60]));
@@ -231,13 +237,14 @@ it.each([
     await b.sync();
 
     a.store.put("routine", "r1", routine([35], theirs));
-    b.store.put("routine", "r1", routine([55], mine));
+    b.store.put("routine", "r1", routine([55], mine, 120));
     await a.sync();
     await b.sync();
     await show(b.store);
 
     expect(screen()).toContain("Both choices keep independent exercise edits");
     expect(screen()).toContain("Bench Press");
+    expect(screen()).toContain("Bench Press · Rest");
     expect(screen()).not.toContain("Squat");
     const option = Array.from(document.querySelectorAll<HTMLElement>('[role="radio"]')).find(
       (choice) => choice.getAttribute("aria-label")?.startsWith(side),
@@ -257,7 +264,7 @@ it.each([
     for (const { store } of [a, b]) {
       expect(store.get("routine", "r1")).toMatchObject({
         status: "synced",
-        content: routine(bench, [70]),
+        content: routine(bench, [70], rest),
       });
     }
   },

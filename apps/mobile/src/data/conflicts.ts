@@ -653,18 +653,22 @@ function routineExerciseLines(store: DeviceStore, mine: unknown, theirs: unknown
     unmatched.delete(exercise.id);
     const moved = !!match && others.indexOf(match) !== index;
     if (match && !moved && jsonEqual(match, exercise)) return;
-    const plan = plannedExercise(store, exercise);
-    // When the sets read the same, say what else differs: rest, superset, rep range.
-    const extra =
-      match && plan === plannedExercise(store, match)
-        ? (["restSeconds", "supersetId", "useRepRange", "exerciseType"] as const)
-            .filter((name) => !jsonEqual(exercise[name] ?? null, match[name] ?? null))
-            .map((name) => `${LABELS[name] ?? name} ${valueLabel(store, name, exercise[name])}`)
-        : [];
+    const label = String(exercise.exerciseName ?? "Exercise");
     lines.push({
-      label: String(exercise.exerciseName ?? "Exercise"),
-      value: [plan, ...extra, ...(moved ? [`number ${index + 1}`] : [])].join(" · "),
+      label,
+      value: [plannedExercise(store, exercise), ...(moved ? [`number ${index + 1}`] : [])].join(
+        " · ",
+      ),
     });
+    if (match) {
+      for (const name of ["restSeconds", "supersetId", "useRepRange", "exerciseType"] as const) {
+        if (jsonEqual(exercise[name] ?? null, match[name] ?? null)) continue;
+        lines.push({
+          label: `${label} · ${LABELS[name] ?? name}`,
+          value: valueLabel(store, name, exercise[name]),
+        });
+      }
+    }
   });
   for (const exercise of unmatched.values())
     lines.push({

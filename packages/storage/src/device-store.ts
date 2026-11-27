@@ -1613,6 +1613,12 @@ export class DeviceStore {
 
   #outgoing(row: SubmissionRow): OutgoingSubmission {
     if (row.op === "put") {
+      // Record dispatch before handing the upload to the network. After a retry,
+      // a stale answer cannot prove that an earlier attempt never committed.
+      if (row.kind === "routine" && this.#tracksRoutineBase)
+        this.db.run("UPDATE submissions SET attempts = attempts + 1 WHERE submission_id = ?", [
+          row.submissionId,
+        ]);
       return {
         release: row.release,
         submission: {
@@ -1652,7 +1658,8 @@ export class DeviceStore {
       for (const submission of abandoned) {
         const row = this.#row(submission.kind, submission.id);
         if (row) {
-          const kept = this.#beforeDroppingSubmission(row, submission, replacement);
+          const evidence = this.#beforeDroppingSubmission(row, submission, replacement);
+          const kept = row.routineBase ? { ...evidence, routineBase: null } : evidence;
           if (
             submission.op === "put" &&
             submission.baseRevision === null &&
@@ -1739,7 +1746,7 @@ export class DeviceStore {
             if (submission.op === "put")
               this.#observeRelease(row.kind, row.id, result.revision, submission.release);
             break;
-          case "conflict":
+          case "conflict": {
             // A newer local choice already used this revision. Its predecessor's
             // stale receipt cannot turn that same choice back into a conflict.
             if (
@@ -1750,10 +1757,15 @@ export class DeviceStore {
               result.current.revision <= row.localBase
             )
               break;
-            this.#conflict(row, result.reason, result.current);
+            // An earlier attempt might have committed before its receipt expired.
+            // The pre-dispatch copy cannot establish what either side changed since.
+            const compared =
+              row.routineBase && Number(raw.attempts) > 1 ? { ...row, routineBase: null } : row;
+            this.#conflict(compared, result.reason, result.current);
             if (result.current?.state === "live")
               this.#observeRelease(row.kind, row.id, result.current.revision, submission.release);
             break;
+          }
           case "retry_later":
             // Stays pending; sent again once its parent is on the server.
             this.#settleUnsentDeletion(row.kind, row.id);
@@ -1898,9 +1910,10 @@ export class DeviceStore {
       }
       // This receipt settles its envelope, not a subsequent edit or a conflict
       // revealed by a richer download while the old envelope was in flight.
+      // A full receipt also establishes the next routine's starting copy. This
+      // includes an accepted submission whose entire content already matched.
       const routineBase =
         row.kind === "routine" &&
-        wroteRevision &&
         submission.baseRevision === row.localBase &&
         !submission.choiceAfterDispatch &&
         withheld.length === 0 &&

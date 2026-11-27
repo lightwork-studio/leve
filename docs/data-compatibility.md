@@ -259,7 +259,8 @@ both sides is included in both choices. If no differences remain, the phone sett
 automatically. Otherwise the popup compares the remaining differences and applies the selected
 side to those exercises while keeping the independent edits. Any resulting write is a new
 submission against the compared server revision. Deletions, structural changes, and conflicts
-carried through a restore or server move use whole-routine review.
+carried through a restore or server move use whole-routine review. A stale retry also requires
+whole-routine review because an earlier attempt may have committed before its receipt expired.
 
 When a conflict needs a decision, the local version is kept and the app asks straight away.
 A popup goes through the conflicts one at a time, each as the person thinks of it: a whole workout with its exercises, sets,

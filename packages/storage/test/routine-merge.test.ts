@@ -88,7 +88,10 @@ it("merges against the saved starting copy after restart and checks a racing wri
   }
 });
 
-it("uses an acknowledged own write as the starting copy of edits made during that upload", async () => {
+it.each([
+  { receipt: "an accepted write", written: true },
+  { receipt: "an identical accepted version", written: false },
+])("uses $receipt as the starting copy for edits made during the upload", async ({ written }) => {
   const store = await openRoutineDatabase();
   try {
     store.applyPull([version(15, routine(30, 60))], 15);
@@ -99,7 +102,7 @@ it("uses an acknowledged own write as the starting copy of edits made during tha
     store.put("routine", "r", routine(45, 60));
     store.applyPushResults(
       [{ status: "accepted", revision: 19, submissionId }],
-      new Set([submissionId]),
+      new Set(written ? [submissionId] : []),
     );
 
     // The other writer restored the original bench value after seeing the intermediate edit.
@@ -128,6 +131,40 @@ it("keeps a concurrent reorder for whole-routine review", async () => {
       status: "conflict",
       content: routine(35, 60),
       server: { content: reordered },
+    });
+  } finally {
+    store.close();
+  }
+});
+
+it("keeps a later undo when a stale retry may already have committed", async () => {
+  const path = join(tempDir(), "lost-routine-receipt.db");
+  const first = await openRoutineDatabase(path);
+  first.applyPull([version(15, routine(30, 60))], 15);
+  first.put("routine", "r", routine(35, 60));
+  const [outgoing] = first.prepareSubmissions("1.0");
+  if (!outgoing) throw Error("Missing initial upload");
+  // The request committed, its reply was lost, and the lifter undid their edit.
+  first.put("routine", "r", routine(30, 60));
+  first.close();
+
+  const store = await openRoutineDatabase(path);
+  try {
+    // The receipt expired and another phone has since changed squat. The retry is stale.
+    expect(store.prepareSubmissions("1.0")).toEqual([outgoing]);
+    store.applyPushResults([
+      {
+        status: "conflict",
+        reason: "stale",
+        submissionId: outgoing.submission.submissionId,
+        current: version(20, routine(35, 70)),
+      },
+    ]);
+    expect(store.routineConflictVersions("r")).toBeNull();
+    expect(store.get("routine", "r")).toMatchObject({
+      status: "conflict",
+      content: routine(30, 60),
+      server: { content: routine(35, 70) },
     });
   } finally {
     store.close();
