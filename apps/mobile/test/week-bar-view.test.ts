@@ -223,7 +223,11 @@ it("folds the days into the line on top, out of reach and out of the way of what
       root.find(
         (n) => isType(n, "AnimatedView") && n.children.length === 1 && n.parent?.props.onLayout,
       );
-    const dots = () => root.find((n) => isType(n, "AnimatedView") && n.props["aria-hidden"]);
+    // The dots: hidden from assistive tech always, and with no layout of their own to report.
+    const dots = () =>
+      root.find(
+        (n) => isType(n, "AnimatedView") && n.props["aria-hidden"] === true && !n.props.onLayout,
+      );
     const style = (node: ReturnType<typeof days>) =>
       Object.assign({}, ...[node.props.style].flat(2).filter(Boolean));
     const opacity = (node: ReturnType<typeof days>) => style(node).opacity;
@@ -252,6 +256,11 @@ it("folds the days into the line on top, out of reach and out of the way of what
     expect(days().props.pointerEvents).toBe("none");
     expect(days().props.accessibilityElementsHidden).toBe(true);
     expect(days().props.importantForAccessibility).toBe("no-hide-descendants");
+    // On the web, where only aria-hidden counts, and out of the keyboard's way too.
+    expect(days().props["aria-hidden"]).toBe(true);
+    expect(root.findAll((n) => isType(n, "Tap")).every((n) => n.props.focusable === false)).toBe(
+      true,
+    );
     expect(opacity(days())).toBe(0);
     expect(opacity(dots())).toBe(1);
     expect(shift(ground())).toBe(-34);
@@ -263,6 +272,23 @@ it("folds the days into the line on top, out of reach and out of the way of what
     await act(() => tree?.update(bar(false)));
     expect(days().props.pointerEvents).toBe("box-none");
     expect(opacity(days())).toBe(1);
+
+    // A picked day's names get the whole line: the dots are left out while it is picked.
+    const monday = () =>
+      root.find((n) => isType(n, "Tap") && n.props.accessibilityLabel?.startsWith("Monday"));
+    await act(() => monday().props.onPress());
+    expect(text(root)[0]).toBe("Mon 9 · Upper Body A");
+    expect(
+      root.findAll(
+        (n) => isType(n, "AnimatedView") && n.props["aria-hidden"] === true && !n.props.onLayout,
+      ),
+    ).toHaveLength(0);
+    // Folding lets go of it, since the days that would let go are hidden; the dots come back.
+    await act(() => tree?.update(bar(true)));
+    expect(text(root)[0]).toBe("This week · 9–15 Nov");
+    expect(dots().children).toHaveLength(7);
+    await act(() => tree?.update(bar(false)));
+    expect(monday().props.accessibilityState).toEqual({ selected: false });
   } finally {
     await act(() => tree?.unmount());
     vi.unstubAllGlobals();

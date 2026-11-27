@@ -176,7 +176,13 @@ export function useTabScroll() {
   const { height, onScroll } = useWeekBarFold();
   return {
     paddingTop: height + tabTopPadding,
-    scrollProps: { onScroll, scrollEventThrottle: 16, scrollIndicatorInsets: { top: height } },
+    scrollProps: {
+      onScroll,
+      scrollEventThrottle: 16,
+      // The bar's height already counts the status bar, so iOS mustn't add it again.
+      scrollIndicatorInsets: { top: height },
+      automaticallyAdjustsScrollIndicatorInsets: false,
+    },
   };
 }
 

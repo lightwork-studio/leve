@@ -60,6 +60,8 @@ export function WeekBar({
   const insets = useSafeAreaInsets();
   const reduced = useReducedMotion();
   const [picked, setPicked] = useState<{ week: number; start: number } | null>(null);
+  // Folding lets go of a picked day: with the days hidden there would be no way to let go of it.
+  if (folded && picked !== null) setPicked(null);
   const [daysHeight, setDaysHeight] = useState(0);
   const [height, setHeight] = useState(0);
   useEffect(() => {
@@ -109,31 +111,35 @@ export function WeekBar({
               </>
             )}
           </Text>
-          {/* The folded week: a dot per day, filled where there was a workout. */}
-          <Animated.View
-            aria-hidden
-            importantForAccessibility="no-hide-descendants"
-            pointerEvents="none"
-            style={[styles.dots, dots]}
-          >
-            {week.days.map((d) => (
-              <View
-                key={d.start}
-                style={[
-                  styles.dot,
-                  d.workouts.length > 0 && styles.dotOn,
-                  d.today && styles.dotToday,
-                  d.future && styles.dotFuture,
-                ]}
-              />
-            ))}
-          </Animated.View>
+          {/* The folded week: a dot per day, filled where there was a workout. Left out while a
+              day is picked (only when open), so its workouts' names get the whole line. */}
+          {!day && (
+            <Animated.View
+              aria-hidden
+              importantForAccessibility="no-hide-descendants"
+              pointerEvents="none"
+              style={[styles.dots, dots]}
+            >
+              {week.days.map((d) => (
+                <View
+                  key={d.start}
+                  style={[
+                    styles.dot,
+                    d.workouts.length > 0 && styles.dotOn,
+                    d.today && styles.dotToday,
+                    d.future && styles.dotFuture,
+                  ]}
+                />
+              ))}
+            </Animated.View>
+          )}
         </View>
         {action ?? <View style={styles.noAction} />}
       </View>
       <Animated.View
         pointerEvents={folded ? "none" : "box-none"}
         accessibilityElementsHidden={folded}
+        aria-hidden={folded}
         importantForAccessibility={folded ? "no-hide-descendants" : "auto"}
         onLayout={(event) => setDaysHeight(event.nativeEvent.layout.height)}
         style={[styles.days, days]}
@@ -172,6 +178,7 @@ export function WeekBar({
               accessibilityRole="button"
               accessibilityLabel={label}
               accessibilityState={{ selected: on }}
+              focusable={!folded}
               onPress={() => {
                 haptic.select();
                 setPicked(on ? null : { week: week.start, start: d.start });

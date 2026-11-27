@@ -1,5 +1,12 @@
 import { useIsFocused } from "expo-router";
-import { createContext, useCallback, useContext, useEffect, useRef } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useSyncExternalStore,
+} from "react";
 import type { NativeScrollEvent, NativeSyntheticEvent } from "react-native";
 import { weekFolded } from "../model/week-bar.ts";
 
@@ -18,6 +25,35 @@ export const WeekBarFoldContext = createContext<WeekBarFold>({
   covered: 0,
   setFolded: () => {},
 });
+
+/** Whether the bar is folded, kept apart from the tab layout so folding redraws only the bar. */
+export interface FoldStore {
+  folded(): boolean;
+  set(folded: boolean): void;
+  subscribe(listener: () => void): () => void;
+}
+
+export function createFoldStore(): FoldStore {
+  let folded = false;
+  const listeners = new Set<() => void>();
+  return {
+    folded: () => folded,
+    set(next) {
+      if (next === folded) return;
+      folded = next;
+      for (const listener of listeners) listener();
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+}
+
+/** The bar's side: whether it is folded now. */
+export function useFolded(store: FoldStore): boolean {
+  return useSyncExternalStore(store.subscribe, store.folded, store.folded);
+}
 
 /**
  * A tab's side of the week bar: where its content starts, and a scroll handler that folds the bar

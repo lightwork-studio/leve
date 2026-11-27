@@ -7,7 +7,9 @@ let shown = "train";
 let rendering = "train";
 vi.mock("expo-router", () => ({ useIsFocused: () => shown === rendering }));
 
-const { WeekBarFoldContext, useWeekBarFold } = await import("../src/ui/week-bar-fold.ts");
+const { createFoldStore, WeekBarFoldContext, useWeekBarFold } = await import(
+  "../src/ui/week-bar-fold.ts"
+);
 
 type Fold = ReturnType<typeof useWeekBarFold>;
 const tabs: Record<string, Fold> = {};
@@ -63,4 +65,21 @@ it("folds the week for the tab on show, and gives each tab its own state back", 
     await act(() => tree?.unmount());
     vi.unstubAllGlobals();
   }
+});
+
+it("tells the bar only when folding changes", () => {
+  const store = createFoldStore();
+  const listener = vi.fn();
+  const stop = store.subscribe(listener);
+  expect(store.folded()).toBe(false);
+  // The tabs report on every scroll that crosses a line, and on focus: repeats change nothing.
+  store.set(false);
+  expect(listener).not.toHaveBeenCalled();
+  store.set(true);
+  store.set(true);
+  expect(store.folded()).toBe(true);
+  expect(listener).toHaveBeenCalledTimes(1);
+  stop();
+  store.set(false);
+  expect(listener).toHaveBeenCalledTimes(1);
 });

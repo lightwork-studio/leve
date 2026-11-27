@@ -21,7 +21,12 @@ import { Tap } from "../../src/ui/tap.tsx";
 import { themedStyles, useColors, useStyles } from "../../src/ui/themed.ts";
 import { useToday } from "../../src/ui/use-now.ts";
 import { WeekBar, type WeekBarMode } from "../../src/ui/week-bar.tsx";
-import { WeekBarFoldContext } from "../../src/ui/week-bar-fold.ts";
+import {
+  createFoldStore,
+  type FoldStore,
+  useFolded,
+  WeekBarFoldContext,
+} from "../../src/ui/week-bar-fold.ts";
 import { whenIdle } from "../../src/ui/when-idle.ts";
 
 const TABS: {
@@ -44,14 +49,14 @@ export default function TabsLayout() {
   // The week floats over the tabs: they start their content below it and fold it as they scroll.
   const insets = useSafeAreaInsets();
   const [bar, setBar] = useState({ height: 0, covered: 0 });
-  const [folded, setFolded] = useState(false);
+  const [folding] = useState(createFoldStore);
   const fold = useMemo(
     () => ({
       height: bar.height || insets.top + BAR_ESTIMATE,
       covered: bar.covered || insets.top + FOLDED_ESTIMATE,
-      setFolded,
+      setFolded: folding.set,
     }),
-    [bar, insets.top],
+    [bar, insets.top, folding],
   );
   const onBarHeight = useCallback(
     (height: number, covered: number) =>
@@ -77,6 +82,11 @@ export default function TabsLayout() {
       <MainActionHeight.Provider value={tabHeight + (slotHeight > 0 ? slotHeight + space.sm : 0)}>
         <WeekBarFoldContext.Provider value={fold}>
           <View style={styles.flex}>
+            {/* One week over every tab: it stays put while the tabs change and scroll under it.
+                First, so it is read first; drawn over the tabs. */}
+            <View pointerEvents="box-none" style={styles.weekBar}>
+              <TabsWeekBar tab={focus} folding={folding} onHeight={onBarHeight} />
+            </View>
             <Tabs
               screenOptions={({ route }) => ({
                 headerShown: false,
@@ -111,10 +121,6 @@ export default function TabsLayout() {
                 <Tabs.Screen key={tab.name} name={tab.name} options={{ title: tab.title }} />
               ))}
             </Tabs>
-            {/* One week over every tab: it stays put while the tabs change and scroll under it. */}
-            <View pointerEvents="box-none" style={styles.weekBar}>
-              <TabsWeekBar tab={focus} folded={folded} onHeight={onBarHeight} />
-            </View>
             {tabHeight > 0 && (
               <View
                 pointerEvents="box-none"
@@ -139,23 +145,24 @@ const BAR_MODES: Record<string, WeekBarMode> = {
 };
 
 /** Roughly the week bar's height under the status bar, until it has been measured. */
-const BAR_ESTIMATE = 96;
+const BAR_ESTIMATE = 102;
 /** And roughly what is left of it folded. */
-const FOLDED_ESTIMATE = 46;
+const FOLDED_ESTIMATE = 54;
 
 /** The week bar, with the marks and the action of the tab on show. */
 function TabsWeekBar({
   tab,
-  folded,
+  folding,
   onHeight,
 }: {
   tab: string;
-  folded: boolean;
+  folding: FoldStore;
   onHeight: (height: number, covered: number) => void;
 }) {
   const mode = BAR_MODES[tab] ?? "train";
   // Only Train shows records, so only Train reads the history for them.
   const week = useWeekBar(useToday(), mode === "train");
+  const folded = useFolded(folding);
   return (
     <WeekBar week={week} mode={mode} action={useBarAction()} folded={folded} onHeight={onHeight} />
   );
@@ -341,7 +348,7 @@ const SWITCH_PAD = 4;
 
 const sheet = themedStyles((c) => ({
   flex: { flex: 1 },
-  weekBar: { position: "absolute", top: 0, left: 0, right: 0 },
+  weekBar: { position: "absolute", top: 0, left: 0, right: 0, zIndex: 1 },
   slot: { position: "absolute", left: gutter.group, right: gutter.group },
   bar: {
     position: "absolute",
