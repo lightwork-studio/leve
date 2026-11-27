@@ -1,8 +1,9 @@
 # Exercise images
 
-One still per exercise, showing a key position of the movement on its equipment. These are the
-first 40, chosen from the most common gym exercises. The app shows an exercise's image at the top
-of its screen and of its sheet in the current workout. Exercises without one keep the body figure.
+One still per exercise, showing a key position of the movement on its equipment. There are 80 so
+far, chosen from common gym exercises and added in groups of 40. The app shows an exercise's image
+at the top of its screen and of its sheet in the current workout. Exercises without one keep the
+body figure.
 
 - **Names:** each file is named after the built-in exercise it shows, without the `builtin:`
   prefix: `barbell-bench-press.webp` is `builtin:barbell-bench-press`. A new image also needs its
@@ -12,7 +13,10 @@ of its screen and of its sheet in the current workout. Exercises without one kee
   orange, secondary muscles in a lighter orange, and nothing else. The primary material colour is
   `#B73F22`; the studio lighting makes it look brighter in the renders. Within a listed group,
   only the parts the exercise works are coloured, such as the front deltoid for "Shoulders" on
-  the bench press.
+  the bench press, or the front and side deltoids on overhead presses. Where the catalog lists
+  "Full body" as the primary muscle, as on the kettlebell swing, only the secondary muscles are
+  coloured. "Abductors" colours the gluteus medius and the muscle along the outer hip
+  (tensor fasciae latae).
 - **Camera:** each exercise is seen from the side where its primary muscles show, so most back
   exercises are shown from behind. Where a seat or bench hides a muscle, as on the seated leg
   curl, only the visible part is coloured.
