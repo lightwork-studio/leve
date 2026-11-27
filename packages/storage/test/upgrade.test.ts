@@ -3,6 +3,7 @@ import { closeSync, openSync, readdirSync, readFileSync, writeSync } from "node:
 import { dirname, join, sep } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import {
+  DEVICE_SCHEMA_V1,
   DEVICE_STORAGE_VERSION,
   deviceStorageDefinition,
   verifyDeviceRecords,
@@ -10,6 +11,7 @@ import {
 import { openDeviceStore } from "../src/device-store.ts";
 import { readStorageMeta } from "../src/meta.ts";
 import { addReleaseRefresh } from "../src/migrations/1.0/storage-v2.ts";
+import { trackUncertainFields } from "../src/migrations/1.0/storage-v3.ts";
 import {
   buildDeviceFixture,
   dumpFile,
@@ -75,6 +77,62 @@ describe("the version-1 device fixture", () => {
     expect(store.activeWorkout()?.id).toBe(UNFINISHED_WORKOUT);
     store.close();
   });
+});
+
+it("upgrades a version-4 routine draft and its upload without inventing a starting copy", async () => {
+  const path = join(tempDir(), "pending-routine.db");
+  const current = deviceStorageDefinition();
+  const previous: StorageDefinition = {
+    ...current,
+    version: 4,
+    create(db) {
+      db.exec(DEVICE_SCHEMA_V1);
+      addReleaseRefresh.run(db);
+      trackUncertainFields.run(db);
+    },
+    steps: current.steps.filter(({ from }) => from < 4),
+  };
+  const routine = { title: "Strength", folderId: null, position: 1, exercises: [] };
+  const old = await openDeviceStore({ engine, path, definition: previous, appVersion: OLD_APP });
+  old.bindAccount("server", "account");
+  old.setNegotiated("1.0", [], "lineage");
+  old.applyPull([{ kind: "routine", id: "r", revision: 1, state: "live", content: routine }], 1);
+  old.put("routine", "r", { ...routine, title: "Strength A" });
+  const [upload] = old.prepareSubmissions("1.0");
+  if (!upload) throw Error("Missing routine submission");
+  const pending = old.get("routine", "r");
+  old.close();
+
+  const store = await openDeviceStore({ engine, path, appVersion: NEW_APP });
+  try {
+    expect(store.get("routine", "r")).toEqual(pending);
+    expect(store.prepareSubmissions("1.0")).toEqual([upload]);
+    expect(store.db.get("SELECT routine_base_content FROM records WHERE id = 'r'")).toEqual({
+      routine_base_content: null,
+    });
+    store.applyPushResults([
+      {
+        status: "conflict",
+        reason: "stale",
+        submissionId: upload.submission.submissionId,
+        current: {
+          kind: "routine",
+          id: "r",
+          revision: 2,
+          state: "live",
+          content: { ...routine, title: "Strength B" },
+        },
+      },
+    ]);
+    expect(store.routineConflictVersions("r")).toBeNull();
+    expect(store.get("routine", "r")).toMatchObject({
+      status: "conflict",
+      content: { title: "Strength A" },
+      server: { content: { title: "Strength B" } },
+    });
+  } finally {
+    store.close();
+  }
 });
 
 describe("upgrading device storage to a test-only version 2", () => {
@@ -1014,7 +1072,7 @@ it("recovers the previous storage version with pending and in-flight records bef
   const store = await openDeviceStore({ engine, path, appVersion: NEW_APP, contract });
   try {
     const after = readDeviceFile(path);
-    expect(after.storageVersion).toBe(4);
+    expect(after.storageVersion).toBe(DEVICE_STORAGE_VERSION);
     expect(meaning(after)).toEqual(meaning(before));
     expect(after.rawContent).toEqual(before.rawContent);
     expect(

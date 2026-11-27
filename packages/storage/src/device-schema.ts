@@ -13,6 +13,7 @@ import type { SqlConnection, SqlRow, SqlValue } from "./driver.ts";
 import { addReleaseRefresh } from "./migrations/1.0/storage-v2.ts";
 import { trackUncertainFields } from "./migrations/1.0/storage-v3.ts";
 import { storeWorkoutJournals } from "./migrations/1.0/storage-v4.ts";
+import { rememberRoutineEditBase } from "./migrations/1.0/storage-v5.ts";
 import type { StorageDefinition, UpgradeStep } from "./upgrade.ts";
 
 /*
@@ -30,7 +31,7 @@ import type { StorageDefinition, UpgradeStep } from "./upgrade.ts";
  * step and a fixture of the previous version.
  */
 
-export const DEVICE_STORAGE_VERSION = 4;
+export const DEVICE_STORAGE_VERSION = 5;
 
 export const RECORD_STATUSES = ["synced", "pending", "conflict", "partial", "invalid"] as const;
 export type RecordStatus = (typeof RECORD_STATUSES)[number];
@@ -286,7 +287,17 @@ export function verifyDeviceRecords(
       (row.parent_kind !== null && row.parent_kind !== contract.kind(kind).parent?.kind)
     )
       problems.push(`${where}: invalid parent index`);
-    for (const column of ["server_content", "local_content", "kept_content"] as const) {
+    if (
+      row.routine_base_content != null &&
+      (kind !== "routine" || row.local_state !== "live" || row.local_base === null)
+    )
+      problems.push(`${where}: routine starting copy has no pending edit`);
+    for (const column of [
+      "server_content",
+      "local_content",
+      "kept_content",
+      "routine_base_content",
+    ] as const) {
       const value = row[column];
       if (value === null || value === undefined) continue;
       const shapeProblem = jsonShapeProblem(value, "object");
@@ -393,8 +404,14 @@ export function deviceStorageDefinition(options: DeviceStorageOptions = {}): Sto
       db.exec(DEVICE_SCHEMA_V1);
       addReleaseRefresh.run(db);
       trackUncertainFields.run(db);
+      rememberRoutineEditBase.run(db);
     },
-    steps: options.steps ?? [addReleaseRefresh, trackUncertainFields, storeWorkoutJournals],
+    steps: options.steps ?? [
+      addReleaseRefresh,
+      trackUncertainFields,
+      storeWorkoutJournals,
+      rememberRoutineEditBase,
+    ],
     countedTables: ["records", "submissions"],
     verify: (db) => verifyDeviceRecords(db, contract),
     verifyPreserved: verifySavedUploadIdentity,

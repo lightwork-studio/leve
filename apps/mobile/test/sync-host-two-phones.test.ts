@@ -153,34 +153,44 @@ async function phone(name: string) {
   return { store, sync };
 }
 
-/** A routine as the editor saves it: loads per set, the way the maintainer's test changed them. */
-const routine = (loads: number[]): JsonObject => ({
+function exercise(
+  id: string,
+  exerciseId: string,
+  exerciseName: string,
+  loads: number[],
+  restSeconds = 90,
+) {
+  return {
+    id,
+    exerciseId,
+    exerciseName,
+    exerciseType: "weight_reps",
+    supersetId: null,
+    restSeconds,
+    useRepRange: false,
+    sets: loads.map((weightKg, index) => ({
+      id: `${id}-s${index + 1}`,
+      type: "normal",
+      weightKg,
+      reps: 8,
+      repRangeMin: null,
+      repRangeMax: null,
+      durationSeconds: null,
+      distanceMeters: null,
+      count: null,
+      rpe: null,
+    })),
+  };
+}
+
+const routine = (bench: number[], squat?: number[], benchRest = 90): JsonObject => ({
   title: "Test Routine A",
   folderId: null,
   position: 1,
   effortScale: "rpe",
   exercises: [
-    {
-      id: "x1",
-      exerciseId: "bench-press-barbell",
-      exerciseName: "Bench Press",
-      exerciseType: "weight_reps",
-      supersetId: null,
-      restSeconds: 90,
-      useRepRange: false,
-      sets: loads.map((weightKg, index) => ({
-        id: `x1-s${index + 1}`,
-        type: "normal",
-        weightKg,
-        reps: 8,
-        repRangeMin: null,
-        repRangeMax: null,
-        durationSeconds: null,
-        distanceMeters: null,
-        count: null,
-        rpe: null,
-      })),
-    },
+    exercise("x1", "bench-press-barbell", "Bench Press", bench, benchRest),
+    ...(squat ? [exercise("x2", "squat-barbell", "Squat", squat)] : []),
   ],
 });
 
@@ -190,6 +200,75 @@ async function show(store: DeviceStore) {
   await act(async () => root.render(h(SyncHost)));
 }
 const screen = () => document.body.textContent ?? "";
+
+it("syncs independent routine exercise changes together without a popup", async () => {
+  const a = await phone("a");
+  const b = await phone("b");
+  a.store.put("routine", "r1", routine([30], [60]));
+  await a.sync();
+  await b.sync();
+
+  a.store.put("routine", "r1", routine([35], [60]));
+  b.store.put("routine", "r1", routine([30], [70]));
+  await a.sync();
+  await b.sync();
+  await a.sync();
+
+  await show(b.store);
+  expect(screen()).toBe("");
+  for (const { store } of [a, b]) {
+    expect(store.get("routine", "r1")).toMatchObject({
+      status: "synced",
+      content: routine([35], [70]),
+    });
+  }
+});
+
+it.each([
+  { side: "On this phone", mine: [60], theirs: [70], bench: [55], rest: 120 },
+  { side: "In your account", mine: [70], theirs: [60], bench: [35], rest: 90 },
+])(
+  "keeps the independent squat edit when choosing $side for bench",
+  async ({ side, mine, theirs, bench, rest }) => {
+    const a = await phone("a");
+    const b = await phone("b");
+    a.store.put("routine", "r1", routine([30], [60]));
+    await a.sync();
+    await b.sync();
+
+    a.store.put("routine", "r1", routine([35], theirs));
+    b.store.put("routine", "r1", routine([55], mine, 120));
+    await a.sync();
+    await b.sync();
+    await show(b.store);
+
+    expect(screen()).toContain("Both choices keep independent exercise edits");
+    expect(screen()).toContain("Bench Press");
+    expect(screen()).toContain("Bench Press · Rest");
+    expect(screen()).not.toContain("Squat");
+    const option = Array.from(document.querySelectorAll<HTMLElement>('[role="radio"]')).find(
+      (choice) => choice.getAttribute("aria-label")?.startsWith(side),
+    );
+    if (!option) throw new Error(`Missing ${side} choice`);
+    await act(async () => option.click());
+    const confirm = Array.from(
+      document.querySelectorAll<HTMLElement>('button, [role="button"]'),
+    ).find((button) => button.textContent === "Keep this version");
+    if (!confirm) throw new Error("Missing confirm button");
+    await act(async () => confirm.click());
+
+    await b.sync();
+    await a.sync();
+    await show(b.store);
+    expect(screen()).toBe("");
+    for (const { store } of [a, b]) {
+      expect(store.get("routine", "r1")).toMatchObject({
+        status: "synced",
+        content: routine(bench, [70], rest),
+      });
+    }
+  },
+);
 
 it("asks about a routine changed on both phones while a workout started on the other one runs", async () => {
   const a = await phone("a");

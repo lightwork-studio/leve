@@ -608,18 +608,18 @@ function valueLabel(store: DeviceStore, name: string, value: JsonValue | undefin
   return "Changed";
 }
 
-/** A set as the person logs it: "80 kg × 8", "5:00", "warm-up". */
-function setValue(store: DeviceStore, values: JsonObject): string {
+/** A set as logged, or the active target from a routine's rep mode. */
+function setValue(store: DeviceStore, values: JsonObject, plannedRange?: boolean): string {
   const unit = readSettings(store).weightUnit;
   const parts: string[] = [];
   if (typeof values.weightKg === "number")
     parts.push(`${weightInput(values.weightKg, unit)} ${unit}`);
-  const reps =
-    typeof values.repRangeMin === "number" && typeof values.repRangeMax === "number"
-      ? `${values.repRangeMin}–${values.repRangeMax}`
-      : typeof values.reps === "number"
-        ? String(values.reps)
-        : null;
+  let reps = !plannedRange && typeof values.reps === "number" ? String(values.reps) : null;
+  if (plannedRange !== false && typeof values.repRangeMin === "number") {
+    if (typeof values.repRangeMax === "number")
+      reps = `${values.repRangeMin}–${values.repRangeMax}`;
+    else if (plannedRange) reps = String(values.repRangeMin);
+  }
   if (reps !== null) parts.push(parts.length ? `× ${reps}` : `${reps} reps`);
   if (typeof values.durationSeconds === "number") parts.push(durationLabel(values.durationSeconds));
   if (typeof values.distanceMeters === "number") parts.push(`${values.distanceMeters} m`);
@@ -635,7 +635,7 @@ function setValue(store: DeviceStore, values: JsonObject): string {
 /** A routine exercise's plan: "3 sets · 85 kg × 8". */
 function plannedExercise(store: DeviceStore, exercise: JsonObject): string {
   const sets = Array.isArray(exercise.sets) ? (exercise.sets as JsonObject[]) : [];
-  const values = sets.map((set) => setValue(store, set));
+  const values = sets.map((set) => setValue(store, set, exercise.useRepRange === true));
   // Set by set when they differ from one another, so their order shows too.
   const shown = new Set(values).size === 1 ? [values[0] as string] : values;
   const count = sets.length === 1 ? "1 set" : `${sets.length} sets`;
@@ -653,18 +653,43 @@ function routineExerciseLines(store: DeviceStore, mine: unknown, theirs: unknown
     unmatched.delete(exercise.id);
     const moved = !!match && others.indexOf(match) !== index;
     if (match && !moved && jsonEqual(match, exercise)) return;
-    const plan = plannedExercise(store, exercise);
-    // When the sets read the same, say what else differs: rest, superset, rep range.
-    const extra =
-      match && plan === plannedExercise(store, match)
-        ? (["restSeconds", "supersetId", "useRepRange", "exerciseType"] as const)
-            .filter((name) => !jsonEqual(exercise[name] ?? null, match[name] ?? null))
-            .map((name) => `${LABELS[name] ?? name} ${valueLabel(store, name, exercise[name])}`)
-        : [];
+    const label = String(exercise.exerciseName ?? "Exercise");
     lines.push({
-      label: String(exercise.exerciseName ?? "Exercise"),
-      value: [plan, ...extra, ...(moved ? [`number ${index + 1}`] : [])].join(" · "),
+      label,
+      value: [plannedExercise(store, exercise), ...(moved ? [`number ${index + 1}`] : [])].join(
+        " · ",
+      ),
     });
+    if (match) {
+      for (const name of ["restSeconds", "supersetId", "useRepRange", "exerciseType"] as const) {
+        if (jsonEqual(exercise[name] ?? null, match[name] ?? null)) continue;
+        lines.push({
+          label: `${label} · ${LABELS[name] ?? name}`,
+          value: valueLabel(store, name, exercise[name]),
+        });
+      }
+      // Switching rep modes keeps the other targets for later use. Compare those
+      // values too so choices with the same active targets can be told apart.
+      const inactive =
+        exercise.useRepRange === true
+          ? ([["reps", "Saved fixed reps"]] as const)
+          : ([
+              ["repRangeMin", "Saved minimum reps"],
+              ["repRangeMax", "Saved maximum reps"],
+            ] as const);
+      const otherSets = new Map(list(match.sets).map((set) => [set.id, set]));
+      list(exercise.sets).forEach((set, setIndex) => {
+        const other = otherSets.get(set.id);
+        if (!other) return;
+        for (const [field, fieldLabel] of inactive) {
+          if (jsonEqual(set[field] ?? null, other[field] ?? null)) continue;
+          lines.push({
+            label: `${label} · Set ${setIndex + 1} · ${fieldLabel}`,
+            value: valueLabel(store, field, set[field]),
+          });
+        }
+      });
+    }
   });
   for (const exercise of unmatched.values())
     lines.push({
@@ -786,11 +811,16 @@ function describe(
   const owner = records[0] as DeviceRecord;
   const phone: ConflictLine[] = [];
   const account: ConflictLine[] = [];
+  let includesIndependentEdits = false;
   for (const row of records) {
     const which = recordCase(row);
-    const mine = row.deleted ? null : (row.content ?? null);
+    const versions = row.kind === "routine" ? store.routineConflictVersions(row.id) : null;
+    const mine = versions?.phone ?? (row.deleted ? null : (row.content ?? null));
     // Under something deleted in the account, the account's copy goes with it, whatever it held.
-    const theirs = row.problem?.reason === "parent_deleted" ? null : accountContent(row);
+    const theirs =
+      versions?.account ?? (row.problem?.reason === "parent_deleted" ? null : accountContent(row));
+    if (versions && (!jsonEqual(mine, row.content) || !jsonEqual(theirs, accountContent(row))))
+      includesIndependentEdits = true;
     phone.push(
       ...sideLines(
         store,
@@ -878,7 +908,9 @@ function describe(
     }
     case "routine":
       title = String(field(owner, "title") ?? "Routine");
-      subtitle = "Routine";
+      subtitle = includesIndependentEdits
+        ? "Both choices keep independent exercise edits"
+        : "Routine";
       break;
     case "routine_folder":
       title = String(field(owner, "title") ?? "Folder");
