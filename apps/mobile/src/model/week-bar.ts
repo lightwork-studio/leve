@@ -230,3 +230,27 @@ export function weekBarDayLabel(day: WeekBarDay, mode: WeekBarMode): string {
   }
   return parts.join(", ");
 }
+
+/** The text under a day's date on Train: its monogram, two of them, or one and how many more. */
+export function dayMonograms(day: WeekBarDay): string {
+  const [first, second] = day.workouts;
+  if (!first) return "";
+  const a = first.monogram || "·";
+  if (!second) return a;
+  // More than two, or a second without letters, don't fit beside the first: count them instead.
+  if (day.workouts.length > 2 || !second.monogram) return `${a}+${day.workouts.length - 1}`;
+  return `${a}·${second.monogram}`;
+}
+
+/** How far a tab scrolls before the week folds into the line above it. */
+export const FOLD_PAST = 12;
+/** How close to the top it comes back before the week opens again. */
+export const OPEN_BELOW = 4;
+
+/**
+ * Whether the week is folded at this scroll offset. The two thresholds keep it from flickering
+ * when a list rests right at the edge.
+ */
+export function weekFolded(offset: number, folded: boolean): boolean {
+  return folded ? offset > OPEN_BELOW : offset > FOLD_PAST;
+}

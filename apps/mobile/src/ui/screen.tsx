@@ -7,6 +7,7 @@ import { StillOnOpen } from "./enter.tsx";
 import { ChevronIcon } from "./icons.tsx";
 import { Tap } from "./tap.tsx";
 import { themedStyles, useColors, useStyles } from "./themed.ts";
+import { useWeekBarFold } from "./week-bar-fold.ts";
 
 /** A tab screen's large title, with an optional small caps line above it and an action beside it. */
 export function TabTitle({
@@ -55,6 +56,37 @@ export function HeaderButton({
     </Tap>
   );
 }
+
+/**
+ * The week bar's action: a bare icon, no tile, so the bar stays quiet. It is drawn smaller than a
+ * touch target and reaches out to one past its edges.
+ */
+export function BarButton({
+  label,
+  onPress,
+  children,
+}: {
+  label: string;
+  onPress: () => void;
+  children: ReactNode;
+}) {
+  const styles = useStyles(sheet);
+  return (
+    <Tap
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={onPress}
+      scaleTo={0.9}
+      hitSlop={BAR_BUTTON_SLOP}
+      style={styles.barButton}
+    >
+      {children}
+    </Tap>
+  );
+}
+
+/** Reaches the bar button's 36 × 32 out to 48 × 44. */
+const BAR_BUTTON_SLOP = 6;
 
 /** The way back from a pushed screen: a chevron and the name of where it goes. */
 export function BackButton({
@@ -137,6 +169,18 @@ export const tabContentStyle = { paddingHorizontal: space.lg, paddingBottom: spa
 export const tabTopPadding = space.lg;
 
 /**
+ * For a tab's scrolling list: content that starts under the week bar floating over it, and the
+ * scroll handler that folds the bar as the list moves.
+ */
+export function useTabScroll() {
+  const { height, onScroll } = useWeekBarFold();
+  return {
+    paddingTop: height + tabTopPadding,
+    scrollProps: { onScroll, scrollEventThrottle: 16, scrollIndicatorInsets: { top: height } },
+  };
+}
+
+/**
  * A screen's scrolling content under a large title with an optional action beside it. Without a
  * title it is a tab under the week bar, which leads it instead.
  */
@@ -161,16 +205,18 @@ export function TabScreen({
   const styles = useStyles(sheet);
   const insets = useSafeAreaInsets();
   const paddingBottom = useTabBottomPadding();
+  const tab = useTabScroll();
   return (
     <ScrollView
       ref={scrollRef}
       style={styles.scroll}
+      {...(title === undefined ? tab.scrollProps : {})}
       scrollEnabled={scrollEnabled}
       automaticallyAdjustKeyboardInsets={hasTextInput}
       keyboardShouldPersistTaps={hasTextInput ? "handled" : "never"}
       contentContainerStyle={[
         styles.content,
-        { paddingTop: title === undefined ? tabTopPadding : insets.top + 20, paddingBottom },
+        { paddingTop: title === undefined ? tab.paddingTop : insets.top + 20, paddingBottom },
       ]}
     >
       {title !== undefined && <TabTitle title={title} eyebrow={eyebrow} action={action} />}
@@ -199,6 +245,13 @@ const sheet = themedStyles((c) => ({
   },
   backLabel: { ...type.action, letterSpacing: 1.26, color: c.fg2, flexShrink: 1 },
   screenTitle: { flex: 1, textAlign: "center", ...type.rowTitle, fontSize: 15, color: c.fg },
+  barButton: {
+    width: 36,
+    height: 32,
+    marginRight: -4,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   headerButton: {
     width: touch,
     height: touch,

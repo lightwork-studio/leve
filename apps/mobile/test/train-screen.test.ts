@@ -4,6 +4,7 @@ import { Text, View } from "react-native";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { expect, it, vi } from "vitest";
 import TrainScreen from "../app/(tabs)/index.tsx";
+import { WeekBarFoldContext } from "../src/ui/week-bar-fold.ts";
 
 let reduced = false;
 let activeTitle: string | null = "Bench";
@@ -25,7 +26,7 @@ vi.mock("react-native", () => ({
   StyleSheet: { create: (s: object) => s },
 }));
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 30 }) }));
-vi.mock("../src/ui/screen.tsx", () => ({ TabScreen: "Screen", HeaderButton: "HeaderButton" }));
+vi.mock("../src/ui/screen.tsx", () => ({ TabScreen: "Screen", BarButton: "BarButton" }));
 // The slot draws what a screen offers elsewhere; here the offer stays in the tree to be inspected.
 vi.mock("../src/ui/main-action.tsx", () => ({ MainAction: "MainAction", BarAction: "BarAction" }));
 vi.mock("../src/ui/commit-button.tsx", () => ({ CommitButton: "CommitButton" }));
@@ -166,8 +167,12 @@ it.each([false, true])(
     });
     let screen: ReactTestRenderer | undefined;
     try {
+      // The folded week bar still covers the top 90 pt of the screen.
+      const fold = { height: 140, covered: 90, setFolded: () => {} };
       await act(() => {
-        screen = create(createElement(TrainScreen));
+        screen = create(
+          createElement(WeekBarFoldContext.Provider, { value: fold }, createElement(TrainScreen)),
+        );
       });
       if (!screen) throw new Error("Train did not mount");
       const root = screen.root;
@@ -193,7 +198,8 @@ it.each([false, true])(
       layouts().at(-1)?.props.onLayout(layout(1050, 1300));
       expect(scrollTo).not.toHaveBeenCalled();
       nextFrame?.();
-      expect(scrollTo).toHaveBeenCalledWith({ y: 1312, animated: !preference });
+      // The header lands just below the folded bar, not under it.
+      expect(scrollTo).toHaveBeenCalledWith({ y: 1222, animated: !preference });
       await act(() => press(root, "Edit routines"));
       await act(() => press(root, "Edit Gym folder"));
       expect(root.findByProps({ initialName: "Gym" })).toBeDefined();
@@ -230,7 +236,7 @@ it.each([null, "Strength and conditioning with a long accessory circuit"])(
       // The week itself is drawn over the tabs; Train offers settings beside it.
       const settings = screen.root
         .findByType("BarAction" as never)
-        .findByType("HeaderButton" as never);
+        .findByType("BarButton" as never);
       expect(settings.props.label).toBe("Settings");
       settings.props.onPress();
       expect(push).toHaveBeenCalledWith("/settings");

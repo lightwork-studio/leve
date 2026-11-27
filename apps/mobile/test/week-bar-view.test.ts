@@ -9,6 +9,15 @@ vi.mock("react-native", () => ({
   Text: "Text",
   StyleSheet: { create: (s: object) => s },
 }));
+// Styles are worked out at once from the fold's current value, as if every move were instant.
+vi.mock("react-native-reanimated", () => ({
+  default: { View: "AnimatedView" },
+  useAnimatedStyle: (style: () => object) => style(),
+  useReducedMotion: () => true,
+  useSharedValue: (value: number) => ({ value }),
+  withTiming: (value: number) => value,
+}));
+vi.mock("../src/ui/motion.ts", () => ({ easeOut: null }));
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 40 }) }));
 vi.mock("../src/ui/tap.tsx", () => ({ Tap: "Tap" }));
 vi.mock("../src/ui/record-mark.tsx", () => ({ RecordMark: "RecordMark" }));
@@ -96,8 +105,7 @@ it("names the week on top, keeps the frame on every tab, and changes only the ma
       "FB",
       "W",
       "11",
-      "LB",
-      "ER",
+      "LB·ER",
       "T",
       "12",
       "F",
@@ -191,6 +199,70 @@ it("names the week on top, keeps the frame on every tab, and changes only the ma
       "Wednesday 11, volume down 15% on last time",
     ]);
     expect(head()).toBe("This week · 9–15 Nov");
+  } finally {
+    await act(() => tree?.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("folds the days into the line on top, out of reach and out of the way of what scrolls under", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  let tree: ReactTestRenderer | undefined;
+  const onHeight = vi.fn();
+  const bar = (folded: boolean) =>
+    h(WeekBar, { week, mode: "train", action: null, folded, onHeight });
+  try {
+    await act(() => {
+      tree = create(bar(false));
+    });
+    const root = (tree as ReactTestRenderer).root;
+    const days = () =>
+      root.find((n) => isType(n, "AnimatedView") && "accessibilityElementsHidden" in n.props);
+    // The first animated view: the ground, holding the hairline.
+    const ground = () =>
+      root.find(
+        (n) => isType(n, "AnimatedView") && n.children.length === 1 && n.parent?.props.onLayout,
+      );
+    const dots = () => root.find((n) => isType(n, "AnimatedView") && n.props["aria-hidden"]);
+    const style = (node: ReturnType<typeof days>) =>
+      Object.assign({}, ...[node.props.style].flat(2).filter(Boolean));
+    const opacity = (node: ReturnType<typeof days>) => style(node).opacity;
+    const shift = (node: ReturnType<typeof days>) => style(node).transform[0].translateY;
+
+    // The bar reports its height, so the tabs can start their content under it.
+    await act(() =>
+      root
+        .find((n) => isType(n, "View") && n.props.pointerEvents === "box-none")
+        .props.onLayout({ nativeEvent: { layout: { height: 132 } } }),
+    );
+    await act(() => days().props.onLayout({ nativeEvent: { layout: { height: 34 } } }));
+    // Folded, the days' height no longer covers the tab.
+    expect(onHeight).toHaveBeenLastCalledWith(132, 98);
+
+    // Open: the days are there to tap, the dots aren't shown, and the ground covers the days.
+    expect(days().props.pointerEvents).toBe("box-none");
+    expect(days().props.accessibilityElementsHidden).toBe(false);
+    expect(opacity(days())).toBe(1);
+    expect(opacity(dots())).toBe(0);
+    expect(shift(ground())).toBeCloseTo(0);
+
+    // Folded: the days fade out of reach and of VoiceOver, the ground slides up by their height
+    // so what scrolls under them shows, and a dot per day is left, filled where there was a workout.
+    await act(() => tree?.update(bar(true)));
+    expect(days().props.pointerEvents).toBe("none");
+    expect(days().props.accessibilityElementsHidden).toBe(true);
+    expect(days().props.importantForAccessibility).toBe("no-hide-descendants");
+    expect(opacity(days())).toBe(0);
+    expect(opacity(dots())).toBe(1);
+    expect(shift(ground())).toBe(-34);
+    expect(dots().children).toHaveLength(7);
+    // The line on top still says which week it is.
+    expect(text(root)[0]).toBe("This week · 9–15 Nov");
+
+    // And it opens again when the tab is back at the top.
+    await act(() => tree?.update(bar(false)));
+    expect(days().props.pointerEvents).toBe("box-none");
+    expect(opacity(days())).toBe(1);
   } finally {
     await act(() => tree?.unmount());
     vi.unstubAllGlobals();

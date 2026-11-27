@@ -1,5 +1,5 @@
 import { Tabs, useSegments } from "expo-router";
-import { type ComponentType, useEffect, useRef, useState } from "react";
+import { type ComponentType, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Easing, type Animated as RNAnimated, StyleSheet, Text, View } from "react-native";
 import Animated, {
   useAnimatedStyle,
@@ -21,6 +21,7 @@ import { Tap } from "../../src/ui/tap.tsx";
 import { themedStyles, useColors, useStyles } from "../../src/ui/themed.ts";
 import { useToday } from "../../src/ui/use-now.ts";
 import { WeekBar, type WeekBarMode } from "../../src/ui/week-bar.tsx";
+import { WeekBarFoldContext } from "../../src/ui/week-bar-fold.ts";
 import { whenIdle } from "../../src/ui/when-idle.ts";
 
 const TABS: {
@@ -40,6 +41,25 @@ export default function TabsLayout() {
   const reduced = useReducedMotion();
   const [tabHeight, setTabHeight] = useState(0);
   const [slotHeight, setSlotHeight] = useState(0);
+  // The week floats over the tabs: they start their content below it and fold it as they scroll.
+  const insets = useSafeAreaInsets();
+  const [bar, setBar] = useState({ height: 0, covered: 0 });
+  const [folded, setFolded] = useState(false);
+  const fold = useMemo(
+    () => ({
+      height: bar.height || insets.top + BAR_ESTIMATE,
+      covered: bar.covered || insets.top + FOLDED_ESTIMATE,
+      setFolded,
+    }),
+    [bar, insets.top],
+  );
+  const onBarHeight = useCallback(
+    (height: number, covered: number) =>
+      setBar((was) =>
+        was.height === height && was.covered === covered ? was : { height, covered },
+      ),
+    [],
+  );
   // Which tab is arriving, so it can fade in differently from the one leaving (the scenes'
   // animation alone can't tell them apart). A tap sets it in the same update as the switch;
   // other ways of changing tabs (a link) catch up from the route a moment later.
@@ -55,54 +75,58 @@ export default function TabsLayout() {
     <MainActionProvider>
       {/* Tab screens scroll clear of the floating tabs, and of the main action when there is one. */}
       <MainActionHeight.Provider value={tabHeight + (slotHeight > 0 ? slotHeight + space.sm : 0)}>
-        <View style={styles.flex}>
-          {/* One week over every tab: it stays put while the tabs change under it. */}
-          <TabsWeekBar tab={focus} />
-          <Tabs
-            screenOptions={({ route }) => ({
-              headerShown: false,
-              sceneStyle: { backgroundColor: c.bg },
-              // Tabs fade through (see fadeIn and fadeOut); reduced motion switches them without moving.
-              ...(reduced
-                ? { animation: "none" }
-                : {
-                    sceneStyleInterpolator: route.name === focus ? fadeIn : fadeOut,
-                    transitionSpec: TAB_TRANSITION,
-                  }),
-            })}
-            tabBar={({ state, descriptors, navigateToTab }) => (
-              <TabBar
-                onHeight={setTabHeight}
-                active={state.routes[state.index]?.name}
-                preload={(name) => {
-                  const current = state.routes[state.index];
-                  if (current) descriptors[current.key]?.navigation.preload(name);
-                }}
-                onSelect={(name) => {
-                  const route = state.routes.find((r) => r.name === name);
-                  if (!route || route.name === state.routes[state.index]?.name) return;
-                  haptic.select();
-                  setFocus(route.name);
-                  navigateToTab(route.key);
-                }}
-              />
-            )}
-          >
-            {TABS.map((tab) => (
-              <Tabs.Screen key={tab.name} name={tab.name} options={{ title: tab.title }} />
-            ))}
-          </Tabs>
-          {tabHeight > 0 && (
-            <View
-              pointerEvents="box-none"
-              style={[styles.slot, { bottom: tabHeight + space.sm }]}
-              onLayout={(event) => setSlotHeight(event.nativeEvent.layout.height)}
+        <WeekBarFoldContext.Provider value={fold}>
+          <View style={styles.flex}>
+            <Tabs
+              screenOptions={({ route }) => ({
+                headerShown: false,
+                sceneStyle: { backgroundColor: c.bg },
+                // Tabs fade through (see fadeIn and fadeOut); reduced motion switches them without moving.
+                ...(reduced
+                  ? { animation: "none" }
+                  : {
+                      sceneStyleInterpolator: route.name === focus ? fadeIn : fadeOut,
+                      transitionSpec: TAB_TRANSITION,
+                    }),
+              })}
+              tabBar={({ state, descriptors, navigateToTab }) => (
+                <TabBar
+                  onHeight={setTabHeight}
+                  active={state.routes[state.index]?.name}
+                  preload={(name) => {
+                    const current = state.routes[state.index];
+                    if (current) descriptors[current.key]?.navigation.preload(name);
+                  }}
+                  onSelect={(name) => {
+                    const route = state.routes.find((r) => r.name === name);
+                    if (!route || route.name === state.routes[state.index]?.name) return;
+                    haptic.select();
+                    setFocus(route.name);
+                    navigateToTab(route.key);
+                  }}
+                />
+              )}
             >
-              {/* A running workout takes the place of whatever the tab offers. */}
-              <MainActionSlot render={(offered) => <MiniPlayer fallback={offered} />} />
+              {TABS.map((tab) => (
+                <Tabs.Screen key={tab.name} name={tab.name} options={{ title: tab.title }} />
+              ))}
+            </Tabs>
+            {/* One week over every tab: it stays put while the tabs change and scroll under it. */}
+            <View pointerEvents="box-none" style={styles.weekBar}>
+              <TabsWeekBar tab={focus} folded={folded} onHeight={onBarHeight} />
             </View>
-          )}
-        </View>
+            {tabHeight > 0 && (
+              <View
+                pointerEvents="box-none"
+                style={[styles.slot, { bottom: tabHeight + space.sm }]}
+                onLayout={(event) => setSlotHeight(event.nativeEvent.layout.height)}
+              >
+                {/* A running workout takes the place of whatever the tab offers. */}
+                <MainActionSlot render={(offered) => <MiniPlayer fallback={offered} />} />
+              </View>
+            )}
+          </View>
+        </WeekBarFoldContext.Provider>
       </MainActionHeight.Provider>
     </MainActionProvider>
   );
@@ -114,12 +138,27 @@ const BAR_MODES: Record<string, WeekBarMode> = {
   progress: "progress",
 };
 
+/** Roughly the week bar's height under the status bar, until it has been measured. */
+const BAR_ESTIMATE = 96;
+/** And roughly what is left of it folded. */
+const FOLDED_ESTIMATE = 46;
+
 /** The week bar, with the marks and the action of the tab on show. */
-function TabsWeekBar({ tab }: { tab: string }) {
+function TabsWeekBar({
+  tab,
+  folded,
+  onHeight,
+}: {
+  tab: string;
+  folded: boolean;
+  onHeight: (height: number, covered: number) => void;
+}) {
   const mode = BAR_MODES[tab] ?? "train";
   // Only Train shows records, so only Train reads the history for them.
   const week = useWeekBar(useToday(), mode === "train");
-  return <WeekBar week={week} mode={mode} action={useBarAction()} />;
+  return (
+    <WeekBar week={week} mode={mode} action={useBarAction()} folded={folded} onHeight={onHeight} />
+  );
 }
 
 function TabBar({
@@ -302,6 +341,7 @@ const SWITCH_PAD = 4;
 
 const sheet = themedStyles((c) => ({
   flex: { flex: 1 },
+  weekBar: { position: "absolute", top: 0, left: 0, right: 0 },
   slot: { position: "absolute", left: gutter.group, right: gutter.group },
   bar: {
     position: "absolute",
