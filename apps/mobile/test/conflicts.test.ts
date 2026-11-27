@@ -342,7 +342,10 @@ it("asks about a refused change on its own, apart from valid changes beside it",
 });
 
 it("shows differences a set's weight and reps don't, and a routine's planned targets", async () => {
-  const plan = (kg: number) => ({
+  const plan = (
+    kg: number,
+    target: { reps?: number; min?: number; max?: number; useRange?: boolean } = {},
+  ) => ({
     title: "Push",
     folderId: null,
     position: 1,
@@ -355,15 +358,15 @@ it("shows differences a set's weight and reps don't, and a routine's planned tar
         exerciseType: "weight_reps",
         supersetId: null,
         restSeconds: 90,
-        useRepRange: false,
+        useRepRange: target.useRange ?? false,
         sets: [
           {
             id: "t1",
             type: "normal",
             weightKg: kg,
-            reps: 8,
-            repRangeMin: null,
-            repRangeMax: null,
+            reps: target.reps ?? 8,
+            repRangeMin: target.min ?? null,
+            repRangeMax: target.max ?? null,
             distanceMeters: null,
             durationSeconds: null,
             count: null,
@@ -379,12 +382,21 @@ it("shows differences a set's weight and reps don't, and a routine's planned tar
     store.put("workout_exercise", "e1", entry("w1"));
     store.put("workout_set", "s1", set(80, 8));
     store.put("routine", "r1", plan(80));
+    store.put("routine", "fixed", plan(80, { min: 6, max: 8 }));
+    store.put("routine", "minimum", plan(80, { min: 6, useRange: true }));
+    store.put("routine", "cleared-minimum", plan(80, { min: 6, useRange: true }));
   });
   a.store.put("workout_set", "s1", { ...set(80, 8), rpe: 7 });
   a.store.put("routine", "r1", plan(90));
+  a.store.put("routine", "fixed", plan(80, { reps: 9, min: 6, max: 8 }));
+  a.store.put("routine", "minimum", plan(80, { min: 7, useRange: true }));
+  a.store.put("routine", "cleared-minimum", plan(80, { min: 8, useRange: true }));
   await a.sync();
   b.store.put("workout_set", "s1", { ...set(80, 8), rpe: 9 });
   b.store.put("routine", "r1", plan(85));
+  b.store.put("routine", "fixed", plan(80, { reps: 10, min: 6, max: 8 }));
+  b.store.put("routine", "minimum", plan(80, { min: 9, useRange: true }));
+  b.store.put("routine", "cleared-minimum", plan(80, { useRange: true }));
   await b.sync();
 
   const all = conflicts(b.store);
@@ -402,6 +414,18 @@ it("shows differences a set's weight and reps don't, and a routine's planned tar
   expect(routineConflict.account.lines).toEqual([
     { label: "Bench Press", value: "1 set · 90 kg × 8" },
   ]);
+  expect(all.find((item) => item.key === "routine:fixed")).toMatchObject({
+    phone: { lines: [{ label: "Bench Press", value: "1 set · 80 kg × 10" }] },
+    account: { lines: [{ label: "Bench Press", value: "1 set · 80 kg × 9" }] },
+  });
+  expect(all.find((item) => item.key === "routine:minimum")).toMatchObject({
+    phone: { lines: [{ label: "Bench Press", value: "1 set · 80 kg × 9" }] },
+    account: { lines: [{ label: "Bench Press", value: "1 set · 80 kg × 7" }] },
+  });
+  expect(all.find((item) => item.key === "routine:cleared-minimum")).toMatchObject({
+    phone: { lines: [{ label: "Bench Press", value: "1 set · 80 kg" }] },
+    account: { lines: [{ label: "Bench Press", value: "1 set · 80 kg × 8" }] },
+  });
 });
 
 it("settles a record deleted in both places", async () => {

@@ -608,18 +608,18 @@ function valueLabel(store: DeviceStore, name: string, value: JsonValue | undefin
   return "Changed";
 }
 
-/** A set as the person logs it: "80 kg × 8", "5:00", "warm-up". */
-function setValue(store: DeviceStore, values: JsonObject): string {
+/** A set as logged, or the active target from a routine's rep mode. */
+function setValue(store: DeviceStore, values: JsonObject, plannedRange?: boolean): string {
   const unit = readSettings(store).weightUnit;
   const parts: string[] = [];
   if (typeof values.weightKg === "number")
     parts.push(`${weightInput(values.weightKg, unit)} ${unit}`);
-  const reps =
-    typeof values.repRangeMin === "number" && typeof values.repRangeMax === "number"
-      ? `${values.repRangeMin}–${values.repRangeMax}`
-      : typeof values.reps === "number"
-        ? String(values.reps)
-        : null;
+  let reps = !plannedRange && typeof values.reps === "number" ? String(values.reps) : null;
+  if (plannedRange !== false && typeof values.repRangeMin === "number") {
+    if (typeof values.repRangeMax === "number")
+      reps = `${values.repRangeMin}–${values.repRangeMax}`;
+    else if (plannedRange) reps = String(values.repRangeMin);
+  }
   if (reps !== null) parts.push(parts.length ? `× ${reps}` : `${reps} reps`);
   if (typeof values.durationSeconds === "number") parts.push(durationLabel(values.durationSeconds));
   if (typeof values.distanceMeters === "number") parts.push(`${values.distanceMeters} m`);
@@ -635,7 +635,7 @@ function setValue(store: DeviceStore, values: JsonObject): string {
 /** A routine exercise's plan: "3 sets · 85 kg × 8". */
 function plannedExercise(store: DeviceStore, exercise: JsonObject): string {
   const sets = Array.isArray(exercise.sets) ? (exercise.sets as JsonObject[]) : [];
-  const values = sets.map((set) => setValue(store, set));
+  const values = sets.map((set) => setValue(store, set, exercise.useRepRange === true));
   // Set by set when they differ from one another, so their order shows too.
   const shown = new Set(values).size === 1 ? [values[0] as string] : values;
   const count = sets.length === 1 ? "1 set" : `${sets.length} sets`;
