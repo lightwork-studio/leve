@@ -75,12 +75,17 @@ vi.mock("../src/ui/icons.tsx", () => ({
 // The week bar draws what History offers; here the offer stays in the tree to be pressed.
 vi.mock("../src/ui/main-action.tsx", () => ({ BarAction: "BarAction" }));
 vi.mock("../src/ui/flash.tsx", () => ({ Flash: "Flash", flashDuration: 2400 }));
+// The list starts under the week bar and folds it as it scrolls.
+const foldScroll = vi.fn();
 vi.mock("../src/ui/screen.tsx", () => ({
-  HeaderButton: "HeaderButton",
+  BarButton: "BarButton",
   BackButton: "BackButton",
   tabContentStyle: {},
-  tabTopPadding: 16,
   useTabBottomPadding: () => 0,
+  useTabScroll: () => ({
+    paddingTop: 128,
+    scrollProps: { onScroll: foldScroll, scrollEventThrottle: 16 },
+  }),
 }));
 vi.mock("../src/ui/workout-sync-review.tsx", () => ({ WorkoutSyncReview: "WorkoutSyncReview" }));
 vi.mock("../src/ui/tap.tsx", () => ({ Tap: "Tap" }));
@@ -471,6 +476,9 @@ it("draws each session's sets as a barcode with its record set in brass", async 
   let row: ReactTestRenderer | undefined;
   try {
     const list = root.findByType(SectionList);
+    // The list scrolls under the week bar, from below it, and folds it as it goes.
+    expect(list.props.onScroll).toBe(foldScroll);
+    expect(list.props.contentContainerStyle[1]).toEqual({ paddingTop: 128, paddingBottom: 0 });
     await act(() => {
       row = create(
         list.props.renderItem({ item: workout, index: 0, section: list.props.sections[0] }),
@@ -608,7 +616,7 @@ it("keeps the month controls on screen, greyed out, while there is only one mont
       expect(control.props.accessibilityState).toEqual({ disabled: true });
     }
     // The week bar's only History action is search: it scrolls back to the field and opens it.
-    const search = root.findByType("BarAction" as never).findByType("HeaderButton" as never);
+    const search = root.findByType("BarAction" as never).findByType("BarButton" as never);
     expect(search.props.label).toBe("Search workouts or exercises");
     expect(focus).not.toHaveBeenCalled();
     await act(() => search.props.onPress());

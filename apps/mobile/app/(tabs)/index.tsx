@@ -4,6 +4,7 @@ import {
   memo,
   type ReactNode,
   useCallback,
+  useContext,
   useEffect,
   useRef,
   useState,
@@ -48,12 +49,13 @@ import { BarAction, MainAction } from "../../src/ui/main-action.tsx";
 import { ModeTile } from "../../src/ui/mode-tile.tsx";
 import { NewFolderDialog } from "../../src/ui/new-folder-dialog.tsx";
 import { showToast } from "../../src/ui/notice.tsx";
-import { HeaderButton, TabScreen } from "../../src/ui/screen.tsx";
+import { BarButton, TabScreen } from "../../src/ui/screen.tsx";
 import { StartActions } from "../../src/ui/start-actions.tsx";
 import { Tap } from "../../src/ui/tap.tsx";
 import { themedStyles, useColors, useStyles } from "../../src/ui/themed.ts";
 import { TrainSyncReview } from "../../src/ui/train-sync-review.tsx";
 import { useNow } from "../../src/ui/use-now.ts";
+import { WeekBarFoldContext } from "../../src/ui/week-bar-fold.ts";
 
 export default function TrainScreen() {
   const now = useNow();
@@ -80,6 +82,8 @@ export default function TrainScreen() {
   const [renaming, setRenaming] = useState<RoutineGroup["folder"]>(null);
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
   const routinesY = useRef(0);
+  // A header scrolled to the top lands under the folded week bar, so it stops that much short.
+  const { covered } = useContext(WeekBarFoldContext);
   const reveal = useRef<string | null>(null);
   // A device runs one workout at a time. Tapping the running routine opens it again; tapping
   // another asks what to do with the running one first.
@@ -196,9 +200,9 @@ export default function TrainScreen() {
     <TabScreen scrollRef={scroll} scrollEnabled={!gripHeld}>
       {/* Settings sit beside the week over the tabs while Train is on show. */}
       <BarAction>
-        <HeaderButton label="Settings" onPress={openSettings}>
-          <GearIcon color={c.fg2} size={19} />
-        </HeaderButton>
+        <BarButton label="Settings" onPress={openSettings}>
+          <GearIcon color={c.fg2} size={18} />
+        </BarButton>
       </BarAction>
       {/* Starting sits in the main-action slot above the tabs, offering the routine next in
           rotation beside an empty workout. While a workout runs, the slot shows that workout
@@ -316,7 +320,7 @@ export default function TrainScreen() {
                     if (reveal.current !== key) return;
                     reveal.current = null;
                     scroll.current?.scrollTo({
-                      y: Math.max(0, routinesY.current + y - space.sm),
+                      y: Math.max(0, routinesY.current + y - covered - space.sm),
                       animated: !reduced,
                     });
                   });

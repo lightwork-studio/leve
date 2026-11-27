@@ -3,9 +3,13 @@ import type { Routine, Workout } from "../src/model/types.ts";
 import {
   dayChange,
   weekBarDayLabel as dayLabel,
+  dayMonograms,
+  FOLD_PAST,
   monogram,
+  OPEN_BELOW,
   routineMonograms,
   weekBar,
+  weekFolded,
 } from "../src/model/week-bar.ts";
 
 // Dates are built in local time, so the tests hold in any time zone.
@@ -217,5 +221,42 @@ describe("week bar", () => {
       if (previous === undefined) delete process.env.TZ;
       else process.env.TZ = previous;
     }
+  });
+});
+
+describe("the folded week", () => {
+  it("folds once the tab has scrolled a little, and opens only back near the top", () => {
+    // Resting at the top, or pulled down past it, the week is open.
+    expect(weekFolded(0, false)).toBe(false);
+    expect(weekFolded(-40, false)).toBe(false);
+    expect(weekFolded(FOLD_PAST, false)).toBe(false);
+    expect(weekFolded(FOLD_PAST + 1, false)).toBe(true);
+    // Between the two lines it stays as it was, so a list resting there doesn't flicker.
+    const between = (FOLD_PAST + OPEN_BELOW) / 2;
+    expect(weekFolded(between, true)).toBe(true);
+    expect(weekFolded(between, false)).toBe(false);
+    expect(weekFolded(OPEN_BELOW, true)).toBe(false);
+    expect(weekFolded(-10, true)).toBe(false);
+  });
+
+  it("writes a day's workouts as one monogram, two joined, or the first and how many more", () => {
+    const day = (...monograms: string[]) =>
+      ({
+        workouts: monograms.map((monogram, i) => ({
+          id: String(i),
+          title: monogram,
+          monogram,
+          records: 0,
+          volumeKg: 0,
+          lastVolumeKg: null,
+        })),
+      }) as unknown as Parameters<typeof dayMonograms>[0];
+    expect(dayMonograms(day())).toBe("");
+    expect(dayMonograms(day("UA"))).toBe("UA");
+    expect(dayMonograms(day("LB", "ER"))).toBe("LB·ER");
+    expect(dayMonograms(day("LB", "ER", "PU"))).toBe("LB+2");
+    // A workout without letters (a routine with no name) still shows that it was there.
+    expect(dayMonograms(day(""))).toBe("·");
+    expect(dayMonograms(day("UA", ""))).toBe("UA+1");
   });
 });

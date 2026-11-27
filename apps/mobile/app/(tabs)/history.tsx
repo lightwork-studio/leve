@@ -38,10 +38,10 @@ import { BarAction } from "../../src/ui/main-action.tsx";
 import { MonthCard } from "../../src/ui/month-odometer.tsx";
 import { RecordMark } from "../../src/ui/record-mark.tsx";
 import {
-  HeaderButton,
+  BarButton,
   tabContentStyle,
-  tabTopPadding,
   useTabBottomPadding,
+  useTabScroll,
 } from "../../src/ui/screen.tsx";
 import { SearchField } from "../../src/ui/search-field.tsx";
 import { Tap } from "../../src/ui/tap.tsx";
@@ -79,6 +79,7 @@ export default function HistoryScreen() {
     search.current?.focus();
   }, [reduced]);
   const paddingBottom = useTabBottomPadding();
+  const { paddingTop, scrollProps } = useTabScroll();
   const records = useMemo(() => recordsByWorkout(index), [index]);
   // A virtualised list: only the rows near the screen are rendered, so years of workouts open as
   // quickly as a few weeks.
@@ -144,7 +145,8 @@ export default function HistoryScreen() {
     <SectionList
       ref={list}
       style={styles.scroll}
-      contentContainerStyle={[tabContentStyle, { paddingTop: tabTopPadding, paddingBottom }]}
+      {...scrollProps}
+      contentContainerStyle={[tabContentStyle, { paddingTop, paddingBottom }]}
       sections={sections}
       keyboardShouldPersistTaps="handled"
       keyExtractor={(workout) => workout.id}
@@ -166,9 +168,9 @@ export default function HistoryScreen() {
         <View style={styles.head}>
           {/* Search sits beside the week over the tabs: it brings the field into view and opens it. */}
           <BarAction>
-            <HeaderButton label="Search workouts or exercises" onPress={openSearch}>
-              <SearchIcon color={c.fg2} size={19} />
-            </HeaderButton>
+            <BarButton label="Search workouts or exercises" onPress={openSearch}>
+              <SearchIcon color={c.fg2} size={18} />
+            </BarButton>
           </BarAction>
           {rejectedDeletions.map((record) => (
             <WorkoutSyncReview
