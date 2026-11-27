@@ -1,8 +1,11 @@
 import type { DeviceStore } from "@leve/storage";
 import { useNavigation } from "expo-router";
 import { useEffect, useMemo, useReducer, useRef } from "react";
+import { recordsByWorkout } from "../model/progress.ts";
+import { whenIdle } from "../ui/when-idle.ts";
 import { useAppData } from "./app-data.tsx";
 import {
+  cachedProgress,
   historyData,
   lastTime,
   liveData,
@@ -10,6 +13,7 @@ import {
   readSettings,
   sharedProgress,
   trainData,
+  weekBarData,
   workoutDetail,
 } from "./read.ts";
 import { heldSet } from "./set-removal.ts";
@@ -116,6 +120,36 @@ export function usePastWorkouts(allowRead: boolean) {
 export function useProgress() {
   const { store, historyVersion } = useAppData();
   return useWhileFocused(() => sharedProgress(store, historyVersion), [store, historyVersion]);
+}
+
+/**
+ * The week bar over the tabs, read again when finished workouts change or the day does. Records
+ * need the whole history read, which an edit must not wait for: the bar takes them from the
+ * progress index once another screen has read it, and keeps the last ones it had until then. While
+ * the tabs are on show and `wantsRecords` (the bar shows them), an idle moment reads it.
+ */
+export function useWeekBar(today: number, wantsRecords: boolean) {
+  const { store, historyVersion } = useAppData();
+  const navigation = useNavigation();
+  const [, refresh] = useReducer((n: number) => n + 1, 0);
+  // Coming back to the tabs looks again, for changes made on a screen over them.
+  const [returns, returned] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => navigation.addListener("focus", returned), [navigation]);
+  const cached = cachedProgress(store, historyVersion);
+  const held = useRef<ReadonlyMap<string, readonly unknown[]> | null>(null);
+  if (cached) held.current = recordsByWorkout(cached.index);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: returns marks a return to the tabs.
+  useEffect(() => {
+    if (!wantsRecords || !navigation.isFocused() || cachedProgress(store, historyVersion)) return;
+    return whenIdle(() => {
+      sharedProgress(store, historyVersion);
+      refresh();
+    });
+  }, [store, historyVersion, wantsRecords, navigation, returns]);
+  return useWhileFocused(
+    () => weekBarData(store, today, held.current),
+    [store, historyVersion, today, cached],
+  );
 }
 
 export function useSettings() {

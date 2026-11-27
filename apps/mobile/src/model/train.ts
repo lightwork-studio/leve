@@ -1,4 +1,4 @@
-import { calendarDaysBetween, dayKey, workoutMinutes } from "./time.ts";
+import { calendarDaysBetween } from "./time.ts";
 import type { Folder, Routine, WithId, Workout } from "./types.ts";
 
 /** Local midnight of the day `time` falls on (or the first moment of it, where DST skips midnight). */
@@ -12,66 +12,6 @@ export function startOfWeek(time: number, firstWeekday: number): number {
   const date = new Date(time);
   const offset = (date.getDay() - firstWeekday + 7) % 7;
   return new Date(date.getFullYear(), date.getMonth(), date.getDate() - offset).getTime();
-}
-
-export interface WeekSummary {
-  workouts: number;
-  /** Total time trained this week, in minutes. */
-  minutes: number;
-  /** The week's volume and counted sets, from the figures given for each workout. */
-  volumeKg: number;
-  sets: number;
-  /** One entry per day of the week, starting at the first weekday, with that day's volume. */
-  days: { letter: string; name: string; trained: boolean; today: boolean; volumeKg: number }[];
-}
-
-/** A finished workout's volume and counted sets (as `summarize` in past-workouts.ts counts them). */
-export type WorkoutFigures = (workoutId: string) => { volumeKg: number; sets: number } | undefined;
-
-const NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-
-export function weekSummary(
-  workouts: WithId<Workout>[],
-  now: number,
-  firstWeekday: number,
-  figures: WorkoutFigures = () => undefined,
-): WeekSummary {
-  const first = new Date(startOfWeek(now, firstWeekday));
-  // Days are built from the calendar date and compared by date, so DST never shifts them.
-  const days = Array.from({ length: 7 }, (_, i) => {
-    const date = new Date(first.getFullYear(), first.getMonth(), first.getDate() + i);
-    return { key: dayKey(date.getTime()), weekday: date.getDay() };
-  });
-  const keys = new Set(days.map((d) => d.key));
-  const finished = workouts.filter(
-    (w) => w.content.endedAt !== null && keys.has(dayKey(Date.parse(w.content.startedAt))),
-  );
-  const trained = new Set(finished.map((w) => dayKey(Date.parse(w.content.startedAt))));
-  const dayVolume = new Map<string, number>();
-  let volumeKg = 0;
-  let sets = 0;
-  for (const w of finished) {
-    const figure = figures(w.id);
-    if (!figure) continue;
-    const key = dayKey(Date.parse(w.content.startedAt));
-    dayVolume.set(key, (dayVolume.get(key) ?? 0) + figure.volumeKg);
-    volumeKg += figure.volumeKg;
-    sets += figure.sets;
-  }
-  const today = dayKey(now);
-  return {
-    workouts: finished.length,
-    minutes: finished.reduce((sum, w) => sum + workoutMinutes(w.content), 0),
-    volumeKg: Math.round(volumeKg * 10) / 10,
-    sets,
-    days: days.map((day) => ({
-      letter: (NAMES[day.weekday] as string)[0] as string,
-      name: NAMES[day.weekday] as string,
-      trained: trained.has(day.key),
-      today: day.key === today,
-      volumeKg: dayVolume.get(day.key) ?? 0,
-    })),
-  };
 }
 
 export interface RoutineCard {
