@@ -15,12 +15,12 @@ const OPTIONS: SecureStore.SecureStoreOptions = {
   keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
 };
 
-/** `null` is the build's own server (Leve's, signed in with Clerk). */
-export type ServerChoice = OwnServer | null;
+/** `null` is the build's own server. `"local"` explicitly turns off sync. */
+export type ServerChoice = OwnServer | "local" | null;
 
 interface Stored {
   current: ServerChoice;
-  previous: ServerChoice;
+  previous: OwnServer | null;
 }
 
 let cached: Stored | null = null;
@@ -44,7 +44,7 @@ function read(): Stored | null {
     const text = SecureStore.getItem(KEY, OPTIONS);
     const value = text ? (JSON.parse(text) as Partial<Stored>) : null;
     stored = {
-      current: isOwnServer(value?.current) ? value.current : null,
+      current: value?.current === "local" || isOwnServer(value?.current) ? value.current : null,
       previous: isOwnServer(value?.previous) ? value.previous : null,
     };
   } catch (error) {
@@ -64,7 +64,8 @@ function write(next: Stored): void {
 
 /** The server this phone syncs with, if it is one of the person's own. */
 export function ownServer(): OwnServer | null {
-  return read()?.current ?? null;
+  const choice = read()?.current;
+  return choice && choice !== "local" ? choice : null;
 }
 
 /** Undefined means the keychain is unreadable and syncing must wait. */
@@ -73,7 +74,7 @@ export function readServerChoice(): ServerChoice | undefined {
 }
 
 /** The choice before the current one, for switching back. */
-export function previousServer(): ServerChoice {
+export function previousServer(): OwnServer | null {
   return read()?.previous ?? null;
 }
 
@@ -85,20 +86,27 @@ function editableChoice(): Stored {
 
 /** Use this paired server from now on. Throws when the keychain refuses it; nothing changes then. */
 export function chooseOwnServer(server: OwnServer): void {
-  const { current } = editableChoice();
-  write({ current: server, previous: current });
+  const { current, previous } = editableChoice();
+  write({ current: server, previous: current === "local" ? previous : current });
 }
 
 /** Go back to the build's own server. The paired server is remembered for switching back. */
 export function chooseBuiltInServer(): void {
+  const { current, previous } = editableChoice();
+  if (current !== null)
+    write({ current: null, previous: current === "local" ? previous : current });
+}
+
+/** Leave sync off while keeping the last destination available for the data recovery prompt. */
+export function chooseLocalSync(): void {
   const { current } = editableChoice();
-  write({ current: null, previous: current });
+  if (current !== "local") write({ current: "local", previous: current });
 }
 
 /** Swap the current and the previous choice. */
 export function switchBack(): void {
   const { current, previous } = editableChoice();
-  write({ current: previous, previous: current });
+  write({ current: previous, previous: current === "local" ? null : current });
 }
 
 export function subscribeServerChoice(listener: () => void): () => void {

@@ -14,9 +14,11 @@ import {
   forgetServerChoice,
   ownServer,
 } from "../src/sync/own-server-store.ts";
+import { turnSyncOff } from "../src/sync/sync-destination.ts";
 import { SyncHost } from "../src/sync/sync-host.tsx";
 import {
   setSignedOutOnPurpose,
+  setSyncPaused,
   signedOutOnPurpose,
   syncPaused,
 } from "../src/sync/sync-preferences.ts";
@@ -222,6 +224,25 @@ afterEach(async () => {
 const render = () => act(() => root.render(h(SyncHost)));
 /** Everything on screen, modals included. */
 const screen = () => document.body.textContent ?? "";
+
+it("stops the session in local mode and does not restart it with the retained Apple account", async () => {
+  data.account = "user_1";
+  data.server = "https://sync.test";
+  await render();
+  const active = session();
+  await act(async () => turnSyncOff());
+  expect(active.calls).toContain("stop");
+  expect(screen()).toContain("Changes stay on this phone");
+  expect(clerk.signedIn).toBe(true);
+
+  // The local destination, rather than the pause bit or the Apple session, gates syncing.
+  await act(async () => setSyncPaused(false));
+  forgetDevicePreferences();
+  forgetServerChoice();
+  await render();
+  expect(sessions.created).toHaveLength(1);
+  expect(screen()).not.toContain("Your sign-in has run out");
+});
 const session = () => {
   const current = sessions.created.at(-1);
   if (!current) throw new Error("no session");

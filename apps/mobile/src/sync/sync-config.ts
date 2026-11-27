@@ -1,5 +1,5 @@
 import { Platform } from "react-native";
-import { ownServerOffered, syncConfigured } from "./sync-server.ts";
+import { builtInServerConfigured, ownServerOffered, syncConfigured } from "./sync-server.ts";
 
 export { builtInServerConfigured, syncServerUrl } from "./sync-server.ts";
 
@@ -11,4 +11,9 @@ export function syncEnabled(): boolean {
 /** Whether Settings offers pairing with a server of the person's own. */
 export function ownServerAvailable(): boolean {
   return ownServerOffered && Platform.OS === "ios";
+}
+
+/** Whether the signed-in Leve account can be chosen as a sync destination. */
+export function leveSyncAvailable(): boolean {
+  return builtInServerConfigured() && Platform.OS === "ios";
 }

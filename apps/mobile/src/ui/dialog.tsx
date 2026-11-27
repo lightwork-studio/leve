@@ -35,6 +35,7 @@ export function Dialog({
   aside,
   confirm,
   footer,
+  bottom = false,
   children,
 }: {
   /** Small caps at the top: "New folder", "Rest timer · Bench Press". */
@@ -50,6 +51,8 @@ export function Dialog({
   confirm?: { label: string; onPress: () => void; accessibilityLabel?: string };
   /** A quiet action under the confirm, such as a destructive one that asks first. */
   footer?: ReactNode;
+  /** Keep a choice sheet within reach at the bottom of the screen. */
+  bottom?: boolean;
   children: ReactNode;
 }) {
   const styles = useStyles(sheet);
@@ -65,7 +68,12 @@ export function Dialog({
     >
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={[styles.overlay, { paddingTop: insets.top + 40 }]}
+        style={[
+          styles.overlay,
+          bottom
+            ? { justifyContent: "flex-end", paddingBottom: insets.bottom + 12 }
+            : { paddingTop: insets.top + 40 },
+        ]}
       >
         {onClose ? (
           <Pressable

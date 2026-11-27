@@ -22,12 +22,7 @@ import { Banner } from "../ui/notice.tsx";
 import { themedStyles, useAppearance, useStyles } from "../ui/themed.ts";
 import { ConflictPrompt } from "./conflict-prompt.tsx";
 import { type OwnServer, serverLabel } from "./own-server.ts";
-import {
-  previousServer,
-  readServerChoice,
-  subscribeServerChoice,
-  switchBack,
-} from "./own-server-store.ts";
+import { previousServer, switchBack } from "./own-server-store.ts";
 import {
   builtInServerConfigured,
   ownServerAvailable,
@@ -45,6 +40,7 @@ import {
   writeLastSynced,
 } from "./sync-preferences.ts";
 import { SyncSession, type SyncStatus, unsyncedChanges } from "./sync-session.ts";
+import { useServerChoice } from "./use-server-choice.ts";
 
 /** The path expo-router reports while `target` is open. */
 function reviewPath(target: ReviewTarget): string {
@@ -84,22 +80,26 @@ const SETTINGS = "/settings";
  * note, until it ends.
  */
 export function SyncHost() {
-  const own = useOwnServer();
+  const pairing = ownServerAvailable();
+  const builtIn = builtInServerConfigured();
+  const choice = useServerChoice(pairing || (builtIn && syncEnabled()));
   // If the keychain is locked, wait before choosing which account to sync.
-  if (own === undefined) return null;
+  if (choice === undefined) return null;
+  if (choice === "local") return <Disconnected local />;
+  const own = pairing ? choice : null;
   // A new pairing is a new session, even with the same account id.
   if (own && syncEnabled()) {
     const key = `${own.server} ${own.device}`;
-    return builtInServerConfigured() ? (
+    return builtIn ? (
       <PairedSyncWithClerk key={key} own={own} />
     ) : (
       <Sync key={key} connection={ownConnection(own)} />
     );
   }
-  if (builtInServerConfigured() && syncEnabled()) return <ClerkSync />;
+  if (builtIn && syncEnabled()) return <ClerkSync />;
   // No server to sync with: a paired one was left in a build without one of its own. Data that
   // belongs to an account says so, never silently.
-  return ownServerAvailable() ? <Disconnected /> : null;
+  return pairing ? <Disconnected /> : null;
 }
 
 /**
@@ -140,9 +140,22 @@ function useElsewhereNote(
   };
 }
 
-function Disconnected() {
+function Disconnected({ local = false }: { local?: boolean }) {
   const { store } = useAppData();
-  const note = useElsewhereNote(store.syncState());
+  const boundNote = useElsewhereNote(store.syncState());
+  const note =
+    boundNote ??
+    (local
+      ? {
+          label: "Sync off",
+          message: "New workouts and changes stay on this phone.",
+          action: {
+            label: "Settings",
+            hint: "Opens Settings to choose where to sync",
+            onPress: () => router.push(SETTINGS),
+          },
+        }
+      : null);
   useEffect(() => publishSyncNote(note));
   useEffect(() => () => publishSyncNote(null), []);
   return note ? <NotSyncing note={note} /> : null;
@@ -159,20 +172,6 @@ interface Connection {
   userId: string | null;
   getToken(fresh: boolean): Promise<string | null>;
   signOut(): Promise<void>;
-}
-
-/** The paired server, while it is the phone's choice; follows changes made in Settings. */
-function useOwnServer(): OwnServer | null | undefined {
-  const [, setVersion] = useState(0);
-  useEffect(() => subscribeServerChoice(() => setVersion((n) => n + 1)), []);
-  // A keychain that couldn't be read (a locked phone) is read again when the app comes back.
-  useEffect(() => {
-    const watch = AppState.addEventListener("change", (state) => {
-      if (state === "active") setVersion((n) => n + 1);
-    });
-    return () => watch.remove();
-  }, []);
-  return ownServerAvailable() ? readServerChoice() : null;
 }
 
 /**

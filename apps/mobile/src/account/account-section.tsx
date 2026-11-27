@@ -50,7 +50,6 @@ export function AccountSection() {
 
 function Account() {
   const styles = useStyles(sheet);
-  const appearance = useAppearance();
   const { isLoaded, isSignedIn, signOut } = useAuth();
   const { user } = useUser();
   const { store } = useAppData();
@@ -174,24 +173,32 @@ function Account() {
 
   return (
     <Group label="Account" footnote={problem ?? (syncing ? SYNC_SIGNED_OUT_NOTE : SIGNED_OUT_NOTE)}>
-      <View
-        style={[styles.signIn, busy && styles.waiting]}
-        pointerEvents={busy ? "none" : "auto"}
-        accessibilityElementsHidden={busy}
-      >
-        <AppleAuthenticationButton
-          buttonType={AppleAuthenticationButtonType.SIGN_IN}
-          buttonStyle={
-            appearance === "paper"
-              ? AppleAuthenticationButtonStyle.BLACK
-              : AppleAuthenticationButtonStyle.WHITE
-          }
-          cornerRadius={radius.button}
-          style={styles.appleButton}
-          onPress={signIn}
-        />
-      </View>
+      <AppleSignInButton busy={busy} onPress={signIn} />
     </Group>
+  );
+}
+
+export function AppleSignInButton({ busy, onPress }: { busy: boolean; onPress: () => void }) {
+  const styles = useStyles(sheet);
+  const appearance = useAppearance();
+  return (
+    <View
+      style={[styles.signIn, busy && styles.waiting]}
+      pointerEvents={busy ? "none" : "auto"}
+      accessibilityElementsHidden={busy}
+    >
+      <AppleAuthenticationButton
+        buttonType={AppleAuthenticationButtonType.SIGN_IN}
+        buttonStyle={
+          appearance === "paper"
+            ? AppleAuthenticationButtonStyle.BLACK
+            : AppleAuthenticationButtonStyle.WHITE
+        }
+        cornerRadius={radius.button}
+        style={styles.appleButton}
+        onPress={onPress}
+      />
+    </View>
   );
 }
 

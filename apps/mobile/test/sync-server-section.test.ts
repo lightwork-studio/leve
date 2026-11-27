@@ -9,22 +9,28 @@ import {
   forgetServerChoice,
   ownServer,
   previousServer,
+  readServerChoice,
 } from "../src/sync/own-server-store.ts";
 import { syncPaused } from "../src/sync/sync-preferences.ts";
 import { SyncServerSection } from "../src/sync/sync-server-section.tsx";
+import { clerk } from "./support/clerk-expo.ts";
+import { files } from "./support/expo-file-system.ts";
 import { keychain } from "./support/expo-secure-store.ts";
 
-/* Choosing the sync server in Settings: pairing with a link, and going back. */
+/* The one destination shown and chosen in Settings. */
 
 const CODE = "R0zFbfeNwBJAytY_ILQ3qw";
 const offered = vi.hoisted(() => ({ own: true, builtIn: true }));
 vi.mock("../src/sync/sync-config.ts", () => ({
   syncServerUrl: "https://sync.leve.example",
   builtInServerConfigured: () => offered.builtIn,
+  leveSyncAvailable: () => offered.builtIn,
   ownServerAvailable: () => offered.own,
 }));
 vi.mock("react-native", () => vi.importActual("react-native-web"));
 vi.mock("expo-constants", () => ({ default: { deviceName: "Alice's iPhone" } }));
+vi.mock("../src/data/app-data.tsx", () => ({ useAppData: () => ({ store: {} }) }));
+vi.mock("../src/sync/sync-session.ts", () => ({ unsyncedChanges: () => 0 }));
 vi.mock("../src/ui/haptics.ts", () => ({
   haptic: { tap: () => {}, select: () => {}, warning: () => {}, success: () => {} },
 }));
@@ -72,6 +78,9 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   keychain.reset();
   forgetServerChoice();
+  files.clear();
+  forgetDevicePreferences();
+  clerk.reset();
   offered.own = true;
   offered.builtIn = true;
   requests = [];
@@ -123,23 +132,26 @@ async function type(text: string) {
   });
 }
 
-it("shows the build's own server until another is paired", async () => {
+it("starts with local workouts and offers both sync destinations", async () => {
   await render();
-  expect(screen()).toContain("Sync server");
-  expect(screen()).toContain("sync.leve.example");
-  expect(screen()).toContain("Connect to your own server");
-  expect(screen()).not.toContain("Use Leve's server");
+  expect(screen()).toContain("On this iPhone");
+  expect(screen()).toContain("Sync off");
+  expect(screen()).toContain("Use your own server");
+  expect(screen()).toContain("Sync with Leve");
+  expect(screen()).not.toContain("Pause sync");
 });
 
 it("pairs with a pasted link, naming the server before it connects", async () => {
   await render();
-  await tap("Connect to your own server");
-  await tap("Connect");
+  await tap("Use your own server");
+  await tap("Review server");
   expect(screen()).toContain("Paste the whole pairing link");
   expect(requests).toEqual([]);
 
   await type(`https://sync.home.example/connect#code=${CODE}`);
+  await tap("Review server");
   expect(screen()).toContain("This phone will sync its workouts with sync.home.example");
+  expect(requests).toEqual([]);
   await tap("Connect to sync.home.example");
   expect(requests).toEqual([
     {
@@ -163,15 +175,23 @@ it("asks before connecting from a link that opened the app, and says why it fail
   expect(ownServer()).toBeNull();
 });
 
-it("goes back to the build's own server, remembering the paired one", async () => {
+it("switches back to Leve with a retained Apple sign-in, remembering the paired server", async () => {
   const home = { server: "https://sync.home.example", account: "a", device: "d", token: "t" };
   chooseOwnServer(home);
+  clerk.signedIn = true;
+  clerk.email = "alice@example.net";
   await render();
   expect(screen()).toContain("sync.home.example");
-  await tap("Use Leve's server");
+  expect(screen()).toContain("Idle");
+  await tap("Change destination");
+  await tap("Leve");
+  expect(ownServer()).toEqual(home);
+  await tap("Switch to Leve");
   expect(ownServer()).toBeNull();
   expect(previousServer()).toEqual(home);
-  expect(screen()).toContain("sync.leve.example");
+  expect(screen()).toContain("alice@example.net");
+  expect(screen()).not.toContain("Idle");
+  expect(clerk.calls).toEqual([]);
 });
 
 it("pauses and resumes sync with a paired server, which has no account section", async () => {
@@ -182,17 +202,21 @@ it("pauses and resumes sync with a paired server, which has no account section",
   await render();
   await tap("Pause sync");
   expect(syncPaused()).toBe(true);
-  expect(screen()).toContain("Sync is paused.");
+  expect(screen()).toContain("Paused · changes wait here");
   await tap("Resume sync");
   expect(syncPaused()).toBe(false);
 });
 
-it("offers to disconnect when the build has no server of its own, and is absent where not offered", async () => {
+it("offers local mode in a self-hosted-only build and hides destinations that are unavailable", async () => {
   offered.builtIn = false;
   chooseOwnServer({ server: "https://sync.home.example", account: "a", device: "d", token: "t" });
   await render();
-  await tap("Disconnect");
+  await tap("Change destination");
+  expect(screen()).not.toContain("Sign in with Apple");
+  await tap("On this iPhone");
+  await tap("Turn sync off");
   expect(ownServer()).toBeNull();
+  expect(readServerChoice()).toBe("local");
   expect(screen()).toContain("Workouts stay on this phone");
 
   offered.own = false;
@@ -200,13 +224,56 @@ it("offers to disconnect when the build has no server of its own, and is absent 
   expect(screen()).toBe("");
 });
 
-it("says so when the keychain refuses a change, and keeps the server", async () => {
+it("keeps the previous destination when turning sync off cannot be saved", async () => {
   chooseOwnServer({ server: "https://sync.home.example", account: "a", device: "d", token: "t" });
   await render();
+  await tap("Change destination");
+  await tap("On this iPhone");
   keychain.failWrites = true;
-  await tap("Use Leve's server");
+  await tap("Turn sync off");
   expect(screen()).toContain("This phone couldn't save the change");
   expect(ownServer()).toMatchObject({ server: "https://sync.home.example" });
+  expect(syncPaused()).toBe(false);
+});
+
+it("keeps Leve signed in but off across a restart until the user chooses it again", async () => {
+  clerk.signedIn = true;
+  clerk.email = "alice@example.net";
+  await render();
+  await tap("Change destination");
+  await tap("On this iPhone");
+  await tap("Pause instead");
+  expect(readServerChoice()).toBeNull();
+  expect(syncPaused()).toBe(true);
+  await tap("Change destination");
+  await tap("On this iPhone");
+  await tap("Turn sync off");
+  forgetServerChoice();
+  forgetDevicePreferences();
+  await render();
+  expect(readServerChoice()).toBe("local");
+  expect(syncPaused()).toBe(true);
+  expect(screen()).toContain("On this iPhone");
+  expect(screen()).toContain("Idle");
+  expect(screen()).not.toContain("Resume sync");
+  await tap("Sync with Leve");
+  await tap("Switch to Leve");
+  expect(readServerChoice()).toBeNull();
+  expect(syncPaused()).toBe(false);
+  expect(clerk.calls).toEqual([]);
+});
+
+it("keeps a paired server selected when Apple sign-in is cancelled", async () => {
+  const home = { server: "https://sync.home.example", account: "a", device: "d", token: "t" };
+  chooseOwnServer(home);
+  clerk.appleFlow = async () => ({ createdSessionId: null });
+  await render();
+  await tap("Change destination");
+  await tap("Leve");
+  await tap("Sign in with Apple");
+  expect(clerk.calls).toEqual(["apple"]);
+  expect(ownServer()).toEqual(home);
+  expect(screen()).toContain("Back up with Apple");
 });
 
 it("asks for a new link when the pairing worked but the phone couldn't keep it", async () => {
