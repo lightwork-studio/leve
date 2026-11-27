@@ -20,8 +20,9 @@ and needs the maintainer's explicit approval of the final diff.
 - **Apps and servers update independently.** Database layouts and the network contract have separate
   versions. A server supports several protocol releases where it can do so truthfully; there is no
   fixed count or minimum support period.
-- **Simple, visible conflicts.** An edit based on an outdated copy is rejected, never merged
-  automatically. The phone keeps its version, shows it with a warning and lets the user decide.
+- **Simple, visible conflicts.** The server rejects stale edits. The phone preserves local work,
+  combines independent edits to existing routine exercises when it can verify their starting
+  version, and asks the user about anything it cannot safely settle.
 - **Sync never stops silently.** Anything that stops sync, for the whole app or for one record, is
   brought to the person for direct resolution (see
   [Sync never stops silently](#sync-never-stops-silently)).
@@ -61,8 +62,8 @@ Sync works on individual records. Each record has a kind, an id and content:
 | `body_measurement`      | One body measurement                                                      |
 | `settings`              | Account settings (a single record)                                        |
 
-- Sets, workout details and whole routines are the units of conflict. Editing set 2 never conflicts
-  with an edit of set 3 or of the workout title. Device-only preferences never sync.
+- The server checks conflicts per record, including for whole routines. Editing a logged workout's
+  set 2 can sync independently of set 3 or the workout title. Device-only preferences never sync.
 - A record id is created on the device that creates the record and never changes: a random UUID,
   except for imported records (see below).
 - Order within a parent is a number on each child (`position`); inserting between two items picks a
@@ -207,6 +208,10 @@ The device stores, for each record, the last copy it received from the server an
 it, the pending local version with the revision it started from (its **base revision**). Downloads
 update the server copy but never the base revision.
 
+For routine edits, the phone also saves the starting copy alongside its revision. The saved copy
+belongs to that pending edit and account history. Routine edits already pending when the phone
+upgrades may lack a starting copy and use whole-routine review.
+
 - **One submission per record is in flight.** It has a random submission id, the base revision and
   the content at the time it was made, and is retried unchanged until the server answers. Later
   edits stay pending; the in-flight submission is never altered. It is abandoned only by a server
@@ -247,8 +252,17 @@ The server answers each submission:
 
 ### Conflicts
 
-A rejected local version is kept, and the app asks about it straight away. A popup goes through the
-conflicts one at a time, each as the person thinks of it: a whole workout with its exercises, sets,
+When the phone has a trusted starting copy for a routine and both sides kept the same routine
+details, exercise identities and order, set identities and order, and superset membership, it
+compares each exercise and its target sets as one unit. An edit made on one side or identically on
+both sides is included in both choices. If no differences remain, the phone settles the conflict
+automatically. Otherwise the popup compares the remaining differences and applies the selected
+side to those exercises while keeping the independent edits. Any resulting write is a new
+submission against the compared server revision. Deletions, structural changes, and conflicts
+carried through a restore or server move use whole-routine review.
+
+When a conflict needs a decision, the local version is kept and the app asks straight away.
+A popup goes through the conflicts one at a time, each as the person thinks of it: a whole workout with its exercises, sets,
 notes and rest; a routine; a folder; a bodyweight entry; a note with its comments; a custom
 exercise; the settings. It shows only what differs on each side (or, where one side is gone, all of
 the other), chooses nothing in advance, and can't be put off, except that it waits while a workout
@@ -270,8 +284,8 @@ agreed on, and sent so the server keeps a marker. A record in a state the popup 
 still shown, with pausing sync as the way out. Letting go of something the account deleted first
 shows what this phone holds below it and what changed there. Keeping a deletion made here is offered
 only when the account holds nothing below it, after showing the account's version. Work recorded
-entirely offline is flagged on the start screen. A conflicted record is not resubmitted
-automatically. An `invalid` answer is handled the same way, unless the user already edited the
+entirely offline is flagged on the start screen. A record that needs a decision waits for the user.
+An `invalid` answer is handled the same way, unless the user already edited the
 record again, in which case the newer version is sent. The kept version is the newest local one. The
 user can:
 

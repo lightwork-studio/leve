@@ -98,6 +98,8 @@ export function EditorSyncReview({
   if (!hasEditorConflict(record)) return null;
   const sync = store.syncState();
   const reason = blocked(store, record);
+  const routine = record.kind === "routine";
+  const versions = routine ? store.routineConflictVersions(record.id) : null;
   const choose = (choice: "keep_mine" | "keep_theirs") => {
     try {
       change((db) => {
@@ -109,7 +111,8 @@ export function EditorSyncReview({
           now.server !== sync.server ||
           now.lineage !== sync.lineage ||
           !hasEditorConflict(current) ||
-          !jsonEqual(current, record)
+          !jsonEqual(current, record) ||
+          (routine && !jsonEqual(db.routineConflictVersions(record.id), versions))
         )
           throw Error("This record changed. Review the latest versions before choosing.");
         const problem = blocked(db, current);
@@ -122,7 +125,6 @@ export function EditorSyncReview({
       setError((cause as Error).message);
     }
   };
-  const routine = record.kind === "routine";
   return (
     <View style={styles.card}>
       <View style={styles.head}>
@@ -133,8 +135,16 @@ export function EditorSyncReview({
         <Text style={styles.text}>
           {String(routine ? record.content.title : record.content.takenAt)}
         </Text>
+        {versions &&
+        (!jsonEqual(versions.phone, record.content) ||
+          !jsonEqual(versions.account, record.server.content)) ? (
+          <Text style={styles.text}>Both choices keep independent exercise edits.</Text>
+        ) : null}
       </View>
-      {differences(record.content, record.server.content).map(({ path, local, remote }) => (
+      {differences(
+        versions?.phone ?? record.content,
+        versions?.account ?? record.server.content,
+      ).map(({ path, local, remote }) => (
         <View key={path} style={styles.field}>
           <Text style={styles.path}>{path}</Text>
           <View style={styles.compare}>

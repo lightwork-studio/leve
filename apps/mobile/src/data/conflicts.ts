@@ -786,11 +786,16 @@ function describe(
   const owner = records[0] as DeviceRecord;
   const phone: ConflictLine[] = [];
   const account: ConflictLine[] = [];
+  let includesIndependentEdits = false;
   for (const row of records) {
     const which = recordCase(row);
-    const mine = row.deleted ? null : (row.content ?? null);
+    const versions = row.kind === "routine" ? store.routineConflictVersions(row.id) : null;
+    const mine = versions?.phone ?? (row.deleted ? null : (row.content ?? null));
     // Under something deleted in the account, the account's copy goes with it, whatever it held.
-    const theirs = row.problem?.reason === "parent_deleted" ? null : accountContent(row);
+    const theirs =
+      versions?.account ?? (row.problem?.reason === "parent_deleted" ? null : accountContent(row));
+    if (versions && (!jsonEqual(mine, row.content) || !jsonEqual(theirs, accountContent(row))))
+      includesIndependentEdits = true;
     phone.push(
       ...sideLines(
         store,
@@ -878,7 +883,9 @@ function describe(
     }
     case "routine":
       title = String(field(owner, "title") ?? "Routine");
-      subtitle = "Routine";
+      subtitle = includesIndependentEdits
+        ? "Both choices keep independent exercise edits"
+        : "Routine";
       break;
     case "routine_folder":
       title = String(field(owner, "title") ?? "Folder");

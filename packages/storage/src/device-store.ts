@@ -19,6 +19,7 @@ import {
   type RecordStatus,
 } from "./device-schema.ts";
 import type { SqlConnection, SqlEngine, SqlRow, SqlValue } from "./driver.ts";
+import { mergeRoutine } from "./routine-merge.ts";
 import { int, json, parseJson, text, transaction } from "./sql.ts";
 import { type Checkpoint, openStorage, type StorageDefinition } from "./upgrade.ts";
 
@@ -150,6 +151,7 @@ interface RecordRow {
   localState: "live" | "deleted" | null;
   localContent: JsonObject | null;
   localBase: number | null;
+  routineBase: { revision: number; content: JsonObject } | null;
   localSeq: number;
   status: RecordStatus;
   problem: string | null;
@@ -180,6 +182,8 @@ interface SubmissionRow {
 function toRecordRow(row: SqlRow): RecordRow {
   const content = (value: SqlValue | undefined) =>
     value === null || value === undefined ? null : parseJson<JsonObject>(value, "content");
+  const localBase = int(row.local_base);
+  const routineBase = content(row.routine_base_content);
   return {
     kind: String(row.kind),
     id: String(row.id),
@@ -194,7 +198,9 @@ function toRecordRow(row: SqlRow): RecordRow {
     serverContent: content(row.server_content),
     localState: text(row.local_state) as RecordRow["localState"],
     localContent: content(row.local_content),
-    localBase: int(row.local_base),
+    localBase,
+    routineBase:
+      localBase !== null && routineBase ? { revision: localBase, content: routineBase } : null,
     localSeq: Number(row.local_seq),
     status: String(row.status) as RecordStatus,
     problem: text(row.problem),
@@ -235,6 +241,7 @@ export class DeviceStore {
   readonly #now: () => string;
   readonly #randomId: () => string;
   readonly #tracksFieldEvidence: boolean;
+  readonly #tracksRoutineBase: boolean;
   #bindingVersion = 0;
 
   constructor(db: SqlConnection, contract: Contract, now: () => string, randomId: () => string) {
@@ -242,9 +249,9 @@ export class DeviceStore {
     this.contract = contract;
     this.#now = now;
     this.#randomId = randomId;
-    this.#tracksFieldEvidence = db
-      .all("PRAGMA table_info(records)")
-      .some((column) => column.name === "uncertain_fields");
+    const columns = new Set(db.all("PRAGMA table_info(records)").map((column) => column.name));
+    this.#tracksFieldEvidence = columns.has("uncertain_fields");
+    this.#tracksRoutineBase = columns.has("routine_base_content");
   }
 
   close(): void {
@@ -548,6 +555,16 @@ export class DeviceStore {
       ],
     );
     if (row.localState !== "live" && row.uncertainFields.length) this.#setFieldEvidence(row, []);
+    if (this.#tracksRoutineBase && row.kind === "routine") {
+      const base = row.routineBase;
+      this.db.run("UPDATE records SET routine_base_content = ? WHERE kind = ? AND id = ?", [
+        base && row.localState === "live" && base.revision === row.localBase
+          ? json(base.content)
+          : null,
+        row.kind,
+        row.id,
+      ]);
+    }
   }
 
   /** Keep uncertainty separately from the revision used for visible measurements. */
@@ -579,6 +596,15 @@ export class DeviceStore {
     );
   }
 
+  #routineServerBase(row: RecordRow): RecordRow["routineBase"] {
+    return this.#tracksRoutineBase &&
+      row.kind === "routine" &&
+      row.serverRevision !== null &&
+      row.serverContent
+      ? { revision: row.serverRevision, content: row.serverContent }
+      : null;
+  }
+
   #emptyRow(kind: string, id: string): RecordRow {
     return {
       kind,
@@ -593,6 +619,7 @@ export class DeviceStore {
       localState: null,
       localContent: null,
       localBase: null,
+      routineBase: null,
       localSeq: 0,
       status: "synced",
       problem: null,
@@ -696,6 +723,11 @@ export class DeviceStore {
           ? row.serverRevision
           : null
         : row.localBase,
+      routineBase: startsEdit
+        ? (row.observedRelease ?? this.contract.releases[0]) === this.contract.latest
+          ? this.#routineServerBase(row)
+          : null
+        : row.routineBase,
       localSeq: row.localSeq + 1,
       reoffered: false,
       // As in delete(): a copy offered again after a restore still existed on the old server, so
@@ -901,9 +933,68 @@ export class DeviceStore {
    * - keep_theirs discards it (for a record deleted on the server, together with its descendants);
    * - save_as_new copies it, with every descendant still shown, under new ids. It is for records
    *   that were deleted on the server or never reached it.
+   * Routine review can keep independent exercise edits in either selected version.
    */
   resolve(kind: string, id: string, resolution: Resolution): DeviceRecord | null {
     return this.#mutate(() => this.#resolve(kind, id, resolution));
+  }
+
+  /** Versions to display in a routine review, with independent exercise edits included in both. */
+  routineConflictVersions(id: string): ReturnType<typeof mergeRoutine> {
+    const row = this.#row("routine", id);
+    return row?.status === "conflict" && !this.#submissionFor(row.kind, id)
+      ? this.#routineVersions(row)
+      : null;
+  }
+
+  #routineVersions(row: RecordRow): ReturnType<typeof mergeRoutine> {
+    if (
+      row.kind !== "routine" ||
+      row.status !== "conflict" ||
+      row.problem !== "stale" ||
+      row.reoffered ||
+      row.partialFields.length ||
+      row.uncertainFields.length ||
+      !row.localContent ||
+      !row.serverContent ||
+      !row.routineBase ||
+      row.localBase !== row.routineBase.revision ||
+      row.serverRevision === null ||
+      row.serverRevision <= row.routineBase.revision
+    )
+      return null;
+    const sync = this.syncState();
+    if (sync.restoring || sync.refreshFrom || sync.release !== this.contract.latest) return null;
+    const versions = mergeRoutine(row.routineBase.content, row.localContent, row.serverContent);
+    return versions &&
+      !this.contract.validateContent("routine", versions.phone, row.id).length &&
+      !this.contract.validateContent("routine", versions.account, row.id).length
+      ? versions
+      : null;
+  }
+
+  #acceptRoutineMerge(row: RecordRow, content: JsonObject): RecordRow {
+    if (jsonEqual(content, row.serverContent)) return this.#keepServerCopy(row);
+    const next: RecordRow = {
+      ...row,
+      localContent: content,
+      localBase: row.serverRevision,
+      routineBase: this.#routineServerBase(row),
+      localSeq: row.localSeq + 1,
+      status: "pending",
+      problem: null,
+      problemRevision: null,
+      problemAt: null,
+    };
+    this.#write(next);
+    return next;
+  }
+
+  #writeConflict(row: RecordRow): void {
+    const versions = this.#routineVersions(row);
+    if (versions && jsonEqual(versions.phone, versions.account))
+      this.#acceptRoutineMerge(row, versions.phone);
+    else this.#write(row);
   }
 
   #resolve(kind: string, id: string, resolution: Resolution): DeviceRecord | null {
@@ -915,6 +1006,20 @@ export class DeviceStore {
       throw new DeviceStoreError(
         "Resolve the workout deletion to decide whether to keep its rest setting.",
       );
+    if (
+      kind === "routine" &&
+      resolution.choice !== "save_as_new" &&
+      !this.#submissionFor(kind, id)
+    ) {
+      const versions = this.#routineVersions(row);
+      if (versions)
+        return this.#view(
+          this.#acceptRoutineMerge(
+            row,
+            resolution.choice === "keep_mine" ? versions.phone : versions.account,
+          ),
+        );
+    }
     const cleared = { problem: null, problemRevision: null, problemAt: null };
     if (this.#tracksFieldEvidence && resolution.choice !== "save_as_new")
       this.db.run(
@@ -1793,12 +1898,22 @@ export class DeviceStore {
       }
       // This receipt settles its envelope, not a subsequent edit or a conflict
       // revealed by a richer download while the old envelope was in flight.
+      const routineBase =
+        row.kind === "routine" &&
+        wroteRevision &&
+        submission.baseRevision === row.localBase &&
+        !submission.choiceAfterDispatch &&
+        withheld.length === 0 &&
+        submission.release === this.contract.latest
+          ? { revision, content: this.contract.normalize(row.kind, wire) }
+          : row.routineBase;
       this.#write({
         ...row,
         serverRevision,
         serverState,
         serverContent,
         localBase: Math.max(row.localBase ?? 0, revision),
+        routineBase,
         partialFields: withheld,
       });
       return;
@@ -1861,7 +1976,7 @@ export class DeviceStore {
       this.#settleMatchingDeletion(updated);
       return;
     }
-    this.#write({
+    this.#writeConflict({
       ...updated,
       status: "conflict",
       problem: reason,
@@ -2137,10 +2252,11 @@ export class DeviceStore {
           continue;
         }
         if (inFlight || (row.status !== "pending" && row.status !== "partial")) {
-          // The answer to the upload in flight, or the user's pending review, decides.
+          // Wait for an upload in flight. A newer routine copy can settle an existing clash.
           if (change.state === "deleted")
             this.#parentDeletedOnServer(change.kind, change.id, change.revision);
-          this.#write(row);
+          if (!inFlight && !refreshFrom && change.state === "live") this.#writeConflict(row);
+          else this.#write(row);
           continue;
         }
         if (row.localState === "deleted" && row.localBase === null && change.state !== "deleted") {
@@ -2195,13 +2311,15 @@ export class DeviceStore {
         }
         if (row.localBase !== null) {
           // The server moved past the version this edit started from: it will be rejected.
-          this.#write({
+          const conflict: RecordRow = {
             ...row,
             status: "conflict",
             problem: "stale",
             problemRevision: change.revision,
             problemAt: this.#now(),
-          });
+          };
+          if (!refreshFrom) this.#writeConflict(conflict);
+          else this.#write(conflict);
           continue;
         }
         this.#write(row);
