@@ -142,8 +142,8 @@ export function workoutSession(factory: Factory, scheme: string, memory: Activit
           }
           if (publishedGeneration !== scheduled) {
             const priorDeadline = Number(published.split(".")[3]);
+            // A queued frame can be replaced before ActivityKit ever displays it.
             previousRestTicket =
-              publishedGeneration === scheduled - 1 &&
               digest === currentDigest &&
               digest !== "-" &&
               priorDeadline > 0 &&

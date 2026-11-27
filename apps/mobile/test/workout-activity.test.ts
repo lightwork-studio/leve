@@ -215,6 +215,24 @@ describe("workout Live Activity", () => {
       }
     },
   );
+  it("accepts the last displayed Log ticket when an intermediate rest update is dropped", async () => {
+    const { session, handle } = harness();
+    const next = frame();
+    const resting = { ...next, display: { ...next.display, restEnd: Date.now() + 90_000 } };
+    await session.publish(resting);
+    const shown = handle.update.mock.calls[0]?.[0].token;
+    if (!shown) throw Error("Missing rest ticket");
+    const adjusting = session.publish({
+      ...resting,
+      display: { ...resting.display, restEnd: resting.display.restEnd + 15_000 },
+    });
+    await session.publish(next);
+    await adjusting;
+    const log = shown.replace(/\.\d+\.([^.]+)$/, ".0.$1");
+    expect(handle.update).toHaveBeenCalledTimes(2);
+    expect(session.interact(handle.getId(), `${log}:log`)).toBe(true);
+    expect(next.act).toHaveBeenCalledExactlyOnceWith("log");
+  });
   it("recovers the identical unlogged set after relaunch and accepts the old tap exactly once", async () => {
     const { session, handle, factory, memory } = harness();
     const next = frame();
