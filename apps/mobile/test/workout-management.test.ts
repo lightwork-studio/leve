@@ -3579,19 +3579,42 @@ it("shows each card's thumbnail beside its name, or its number without one, with
   await act(() => root.render(h(ActiveWorkoutScreen)));
   const heading = (name: string) =>
     host.querySelector<HTMLElement>(`button[aria-expanded][aria-label="${name}"]`);
-  // The card's head: the picture, then the name over its line.
-  const head = (name: string) => heading(name)?.parentElement?.parentElement ?? null;
-  expect(head("Bench Press")?.querySelector("img")?.getAttribute("src")).toMatch(
+  // The card's head: the picture, then the title area that the expanding button fills.
+  const title = (name: string) => heading(name)?.parentElement ?? null;
+  const thumb = (name: string) => title(name)?.parentElement?.firstElementChild ?? null;
+  expect(thumb("Bench Press")?.querySelector("img")?.getAttribute("src")).toMatch(
     /\/thumbs\/barbell-bench-press\.webp$/,
   );
-  expect(head("Plank")?.querySelector("img")).toBeNull();
-  expect(head("Plank")?.textContent).toMatch(/^0[12]/);
+  expect(thumb("Plank")?.querySelector("img")).toBeNull();
+  expect(thumb("Plank")?.textContent).toMatch(/^0[12]$/);
+  // Nothing is shaded over a picture until its exercise is done.
+  expect(thumb("Bench Press")?.childElementCount).toBe(1);
+  expect(thumb("Plank")?.childElementCount).toBe(1);
   for (const name of ["Bench Press", "Plank"]) {
-    const line = heading(name)?.nextElementSibling;
     expect(
-      line?.querySelector(`[aria-label^="Rest "][aria-label$=" for ${name}. Change it"]`),
+      title(name)?.querySelector(`[aria-label^="Rest "][aria-label$=" for ${name}. Change it"]`),
     ).not.toBeNull();
   }
+});
+
+it("shades a finished card's thumbnail under a check, and drops the number of one without an image", async () => {
+  const workout = beginWorkout(store);
+  addExercise(store, workout, EXERCISES.bench, 0);
+  addExercise(store, workout, EXERCISES.plank, 0);
+  for (const entry of store.list("workout_exercise", { parentId: workout })) {
+    for (const set of store.list("workout_set", { parentId: entry.id })) {
+      logSet(store, set.id, { weightKg: 60, reps: 8, durationSeconds: 60 });
+    }
+  }
+  await act(() => root.render(h(ActiveWorkoutScreen)));
+  const thumb = (name: string) =>
+    host.querySelector(`button[aria-expanded][aria-label="${name}"]`)?.parentElement?.parentElement
+      ?.firstElementChild ?? null;
+  // The picture stays, with the shade over it; the number gives way to the same shade.
+  expect(thumb("Bench Press")?.querySelector("img")).not.toBeNull();
+  expect(thumb("Bench Press")?.childElementCount).toBe(2);
+  expect(thumb("Plank")?.childElementCount).toBe(2);
+  expect(thumb("Plank")?.textContent).toBe("");
 });
 
 it("identifies a custom exercise with no earlier sessions from the workout entry", async () => {
@@ -3891,8 +3914,8 @@ it("shows each superset on the live and completed cards independently of its tem
   expect(
     headings.map((heading) => [
       heading.getAttribute("aria-label"),
-      // The line under the name, before its rest button.
-      groupOn(heading.nextElementSibling?.firstElementChild ?? null),
+      // The line under the name (after the name), before its rest button.
+      groupOn(heading.nextElementSibling?.nextElementSibling?.firstElementChild ?? null),
     ]),
   ).toEqual(expected);
   finishWorkout(store, detailId, {

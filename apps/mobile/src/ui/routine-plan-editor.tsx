@@ -1047,7 +1047,7 @@ const sheet = themedStyles((c) => ({
     alignItems: "center",
     gap: 12,
     height: ROW,
-    paddingLeft: 16,
+    paddingLeft: 12,
     paddingRight: 6,
   },
   reorderSuperset: { boxShadow: `inset 3px 0 0 ${c.fg3}` },

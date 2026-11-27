@@ -34,8 +34,16 @@ it("stores every exercise image and thumbnail as WebP", () => {
   }
 });
 
-it("has one thumbnail for each image", () => {
+it("has one 144 × 144 thumbnail for each image", () => {
   expect([...thumbs].sort()).toEqual([...images].sort());
+  for (const file of thumbs) {
+    // A lossy WebP: the VP8 frame header gives the size (14 bits each) after its start code.
+    const data = readFileSync(new URL(file, thumbFolder));
+    expect(data.toString("latin1", 12, 16), file).toBe("VP8 ");
+    expect([data.readUInt16LE(26) & 0x3fff, data.readUInt16LE(28) & 0x3fff], file).toEqual([
+      144, 144,
+    ]);
+  }
 });
 
 it("shows each image and thumbnail for its own exercise and none for the rest", () => {

@@ -96,7 +96,7 @@ import type { NoteComment, WorkoutPlan } from "../../src/model/types.ts";
 import { countsTowardTotals } from "../../src/model/volume.ts";
 import type { ExerciseCardNotes as CardNotes } from "../../src/model/workout-notes.ts";
 import { SyncNoteBanner } from "../../src/sync/sync-note.tsx";
-import { font, gutter, numeral, radius, space, type } from "../../src/theme.ts";
+import { font, gutter, numeral, radius, space, touch, type } from "../../src/theme.ts";
 import { DestructiveButton } from "../../src/ui/action-sheet.tsx";
 import { BottomSheet } from "../../src/ui/bottom-sheet.tsx";
 import { CommitButton } from "../../src/ui/commit-button.tsx";
@@ -2175,39 +2175,52 @@ function EntryCard({
             exerciseId={entry.entry.content.exerciseId}
             done={complete}
             fallback={
-              <Text style={[styles.cardIndex, complete && styles.cardIndexDone]}>
+              <Text style={styles.cardIndex}>
                 {complete ? "" : String(index + 1).padStart(2, "0")}
               </Text>
             }
           />
           <View style={styles.cardTitle}>
+            {/*
+              The whole title area expands and collapses the card. It lies under the name and its
+              line, which don't take touches, so the rest button on that line stays its own target.
+            */}
             <Tap
               ref={headingRef}
               accessibilityRole="button"
               accessibilityLabel={name}
               accessibilityState={{ expanded }}
               onPress={() => interact(() => setExpanded(!expanded))}
-              hitSlop={{ top: 12, bottom: 4 }}
               scaleTo={1}
+              style={styles.cardToggle}
+            />
+            <Text
+              style={styles.exercise}
+              numberOfLines={1}
+              pointerEvents="none"
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+              aria-hidden
             >
-              <Text style={styles.exercise} numberOfLines={1}>
-                {name}
-              </Text>
-            </Tap>
+              {name}
+            </Text>
             {/* The rest time sits under the name, so the name keeps the width of the card. */}
-            <View style={styles.cardMeta}>
-              <Text style={styles.exerciseLine} numberOfLines={1}>
+            <View style={styles.cardMeta} pointerEvents="box-none">
+              <Text style={styles.exerciseLine} numberOfLines={1} pointerEvents="none">
                 {[`${done} of ${setCount(entry.sets.length)}`, group].filter(Boolean).join(" · ")}
               </Text>
               <Tap
                 accessibilityRole="button"
                 accessibilityLabel={`Rest ${restSeconds > 0 ? clock(restSeconds) : "off"} for ${name}. Change it`}
                 onPress={() => interact(onRest)}
-                hitSlop={{ top: 9, bottom: 9, left: 4, right: 4 }}
-                style={styles.chip}
+                style={styles.restHit}
               >
-                <TimerIcon color={c.fg2} size={13} />
-                <Text style={styles.chipText}>{restSeconds > 0 ? clock(restSeconds) : "Off"}</Text>
+                <View style={styles.chip}>
+                  <TimerIcon color={c.fg2} size={13} />
+                  <Text style={styles.chipText}>
+                    {restSeconds > 0 ? clock(restSeconds) : "Off"}
+                  </Text>
+                </View>
               </Tap>
             </View>
           </View>
@@ -2877,16 +2890,19 @@ const sheet = themedStyles((c) => ({
     alignItems: "center",
     gap: 12,
     paddingTop: 10,
-    paddingBottom: 6,
+    // The rest button's target already leaves room below its line.
+    paddingBottom: 0,
     paddingLeft: 10,
     paddingRight: 10,
   },
   cardIndex: { ...font.mono, fontSize: 12, color: c.fg3 },
-  cardIndexDone: { color: c.fg },
   cardTitle: { flex: 1, minWidth: 0, minHeight: 48, justifyContent: "center" },
+  cardToggle: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0 },
   exercise: { ...type.cardTitle, color: c.fg },
-  cardMeta: { flexDirection: "row", alignItems: "center", gap: space.sm, marginTop: 6 },
+  // A row as tall as the rest button's target, pulled up so the line sits close to the name.
+  cardMeta: { flexDirection: "row", alignItems: "center", gap: space.sm, marginTop: -4 },
   exerciseLine: { ...type.label, color: c.fg3, flexShrink: 1 },
+  restHit: { minHeight: touch, justifyContent: "center" },
   chip: {
     minHeight: 26,
     paddingHorizontal: 8,
