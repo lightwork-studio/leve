@@ -77,7 +77,7 @@ export function workoutSession(factory: Factory, scheme: string, memory: Activit
   let applied = "";
   let currentDigest = "";
   let publishedGeneration = -1;
-  let previousRestTicket = "";
+  const shownRestTickets = new Set<string>();
   return {
     publish(frame: ActivityFrame | null, retry = false) {
       current = frame;
@@ -141,15 +141,10 @@ export function workoutSession(factory: Factory, scheme: string, memory: Activit
             return;
           }
           if (publishedGeneration !== scheduled) {
-            const priorDeadline = Number(published.split(".")[3]);
-            // A queued frame can be replaced before ActivityKit ever displays it.
-            previousRestTicket =
-              digest === currentDigest &&
-              digest !== "-" &&
-              priorDeadline > 0 &&
-              !frame.display.restEnd
-                ? published
-                : "";
+            const wasResting = Number(published.split(".")[3]) > 0;
+            if (digest !== currentDigest || !wasResting) shownRestTickets.clear();
+            // Native Skip can expose Log from any frame that was visible during this rest.
+            if (props.restEnd && digest !== "-") shownRestTickets.add(logTicketIdentity(token));
           }
           published = token;
           publishedGeneration = scheduled;
@@ -182,7 +177,7 @@ export function workoutSession(factory: Factory, scheme: string, memory: Activit
         process !== epoch && digest === currentDigest && digest !== "-" && Number(deadline) <= now;
       if (
         identity !== logTicketIdentity(published) &&
-        identity !== logTicketIdentity(previousRestTicket) &&
+        !shownRestTickets.has(identity) &&
         !restoredLog
       )
         return false;
