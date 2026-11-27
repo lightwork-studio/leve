@@ -111,9 +111,9 @@ export function WeekBar({
               </>
             )}
           </Text>
-          {/* The folded week: a dot per day, filled where there was a workout. Left out while a
-              day is picked (only when open), so its workouts' names get the whole line. */}
-          {!day && (
+          {/* The folded week: a dot per day, filled where there was a workout. Only there while
+              folded, so open the line has its whole width (for a picked day's names, say). */}
+          {folded && (
             <Animated.View
               aria-hidden
               importantForAccessibility="no-hide-descendants"
@@ -179,6 +179,8 @@ export function WeekBar({
               accessibilityLabel={label}
               accessibilityState={{ selected: on }}
               focusable={!folded}
+              // The web ignores focusable on a pressable; this keeps hidden days out of Tab order.
+              {...(folded ? { tabIndex: -1 as const } : {})}
               onPress={() => {
                 haptic.select();
                 setPicked(on ? null : { week: week.start, start: d.start });

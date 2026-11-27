@@ -247,7 +247,12 @@ it("folds the days into the line on top, out of reach and out of the way of what
     expect(days().props.pointerEvents).toBe("box-none");
     expect(days().props.accessibilityElementsHidden).toBe(false);
     expect(opacity(days())).toBe(1);
-    expect(opacity(dots())).toBe(0);
+    // Open, the dots aren't there at all, so the line has its whole width.
+    expect(
+      root.findAll(
+        (n) => isType(n, "AnimatedView") && n.props["aria-hidden"] === true && !n.props.onLayout,
+      ),
+    ).toHaveLength(0);
     expect(shift(ground())).toBeCloseTo(0);
 
     // Folded: the days fade out of reach and of VoiceOver, the ground slides up by their height
@@ -258,9 +263,8 @@ it("folds the days into the line on top, out of reach and out of the way of what
     expect(days().props.importantForAccessibility).toBe("no-hide-descendants");
     // On the web, where only aria-hidden counts, and out of the keyboard's way too.
     expect(days().props["aria-hidden"]).toBe(true);
-    expect(root.findAll((n) => isType(n, "Tap")).every((n) => n.props.focusable === false)).toBe(
-      true,
-    );
+    const taps = root.findAll((n) => isType(n, "Tap"));
+    expect(taps.every((n) => n.props.focusable === false && n.props.tabIndex === -1)).toBe(true);
     expect(opacity(days())).toBe(0);
     expect(opacity(dots())).toBe(1);
     expect(shift(ground())).toBe(-34);

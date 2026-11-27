@@ -83,7 +83,7 @@ export default function TabsLayout() {
         <WeekBarFoldContext.Provider value={fold}>
           <View style={styles.flex}>
             {/* One week over every tab: it stays put while the tabs change and scroll under it.
-                First, so it is read first; drawn over the tabs. */}
+                First in the tree, which the web reads in order; zIndex draws it over the tabs. */}
             <View pointerEvents="box-none" style={styles.weekBar}>
               <TabsWeekBar tab={focus} folding={folding} onHeight={onBarHeight} />
             </View>

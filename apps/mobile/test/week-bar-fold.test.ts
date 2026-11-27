@@ -49,18 +49,21 @@ it("folds the week for the tab on show, and gives each tab its own state back", 
     await scroll("train", 300);
     expect(folded()).toBe(true);
 
-    // History isn't on show: its scrolling leaves the bar alone (here, it stays at its top).
+    // History isn't on show: scrolling it down leaves the bar alone.
     setFolded.mockClear();
-    await scroll("history", 0);
+    await scroll("history", 300);
     expect(setFolded).not.toHaveBeenCalled();
+    // Train goes back to its top and opens the week.
+    await scroll("train", 0);
+    expect(folded()).toBe(false);
 
-    // Switching to History, still at its top, opens the week; scrolled Train folds it again.
+    // Switching to History, scrolled down, folds the week; back on Train, at its top, it opens.
     shown = "history";
     await act(() => tree?.update(app()));
-    expect(folded()).toBe(false);
+    expect(folded()).toBe(true);
     shown = "train";
     await act(() => tree?.update(app()));
-    expect(folded()).toBe(true);
+    expect(folded()).toBe(false);
   } finally {
     await act(() => tree?.unmount());
     vi.unstubAllGlobals();
