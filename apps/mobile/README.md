@@ -74,13 +74,14 @@ brief server failures show nothing. A day without syncing shows a note while cha
 silently](../../docs/data-compatibility.md#sync-never-stops-silently)): anything that stops sync,
 for the whole app or for one record, is brought to the person to resolve. Every question below can't
 be put off. Where it can't be answered yet, the way out is pausing sync (or, for data that isn't the
-signed-in account's or server's, going back to where it belongs or signing out). While the phone's
-data belongs to an account but sync isn't running, paused or signed out on purpose, every screen
-says so (the live workout too), with Resume or Sign in. Pause and resume are also in Settings while
-signed in or connected to a paired server. A sync server that needs an update is said on every
-screen straight away, with Pause. Questions never cover a workout being logged on this phone: they
-wait, with a note on every screen, and come up as soon as it ends. A workout running on another
-phone, which shows here as in progress too, doesn't hold them back.
+signed-in account's or server's, going back to where it belongs or signing out). If the phone's
+data belongs to an account and you pause sync, sign out, or disconnect from the server, every
+screen shows a way back, including the live workout. Pause and resume are also in Settings
+while signed in or connected to a paired server. If Leve can't save a pause, it warns that syncing
+can restart when you reopen the app and offers to save the pause again. If the sync server needs an
+update, every screen shows a notice with a Pause action. Questions never cover a workout being
+logged on this phone. They wait, with a note on every screen, and come up as soon as it ends.
+A workout running on another phone, which shows here as in progress too, doesn't hold them back.
 
 - **Combine:** this phone has data that never synced, and the account already has data. Add it to
   the account, or replace it with the account's data (after an offer to save a copy). Signing out
@@ -97,8 +98,8 @@ phone, which shows here as in progress too, doesn't hold them back.
   moving them.
 - **Sign in again:** the sign-in ran out, or the server refused it. Sign in, or pause sync until
   you can. On a paired server, this is **Connect again**: the server no longer accepts the phone,
-  and a new pairing link from its operator connects it again (Settings stays reachable for it), or
-  pause sync until you have one.
+  and a new pairing link from its operator connects it again. Settings shows why a new link is
+  needed and leaves the pairing controls available. You can also pause sync until you have a link.
 - **Update Leve:** the server no longer syncs with this version. Update (TestFlight builds open
   TestFlight), or pause sync until you can.
 - **Changed in two places:** the same workout, routine, entry or setting changed on this phone and

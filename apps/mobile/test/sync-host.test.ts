@@ -15,7 +15,11 @@ import {
   ownServer,
 } from "../src/sync/own-server-store.ts";
 import { SyncHost } from "../src/sync/sync-host.tsx";
-import { signedOutOnPurpose, syncPaused } from "../src/sync/sync-preferences.ts";
+import {
+  setSignedOutOnPurpose,
+  signedOutOnPurpose,
+  syncPaused,
+} from "../src/sync/sync-preferences.ts";
 import type { SyncSessionOptions, SyncStatus } from "../src/sync/sync-session.ts";
 import { clerk } from "./support/clerk-expo.ts";
 import { files } from "./support/expo-file-system.ts";
@@ -481,13 +485,13 @@ describe("a server the person paired", () => {
     expect(screen()).not.toContain("Sign in again");
     await tap("Open Settings");
     expect(route.pushed).toEqual(["/settings"]);
-    expect(screen()).not.toContain("no longer accepts");
+    expect(screen()).not.toContain("Open Settings");
     expect(screen()).not.toContain("Training");
     route.path = "/settings";
     await act(async () => {
       for (const listener of appState.listeners) listener("active");
     });
-    expect(screen()).not.toContain("no longer accepts");
+    expect(screen()).toContain("Connect again in Settings using a new pairing link.");
     await report({ prompt: { kind: "combine" } });
     expect(screen()).toContain("Your account already has data");
     expect(screen()).toContain("Pausing sync keeps them on this phone only.");
@@ -500,9 +504,14 @@ describe("a server the person paired", () => {
     await report({ prompt: { kind: "sign_in" } });
     expect(screen()).not.toContain("Not now");
     await tap("Open Settings");
+    route.path = "/history";
+    await render();
+    expect(screen()).toContain("Open Settings");
+    await tap("Open Settings");
     route.path = "/settings";
     await render();
-    expect(screen()).not.toContain("no longer accepts");
+    expect(screen()).toContain("Connect again in Settings using a new pairing link.");
+    expect(screen()).not.toContain("Open Settings");
     route.path = "/";
     await render();
     expect(screen()).toContain("no longer accepts this phone");
@@ -525,20 +534,44 @@ describe("a server the person paired", () => {
     await render();
     expect(syncPaused()).toBe(true);
     expect(ownServer()).toEqual(home);
+    expect(session().calls).not.toContain("combine");
+    expect(session().calls).not.toContain("replace");
+    forgetDevicePreferences();
+    expect(syncPaused()).toBe(true);
   });
 
-  it("says so, with a way back, when the data's server was left for Leve's without signing in", async () => {
+  it("warns when a paired Combine pause only lasts until restart and lets it be saved again", async () => {
+    const preferences = "document/leve-device-preferences.json";
+    files.set(preferences, "invalid");
     chooseOwnServer(home);
-    chooseBuiltInServer();
-    clerk.signedIn = false;
-    data.server = home.server;
-    data.account = home.account;
     await render();
-    expect(screen()).not.toContain("Your sign-in has run out");
-    expect(screen()).toContain("This phone's data belongs to sync.home.example");
-    await tap("Switch back");
-    expect(ownServer()).toEqual(home);
+    await report({ prompt: { kind: "combine" } });
+    await tap("Pause sync");
+    expect(session().calls).toContain("stop");
+    expect(screen()).toContain("Sync can restart when you reopen the app.");
+    files.set(preferences, "{}");
+    await tap("Save pause");
+    expect(screen()).not.toContain("Sync can restart when you reopen the app.");
+    forgetDevicePreferences();
+    expect(syncPaused()).toBe(true);
   });
+
+  it.each([false, true])(
+    "offers a way back when leaving for Leve while signed out (previous sign-out: %s)",
+    async (signedOut) => {
+      chooseOwnServer(home);
+      chooseBuiltInServer();
+      clerk.signedIn = false;
+      setSignedOutOnPurpose(signedOut);
+      data.server = home.server;
+      data.account = home.account;
+      await render();
+      expect(screen()).not.toContain("Your sign-in has run out");
+      expect(screen()).toContain("This phone's data belongs to sync.home.example");
+      await tap("Switch back");
+      expect(ownServer()).toEqual(home);
+    },
+  );
 
   it("says so when a paired server was left in a build without a server of its own", async () => {
     config.builtIn = false;
@@ -549,6 +582,11 @@ describe("a server the person paired", () => {
     await render();
     expect(screen()).toContain("Not syncing");
     expect(screen()).toContain("This phone's data belongs to sync.home.example");
+    keychain.failWrites = true;
+    await tap("Switch back");
+    expect(ownServer()).toBeNull();
+    expect(screen()).toContain("Switching back didn't work. Try again.");
+    keychain.failWrites = false;
     await tap("Switch back");
     await render();
     expect(ownServer()).toEqual(home);

@@ -1,4 +1,8 @@
-import { readDevicePreference, writeDevicePreference } from "../data/device-preference-store.ts";
+import {
+  hasUnsavedDevicePreference,
+  readDevicePreference,
+  writeDevicePreference,
+} from "../data/device-preference-store.ts";
 
 // Sync's own notes on this phone, kept beside the other device preferences and never synced.
 
@@ -31,6 +35,10 @@ export function setSignedOutOnPurpose(value: boolean): void {
  */
 export function syncPaused(): boolean {
   return readDevicePreference(PAUSED) === true;
+}
+
+export function syncPauseIsTemporary(): boolean {
+  return hasUnsavedDevicePreference(PAUSED);
 }
 
 export function setSyncPaused(value: boolean): void {

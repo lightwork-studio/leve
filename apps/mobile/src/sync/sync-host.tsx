@@ -41,6 +41,7 @@ import {
   setSyncPaused,
   signedOutOnPurpose,
   syncPaused,
+  syncPauseIsTemporary,
   writeLastSynced,
 } from "./sync-preferences.ts";
 import { SyncSession, type SyncStatus, unsyncedChanges } from "./sync-session.ts";
@@ -105,15 +106,31 @@ export function SyncHost() {
  * This phone's data belongs to a server it isn't syncing with now (left in Settings, or the
  * build's own server chosen without signing in): a note on every screen, with the way back.
  */
-function elsewhereNote(bound: string, canSwitchBack: boolean): SyncNote {
+function useElsewhereNote(
+  bound: { server: string | null; account: string | null } | null,
+): SyncNote | null {
+  const [failedServer, setFailedServer] = useState<string | null>(null);
+  if (!bound || bound.server === null || bound.account === null) return null;
+  const server = bound.server;
+  const label = serverLabel(server);
+  const canSwitchBack = switchesBackToData(bound, null);
+  const problem =
+    canSwitchBack && failedServer === server ? " Switching back didn't work. Try again." : "";
   return {
     label: "Not syncing",
-    message: `This phone's data belongs to ${serverLabel(bound)}. Changes stay on this phone until it syncs there again.`,
+    message: `This phone's data belongs to ${label}. Changes stay on this phone until it syncs there again.${problem}`,
     action: canSwitchBack
       ? {
           label: "Switch back",
-          hint: `Syncs with ${serverLabel(bound)} again`,
-          onPress: switchBack,
+          hint: `Returns to ${label}`,
+          onPress: () => {
+            try {
+              switchBack();
+              setFailedServer(null);
+            } catch {
+              setFailedServer(server);
+            }
+          },
         }
       : {
           label: "Settings",
@@ -125,11 +142,7 @@ function elsewhereNote(bound: string, canSwitchBack: boolean): SyncNote {
 
 function Disconnected() {
   const { store } = useAppData();
-  const bound = store.syncState();
-  const note =
-    bound.account !== null && bound.server !== null
-      ? elsewhereNote(bound.server, switchesBackToData(bound, null))
-      : null;
+  const note = useElsewhereNote(store.syncState());
   useEffect(() => publishSyncNote(note));
   useEffect(() => () => publishSyncNote(null), []);
   return note ? <NotSyncing note={note} /> : null;
@@ -321,7 +334,11 @@ function Sync({
   }, [version, store]);
 
   // This phone's data belongs to an account, so its changes are meant to sync.
-  const accountData = store.syncState().account !== null;
+  const bound = store.syncState();
+  const accountData = bound.account !== null;
+  const disconnected = useElsewhereNote(
+    !own && isLoaded && !isSignedIn && bound.server !== server ? bound : null,
+  );
   const prompt = status.prompt;
   const signOutHere = async () => {
     setSignedOutOnPurpose(true);
@@ -412,7 +429,6 @@ function Sync({
       );
     // Conflicts are settled here and now: one at a time, before the app goes on. Not while the
     // phone's data belongs to another account or server: that question comes first.
-    const bound = store.syncState();
     const switching =
       isSignedIn && bound.account !== null && (bound.server !== server || bound.account !== userId);
     const pending = switching ? [] : conflicts(store);
@@ -440,6 +456,20 @@ function Sync({
   const decide = (): { question: ReactNode; note: SyncNote | null } => {
     const none = { question: null, note: null };
     // Stopped by the person: every screen says so, with the way back. Nothing is asked meanwhile.
+    if (paused && syncPauseIsTemporary())
+      return {
+        question: null,
+        note: {
+          label: "Sync paused for now",
+          message:
+            "Leve couldn't save the pause. Sync can restart when you reopen the app. Keep it open and try saving the pause again.",
+          action: {
+            label: "Save pause",
+            hint: "Tries to keep sync paused after reopening",
+            onPress: pause,
+          },
+        },
+      };
     if (paused && (isSignedIn || accountData))
       return {
         question: null,
@@ -453,6 +483,8 @@ function Sync({
           },
         },
       };
+    // The bound server matters even if the person deliberately signed out of Leve before pairing.
+    if (disconnected) return { question: null, note: disconnected };
     if (isLoaded && !isSignedIn && accountData && signedOutOnPurpose())
       return {
         question: null,
@@ -465,13 +497,6 @@ function Sync({
             onPress: () => router.push("/settings"),
           },
         },
-      };
-    // The data belongs to another server, and nobody is signed in to this one: left on purpose.
-    const bound = store.syncState();
-    if (!own && isLoaded && !isSignedIn && accountData && bound.server && bound.server !== server)
-      return {
-        question: null,
-        note: elsewhereNote(bound.server, switchesBackToData(bound, builtInAccount)),
       };
     const question = ask();
     // Nothing covers a workout being logged here: the question waits until it ends, and says so.
@@ -487,6 +512,16 @@ function Sync({
         },
       };
     if (question) return { question, note: null };
+    // Settings stays usable for pairing, with the reason the phone needs to connect again.
+    if (own && prompt?.kind === "sign_in")
+      return {
+        question: null,
+        note: {
+          label: "Not syncing",
+          message: `${serverLabel(server)} no longer accepts this phone. Connect again in Settings using a new pairing link.`,
+          action: { label: "Pause", hint: "Stops syncing until you resume it", onPress: pause },
+        },
+      };
     // The server is too old for this app: nothing the phone can do but wait or pause, so it says
     // so straight away, not only after a day.
     if (status.serverOutdated)

@@ -321,9 +321,9 @@ synced is not enough when there is nothing the person can do about it.
   so, with the way back: resume, sign in, or switch back to that server. Screens drawn above the
   app, such as the live workout, show the same note. Pausing and resuming are also in Settings while
   signed in or connected to a paired server. Nothing is asked while paused; resuming asks again
-  whatever is still open. A sync server too old for the app is said on every screen from its first
-  answer, not after a day, with pausing as the way out; the app keeps checking until the server is
-  updated.
+  whatever is still open. If the app can't save a pause, it warns that the pause lasts only while
+  the app is open and offers to retry saving it. From the first answer by a server that is too old,
+  every screen offers to pause sync. The app keeps checking until the server is updated.
 - **A workout being logged is never interrupted.** Questions wait while a workout is logged on
   this phone (started or logged here, or open on its live or finish screen; one already running
   when a version with this rule first opens counts too), and come up as soon as it ends;
