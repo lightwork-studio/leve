@@ -1,7 +1,9 @@
 import { router, useSegments } from "expo-router";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
 import { Text, View } from "react-native";
 import Svg, { Circle } from "react-native-svg";
+import { useAppData } from "../../data/app-data.tsx";
+import { liveWorkoutNotes } from "../../data/live-workout-notes.ts";
 import { restProgress, restTimer } from "../../data/rest-timer.ts";
 import { font, numeral, type } from "../../theme.ts";
 import { Enter } from "../enter.tsx";
@@ -37,9 +39,14 @@ function VisibleMiniPlayer({ fallback }: { fallback: ReactNode }) {
   const styles = useStyles(sheet);
   const c = useColors();
   const player = useWorkoutPlayer();
+  const { store, version, historyVersion } = useAppData();
+  const workoutId = player?.tree.workout.id;
+  useEffect(() => {
+    if (workoutId) liveWorkoutNotes(store, workoutId, version, historyVersion);
+  }, [store, workoutId, version, historyVersion]);
   const now = useTicker(!!player);
   if (!player) return fallback;
-  const { store, tree, rest, target, name, title, setName, values, progress, resume, log } = player;
+  const { tree, rest, target, name, title, setName, values, progress, resume, log } = player;
   const elapsed = clock((now - Date.parse(tree.workout.content.startedAt)) / 1000);
   const left = rest ? restProgress(rest, now).left : 0;
   const resting = rest !== null && left > 0;

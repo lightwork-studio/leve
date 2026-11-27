@@ -12,7 +12,6 @@ import {
   type RefCallback,
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
@@ -29,10 +28,9 @@ import Animated, { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppData } from "../../src/data/app-data.tsx";
 import { exerciseImage } from "../../src/data/exercise-images.ts";
-import { workoutExerciseNotes, workoutsByExercise } from "../../src/data/exercise-notes.ts";
+import { liveWorkoutNotes } from "../../src/data/live-workout-notes.ts";
 import { hasUnread, useSeenComments } from "../../src/data/note-seen.ts";
 import { useLive, usePastWorkouts } from "../../src/data/queries.ts";
-import { refreshedJournal, workoutJournalData } from "../../src/data/read.ts";
 import { restProgress, restTimer, useRest } from "../../src/data/rest-timer.ts";
 import {
   deleteHeldSet,
@@ -94,7 +92,7 @@ import {
   typeRpe,
 } from "../../src/model/rir.ts";
 import { supersetMemberships } from "../../src/model/supersets.ts";
-import type { WorkoutPlan } from "../../src/model/types.ts";
+import type { NoteComment, WorkoutPlan } from "../../src/model/types.ts";
 import { countsTowardTotals } from "../../src/model/volume.ts";
 import type { ExerciseCardNotes as CardNotes } from "../../src/model/workout-notes.ts";
 import { SyncNoteBanner } from "../../src/sync/sync-note.tsx";
@@ -354,17 +352,8 @@ export default function ActiveWorkoutScreen() {
       ? previousForWorkout(history, data.tree, data.settings, data.initialPlan)
       : null;
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: set edits leave prior journals unchanged.
-  const journalHistory = useMemo(
-    () => (settled && workoutId ? workoutJournalData(store, workoutId) : null),
-    [store, workoutId, historyVersion, settled],
-  );
-  // This workout's own notes and comments are written with the running workout's version.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: read again for every change.
-  const journal = useMemo(
-    () => (journalHistory ? refreshedJournal(store, journalHistory) : null),
-    [store, journalHistory, version],
-  );
+  const notes = workoutId ? liveWorkoutNotes(store, workoutId, version, historyVersion) : null;
+  const journal = notes?.journal;
   const carried = journal?.carried ?? [];
   const needsReview =
     !!journal &&
@@ -376,19 +365,6 @@ export default function ActiveWorkoutScreen() {
     [...carried.map(({ note }) => note), ...journal.notes].some((note) =>
       hasUnread(journal.comments.get(note.id), seenComments),
     );
-  // biome-ignore lint/correctness/useExhaustiveDependencies: only finished workouts change it.
-  const exerciseHistory = useMemo(
-    () => (settled ? workoutsByExercise(store) : null),
-    [store, historyVersion, settled],
-  );
-  // biome-ignore lint/correctness/useExhaustiveDependencies: notes change with the store version.
-  const exerciseNotes = useMemo(
-    () =>
-      settled && workoutId && exerciseHistory
-        ? workoutExerciseNotes(store, workoutId, exerciseHistory)
-        : null,
-    [store, workoutId, version, settled, exerciseHistory],
-  );
   const rest = useRest(store, workoutId, version);
   useRestEnd(rest);
 
@@ -1652,7 +1628,8 @@ export default function ActiveWorkoutScreen() {
                       }}
                     >
                       <EntryCard
-                        notes={exerciseNotes?.get(entry.entry.content.exerciseId)}
+                        notes={notes?.exerciseNotes.byExercise.get(entry.entry.content.exerciseId)}
+                        noteComments={notes?.exerciseNotes.comments}
                         actionProblem={problem}
                         headingRef={(node) => {
                           if (node) headings.current.set(entry.entry.id, node);
@@ -2026,6 +2003,7 @@ function Subline({ startedAt, sets, effort }: { startedAt: string; sets: string;
 
 function EntryCard({
   notes,
+  noteComments,
   actionProblem,
   headingRef,
   rowRef,
@@ -2078,6 +2056,7 @@ function EntryCard({
   onSyncResolved,
 }: {
   notes: CardNotes | undefined;
+  noteComments: ReadonlyMap<string, NoteComment[]> | undefined;
   actionProblem: string | null;
   headingRef: RefCallback<ComponentRef<typeof View>>;
   rowRef: (setId: string, node: ComponentRef<typeof View> | null) => void;
@@ -2321,6 +2300,7 @@ function EntryCard({
           exerciseName={name}
           workoutId={entry.entry.content.workoutId}
           notes={notes}
+          commentsById={noteComments}
           live
           onInteract={onInteract}
         />
