@@ -84,10 +84,10 @@ function workoutLayout(p: WorkoutContent, env: LiveActivityEnvironment) {
   ) : (
     <Text modifiers={big}>{p.measurements || p.exercise}</Text>
   );
-  const control = (label: string, action: string, color: string) => (
+  const control = (label: string, target: string, color: string) => (
     <Button
       label={label}
-      target={`${p.token}:${action}`}
+      target={target}
       modifiers={[buttonStyle("borderedProminent"), tint(color)]}
     />
   );
@@ -101,16 +101,20 @@ function workoutLayout(p: WorkoutContent, env: LiveActivityEnvironment) {
       modifiers={[foregroundStyle(orange)]}
     />
   );
+  const restTicket = p.restKey ? `leveRest.${p.restKey}` : p.token;
+  // Native timer actions can change the deadline without changing the set's ticket.
+  const logTicket = p.token.split(".");
+  if (logTicket.length === 5 && logTicket[0] === "leve1") logTicket[3] = String(p.restEnd);
   const controls = !p.interactive ? (
     open
   ) : resting ? (
     <HStack spacing={5}>
-      {control("−15", "less", "#565C66")}
-      {control("+15", "more", "#565C66")}
-      {control("Skip", "skip", "#383D46")}
+      {control("−15", `${restTicket}:less`, "#565C66")}
+      {control("+15", `${restTicket}:more`, "#565C66")}
+      {control("Skip", `${restTicket}:skip`, "#383D46")}
     </HStack>
   ) : p.canLog ? (
-    control("Log", "log", orange)
+    control("Log", `${logTicket.join(".")}:log`, orange)
   ) : (
     open
   );

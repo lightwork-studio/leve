@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Leve Watch Screens</title>
+<meta name="description" content="Storyboard for docs/apple-watch-workout-design.md: Smart Stack, rest alert, Watch app screens, states and data flow. Synthetic workout.">
+<style>
+  :root {
+    --page: #F3F1EC; --ink: #171A20; --muted: #5B606A; --line: #D9D5CC; --card: #FBFAF7;
+    --accent: #FF5A32; --phase: #E9E5DC;
+    /* The watch face is always dark, whatever the page theme. */
+    --w-bg: #000; --w-ink: #F3F1EC; --w-dim: #8C919B; --w-chip: #262A31; --w-chip2: #383D46;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --page: #101217; --ink: #F3F1EC; --muted: #9DA2AC; --line: #2A2E36; --card: #171A20; --phase: #22262E;
+    }
+  }
+  :root[data-theme="dark"] {
+    --page: #101217; --ink: #F3F1EC; --muted: #9DA2AC; --line: #2A2E36; --card: #171A20; --phase: #22262E;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--ink);
+    font: 15px/1.5 system-ui, -apple-system, "SF Pro Text", sans-serif; }
+  main { max-width: 1120px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 28px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h1 .dot { color: var(--accent); }
+  h2 { font-size: 19px; margin: 44px 0 4px; }
+  .lede, .note { color: var(--muted); max-width: 70ch; margin: 0 0 16px; }
+  .tag { display: inline-block; font: 600 11px/1 ui-monospace, "SF Mono", monospace; letter-spacing: .06em;
+    text-transform: uppercase; padding: 5px 7px; border-radius: 4px; background: var(--phase); color: var(--muted); margin-right: 6px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(208px, 1fr)); gap: 28px 20px; }
+  figure { margin: 0; padding-left: 8px; }
+  figcaption { font-size: 13px; color: var(--muted); margin-top: 10px; max-width: 220px; }
+  figcaption b { color: var(--ink); display: block; font-size: 14px; }
+
+  /* Watch body: 45 mm proportions. */
+  .watch { width: 196px; height: 238px; border-radius: 46px; background: var(--w-bg); color: var(--w-ink);
+    padding: 16px 14px 14px; position: relative; overflow: hidden;
+    box-shadow: 0 0 0 6px #2B2E34, 0 0 0 7px #4A4E56, 0 10px 24px rgba(0,0,0,.25);
+    font-family: system-ui, -apple-system, "SF Pro Rounded", sans-serif; display: flex; flex-direction: column; }
+  .top { display: flex; justify-content: space-between; font: 12px/1 ui-monospace, "SF Mono", monospace; color: var(--w-dim); margin: 2px 6px 8px; }
+  .top .title { color: var(--accent); max-width: 96px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-family: system-ui, sans-serif; font-weight: 600; }
+  .lbl { font: 11px/1.2 ui-monospace, "SF Mono", monospace; color: var(--w-dim); letter-spacing: .04em; }
+  .ex { font-size: 16px; font-weight: 600; line-height: 1.2; }
+  .big { font-size: 30px; white-space: nowrap; font-weight: 300; font-variant-numeric: tabular-nums; line-height: 1.05; letter-spacing: -0.02em; }
+  .mid { font-size: 24px; font-weight: 400; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .sub { font-size: 12px; color: var(--w-dim); line-height: 1.3; }
+  .row { display: flex; gap: 6px; margin-top: auto; }
+  .btn { flex: 1; border: 0; border-radius: 22px; height: 38px; background: var(--w-chip2); color: var(--w-ink);
+    font: 600 14px/38px system-ui, sans-serif; text-align: center; }
+  .btn.go { background: var(--accent); color: #fff; }
+  .btn.dark { background: var(--w-chip); }
+  .btn.off { opacity: .35; }
+  .ring { width: 104px; height: 104px; margin: 0 auto 4px; position: relative; }
+  .ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .ring .t { position: absolute; inset: 0; display: grid; place-items: center; font-size: 28px; font-weight: 300; font-variant-numeric: tabular-nums; }
+  .center { text-align: center; }
+  .spin { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.45); border-top-color: #fff;
+    border-radius: 50%; vertical-align: -2px; margin-right: 6px; }
+  .banner { background: #FFE9E3; color: #7A1F08; border-radius: 12px; padding: 6px 9px; font-size: 12px; line-height: 1.3; margin-bottom: 8px; }
+  .dim { opacity: .5; }
+
+  /* Smart Stack tile and notification inside the watch. */
+  .clock { text-align: right; font: 600 15px/1 system-ui, sans-serif; margin: 2px 8px 10px; }
+  .tile { background: #1C1E22; border-radius: 18px; padding: 10px 11px; }
+  .tile .head { display: flex; align-items: center; gap: 8px; }
+  .mini { width: 26px; height: 26px; }
+  .mini svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .peek { background: #1C1E22; border-radius: 14px; height: 22px; margin-top: 6px; opacity: .55; }
+  .notif { background: #1C1E22; border-radius: 18px; padding: 10px 12px; margin-top: 4px; }
+  .app { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--w-dim); margin-bottom: 4px; }
+  .app i { width: 16px; height: 16px; border-radius: 50%; background: var(--w-ink); display: inline-grid; place-items: center;
+    font: 700 10px/1 system-ui; color: #000; font-style: normal; }
+
+  /* Diagrams */
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; overflow-x: auto; }
+  .panel svg { display: block; min-width: 720px; width: 100%; height: auto; }
+  .panel text { fill: var(--ink); font: 13px system-ui, sans-serif; }
+  .panel .m { fill: var(--muted); font-size: 11.5px; }
+  .panel .box { fill: var(--page); stroke: var(--line); stroke-width: 1.2; }
+  .panel .hot { fill: none; stroke: var(--accent); stroke-width: 1.6; }
+  .panel .edge { stroke: var(--muted); stroke-width: 1.3; fill: none; }
+  .panel .edge.a { stroke: var(--accent); }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+  .tablewrap { overflow-x: auto; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Leve on Apple Watch<span class="dot">.</span></h1>
+  <p class="lede">Storyboard for <code>docs/apple-watch-workout-design.md</code>. Workouts are synthetic. The iPhone stays the
+    only writer. The Watch shows one snapshot and sends ticketed commands, which the phone validates exactly as it
+    validates Live Activity buttons.</p>
+
+  <h2><span class="tag">Phase 1</span>Smart Stack and rest alert</h2>
+  <p class="note">No Watch app. The existing Live Activity's <code>bannerSmall</code> gets a wrist-sized layout. A local
+    notification at <code>restEnd</code> is forwarded to the Watch while the iPhone is locked.</p>
+  <div class="grid">
+    <figure>
+      <div class="watch">
+        <div class="clock">10:09</div>
+        <div class="tile">
+          <div class="head">
+            <div class="mini"><svg viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="15" fill="none" stroke="#383D46" stroke-width="4"/><circle cx="18" cy="18" r="15" fill="none" stroke="#FF5A32" stroke-width="4" stroke-dasharray="94.2" stroke-dashoffset="40" stroke-linecap="round"/></svg></div>
+            <span class="lbl">REST</span>
+          </div>
+          <div class="big" style="margin-top:4px">1:24</div>
+          <div class="sub">Next · Bench · set 3</div>
+        </div>
+        <div class="peek"></div>
+      </div>
+      <figcaption><b>Smart Stack · resting</b>Driven by <code>timerInterval</code>, so it counts down with no updates.
+        It shows the ready state once the activity goes stale.</figcaption>
+    </figure>
+    <figure>
+      <div class="watch">
+        <div class="clock">10:11</div>
+        <div class="tile">
+          <div class="lbl">BENCH PRESS · SET 3</div>
+          <div class="mid" style="margin:6px 0 2px">80 kg × 8</div>
+          <div class="sub">4/12 sets · Last 77.5 × 8</div>
+        </div>
+        <div class="peek"></div>
+      </div>
+      <figcaption><b>Smart Stack · ready</b>Read-only unless check F2 shows wrist taps reach the iPhone reliably.
+        Tapping it opens the Watch app once one exists.</figcaption>
+    </figure>
+    <figure>
+      <div class="watch">
+        <div class="clock">10:11</div>
+        <div class="notif">
+          <div class="app"><i>L</i>Leve · now</div>
+          <div class="ex">Rest over</div>
+          <div class="sub" style="color:var(--w-ink);margin-top:2px">Bench press · set 3<br>80 kg × 8</div>
+        </div>
+        <div class="row"><div class="btn dark">Dismiss</div></div>
+      </div>
+      <figcaption><b>Rest-end alert</b>One scheduled notification, <code>leve.rest</code>. Adjusting rest reschedules
+        it. Skip, logging and a cold start cancel it. Opt-in.</figcaption>
+    </figure>
+    <figure>
+      <div class="watch">
+        <div class="clock">10:20</div>
+        <div class="tile">
+          <div class="lbl">PLANK · SET 2</div>
+          <div class="mid" style="margin:6px 0 2px">1:00</div>
+          <div class="sub">Start on iPhone</div>
+        </div>
+        <div class="peek"></div>
+      </div>
+      <figcaption><b>Smart Stack · timed set</b>The set stopwatch lives on the phone, so the Watch never starts a
+        timed set.</figcaption>
+    </figure>
+  </div>
+
+  <h2><span class="tag">Phase 2</span>Watch app: the main loop</h2>
+  <p class="note">The Watch app is a remote control. Rest nudges are optimistic and reconciled with the reply. Log
+    waits for the phone's answer.</p>
+  <div class="grid">
+    <figure>
+      <div class="watch">
+        <div class="top"><span class="title">Push day</span><span>32:10</span></div>
+        <div class="ring">
+          <svg viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="16" fill="none" stroke="#262A31" stroke-width="2.6"/><circle cx="18" cy="18" r="16" fill="none" stroke="#FF5A32" stroke-width="2.6" stroke-dasharray="100.5" stroke-dashoffset="43" stroke-linecap="round"/></svg>
+          <div class="t">1:24</div>
+        </div>
+        <div class="sub center">Next · Bench · 80 kg × 8</div>
+        <div class="row" style="margin-top:8px"><div class="btn">−15</div><div class="btn">+15</div><div class="btn dark">Skip</div></div>
+      </div>
+      <figcaption><b>Rest</b>Vermilion ring on black, not the app's inverted bone ground, which would be a white
+        screen on the wrist. <code>.stop</code> haptic at zero.</figcaption>
+    </figure>
+    <figure>
+      <div class="watch">
+        <div class="top"><span class="title">Push day</span><span>33:40</span></div>
+        <div class="lbl" style="margin:0 6px">SET 3 OF 4 · 4/12</div>
+        <div class="ex" style="margin:2px 6px 4px">Bench press</div>
+        <div class="big" style="margin:0 6px">80 kg × 8</div>
+        <div class="sub" style="margin:4px 6px 0">Last 77.5 × 8</div>
+        <div class="row"><div class="btn go">Log</div></div>
+      </div>
+      <figcaption><b>Next set</b>Log records exactly these values. The ticket's digest covers the set version, the
+        values and the measurements.</figcaption>
+    </figure>
+    <figure>
+      <div class="watch">
+        <div class="top"><span class="title">Push day</span><span>33:42</span></div>
+        <div class="lbl" style="margin:0 6px">SET 3 OF 4 · 4/12</div>
+        <div class="ex" style="margin:2px 6px 4px">Bench press</div>
+        <div class="big" style="margin:0 6px">80 kg × 8</div>
+        <div class="sub" style="margin:4px 6px 0">Last 77.5 × 8</div>
+        <div class="row"><div class="btn go"><span class="spin"></span>Logging</div></div>
+      </div>
+      <figcaption><b>Logging</b>Busy state until the phone replies. No optimistic "logged" on the wrist. Times out
+        after 6 s.</figcaption>
+    </figure>
+    <figure>
+      <div class="watch" style="justify-content:center;align-items:center">
+        <svg width="64" height="64" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="30" fill="#FF5A32"/><path d="M19 33l9 9 17-19" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <div class="ex" style="margin-top:10px">Set 3 logged</div>
+        <div class="sub">Rest 2:00</div>
+      </div>
+      <figcaption><b>Logged</b>Shown for 0.8 s after <code>applied</code>, then Rest from the snapshot in the
+        reply.</figcaption>
+    </figure>
+  </div>
+
+  <h2><span class="tag">Phase 2</span>Watch app: edges</h2>
+  <div class="grid">
+    <figure>
+      <div class="watch">
+        <div class="top"><span class="title">Push day</span><span>33:50</span></div>
+        <div class="banner">Changed on iPhone</div>
+        <div class="ex" style="margin:0 6px 2px">Bench press · set 3</div>
+        <div class="big" style="margin:0 6px">82.5 × 6</div>
+        <div class="row"><div class="btn go">Log</div></div>
+      </div>
+      <figcaption><b>Stale</b>The set was edited on the phone after the snapshot. Nothing was logged, and the new
+        values are shown to confirm.</figcaption>
+    </figure>
+    <figure>
+      <div class="watch">
+        <div class="top"><span class="title dim">Push day</span><span>34:05</span></div>
+        <div class="banner">iPhone unavailable · 2 min ago</div>
+        <div class="dim">
+          <div class="ex" style="margin:0 6px 2px">Bench press · set 3</div>
+          <div class="big" style="margin:0 6px">80 kg × 8</div>
+        </div>
+        <div class="row"><div class="btn dark">Try again</div></div>
+      </div>
+      <figcaption><b>iPhone unavailable</b>The last snapshot, dimmed and labelled with its age, with actions off.
+        Commands are never queued. After 5 min it gives way to this screen without values.</figcaption>
+    </figure>
+    <figure>
+      <div class="watch">
+        <div class="top"><span class="title">Push day</span><span>33:48</span></div>
+        <div class="lbl" style="margin:0 6px">SET 3 OF 4 · 4/12</div>
+        <div class="ex" style="margin:2px 6px 4px">Bench press</div>
+        <div class="big" style="margin:0 6px">80 kg × 8</div>
+        <div class="sub" style="margin:4px 6px 0">Checking whether it saved</div>
+        <div class="row"><div class="btn dark"><span class="spin"></span>Checking</div></div>
+      </div>
+      <figcaption><b>Checking if saved</b>No reply within 6 s. The Watch asks for a fresh snapshot and keeps Log
+        disabled until that settles whether the set was logged.</figcaption>
+    </figure>
+    <figure>
+      <div class="watch" style="justify-content:center;text-align:center">
+        <div class="ex"><span class="spin"></span>Checking iPhone</div>
+        <div class="sub" style="margin-top:6px">Looking for your workout</div>
+      </div>
+      <figcaption><b>Checking iPhone</b>Every launch and foreground. A cached snapshot under 5 min old may show
+        behind it, with actions disabled. "No workout" appears only after a current reply.</figcaption>
+    </figure>
+    <figure>
+      <div class="watch">
+        <div class="top"><span class="title">Core</span><span>41:12</span></div>
+        <div class="lbl" style="margin:0 6px">SET 2 OF 3</div>
+        <div class="ex" style="margin:2px 6px 4px">Plank</div>
+        <div class="big" style="margin:0 6px">1:00</div>
+        <div class="sub" style="margin:4px 6px 0">Timed sets start on iPhone</div>
+        <div class="row"><div class="btn dark">Open on iPhone</div></div>
+      </div>
+      <figcaption><b>Needs the iPhone</b>Whenever <code>canLog</code> is false: a timed set, values Leve can't
+        prefill, or last time's values still loading.</figcaption>
+    </figure>
+    <figure>
+      <div class="watch">
+        <div class="top"><span class="title">Push day</span><span>58:30</span></div>
+        <div class="ex center" style="margin-top:10px">All sets logged</div>
+        <div class="big center" style="margin-top:4px">12/12</div>
+        <div class="sub center">4 820 kg · 58 min</div>
+        <div class="row"><div class="btn dark">Finish on iPhone</div></div>
+      </div>
+      <figcaption><b>All logged</b>Finishing, with notes and the summary, stays on the phone.</figcaption>
+    </figure>
+    <figure>
+      <div class="watch" style="justify-content:center;text-align:center">
+        <div class="ex">No workout</div>
+        <div class="sub" style="margin-top:4px">Start one on your iPhone.<br>It will show up here.</div>
+      </div>
+      <figcaption><b>No workout</b>The snapshot is cleared on finish, discard, sign-out and account switch.</figcaption>
+    </figure>
+  </div>
+
+  <h2>States and transitions</h2>
+  <div class="panel">
+    <svg viewBox="0 0 960 300" role="img" aria-label="Watch app state machine">
+      <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker></defs>
+      <rect class="box" x="20" y="120" width="130" height="52" rx="10"/><text x="85" y="150" text-anchor="middle">No workout</text>
+      <rect class="box" x="220" y="40" width="140" height="52" rx="10"/><text x="290" y="70" text-anchor="middle">Next set</text>
+      <rect class="box" x="220" y="200" width="140" height="52" rx="10"/><text x="290" y="224" text-anchor="middle">Needs the iPhone</text><text class="m" x="290" y="240" text-anchor="middle">canLog false</text>
+      <rect class="box" x="440" y="40" width="140" height="52" rx="10"/><rect class="hot" x="440" y="40" width="140" height="52" rx="10"/><text x="510" y="70" text-anchor="middle">Logging</text>
+      <rect class="box" x="660" y="40" width="140" height="52" rx="10"/><text x="730" y="70" text-anchor="middle">Rest</text>
+      <rect class="box" x="660" y="200" width="140" height="52" rx="10"/><text x="730" y="230" text-anchor="middle">All logged</text>
+      <rect class="box" x="440" y="200" width="140" height="52" rx="10"/><text x="510" y="224" text-anchor="middle">Stale / unreachable</text><text class="m" x="510" y="240" text-anchor="middle">banner, then snapshot</text>
+      <path class="edge" d="M150 140 C185 110 190 80 220 70" marker-end="url(#ar)"/><text class="m" x="120" y="100">snapshot</text>
+      <path class="edge" d="M150 155 C190 180 195 215 220 222" marker-end="url(#ar)"/>
+      <path class="edge a" d="M360 66 H440" marker-end="url(#ar)"/><text class="m" x="378" y="58">Log</text>
+      <path class="edge a" d="M580 66 H660" marker-end="url(#ar)"/><text class="m" x="590" y="58">applied</text>
+      <path class="edge" d="M510 92 V200" marker-end="url(#ar)"/><text class="m" x="518" y="150">stale · timeout · unreachable</text>
+      <path class="edge" d="M440 226 C400 200 380 120 360 80" marker-end="url(#ar)"/><text class="m" x="372" y="190">new snapshot</text>
+      <path class="edge" d="M700 40 C680 0 330 0 300 40" marker-end="url(#ar)"/><text class="m" x="470" y="16">restEnd, or Skip</text>
+      <path class="edge" d="M730 92 V200" marker-end="url(#ar)"/><text class="m" x="738" y="150">last set logged</text>
+      <path class="edge" d="M800 54 C860 40 860 92 802 80" marker-end="url(#ar)"/><text class="m" x="850" y="70">±15 (optimistic)</text>
+    </svg>
+  </div>
+
+  <h2>Data flow</h2>
+  <p class="note">The Watch surface subscribes to the same frame publisher as the Live Activity. That needs a refactor:
+    tickets are minted today only when an ActivityKit handle exists.</p>
+  <div class="panel">
+    <svg viewBox="0 0 960 330" role="img" aria-label="Data flow between the iPhone app and the Watch">
+      <defs><marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker></defs>
+      <text x="20" y="22" class="m">iPHONE · React Native</text>
+      <rect class="box" x="20" y="36" width="190" height="62" rx="10"/><text x="115" y="62" text-anchor="middle">useWorkoutPlayer</text><text class="m" x="115" y="80" text-anchor="middle">rest-timer · drafts · logSet</text>
+      <rect class="box" x="260" y="36" width="200" height="62" rx="10"/><rect class="hot" x="260" y="36" width="200" height="62" rx="10"/><text x="360" y="62" text-anchor="middle">Frame publisher</text><text class="m" x="360" y="80" text-anchor="middle">tickets · digest · applied</text>
+      <rect class="box" x="520" y="20" width="180" height="44" rx="10"/><text x="610" y="47" text-anchor="middle">ActivityKit surface</text>
+      <rect class="box" x="520" y="78" width="180" height="44" rx="10"/><text x="610" y="105" text-anchor="middle">Watch surface</text>
+      <rect class="box" x="260" y="150" width="200" height="50" rx="10"/><text x="360" y="172" text-anchor="middle">rest notification</text><text class="m" x="360" y="188" text-anchor="middle">leve.rest at restEnd</text>
+      <text x="520" y="168" class="m">NATIVE</text>
+      <rect class="box" x="520" y="176" width="180" height="58" rx="10"/><text x="610" y="200" text-anchor="middle">leve-watch module</text><text class="m" x="610" y="218" text-anchor="middle">WCSession · command inbox</text>
+      <text x="770" y="22" class="m">APPLE WATCH</text>
+      <rect class="box" x="770" y="36" width="170" height="62" rx="10"/><text x="855" y="62" text-anchor="middle">Smart Stack</text><text class="m" x="855" y="80" text-anchor="middle">bannerSmall</text>
+      <rect class="box" x="770" y="176" width="170" height="58" rx="10"/><text x="855" y="200" text-anchor="middle">Leve Watch app</text><text class="m" x="855" y="218" text-anchor="middle">SwiftUI · no storage</text>
+      <rect class="box" x="770" y="262" width="170" height="44" rx="10"/><text x="855" y="289" text-anchor="middle">forwarded alert</text>
+      <path class="edge" d="M210 67 H260" marker-end="url(#ar2)"/>
+      <path class="edge" d="M460 58 H520" marker-end="url(#ar2)"/>
+      <path class="edge" d="M460 80 C490 90 495 100 520 100" marker-end="url(#ar2)"/>
+      <path class="edge" d="M700 42 H770" marker-end="url(#ar2)"/><text class="m" x="706" y="34">iOS mirrors</text>
+      <path class="edge" d="M610 122 V176" marker-end="url(#ar2)"/>
+      <path class="edge" d="M700 196 H770" marker-end="url(#ar2)"/><text class="m" x="704" y="188">app context</text>
+      <path class="edge a" d="M770 222 H700" marker-end="url(#ar2)"/><text class="m" x="706" y="240" style="fill:var(--accent)">command + ticket</text>
+      <path class="edge a" d="M520 216 C380 260 140 240 115 98" marker-end="url(#ar2)"/><text class="m" x="160" y="262" style="fill:var(--accent)">interact() → frame.act() → logSet</text>
+      <path class="edge" d="M115 98 C115 140 200 175 260 175" marker-end="url(#ar2)"/>
+      <path class="edge" d="M460 190 C600 300 700 290 770 284" marker-end="url(#ar2)"/><text class="m" x="560" y="300">iOS forwards when iPhone locked</text>
+    </svg>
+  </div>
+
+  <h2>Messages</h2>
+  <div class="tablewrap">
+  <table>
+    <tr><th>Direction</th><th>Channel</th><th>Payload</th><th>Rule</th></tr>
+    <tr><td>Phone → Watch</td><td><code>updateApplicationContext</code> on every publish</td>
+      <td><code>{ v, session, seq, generatedAt, ticket, …WorkoutDisplay }</code> or <code>workout: null</code></td>
+      <td>Latest wins. A lower <code>seq</code> in the same session is ignored. Same 4 KB, no-notes boundary as the Live Activity.</td></tr>
+    <tr><td>Watch → Phone</td><td><code>sendMessage</code> with reply</td>
+      <td><code>{ v, kind: "refresh" }</code> on launch, foreground, reconnect and countdown zero</td>
+      <td>The reply carries the newest snapshot.</td></tr>
+    <tr><td>Watch → Phone</td><td><code>sendMessage</code> with reply only</td>
+      <td><code>{ v, id, session, ticket, action }</code>, with no values</td>
+      <td>Never <code>transferUserInfo</code>. De-duplicated by <code>id</code>. A ticket that is no longer the published one fails.</td></tr>
+    <tr><td>Phone → Watch</td><td>reply</td>
+      <td><code>{ id, result, snapshot }</code>: <code>applied | alreadyApplied | staleTarget | needsPhone | unavailable | unsupportedVersion | failed</code></td>
+      <td>The Watch takes the snapshot unless a newer <code>seq</code> already arrived. Log is idempotent per digest across all surfaces.</td></tr>
+  </table>
+  </div>
+</main>
+</body>
+</html>

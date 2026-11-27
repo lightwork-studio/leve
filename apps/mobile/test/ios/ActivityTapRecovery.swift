@@ -24,6 +24,7 @@ struct ActivityTapRecovery {
       precondition(taps.count == 1 && taps[0].reviewOnly && taps[0].target == "edited:log")
       try await inbox.finish(id: taps[0].id.uuidString, applied: false, reviewed: true)
     case "verify":
+      verifyRestActions()
       let pending = try await inbox.pending()
       precondition(pending.isEmpty)
       for applied in [true, false] {
@@ -62,4 +63,32 @@ struct ActivityTapRecovery {
       preconditionFailure("Unexpected test phase")
     }
   }
+
+  static func verifyRestActions() {
+    let less = "leveRest.rest-1:less"
+    let more = "leveRest.rest-1:more"
+    let skip = "leveRest.rest-1:skip"
+    var props: [String: Any] = [
+      "token": "leve1.previous-ticket", "restKey": "rest-1",
+      "restStart": 90_000.0, "restEnd": 150_000.0, "title": "Push A"
+    ]
+    let shortened = LeveRestAction(target: less)?.change(target: less, props: props, now: 100_000)
+    precondition(shortened == LeveRestChange(key: "rest-1", start: 75_000, end: 135_000))
+    precondition(shortened?.staleDate?.timeIntervalSince1970 == 135)
+    shortened?.apply(to: &props)
+    precondition(props["title"] as? String == "Push A")
+    precondition(LeveRestAction.less.change(target: less, props: props, now: 101_000)?.end == 120_000)
+    precondition(LeveRestAction.more.change(target: more, props: props, now: 101_000)?.end == 150_000)
+    precondition(LeveRestAction.less.change(target: less, props: props, now: 125_000)?.end == 0)
+    precondition(LeveRestAction.more.change(target: more, props: props, now: 135_000) == nil)
+    precondition(LeveRestAction.skip.change(target: "leveRest.old:skip", props: props, now: 101_000) == nil)
+    precondition(LeveRestAction(target: "leve1.previous-ticket:skip") == .skip)
+    precondition(LeveRestAction(target: "leve1.previous-ticket:log") == nil)
+    let skipped = LeveRestAction.skip.change(target: skip, props: props, now: 101_000)
+    precondition(skipped == LeveRestChange(key: "rest-1", start: 0, end: 0))
+    precondition(skipped?.staleDate == nil)
+    skipped?.apply(to: &props)
+    precondition(LeveRestAction.more.change(target: more, props: props, now: 102_000) == nil)
+  }
+
 }

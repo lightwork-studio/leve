@@ -183,7 +183,7 @@ const ExerciseRow = memo(function ExerciseRow({
           !first && styles.divider,
         ])}
       >
-        <MusclePreview targets={targets} />
+        <MusclePreview exerciseId={exercise.exerciseId} targets={targets} />
         <View style={styles.flex}>
           <Text style={styles.name} numberOfLines={1}>
             {exercise.name}
@@ -219,9 +219,11 @@ const sheet = themedStyles((c) => ({
     flexDirection: "row",
     alignItems: "center",
     gap: space.md,
-    paddingHorizontal: space.lg,
-    paddingVertical: 10,
-    minHeight: 58,
+    // The picture sits closer to the card's edge than the text would.
+    paddingLeft: 10,
+    paddingRight: space.lg,
+    paddingVertical: 8,
+    minHeight: 64,
     backgroundColor: c.s1,
     borderLeftWidth: 1,
     borderRightWidth: 1,

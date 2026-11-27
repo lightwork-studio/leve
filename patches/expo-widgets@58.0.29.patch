@@ -1,14 +1,37 @@
+diff --git a/ios/LiveActivity.swift b/ios/LiveActivity.swift
+index b80655d..000443b 100644
+--- a/ios/LiveActivity.swift
++++ b/ios/LiveActivity.swift
+@@ -17,6 +17,10 @@ final class LiveActivity: SharedObject {
+       throw LiveActivityNotFoundException(id)
+     }
+
++    if name == "LeveWorkout" {
++      await LeveLiveActivityRest.shared.update(activity: activity, props: props, staleDate: staleDate)
++      return
++    }
+     let newState = LiveActivityAttributes.ContentState(name: name, props: props)
+     await activity.update(ActivityContent(state: newState, staleDate: staleDate))
+   }
 diff --git a/ios/Widgets/AppIntent.swift b/ios/Widgets/AppIntent.swift
-index 1730fffee8dd7992c09457e88542cd743be741e1..c06183fb0ca2116a68cf3d67724f0aa996c3fcad 100644
+index 1730fff..a02fecb 100644
 --- a/ios/Widgets/AppIntent.swift
 +++ b/ios/Widgets/AppIntent.swift
-@@ -118,13 +118,37 @@ struct LiveActivityUserInteraction: LiveActivityIntent {
+@@ -118,13 +118,72 @@ struct LiveActivityUserInteraction: LiveActivityIntent {
      self.target = target
    }
  
 -  func perform() async throws -> some IntentResult {
 +  func perform() async throws -> some IntentResult & OpensIntent {
 +    var response = IntentResultContainer<Never, ReviewLeveWorkout, Never, Never>.result(opensIntent: ReviewLeveWorkout())
++    // Buttons rendered before the update can still call the old intent.
++    if let target, let action = LeveRestAction(target: target) {
++      if let source {
++        await LeveLiveActivityRest.shared.interact(source: source, target: target, action: action)
++      }
++      response.opensIntent = nil
++      return response
++    }
 +    if let source, let target, target.hasPrefix("leve1.") {
 +      let inbox = LeveActivityInbox.shared
 +      let applied = await inbox.deliver(source: source, target: target) { tap in
@@ -31,6 +54,33 @@ index 1730fffee8dd7992c09457e88542cd743be741e1..c06183fb0ca2116a68cf3d67724f0aa9
 +  }
 +}
 +
++struct LeveRestTimerIntent: LiveActivityIntent {
++  static var title: LocalizedStringResource = "Adjust workout rest"
++  static var isDiscoverable: Bool = false
++  static var openAppWhenRun: Bool = false
++  @available(iOS 26.0, *)
++  static var supportedModes: IntentModes { .background }
++
++  @Parameter(title: "source")
++  var source: String?
++
++  @Parameter(title: "target")
++  var target: String?
++
++  init() {}
++  init(source: String?, target: String?) {
++    self.source = source
++    self.target = target
++  }
++
++  func perform() async throws -> some IntentResult {
++    if let source, let target, let action = LeveRestAction(target: target) {
++      await LeveLiveActivityRest.shared.interact(source: source, target: target, action: action)
++    }
++    return .result()
++  }
++}
++
 +struct ReviewLeveWorkout: AppIntent {
 +  static var title: LocalizedStringResource = "Review workout"
 +  static var isDiscoverable: Bool = false
@@ -41,12 +91,60 @@ index 1730fffee8dd7992c09457e88542cd743be741e1..c06183fb0ca2116a68cf3d67724f0aa9
      return .result()
    }
  }
+diff --git a/ios/Widgets/Buttons.swift b/ios/Widgets/Buttons.swift
+index 55fb9b3..43b6808 100644
+--- a/ios/Widgets/Buttons.swift
++++ b/ios/Widgets/Buttons.swift
+@@ -41,22 +41,29 @@ struct LiveActivityButtonView: ExpoSwiftUI.View {
+   @ObservedObject var props: ButtonProps
+
+   var body: some View {
+-    SwiftUI.Button(
+-      role: props.role?.toNativeRole(),
+-      intent: LiveActivityUserInteraction(
+-        source: props.source,
+-        target: props.target
+-      )
+-    ) {
+-      if let label = props.label {
+-        if let systemImage = props.systemImage {
+-          Label(title: { Text(label) }, icon: { Image(systemName: systemImage) })
+-        } else {
+-          Text(label)
+-        }
++    if let target = props.target, LeveRestAction(target: target) != nil {
++      SwiftUI.Button(
++        role: props.role?.toNativeRole(),
++        intent: LeveRestTimerIntent(source: props.source, target: target)
++      ) { label }
++    } else {
++      SwiftUI.Button(
++        role: props.role?.toNativeRole(),
++        intent: LiveActivityUserInteraction(source: props.source, target: props.target)
++      ) { label }
++    }
++  }
++
++  @ViewBuilder
++  private var label: some View {
++    if let label = props.label {
++      if let systemImage = props.systemImage {
++        Label(title: { Text(label) }, icon: { Image(systemName: systemImage) })
+       } else {
+-        Children()
++        Text(label)
+       }
++    } else {
++      Children()
+     }
+   }
+ }
 diff --git a/ios/Widgets/LeveActivityTap.swift b/ios/Widgets/LeveActivityTap.swift
 new file mode 100644
-index 0000000000000000000000000000000000000000..32d298852aa36fd1f1e3a681bf0ffe128a8d71ed
+index 0000000..0becfe4
 --- /dev/null
 +++ b/ios/Widgets/LeveActivityTap.swift
-@@ -0,0 +1,110 @@
+@@ -0,0 +1,158 @@
 +import Foundation
 +
 +// LiveActivityIntent runs in the containing app process. Keep only the opaque button
@@ -157,8 +255,148 @@ index 0000000000000000000000000000000000000000..32d298852aa36fd1f1e3a681bf0ffe12
 +    }
 +  }
 +}
++
++enum LeveRestAction: String {
++  case less, more, skip
++
++  init?(target: String) {
++    let parts = target.split(separator: ":", omittingEmptySubsequences: false)
++    guard parts.count == 2, parts[0].hasPrefix("leveRest.") || parts[0].hasPrefix("leve1.") else {
++      return nil
++    }
++    self.init(rawValue: String(parts[1]))
++  }
++
++  func change(target: String, props: [String: Any], now: Double) -> LeveRestChange? {
++    guard let key = props["restKey"] as? String,
++          target == "leveRest.\(key):\(rawValue)" ||
++            (props["token"] as? String).map({ target == "\($0):\(rawValue)" }) == true,
++          let start = props["restStart"] as? Double,
++          let end = props["restEnd"] as? Double,
++          start < end, end > now else { return nil }
++    switch self {
++    case .less:
++      // Advance the displayed progress by 15 seconds at the existing pace.
++      if end - 15_000 > now {
++        return LeveRestChange(key: key, start: start - 15_000, end: end - 15_000)
++      }
++      return LeveRestChange(key: key, start: 0, end: 0)
++    case .more:
++      return LeveRestChange(key: key, start: start, end: end + 15_000)
++    case .skip:
++      return LeveRestChange(key: key, start: 0, end: 0)
++    }
++  }
++}
++
++struct LeveRestChange: Sendable, Equatable {
++  let key: String
++  let start: Double
++  let end: Double
++
++  var staleDate: Date? {
++    end > 0 ? Date(timeIntervalSince1970: end / 1000) : nil
++  }
++
++  func apply(to props: inout [String: Any]) {
++    props["restStart"] = start
++    props["restEnd"] = end
++  }
++}
+diff --git a/ios/Widgets/LeveLiveActivityRest.swift b/ios/Widgets/LeveLiveActivityRest.swift
+new file mode 100644
+index 0000000..e159e57
+--- /dev/null
++++ b/ios/Widgets/LeveLiveActivityRest.swift
+@@ -0,0 +1,86 @@
++import ActivityKit
++import Foundation
++
++// Only the current timer's override lives here. Its opaque key changes on each in-app edit.
++final class LeveRestOverride: @unchecked Sendable {
++  static let shared = LeveRestOverride()
++  private let lock = NSLock()
++  private var latest: LeveRestChange?
++
++  func store(_ change: LeveRestChange) {
++    lock.lock()
++    defer { lock.unlock() }
++    latest = change
++  }
++
++  func change(for key: String) -> LeveRestChange? {
++    lock.lock()
++    defer { lock.unlock() }
++    return latest?.key == key ? latest : nil
++  }
++}
++
++actor LeveLiveActivityRest {
++  static let shared = LeveLiveActivityRest()
++  private var tail: Task<Void, Never>?
++
++  // ActivityKit updates suspend. Order button presses and React publications across that await.
++  private func run(_ operation: @escaping @Sendable () async -> Void) async {
++    let previous = tail
++    let next = Task {
++      await previous?.value
++      await operation()
++    }
++    tail = next
++    await next.value
++  }
++
++  private static func decode(_ props: String?) -> [String: Any]? {
++    guard let data = props?.data(using: .utf8) else { return nil }
++    return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
++  }
++
++  private static func encode(_ props: [String: Any]) -> String? {
++    guard let data = try? JSONSerialization.data(withJSONObject: props) else { return nil }
++    return String(data: data, encoding: .utf8)
++  }
++
++  func interact(source: String, target: String, action: LeveRestAction) async {
++    await run {
++      guard let activity = Activity<LiveActivityAttributes>.activities.first(where: { $0.id == source }),
++            activity.activityState == .active,
++            activity.content.state.name == "LeveWorkout",
++            var props = Self.decode(activity.content.state.props) else { return }
++      if let key = props["restKey"] as? String {
++        LeveRestOverride.shared.change(for: key)?.apply(to: &props)
++      }
++      guard let change = action.change(target: target, props: props, now: Date().timeIntervalSince1970 * 1000)
++        else { return }
++      change.apply(to: &props)
++      guard let encoded = Self.encode(props) else { return }
++      LeveRestOverride.shared.store(change)
++      let state = LiveActivityAttributes.ContentState(name: "LeveWorkout", props: encoded)
++      await activity.update(ActivityContent(state: state, staleDate: change.staleDate))
++      WidgetsEvents.shared.sendNotification(type: .userEvent, data: [
++        "source": source, "target": "LeveRestChanged", "timestamp": Int(Date().timeIntervalSince1970 * 1000)
++      ])
++    }
++  }
++
++  func update(activity: Activity<LiveActivityAttributes>, props: String?, staleDate: Date?) async {
++    await run {
++      var encoded = props
++      var stale = staleDate
++      if var values = Self.decode(props), let key = values["restKey"] as? String,
++         let change = LeveRestOverride.shared.change(for: key) {
++        change.apply(to: &values)
++        if let merged = Self.encode(values) {
++          encoded = merged
++          stale = change.staleDate
++        }
++      }
++      let state = LiveActivityAttributes.ContentState(name: "LeveWorkout", props: encoded)
++      await activity.update(ActivityContent(state: state, staleDate: stale))
++    }
++  }
++}
 diff --git a/ios/Widgets/WidgetLiveActivity.swift b/ios/Widgets/WidgetLiveActivity.swift
-index 4d135c4e4eb1f846315654ed9d835a935d120d42..c2734644807f3b6d229f459e5b3c2dda5dcdf152 100644
+index 4d135c4..c273464 100644
 --- a/ios/Widgets/WidgetLiveActivity.swift
 +++ b/ios/Widgets/WidgetLiveActivity.swift
 @@ -19,53 +19,44 @@ struct LiveActivityAttributes: ActivityAttributes {
@@ -267,13 +505,18 @@ index 4d135c4e4eb1f846315654ed9d835a935d120d42..c2734644807f3b6d229f459e5b3c2dda
        LiveActivityBanner(context: context, nodes: nodes)
      } else if let node = nodes["banner"] as? [String: Any] {
 diff --git a/ios/WidgetsModule.swift b/ios/WidgetsModule.swift
-index 285136b3774e531b35c1a3e832506f93f61654be..3db554f5316cb27b1612232dddbbea2edc0003ba 100644
+index 285136b..e1361bf 100644
 --- a/ios/WidgetsModule.swift
 +++ b/ios/WidgetsModule.swift
-@@ -59,6 +59,18 @@ public final class WidgetsModule: Module {
+@@ -59,6 +59,23 @@ public final class WidgetsModule: Module {
        }
      }
  
++    Function("leveRestChange") { (key: String) -> [String: Double]? in
++      guard let change = LeveRestOverride.shared.change(for: key) else { return nil }
++      return ["start": change.start, "end": change.end]
++    }
++
 +    Function("takeLeveReviewRequest") { () -> Bool in
 +      let pending = UserDefaults.standard.bool(forKey: "LeveReviewWorkout")
 +      UserDefaults.standard.removeObject(forKey: "LeveReviewWorkout")

@@ -42,6 +42,7 @@ vi.mock("react-native", () => ({
   Text: "Text",
   TextInput: "Input",
   View: "View",
+  Image: "Image",
   StyleSheet: { create: (s: object) => s },
 }));
 vi.mock("react-native-safe-area-context", () => ({

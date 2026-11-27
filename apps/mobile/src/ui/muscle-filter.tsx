@@ -3,6 +3,7 @@ import { ScrollView, Text, View } from "react-native";
 import { choiceLabel } from "../data/custom-exercises.ts";
 import { type MuscleTargets, targetAmounts } from "../model/muscle-map.ts";
 import { radius, type } from "../theme.ts";
+import { ExerciseThumb } from "./exercise-image.tsx";
 import { MuscleFigure } from "./muscle-figure.tsx";
 import { FIGURE_MUSCLES, sideOf } from "./muscle-geometry.ts";
 import { Tap } from "./tap.tsx";
@@ -100,27 +101,30 @@ export function MuscleFilter({
   );
 }
 
-/** A row's small figure: the side that shows the exercise's main muscle, its muscles shaded. */
+/**
+ * A row's picture of an exercise: its image when it has one, else a small figure of the side that
+ * shows its main muscle, with its muscles shaded.
+ */
 export const MusclePreview = memo(function MusclePreview({
+  exerciseId,
   targets,
 }: {
+  exerciseId: string;
   targets: MuscleTargets | undefined;
 }) {
-  const styles = useStyles(sheet);
   const amounts = useMemo(() => targetAmounts(targets), [targets]);
   return (
-    <View
-      style={styles.preview}
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
-    >
-      <MuscleFigure
-        amounts={amounts}
-        height={34}
-        sides={[sideOf(targets?.primaryMuscles[0])]}
-        accessibilityLabel=""
-      />
-    </View>
+    <ExerciseThumb
+      exerciseId={exerciseId}
+      fallback={
+        <MuscleFigure
+          amounts={amounts}
+          height={42}
+          sides={[sideOf(targets?.primaryMuscles[0])]}
+          accessibilityLabel=""
+        />
+      }
+    />
   );
 });
 
@@ -161,15 +165,4 @@ const sheet = themedStyles((c) => ({
   chipOn: { backgroundColor: c.fg, borderColor: c.fg },
   chipText: { ...type.action, fontSize: 9.5, letterSpacing: 0.95, color: c.fg2 },
   chipTextOn: { color: c.bg },
-  preview: {
-    width: 38,
-    height: 38,
-    borderRadius: 11,
-    backgroundColor: c.s2,
-    borderWidth: 1,
-    borderColor: c.line,
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-  },
 }));

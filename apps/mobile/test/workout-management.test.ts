@@ -25,6 +25,7 @@ import {
 import { addExerciseNote, workoutExerciseNotes } from "../src/data/exercise-notes.ts";
 import { type BuiltInExercise, EXERCISES } from "../src/data/exercises.ts";
 import { newId } from "../src/data/ids.ts";
+import { readLiveActivityRest } from "../src/data/live-activity-rest";
 import {
   applyAppChange,
   historyData,
@@ -65,6 +66,7 @@ import { WorkoutDetailsEditor } from "../src/ui/workout-details-editor.tsx";
 import { feedbackScheduler } from "./support/feedback.ts";
 
 const feedback = feedbackScheduler();
+vi.mock("../src/data/live-activity-rest", () => ({ readLiveActivityRest: vi.fn(() => null) }));
 vi.mock("../src/ui/after-feedback.ts", () => ({
   afterFeedback: (run: () => void) => feedback.afterFeedback(run),
 }));
@@ -3572,6 +3574,51 @@ it("shows an exercise's image at the top of its sheet and its screen, and leaves
   expect(host.textContent).toContain("This exercise");
 });
 
+it("shows each card's thumbnail beside its name, or its number without one, with the rest time under the name", async () => {
+  const workout = beginWorkout(store);
+  addExercise(store, workout, EXERCISES.bench, 0);
+  addExercise(store, workout, EXERCISES.plank, 0);
+  await act(() => root.render(h(ActiveWorkoutScreen)));
+  const heading = (name: string) =>
+    host.querySelector<HTMLElement>(`button[aria-expanded][aria-label="${name}"]`);
+  // The card's head: the picture, then the title area that the expanding button fills.
+  const title = (name: string) => heading(name)?.parentElement ?? null;
+  const thumb = (name: string) => title(name)?.parentElement?.firstElementChild ?? null;
+  expect(thumb("Bench Press")?.querySelector("img")?.getAttribute("src")).toMatch(
+    /\/thumbs\/barbell-bench-press\.webp$/,
+  );
+  expect(thumb("Plank")?.querySelector("img")).toBeNull();
+  expect(thumb("Plank")?.textContent).toMatch(/^0[12]$/);
+  // Nothing is shaded over a picture until its exercise is done.
+  expect(thumb("Bench Press")?.childElementCount).toBe(1);
+  expect(thumb("Plank")?.childElementCount).toBe(1);
+  for (const name of ["Bench Press", "Plank"]) {
+    expect(
+      title(name)?.querySelector(`[aria-label^="Rest "][aria-label$=" for ${name}. Change it"]`),
+    ).not.toBeNull();
+  }
+});
+
+it("shades a finished card's thumbnail under a check, and drops the number of one without an image", async () => {
+  const workout = beginWorkout(store);
+  addExercise(store, workout, EXERCISES.bench, 0);
+  addExercise(store, workout, EXERCISES.plank, 0);
+  for (const entry of store.list("workout_exercise", { parentId: workout })) {
+    for (const set of store.list("workout_set", { parentId: entry.id })) {
+      logSet(store, set.id, { weightKg: 60, reps: 8, durationSeconds: 60 });
+    }
+  }
+  await act(() => root.render(h(ActiveWorkoutScreen)));
+  const thumb = (name: string) =>
+    host.querySelector(`button[aria-expanded][aria-label="${name}"]`)?.parentElement?.parentElement
+      ?.firstElementChild ?? null;
+  // The picture stays, with the shade over it; the number gives way to the same shade.
+  expect(thumb("Bench Press")?.querySelector("img")).not.toBeNull();
+  expect(thumb("Bench Press")?.childElementCount).toBe(2);
+  expect(thumb("Plank")?.childElementCount).toBe(2);
+  expect(thumb("Plank")?.textContent).toBe("");
+});
+
 it("identifies a custom exercise with no earlier sessions from the workout entry", async () => {
   const active = beginWorkout(store);
   canGoBack.mockReturnValue(false);
@@ -3862,13 +3909,17 @@ it("shows each superset on the live and completed cards independently of its tem
   ];
   const groupOn = (element: Element | null) =>
     element?.textContent?.match(/Superset \d+/)?.[0] ?? null;
-  // Each card names its exercise and, under it, the superset it belongs to.
+  // Each card names its exercise and, on the line under it, the superset it belongs to.
   const headings = Array.from(
     host.querySelectorAll<HTMLButtonElement>("button[aria-expanded]"),
   ).filter((el) => /^Press \d$/.test(el.getAttribute("aria-label") ?? ""));
-  expect(headings.map((heading) => [heading.getAttribute("aria-label"), groupOn(heading)])).toEqual(
-    expected,
-  );
+  expect(
+    headings.map((heading) => [
+      heading.getAttribute("aria-label"),
+      // The line under the name (after the name), before its rest button.
+      groupOn(heading.nextElementSibling?.nextElementSibling?.firstElementChild ?? null),
+    ]),
+  ).toEqual(expected);
   finishWorkout(store, detailId, {
     title: "Paired presses",
     countForRoutine: false,
@@ -4519,18 +4570,26 @@ describe("the minimised workout", () => {
       await act(() => root.render(h(PlayerProbe, { capture })));
       await ready;
       const old = published.at(-1);
-      if (!old || old.restEnd <= 0 || old.canLog) throw Error("Expected rest after the final set");
+      if (!old?.restKey || old.restEnd <= 0 || old.canLog)
+        throw Error("Expected rest after the final set");
+      const nativeChange = vi.mocked(readLiveActivityRest);
+      onTestFinished(() => {
+        nativeChange.mockReset();
+      });
       if (transition === "account binding") store.bindAccount("server-A", "alice");
       else store.setNegotiated("1.0", [], "restored");
+      nativeChange.mockImplementation((key) => (key === old.restKey ? { start: 0, end: 0 } : null));
       version++;
       await act(() => root.render(h(PlayerProbe, { capture })));
       await ready;
-      expect(session.interact(handle.getId(), old.token + ":skip")).toBe(false);
       const current = published.at(-1);
-      expect(current?.restEnd).toBe(old.restEnd);
-      await act(() => {
-        expect(session.interact(handle.getId(), current?.token + ":skip")).toBe(true);
-      });
+      if (!current?.restKey) throw Error("Missing replacement rest ticket");
+      expect(current.restKey).not.toBe(old.restKey);
+      expect(current.restEnd).toBe(old.restEnd);
+      nativeChange.mockImplementation((key) =>
+        key === current.restKey ? { start: 0, end: 0 } : null,
+      );
+      await act(() => restTimer.refresh());
       await ready;
       expect(published.at(-1)?.restEnd).toBe(0);
     },

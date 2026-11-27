@@ -196,3 +196,35 @@ it("follows the system for an activity started before the Appearance setting was
     clock.mockRestore();
   }
 });
+
+function targets(node: unknown): string[] {
+  if (Array.isArray(node)) return node.flatMap(targets);
+  if (!isValidElement<{ target?: string; children?: unknown }>(node)) return [];
+  return node.props.target ? [node.props.target] : targets(node.props.children);
+}
+
+it("uses rest-specific intent targets for lock-screen and island buttons", () => {
+  vi.useFakeTimers();
+  try {
+    vi.setSystemTime(100_000);
+    const env = { colorScheme: "dark", isStale: false } as const;
+    const resting = layout({ ...content, restKey: "timer-edit", restEnd: 120_000 }, env);
+    for (const slot of [resting.banner, resting.expandedBottom]) {
+      expect(targets(slot)).toEqual([
+        "leveRest.timer-edit:less",
+        "leveRest.timer-edit:more",
+        "leveRest.timer-edit:skip",
+      ]);
+      expect(destinations(slot)).toEqual([]);
+    }
+    expect(targets(layout(content, env).banner)).toEqual(["1:log"]);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("uses the actual countdown deadline in Log after a native skip", () => {
+  const env = { colorScheme: "dark", isStale: false } as const;
+  const display = layout({ ...content, token: "leve1.epoch.2.120000.digest", restEnd: 0 }, env);
+  expect(targets(display.banner)).toEqual(["leve1.epoch.2.0.digest:log"]);
+});

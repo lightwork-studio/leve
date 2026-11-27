@@ -42,6 +42,7 @@ import { isSwipe, SWIPE_OPEN, swipeOffset } from "../src/ui/live/swipe-row.tsx";
 vi.mock("react-native", () => ({
   useColorScheme: () => "dark",
   View: "View",
+  Image: "Image",
   Text: "Text",
   TextInput: "Input",
   ScrollView: "Scroll",

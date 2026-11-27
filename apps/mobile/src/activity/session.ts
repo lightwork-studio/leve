@@ -1,6 +1,7 @@
 import { CryptoDigestAlgorithm, digestStringAsync } from "expo-crypto";
 import type { AppearanceSetting } from "../data/appearance-setting.ts";
 import { newId } from "../data/ids.ts";
+import { readLiveActivityRest } from "../data/live-activity-rest";
 // Only this display snapshot crosses into ActivityKit. In particular, no notes, history records,
 // account identifiers or input objects are shared with the extension.
 export interface WorkoutDisplay {
@@ -14,6 +15,7 @@ export interface WorkoutDisplay {
   started: number;
   done: number;
   total: number;
+  restKey?: string;
   restStart: number;
   restEnd: number;
   interactive: boolean;
@@ -42,7 +44,6 @@ export interface ActivityMemory {
   remember(workoutId: string): void;
   forget(): void;
 }
-export type ActivityAction = "log" | "skip" | "more" | "less";
 export interface ActivityFrame {
   workoutId: string;
   // Even visually identical sets need distinct actions.
@@ -50,7 +51,13 @@ export interface ActivityFrame {
   // Private input to SHA-256. Only its digest is carried in the ActivityKit button.
   binding: string | null;
   display: WorkoutDisplay;
-  act(action: ActivityAction): boolean | undefined;
+  act(action: "log"): boolean | undefined;
+}
+
+// The frame identity stays fixed when ActivityKit supplies an updated deadline for Log.
+function logTicketIdentity(ticket: string) {
+  const [format, process, generation, , digest] = ticket.split(".");
+  return [format, process, generation, digest].join(".");
 }
 
 // Serialize native operations. A queued tap must still belong to the same activity and exact
@@ -70,7 +77,7 @@ export function workoutSession(factory: Factory, scheme: string, memory: Activit
   let applied = "";
   let currentDigest = "";
   let publishedGeneration = -1;
-  let expiredRestTicket = "";
+  const shownRestTickets = new Set<string>();
   return {
     publish(frame: ActivityFrame | null, retry = false) {
       current = frame;
@@ -134,16 +141,10 @@ export function workoutSession(factory: Factory, scheme: string, memory: Activit
             return;
           }
           if (publishedGeneration !== scheduled) {
-            const priorDeadline = Number(published.split(".")[3]);
-            expiredRestTicket =
-              publishedGeneration === scheduled - 1 &&
-              digest === currentDigest &&
-              digest !== "-" &&
-              priorDeadline > 0 &&
-              priorDeadline <= Date.now() &&
-              !frame.display.restEnd
-                ? published
-                : "";
+            const wasResting = Number(published.split(".")[3]) > 0;
+            if (digest !== currentDigest || !wasResting) shownRestTickets.clear();
+            // Native Skip can expose Log from any frame that was visible during this rest.
+            if (props.restEnd && digest !== "-") shownRestTickets.add(logTicketIdentity(token));
           }
           published = token;
           publishedGeneration = scheduled;
@@ -163,33 +164,27 @@ export function workoutSession(factory: Factory, scheme: string, memory: Activit
       )
         return false;
       const [ticket, action] = target.split(":");
-      if (!ticket) return false;
-      const [format, process, , deadline, digest] = ticket.split(".");
+      if (action !== "log" || !ticket || !current.display.canLog) return false;
+      const parts = ticket.split(".");
+      const [format, process, , deadline, digest] = parts;
+      if (parts.length !== 5 || format !== "leve1") return false;
+      const now = Date.now();
+      const { restKey, restEnd } = current.display;
+      const activeDeadline = (restKey ? readLiveActivityRest(restKey)?.end : undefined) ?? restEnd;
+      if (activeDeadline > now) return false;
+      const identity = logTicketIdentity(ticket);
       const restoredLog =
-        format === "leve1" &&
-        process !== epoch &&
-        digest === currentDigest &&
-        digest !== "-" &&
-        Number(deadline) <= Date.now();
+        process !== epoch && digest === currentDigest && digest !== "-" && Number(deadline) <= now;
       if (
-        action === "log" &&
-        (ticket === published || ticket === expiredRestTicket || restoredLog) &&
-        current.display.canLog &&
-        current.display.restEnd <= Date.now()
-      ) {
-        if (applied === currentDigest) return true;
-        const success = current.act("log") === true;
-        if (success) applied = currentDigest;
-        return success;
-      }
-      if (
-        ticket === published &&
-        current.display.restEnd > Date.now() &&
-        (action === "skip" || action === "more" || action === "less")
-      ) {
-        return current.act(action) === true;
-      }
-      return false;
+        identity !== logTicketIdentity(published) &&
+        !shownRestTickets.has(identity) &&
+        !restoredLog
+      )
+        return false;
+      if (applied === currentDigest) return true;
+      const success = current.act("log") === true;
+      if (success) applied = currentDigest;
+      return success;
     },
   };
 }

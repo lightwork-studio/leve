@@ -6,6 +6,9 @@ import {
   type WorkoutContent,
   workoutSession,
 } from "../src/activity/session.ts";
+import { readLiveActivityRest } from "../src/data/live-activity-rest";
+
+vi.mock("../src/data/live-activity-rest", () => ({ readLiveActivityRest: vi.fn(() => null) }));
 
 function frame(): ActivityFrame {
   return {
@@ -129,7 +132,7 @@ describe("workout Live Activity", () => {
     session.interact("island-A", `${handle.update.mock.calls[0]?.[0].token}:log`);
     expect(second.act).toHaveBeenCalledExactlyOnceWith("log");
   });
-  it("accepts only rest controls while resting, and ignores them after the deadline", async () => {
+  it("leaves rest controls to the native intent and blocks Log until the deadline", async () => {
     vi.useFakeTimers();
     try {
       vi.setSystemTime(100_000);
@@ -138,39 +141,102 @@ describe("workout Live Activity", () => {
       const next = frame();
       Object.assign(next.display, { restStart: 90_000, restEnd: 115_000 });
       await session.publish(next);
-      const [props, , stale] = factory.start.mock.calls[0]!;
+      const start = factory.start.mock.calls[0];
+      if (!start) throw Error("Missing resting activity");
+      const [props, , stale] = start;
       expect(stale?.getTime()).toBe(115_000);
       for (const action of ["log", "more", "less", "skip"])
         session.interact("island-A", `${props.token}:${action}`);
       vi.setSystemTime(115_001);
       session.interact("island-A", `${props.token}:more`);
       session.interact("island-A", `${props.token}:log`);
-      expect(next.act).toHaveBeenCalledTimes(4);
-      expect(vi.mocked(next.act).mock.calls).toEqual([["more"], ["less"], ["skip"], ["log"]]);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-  it("accepts the visible Log ticket after a resumed host republishes the expired rest", async () => {
-    const { session, handle } = harness();
-    const next = frame();
-    vi.useFakeTimers();
-    try {
-      vi.setSystemTime(100_000);
-      await session.publish({
-        ...next,
-        display: { ...next.display, restStart: 90_000, restEnd: 115_000 },
-      });
-      const token = handle.update.mock.calls[0]![0].token;
-      vi.setSystemTime(115_001);
-      await session.publish(next);
-      expect(session.interact(handle.getId(), token + ":more")).toBe(false);
-      expect(session.interact(handle.getId(), token + ":log")).toBe(true);
       expect(next.act).toHaveBeenCalledExactlyOnceWith("log");
     } finally {
       vi.useRealTimers();
     }
   });
+  it.each([100_001, 115_001])(
+    "accepts the visible Log ticket after rest ends at %s",
+    async (end) => {
+      const { session, handle } = harness();
+      const next = frame();
+      vi.useFakeTimers();
+      try {
+        vi.setSystemTime(100_000);
+        await session.publish({
+          ...next,
+          display: { ...next.display, restStart: 90_000, restEnd: 115_000 },
+        });
+        const token = handle.update.mock.calls[0]?.[0].token;
+        if (!token) throw Error("Missing published ticket");
+        vi.setSystemTime(end);
+        await session.publish(next);
+        expect(session.interact(handle.getId(), `${token}:more`)).toBe(false);
+        expect(session.interact(handle.getId(), `${token}:log`)).toBe(true);
+        expect(next.act).toHaveBeenCalledExactlyOnceWith("log");
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+  it.each(["suspended", "restarted"])(
+    "accepts Log after native Skip with the app %s",
+    async (mode) => {
+      vi.useFakeTimers();
+      try {
+        vi.setSystemTime(100_000);
+        const { session, handle, factory, memory } = harness();
+        const next = frame();
+        await session.publish({
+          ...next,
+          display: { ...next.display, restKey: "rest", restStart: 90_000, restEnd: 115_000 },
+        });
+        const shown = handle.update.mock.calls[0]?.[0].token;
+        if (!shown) throw Error("Missing rest ticket");
+        const parts = shown.split(".");
+        parts[3] = "0";
+        const log = `${parts.join(".")}:log`;
+        const receiver =
+          mode === "restarted" ? workoutSession(factory, "leve-preview", memory) : session;
+        if (mode === "restarted") await receiver.publish(next);
+
+        expect(receiver.interact(handle.getId(), `${shown}:log`)).toBe(false);
+        if (mode === "suspended") {
+          vi.mocked(readLiveActivityRest).mockImplementation((key) =>
+            key === "rest" ? { start: 0, end: 0 } : null,
+          );
+        }
+        expect(receiver.interact(handle.getId(), log)).toBe(true);
+        expect(receiver.interact(handle.getId(), log)).toBe(true);
+        expect(next.act).toHaveBeenCalledExactlyOnceWith("log");
+      } finally {
+        vi.mocked(readLiveActivityRest).mockReset();
+        vi.useRealTimers();
+      }
+    },
+  );
+  it.each(["dropped", "displayed"])(
+    "accepts the visible Log ticket when an intermediate rest update is %s",
+    async (mode) => {
+      const { session, handle } = harness();
+      const next = frame();
+      const resting = { ...next, display: { ...next.display, restEnd: Date.now() + 90_000 } };
+      await session.publish(resting);
+      const shown = handle.update.mock.calls[0]?.[0].token;
+      if (!shown) throw Error("Missing rest ticket");
+      const adjusting = session.publish({
+        ...resting,
+        display: { ...resting.display, restEnd: resting.display.restEnd + 15_000 },
+      });
+      if (mode === "displayed") await adjusting;
+      await session.publish(next);
+      await adjusting;
+      const log = shown.replace(/\.\d+\.([^.]+)$/, ".0.$1");
+      expect(handle.update).toHaveBeenCalledTimes(mode === "displayed" ? 3 : 2);
+      expect(session.interact(handle.getId(), `${log}:log`)).toBe(true);
+      expect(next.act).toHaveBeenCalledExactlyOnceWith("log");
+    },
+  );
   it("recovers the identical unlogged set after relaunch and accepts the old tap exactly once", async () => {
     const { session, handle, factory, memory } = harness();
     const next = frame();
@@ -286,7 +352,7 @@ it.each(["same", "changed", "expired"] as const)(
     const tap = {
       id: "tap",
       source: handle.getId(),
-      target: token + ":log",
+      target: `${token}:log`,
       timestamp: Date.now() - (scenario === "expired" ? 121_000 : 20_000),
       reviewOnly: false,
     };
