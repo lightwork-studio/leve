@@ -1,5 +1,4 @@
 import type { AppearanceSetting } from "../data/appearance-setting.ts";
-import { restTimer } from "../data/rest-timer.ts";
 import type { useWorkoutPlayer } from "../ui/live/use-workout-player.ts";
 import type { ActivityFrame } from "./session.ts";
 
@@ -57,13 +56,14 @@ export function workoutFrame(
         measurements: short(player.measurements),
         previous: short(player.lastValues),
         volume: player.volume,
+        restKey: rest?.key,
         restStart: activeRest ? activeRest.endsAt - activeRest.totalSeconds * 1000 : 0,
         restEnd: activeRest?.endsAt ?? 0,
         canLog: player.canLog,
         finish,
         appearance,
       },
-      act(action) {
+      act() {
         const owner = store.syncState();
         if (
           owner.server !== sync.server ||
@@ -72,12 +72,7 @@ export function workoutFrame(
           store.activeWorkout()?.id !== tree.workout.id
         )
           return;
-        if (action === "log") return version !== null && player.log(version) === true;
-        else if (activeRest) {
-          if (action === "skip") restTimer.skip(store, tree.workout.id, activeRest.source);
-          else restTimer.adjust(store, activeRest, action === "more" ? 15 : -15);
-          return true;
-        }
+        return version !== null && player.log(version) === true;
       },
     };
   }

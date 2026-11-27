@@ -5,6 +5,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AppState, Platform } from "react-native";
 import { useAppearanceSetting } from "../data/appearance-setting.ts";
 import { readDevicePreference, writeDevicePreference } from "../data/device-preference-store.ts";
+import { restTimer } from "../data/rest-timer.ts";
 import { useWorkoutPlayer } from "../ui/live/use-workout-player.ts";
 import { showToast } from "../ui/notice.tsx";
 import { type ActivityTapInbox, activityDelivery } from "./delivery.ts";
@@ -81,10 +82,14 @@ function LiveWorkout() {
   }, [rest]);
   useEffect(() => {
     const app = AppState.addEventListener("change", (state) => {
-      if (state === "active") refresh((n) => n + 1);
+      if (state === "active") {
+        restTimer.refresh();
+        refresh((n) => n + 1);
+      }
     });
-    const events = widgets?.addUserInteractionListener(() => {
-      void widgets.session.drain();
+    const events = widgets?.addUserInteractionListener((event) => {
+      if (event.target === "LeveRestChanged") restTimer.refresh();
+      else void widgets.session.drain();
     });
     void widgets?.session.drain();
     return () => {
