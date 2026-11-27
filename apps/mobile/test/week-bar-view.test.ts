@@ -45,9 +45,14 @@ const week: Week = {
   start,
   days: [
     day(0, { workouts: [workout("a", "Upper Body A", "UA", 2)], habit: [true, true, true, true] }),
-    day(1),
+    // The first Full Body session, so there is nothing to compare it with.
+    day(1, { workouts: [{ ...workout("d", "Full Body", "FB"), lastVolumeKg: null }] }),
     day(2, {
-      workouts: [workout("b", "Lower Body", "LB"), workout("c", "Evening Run", "ER")],
+      // Together lighter than last time: 10,200 kg against 12,000.
+      workouts: [
+        workout("b", "Lower Body", "LB"),
+        { ...workout("c", "Evening Run", "ER"), volumeKg: 4000 },
+      ],
       habit: [false, true, false, true],
     }),
     day(3),
@@ -88,6 +93,7 @@ it("names the week on top, keeps the frame on every tab, and changes only the ma
       "UA",
       "T",
       "10",
+      "FB",
       "W",
       "11",
       "LB",
@@ -105,7 +111,7 @@ it("names the week on top, keeps the frame on every tab, and changes only the ma
     const days = root.findAll((n) => n.props.accessibilityLabel?.match(/^\w+day \d+/));
     expect(days.map((d) => d.props.accessibilityLabel)).toEqual([
       "Monday 9, Upper Body A, 2 records",
-      "Tuesday 10, no workout",
+      "Tuesday 10, Full Body",
       "Wednesday 11, Lower Body, Evening Run",
       "Thursday 12, today, no workout",
       "Friday 13",
@@ -123,7 +129,7 @@ it("names the week on top, keeps the frame on every tab, and changes only the ma
     await act(() => wednesday.props.onPress());
     expect(head()).toBe("This week · 9–15 Nov");
     // A day without a workout has nothing to name, so it isn't a button.
-    expect(root.findAll((n) => isType(n, "Tap"))).toHaveLength(2);
+    expect(root.findAll((n) => isType(n, "Tap"))).toHaveLength(3);
 
     // History: the weeks before and this one, a mark each, under every date.
     await act(() => tree?.update(h(WeekBar, { week, mode: "history", action: null })));
@@ -144,12 +150,19 @@ it("names the week on top, keeps the frame on every tab, and changes only the ma
       "S",
       "15",
     ]);
-    expect(days.length).toBe(7);
-    expect(
+    const labels = () =>
       root
         .findAll((n) => n.props.accessibilityLabel?.match(/^\w+day \d+/))
-        .map((d) => d.props.accessibilityLabel)[2],
-    ).toBe("Wednesday 11, trained, trained 2 of the 4 weeks before");
+        .map((d) => d.props.accessibilityLabel);
+    expect(labels()).toEqual([
+      "Monday 9, trained, trained 4 of the 4 weeks before",
+      "Tuesday 10, trained, trained 0 of the 4 weeks before",
+      "Wednesday 11, trained, trained 2 of the 4 weeks before",
+      "Thursday 12, today, not trained, trained 0 of the 4 weeks before",
+      "Friday 13, not trained, trained 0 of the 4 weeks before",
+      "Saturday 14, not trained, trained 0 of the 4 weeks before",
+      "Sunday 15, not trained, trained 0 of the 4 weeks before",
+    ]);
 
     // Progress: the change on last time, per day.
     await act(() => tree?.update(h(WeekBar, { week, mode: "progress", action: null })));
@@ -159,9 +172,10 @@ it("names the week on top, keeps the frame on every tab, and changes only the ma
       "▲3%",
       "T",
       "10",
+      "New",
       "W",
       "11",
-      "▲3%",
+      "▼15%",
       "T",
       "12",
       "F",
@@ -170,6 +184,11 @@ it("names the week on top, keeps the frame on every tab, and changes only the ma
       "14",
       "S",
       "15",
+    ]);
+    expect(labels().slice(0, 3)).toEqual([
+      "Monday 9, volume up 3% on last time",
+      "Tuesday 10, no earlier session to compare",
+      "Wednesday 11, volume down 15% on last time",
     ]);
     expect(head()).toBe("This week · 9–15 Nov");
   } finally {

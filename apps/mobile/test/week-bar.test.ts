@@ -38,6 +38,8 @@ describe("monogram", () => {
     expect(monogram("Full Body Strength")).toBe("FB");
     expect(monogram("Push")).toBe("PU");
     expect(monogram("legs & core")).toBe("LC");
+    expect(monogram("Push-Pull")).toBe("PP");
+    expect(monogram("Upper/Lower")).toBe("UL");
     expect(monogram("  ")).toBe("");
     expect(monogram("A")).toBe("A");
   });
@@ -171,6 +173,23 @@ describe("week bar", () => {
       () => null,
     );
     expect(dayChange(first.days[1] as never)).toBeNull();
+    // An earlier session that moved no weight is still an earlier session: no "New", and no
+    // percentage of nothing.
+    const fromZero = (volumeKg: number) =>
+      weekBar(
+        {
+          workouts: [workout("cardio", local(2026, 11, 10), "upper")],
+          routines,
+          now,
+          firstWeekday: 1,
+        },
+        () => ({ volumeKg, records: 0 }),
+        () => 0,
+      ).days[1] as never;
+    expect(dayChange(fromZero(0))).toBe(0);
+    expect(dayChange(fromZero(500))).toBe("up");
+    expect(dayLabel(fromZero(0), "progress")).toBe("Tuesday 10, same volume as last time");
+    expect(dayLabel(fromZero(500), "progress")).toBe("Tuesday 10, volume up on last time");
   });
 
   it("marks the right days in a week whose first midnight doesn't exist", () => {

@@ -21,6 +21,7 @@ import { Tap } from "../../src/ui/tap.tsx";
 import { themedStyles, useColors, useStyles } from "../../src/ui/themed.ts";
 import { useToday } from "../../src/ui/use-now.ts";
 import { WeekBar, type WeekBarMode } from "../../src/ui/week-bar.tsx";
+import { whenIdle } from "../../src/ui/when-idle.ts";
 
 const TABS: {
   name: string;
@@ -115,11 +116,7 @@ const BAR_MODES: Record<string, WeekBarMode> = {
 
 /** The week bar, with the marks and the action of the tab on show. */
 function TabsWeekBar({ tab }: { tab: string }) {
-  const today = useToday();
-  // Records read the whole history, so they join once the first screen is up.
-  const [withRecords, setWithRecords] = useState(false);
-  useEffect(() => whenIdle(() => setWithRecords(true)), []);
-  const week = useWeekBar(today, withRecords);
+  const week = useWeekBar(useToday());
   return <WeekBar week={week} mode={BAR_MODES[tab] ?? "train"} action={useBarAction()} />;
 }
 
@@ -221,16 +218,6 @@ function TabBar({
       </View>
     </View>
   );
-}
-
-/** Runs `fn` when the app is idle (or after a moment where that can't be told); returns a cancel. */
-function whenIdle(fn: () => void): () => void {
-  if (typeof requestIdleCallback === "function") {
-    const handle = requestIdleCallback(fn, { timeout: 2500 });
-    return () => cancelIdleCallback(handle);
-  }
-  const timer = setTimeout(fn, 1200);
-  return () => clearTimeout(timer);
 }
 
 /*

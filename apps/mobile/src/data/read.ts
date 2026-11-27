@@ -261,15 +261,18 @@ export function trainData(store: DeviceStore, now: number) {
 
 /**
  * The week bar over the tabs: this week's days with their workouts, and the weekdays trained in the
- * weeks before. Records come from the progress index the tabs already share.
+ * weeks before. `held` gives each workout's records (from the progress index); without it, none.
  */
-export function weekBarData(store: DeviceStore, now: number, index: ProgressData["index"] | null) {
+export function weekBarData(
+  store: DeviceStore,
+  now: number,
+  held: ReadonlyMap<string, readonly unknown[]> | null,
+) {
   const settings = readSettings(store);
   const workouts = records<Workout>(store, "workout");
   const routines = records<Routine>(store, "routine");
   const bodyweightAt = bodyweightLookup(store);
   const usesBodyweight = bodyweightFlags(store);
-  const held = index ? recordsByWorkout(index) : new Map<string, unknown[]>();
   // Each volume is worked out once, and only for the workouts the bar shows.
   const volumes = new Map<string, number>();
   const volumeOf = (w: WithId<Workout>) => {
@@ -291,7 +294,7 @@ export function weekBarData(store: DeviceStore, now: number, index: ProgressData
     { workouts, routines, now, firstWeekday: settings.firstWeekday },
     (id) => {
       const w = byId.get(id);
-      return { volumeKg: w ? volumeOf(w) : 0, records: held.get(id)?.length ?? 0 };
+      return { volumeKg: w ? volumeOf(w) : 0, records: held?.get(id)?.length ?? 0 };
     },
     (routineId, before, workoutId) => {
       let latest: WithId<Workout> | null = null;
@@ -444,6 +447,12 @@ export function applyAppChange<T>(
   const historyVersion = (revisions.get(store) ?? 0) + (scope === "active-workout" ? 0 : 1);
   revisions.set(store, historyVersion);
   return { result, historyVersion };
+}
+
+/** The shared progress data if it has already been read for this version, without reading it. */
+export function cachedProgress(store: DeviceStore, version: number): ProgressData | null {
+  const cached = progressCache.get(store);
+  return cached?.version === version ? cached.data : null;
 }
 
 export function sharedProgress(store: DeviceStore, version: number): ProgressData {

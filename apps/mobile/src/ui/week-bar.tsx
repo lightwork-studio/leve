@@ -130,6 +130,7 @@ function Mark({ day, mode }: { day: WeekBarDay; mode: WeekBarMode }) {
   if (mode === "progress") {
     const change = dayChange(day);
     if (change === null) return <Text style={styles.newLabel}>New</Text>;
+    if (change === "up") return <Text style={styles.change}>▲</Text>;
     return (
       <Text style={[styles.change, change < 0 && styles.changeDown]}>
         {change > 0 ? `▲${change}%` : change < 0 ? `▼${-change}%` : "±0%"}

@@ -1,8 +1,11 @@
 import type { DeviceStore } from "@leve/storage";
 import { useNavigation } from "expo-router";
 import { useEffect, useMemo, useReducer, useRef } from "react";
+import { recordsByWorkout } from "../model/progress.ts";
+import { whenIdle } from "../ui/when-idle.ts";
 import { useAppData } from "./app-data.tsx";
 import {
+  cachedProgress,
   historyData,
   lastTime,
   liveData,
@@ -121,15 +124,26 @@ export function useProgress() {
 
 /**
  * The week bar over the tabs, read again when finished workouts change or the day does. Records
- * need the whole history read, so they wait for `withRecords` (once the app is idle) and the bar
- * opens without them.
+ * need the whole history read, which an edit must not wait for: the bar takes them from the
+ * progress index once another screen (or an idle moment) has read it, and keeps the last ones it
+ * had until then.
  */
-export function useWeekBar(today: number, withRecords: boolean) {
+export function useWeekBar(today: number) {
   const { store, historyVersion } = useAppData();
+  const [, refresh] = useReducer((n: number) => n + 1, 0);
+  const cached = cachedProgress(store, historyVersion);
+  const held = useRef<ReadonlyMap<string, readonly unknown[]> | null>(null);
+  if (cached) held.current = recordsByWorkout(cached.index);
+  useEffect(() => {
+    if (cachedProgress(store, historyVersion)) return;
+    return whenIdle(() => {
+      sharedProgress(store, historyVersion);
+      refresh();
+    });
+  }, [store, historyVersion]);
   return useWhileFocused(
-    () =>
-      weekBarData(store, today, withRecords ? sharedProgress(store, historyVersion).index : null),
-    [store, historyVersion, today, withRecords],
+    () => weekBarData(store, today, held.current),
+    [store, historyVersion, today, cached],
   );
 }
 

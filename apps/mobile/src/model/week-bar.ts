@@ -5,8 +5,9 @@ import type { Routine, WithId, Workout } from "./types.ts";
 /**
  * Two letters for a workout's name, short enough for a day of the week bar: a short last word stays
  * with the first word's initial ("Upper Body A" → UA, "Day 2" → D2); otherwise the initials of the
- * first two words ("Lower Body" → LB), or a single word's first two letters ("Push" → PU). Words
- * without a letter or digit ("&") don't count. Empty for a name with no letter or digit.
+ * first two words ("Lower Body" → LB, "Push-Pull" → PP), or a single word's first two letters
+ * ("Push" → PU). Words without a letter or digit ("&") don't count. Empty for a name with no letter
+ * or digit.
  */
 export function monogram(name: string): string {
   const words = wordsOf(name);
@@ -22,7 +23,7 @@ export function monogram(name: string): string {
 function wordsOf(name: string): string[] {
   return name
     .toLocaleUpperCase()
-    .split(/\s+/)
+    .split(/[\s\-/]+/)
     .map((word) => word.replace(/[^\p{L}\p{N}]/gu, ""))
     .filter((word) => word.length > 0);
 }
@@ -180,17 +181,21 @@ export function weekBar(
 
 /**
  * A day's volume against the last sessions of the same routines, as a whole percentage, from the
- * workouts that have an earlier session; null when none has.
+ * workouts that have an earlier session: null when none has, and "up" when those sessions moved
+ * no weight and this day did (no percentage of nothing).
  */
-export function dayChange(day: WeekBarDay): number | null {
+export function dayChange(day: WeekBarDay): number | "up" | null {
   let now = 0;
   let before = 0;
+  let earlier = false;
   for (const w of day.workouts) {
     if (w.lastVolumeKg === null) continue;
+    earlier = true;
     now += w.volumeKg;
     before += w.lastVolumeKg;
   }
-  if (before <= 0) return null;
+  if (!earlier) return null;
+  if (before <= 0) return now > 0 ? "up" : 0;
   return Math.round((now / before - 1) * 100);
 }
 
@@ -212,9 +217,11 @@ export function weekBarDayLabel(day: WeekBarDay, mode: WeekBarMode): string {
     parts.push(
       change === null
         ? "no earlier session to compare"
-        : change === 0
-          ? "same volume as last time"
-          : `volume ${change > 0 ? "up" : "down"} ${Math.abs(change)}% on last time`,
+        : change === "up"
+          ? "volume up on last time"
+          : change === 0
+            ? "same volume as last time"
+            : `volume ${change > 0 ? "up" : "down"} ${Math.abs(change)}% on last time`,
     );
   } else {
     parts.push(day.workouts.map((w) => w.title).join(", "));
