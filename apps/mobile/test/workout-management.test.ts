@@ -25,6 +25,7 @@ import {
 import { addExerciseNote, workoutExerciseNotes } from "../src/data/exercise-notes.ts";
 import { type BuiltInExercise, EXERCISES } from "../src/data/exercises.ts";
 import { newId } from "../src/data/ids.ts";
+import { readLiveActivityRest } from "../src/data/live-activity-rest";
 import {
   applyAppChange,
   historyData,
@@ -65,6 +66,7 @@ import { WorkoutDetailsEditor } from "../src/ui/workout-details-editor.tsx";
 import { feedbackScheduler } from "./support/feedback.ts";
 
 const feedback = feedbackScheduler();
+vi.mock("../src/data/live-activity-rest", () => ({ readLiveActivityRest: vi.fn(() => null) }));
 vi.mock("../src/ui/after-feedback.ts", () => ({
   afterFeedback: (run: () => void) => feedback.afterFeedback(run),
 }));
@@ -4519,18 +4521,26 @@ describe("the minimised workout", () => {
       await act(() => root.render(h(PlayerProbe, { capture })));
       await ready;
       const old = published.at(-1);
-      if (!old || old.restEnd <= 0 || old.canLog) throw Error("Expected rest after the final set");
+      if (!old?.restKey || old.restEnd <= 0 || old.canLog)
+        throw Error("Expected rest after the final set");
+      const nativeChange = vi.mocked(readLiveActivityRest);
+      onTestFinished(() => {
+        nativeChange.mockReset();
+      });
       if (transition === "account binding") store.bindAccount("server-A", "alice");
       else store.setNegotiated("1.0", [], "restored");
+      nativeChange.mockImplementation((key) => (key === old.restKey ? { start: 0, end: 0 } : null));
       version++;
       await act(() => root.render(h(PlayerProbe, { capture })));
       await ready;
-      expect(session.interact(handle.getId(), old.token + ":skip")).toBe(false);
       const current = published.at(-1);
-      expect(current?.restEnd).toBe(old.restEnd);
-      await act(() => {
-        expect(session.interact(handle.getId(), current?.token + ":skip")).toBe(true);
-      });
+      if (!current?.restKey) throw Error("Missing replacement rest ticket");
+      expect(current.restKey).not.toBe(old.restKey);
+      expect(current.restEnd).toBe(old.restEnd);
+      nativeChange.mockImplementation((key) =>
+        key === current.restKey ? { start: 0, end: 0 } : null,
+      );
+      await act(() => restTimer.refresh());
       await ready;
       expect(published.at(-1)?.restEnd).toBe(0);
     },

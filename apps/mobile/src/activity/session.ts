@@ -14,6 +14,7 @@ export interface WorkoutDisplay {
   started: number;
   done: number;
   total: number;
+  restKey?: string;
   restStart: number;
   restEnd: number;
   interactive: boolean;
@@ -42,7 +43,6 @@ export interface ActivityMemory {
   remember(workoutId: string): void;
   forget(): void;
 }
-export type ActivityAction = "log" | "skip" | "more" | "less";
 export interface ActivityFrame {
   workoutId: string;
   // Even visually identical sets need distinct actions.
@@ -50,7 +50,7 @@ export interface ActivityFrame {
   // Private input to SHA-256. Only its digest is carried in the ActivityKit button.
   binding: string | null;
   display: WorkoutDisplay;
-  act(action: ActivityAction): boolean | undefined;
+  act(action: "log"): boolean | undefined;
 }
 
 // Serialize native operations. A queued tap must still belong to the same activity and exact
@@ -70,7 +70,7 @@ export function workoutSession(factory: Factory, scheme: string, memory: Activit
   let applied = "";
   let currentDigest = "";
   let publishedGeneration = -1;
-  let expiredRestTicket = "";
+  let previousRestTicket = "";
   return {
     publish(frame: ActivityFrame | null, retry = false) {
       current = frame;
@@ -135,12 +135,11 @@ export function workoutSession(factory: Factory, scheme: string, memory: Activit
           }
           if (publishedGeneration !== scheduled) {
             const priorDeadline = Number(published.split(".")[3]);
-            expiredRestTicket =
+            previousRestTicket =
               publishedGeneration === scheduled - 1 &&
               digest === currentDigest &&
               digest !== "-" &&
               priorDeadline > 0 &&
-              priorDeadline <= Date.now() &&
               !frame.display.restEnd
                 ? published
                 : "";
@@ -173,7 +172,7 @@ export function workoutSession(factory: Factory, scheme: string, memory: Activit
         Number(deadline) <= Date.now();
       if (
         action === "log" &&
-        (ticket === published || ticket === expiredRestTicket || restoredLog) &&
+        (ticket === published || ticket === previousRestTicket || restoredLog) &&
         current.display.canLog &&
         current.display.restEnd <= Date.now()
       ) {
@@ -181,13 +180,6 @@ export function workoutSession(factory: Factory, scheme: string, memory: Activit
         const success = current.act("log") === true;
         if (success) applied = currentDigest;
         return success;
-      }
-      if (
-        ticket === published &&
-        current.display.restEnd > Date.now() &&
-        (action === "skip" || action === "more" || action === "less")
-      ) {
-        return current.act(action) === true;
       }
       return false;
     },

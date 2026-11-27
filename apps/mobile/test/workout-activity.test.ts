@@ -129,7 +129,7 @@ describe("workout Live Activity", () => {
     session.interact("island-A", `${handle.update.mock.calls[0]?.[0].token}:log`);
     expect(second.act).toHaveBeenCalledExactlyOnceWith("log");
   });
-  it("accepts only rest controls while resting, and ignores them after the deadline", async () => {
+  it("leaves rest controls to the native intent and blocks Log until the deadline", async () => {
     vi.useFakeTimers();
     try {
       vi.setSystemTime(100_000);
@@ -138,39 +138,44 @@ describe("workout Live Activity", () => {
       const next = frame();
       Object.assign(next.display, { restStart: 90_000, restEnd: 115_000 });
       await session.publish(next);
-      const [props, , stale] = factory.start.mock.calls[0]!;
+      const start = factory.start.mock.calls[0];
+      if (!start) throw Error("Missing resting activity");
+      const [props, , stale] = start;
       expect(stale?.getTime()).toBe(115_000);
       for (const action of ["log", "more", "less", "skip"])
         session.interact("island-A", `${props.token}:${action}`);
       vi.setSystemTime(115_001);
       session.interact("island-A", `${props.token}:more`);
       session.interact("island-A", `${props.token}:log`);
-      expect(next.act).toHaveBeenCalledTimes(4);
-      expect(vi.mocked(next.act).mock.calls).toEqual([["more"], ["less"], ["skip"], ["log"]]);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-  it("accepts the visible Log ticket after a resumed host republishes the expired rest", async () => {
-    const { session, handle } = harness();
-    const next = frame();
-    vi.useFakeTimers();
-    try {
-      vi.setSystemTime(100_000);
-      await session.publish({
-        ...next,
-        display: { ...next.display, restStart: 90_000, restEnd: 115_000 },
-      });
-      const token = handle.update.mock.calls[0]![0].token;
-      vi.setSystemTime(115_001);
-      await session.publish(next);
-      expect(session.interact(handle.getId(), token + ":more")).toBe(false);
-      expect(session.interact(handle.getId(), token + ":log")).toBe(true);
       expect(next.act).toHaveBeenCalledExactlyOnceWith("log");
     } finally {
       vi.useRealTimers();
     }
   });
+  it.each([100_001, 115_001])(
+    "accepts the visible Log ticket after rest ends at %s",
+    async (end) => {
+      const { session, handle } = harness();
+      const next = frame();
+      vi.useFakeTimers();
+      try {
+        vi.setSystemTime(100_000);
+        await session.publish({
+          ...next,
+          display: { ...next.display, restStart: 90_000, restEnd: 115_000 },
+        });
+        const token = handle.update.mock.calls[0]?.[0].token;
+        if (!token) throw Error("Missing published ticket");
+        vi.setSystemTime(end);
+        await session.publish(next);
+        expect(session.interact(handle.getId(), `${token}:more`)).toBe(false);
+        expect(session.interact(handle.getId(), `${token}:log`)).toBe(true);
+        expect(next.act).toHaveBeenCalledExactlyOnceWith("log");
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
   it("recovers the identical unlogged set after relaunch and accepts the old tap exactly once", async () => {
     const { session, handle, factory, memory } = harness();
     const next = frame();
@@ -286,7 +291,7 @@ it.each(["same", "changed", "expired"] as const)(
     const tap = {
       id: "tap",
       source: handle.getId(),
-      target: token + ":log",
+      target: `${token}:log`,
       timestamp: Date.now() - (scenario === "expired" ? 121_000 : 20_000),
       reviewOnly: false,
     };
