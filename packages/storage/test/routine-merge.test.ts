@@ -143,6 +143,18 @@ it("uses whole-routine review after the account history changes", async () => {
     store.setNegotiated("1.0", [], "restored-lineage");
     store.applyPull([version(20, routine(30, 70))], 20);
     store.completeRestore();
+    // Pending local work is offered to the restored server without its old revision.
+    const [outgoing] = store.prepareSubmissions("1.0");
+    if (!outgoing) throw Error("Missing upload after restore");
+    expect(outgoing.submission.baseRevision).toBeNull();
+    store.applyPushResults([
+      {
+        status: "conflict",
+        reason: "exists",
+        submissionId: outgoing.submission.submissionId,
+        current: version(20, routine(30, 70)),
+      },
+    ]);
     expect(store.routineConflictVersions("r")).toBeNull();
     expect(store.get("routine", "r")).toMatchObject({
       status: "conflict",
