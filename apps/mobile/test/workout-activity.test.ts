@@ -459,6 +459,68 @@ describe("shared frame publisher", () => {
     expect(frames.interact(`${ticket.token}:log`)).toBe(false);
     expect(changed.act).not.toHaveBeenCalled();
   });
+  it("keeps a newer frame another surface shows when a slow Live Activity update finishes late", async () => {
+    const frames = framePublisher();
+    const island = harness();
+    const session = workoutSession(island.factory, "leve-preview", island.memory, frames);
+    const first = frame();
+    await session.publish(first);
+    let started = false;
+    let release = () => {};
+    island.handle.update.mockImplementationOnce(() => {
+      started = true;
+      return new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    });
+    const slow = session.publish({ ...first, selection: "set-B", binding: "set-B/v1" });
+    await vi.waitFor(() => expect(started).toBe(true));
+    // Another surface shows the next frame, then the person swipes the Live Activity away.
+    const third = { ...first, selection: "set-C", binding: "set-C/v1", act: vi.fn(() => true) };
+    const scheduled = frames.set(third);
+    const ticket = await frames.ticket(third, scheduled);
+    if (!ticket) throw Error("Missing ticket");
+    frames.shown(third, ticket, scheduled);
+    const latest = session.publish(third);
+    island.dismiss();
+    release();
+    await slow;
+    await latest;
+    expect(frames.interact(`${ticket.token}:log`)).toBe(true);
+    expect(third.act).toHaveBeenCalledExactlyOnceWith("log");
+  });
+  it("keeps another surface's ticket when the Live Activity can't start for a new workout", async () => {
+    const frames = framePublisher();
+    const island = harness();
+    const session = workoutSession(island.factory, "leve-preview", island.memory, frames);
+    await session.publish(frame());
+    let ending = false;
+    let release = () => {};
+    island.handle.end.mockImplementationOnce(() => {
+      ending = true;
+      return new Promise<void>((resolve) => {
+        release = () => {
+          island.dismiss();
+          resolve();
+        };
+      });
+    });
+    island.factory.start.mockImplementationOnce(() => {
+      throw Error("background");
+    });
+    const next = { ...frame(), workoutId: "session-B", act: vi.fn(() => true) };
+    const publishing = session.publish(next);
+    await vi.waitFor(() => expect(ending).toBe(true));
+    const scheduled = frames.set(next);
+    const ticket = await frames.ticket(next, scheduled);
+    if (!ticket) throw Error("Missing ticket");
+    frames.shown(next, ticket, scheduled);
+    release();
+    await publishing;
+    expect(island.factory.start).toHaveBeenCalledOnce();
+    expect(frames.interact(`${ticket.token}:log`)).toBe(true);
+    expect(next.act).toHaveBeenCalledExactlyOnceWith("log");
+  });
   it("refuses a ticket minted for a frame that was replaced while it was being made", async () => {
     const frames = framePublisher();
     const next = frame();
