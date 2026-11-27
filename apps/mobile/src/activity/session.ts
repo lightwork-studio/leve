@@ -60,37 +60,124 @@ function logTicketIdentity(ticket: string) {
   return [format, process, generation, digest].join(".");
 }
 
-// Serialize native operations. A queued tap must still belong to the same activity and exact
-// displayed set/rest when it reaches the workout. Never resurrect a user-dismissed activity.
-export function workoutSession(factory: Factory, scheme: string, memory: ActivityMemory) {
-  const activeUrl = `${scheme}:///workout/active`;
-  const finishUrl = `${scheme}:///workout/finish`;
+export type FramePublisher = ReturnType<typeof framePublisher>;
+
+/**
+ * Mints and checks the tickets that surfaces put on their buttons. Keep one per process and share
+ * it between surfaces, so that a set logged from one surface is never logged again from another,
+ * and so that a surface gets tickets without an ActivityKit handle. A ticket depends only on the
+ * process, the frame's generation, its rest deadline and the digest of its binding, so every
+ * surface showing the same frame shows the same ticket.
+ */
+export function framePublisher() {
+  const epoch = newId(); // A tap from a former process must never authorize a new frame.
   let current: ActivityFrame | null = null;
   let signature: string | undefined;
   let generation = 0;
-  let owner: string | undefined;
-  let handle: WorkoutActivity | undefined;
-  let cleanStart = true;
-  const epoch = newId(); // A tap from a former process must never authorize a new frame.
-  let work = Promise.resolve();
   let published = "";
   let applied = "";
   let currentDigest = "";
   let publishedGeneration = -1;
   const shownRestTickets = new Set<string>();
   return {
-    publish(frame: ActivityFrame | null, retry = false) {
+    /** Makes the frame current. Its generation changes whenever what the frame shows does. */
+    set(frame: ActivityFrame | null) {
       current = frame;
       const next = JSON.stringify(
         frame && [frame.workoutId, frame.selection, frame.binding, frame.display],
       );
-      if (next === signature && !retry) return work;
       if (next !== signature) generation++;
       signature = next;
-      const scheduled = generation;
+      return generation;
+    },
+    generation: () => generation,
+    /** The ticket for a frame of this generation, or none once a newer frame has replaced it. */
+    async ticket(frame: ActivityFrame, scheduled: number) {
+      const digest = frame.binding
+        ? await digestStringAsync(CryptoDigestAlgorithm.SHA256, frame.binding)
+        : "-";
+      if (scheduled !== generation) return;
+      return {
+        token: ["leve1", epoch, scheduled, frame.display.restEnd, digest].join("."),
+        digest,
+      };
+    },
+    /** Records that a surface now shows this frame's ticket. */
+    shown(frame: ActivityFrame, ticket: { token: string; digest: string }, scheduled: number) {
+      // A surface that finishes late never takes back a newer frame another surface shows.
+      if (scheduled < publishedGeneration) return;
+      const { token, digest } = ticket;
+      if (publishedGeneration !== scheduled) {
+        const wasResting = Number(published.split(".")[3]) > 0;
+        if (digest !== currentDigest || !wasResting) shownRestTickets.clear();
+        // Native Skip can expose Log from any frame that was visible during this rest.
+        if (frame.display.restEnd && digest !== "-") shownRestTickets.add(logTicketIdentity(token));
+      }
+      published = token;
+      publishedGeneration = scheduled;
+      currentDigest = digest;
+    },
+    /**
+     * Forgets the shown ticket, when a surface stops showing a workout. Keeps it while some
+     * surface already shows the current frame.
+     */
+    clear() {
+      if (publishedGeneration !== generation) published = "";
+    },
+    /** Applies a button's `<ticket>:<action>` target if it still matches what is shown. */
+    interact(target: string) {
+      if (!current || publishedGeneration !== generation || !current.display.interactive)
+        return false;
+      const [ticket, action] = target.split(":");
+      if (action !== "log" || !ticket || !current.display.canLog) return false;
+      const parts = ticket.split(".");
+      const [format, process, , deadline, digest] = parts;
+      if (parts.length !== 5 || format !== "leve1") return false;
+      const now = Date.now();
+      const { restKey, restEnd } = current.display;
+      const activeDeadline = (restKey ? readLiveActivityRest(restKey)?.end : undefined) ?? restEnd;
+      if (activeDeadline > now) return false;
+      const identity = logTicketIdentity(ticket);
+      const restoredLog =
+        process !== epoch && digest === currentDigest && digest !== "-" && Number(deadline) <= now;
+      if (
+        identity !== logTicketIdentity(published) &&
+        !shownRestTickets.has(identity) &&
+        !restoredLog
+      )
+        return false;
+      if (applied === currentDigest) return true;
+      const success = current.act("log") === true;
+      if (success) applied = currentDigest;
+      return success;
+    },
+  };
+}
+
+// The Live Activity surface. Serialize native operations. A queued tap must still belong to the
+// same activity and exact displayed set/rest when it reaches the workout. Never resurrect a
+// user-dismissed activity.
+export function workoutSession(
+  factory: Factory,
+  scheme: string,
+  memory: ActivityMemory,
+  frames: FramePublisher = framePublisher(),
+) {
+  const activeUrl = `${scheme}:///workout/active`;
+  const finishUrl = `${scheme}:///workout/finish`;
+  let seen: number | undefined;
+  let owner: string | undefined;
+  let handle: WorkoutActivity | undefined;
+  let cleanStart = true;
+  let work = Promise.resolve();
+  return {
+    publish(frame: ActivityFrame | null, retry = false) {
+      const scheduled = frames.set(frame);
+      if (scheduled === seen && !retry) return work;
+      seen = scheduled;
       work = work
         .then(async () => {
-          if (scheduled !== generation) return;
+          if (scheduled !== frames.generation()) return;
           if (cleanStart) {
             const existing = factory.getInstances();
             // Reuse a surviving surface even when iOS relaunched Leve in the background,
@@ -116,17 +203,14 @@ export function workoutSession(factory: Factory, scheme: string, memory: Activit
             }
             handle = undefined;
             owner = undefined;
-            published = "";
+            frames.clear();
           }
-          if (!frame || scheduled !== generation) return;
-          const digest = frame.binding
-            ? await digestStringAsync(CryptoDigestAlgorithm.SHA256, frame.binding)
-            : "-";
-          if (scheduled !== generation) return;
-          const token = ["leve1", epoch, scheduled, frame.display.restEnd, digest].join(".");
+          if (!frame || scheduled !== frames.generation()) return;
+          const ticket = await frames.ticket(frame, scheduled);
+          if (!ticket) return;
           const props = {
             ...frame.display,
-            token,
+            token: ticket.token,
             openUrl: frame.display.finish ? finishUrl : activeUrl,
           };
           const stale = props.restEnd ? new Date(props.restEnd) : undefined;
@@ -140,15 +224,7 @@ export function workoutSession(factory: Factory, scheme: string, memory: Activit
             handle = undefined;
             return;
           }
-          if (publishedGeneration !== scheduled) {
-            const wasResting = Number(published.split(".")[3]) > 0;
-            if (digest !== currentDigest || !wasResting) shownRestTickets.clear();
-            // Native Skip can expose Log from any frame that was visible during this rest.
-            if (props.restEnd && digest !== "-") shownRestTickets.add(logTicketIdentity(token));
-          }
-          published = token;
-          publishedGeneration = scheduled;
-          currentDigest = digest;
+          frames.shown(frame, ticket, scheduled);
         })
         .catch(() => {
           // Disabled activities and a background start are normal. Retry on foreground or change.
@@ -156,35 +232,7 @@ export function workoutSession(factory: Factory, scheme: string, memory: Activit
       return work;
     },
     interact(source: string, target: string) {
-      if (
-        !current ||
-        source !== handle?.getId() ||
-        publishedGeneration !== generation ||
-        !current.display.interactive
-      )
-        return false;
-      const [ticket, action] = target.split(":");
-      if (action !== "log" || !ticket || !current.display.canLog) return false;
-      const parts = ticket.split(".");
-      const [format, process, , deadline, digest] = parts;
-      if (parts.length !== 5 || format !== "leve1") return false;
-      const now = Date.now();
-      const { restKey, restEnd } = current.display;
-      const activeDeadline = (restKey ? readLiveActivityRest(restKey)?.end : undefined) ?? restEnd;
-      if (activeDeadline > now) return false;
-      const identity = logTicketIdentity(ticket);
-      const restoredLog =
-        process !== epoch && digest === currentDigest && digest !== "-" && Number(deadline) <= now;
-      if (
-        identity !== logTicketIdentity(published) &&
-        !shownRestTickets.has(identity) &&
-        !restoredLog
-      )
-        return false;
-      if (applied === currentDigest) return true;
-      const success = current.act("log") === true;
-      if (success) applied = currentDigest;
-      return success;
+      return source === handle?.getId() && frames.interact(target);
     },
   };
 }

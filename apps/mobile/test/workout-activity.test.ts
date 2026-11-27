@@ -3,6 +3,7 @@ import { activityDelivery } from "../src/activity/delivery.ts";
 import {
   type ActivityFrame,
   type ActivityMemory,
+  framePublisher,
   type WorkoutContent,
   workoutSession,
 } from "../src/activity/session.ts";
@@ -415,4 +416,55 @@ it("opens the requested foreground review even when the native inbox cannot be r
   );
   await delivery.publish(frame());
   expect(review).toHaveBeenCalledOnce();
+});
+
+describe("shared frame publisher", () => {
+  it("gives every surface the same ticket and logs a set only once across them", async () => {
+    const frames = framePublisher();
+    const island = harness();
+    const other = harness();
+    const first = workoutSession(island.factory, "leve-preview", island.memory, frames);
+    const second = workoutSession(other.factory, "leve-preview", other.memory, frames);
+    const next = frame();
+    await first.publish(next);
+    await second.publish(next);
+    const token = island.handle.update.mock.calls[0]?.[0].token;
+    expect(other.handle.update.mock.calls[0]?.[0].token).toBe(token);
+    expect(first.interact("island-A", `${token}:log`)).toBe(true);
+    expect(second.interact("island-A", `${token}:log`)).toBe(true);
+    expect(next.act).toHaveBeenCalledExactlyOnceWith("log");
+  });
+  it("issues and honours tickets for a surface without an ActivityKit handle", async () => {
+    const frames = framePublisher();
+    const island = harness();
+    // The person dismissed the workout's Live Activity.
+    island.dismiss();
+    island.memory.remember("session-A");
+    const activity = workoutSession(island.factory, "leve-preview", island.memory, frames);
+    const next = frame();
+    await activity.publish(next);
+    expect(island.factory.start).not.toHaveBeenCalled();
+    // Another surface shows the same frame.
+    const scheduled = frames.set(next);
+    const ticket = await frames.ticket(next, scheduled);
+    if (!ticket) throw Error("Missing ticket");
+    frames.shown(next, ticket, scheduled);
+    expect(activity.interact("island-A", `${ticket.token}:log`)).toBe(false);
+    expect(frames.interact(`${ticket.token}:log`)).toBe(true);
+    expect(frames.interact(`${ticket.token}:log`)).toBe(true);
+    expect(next.act).toHaveBeenCalledExactlyOnceWith("log");
+    // A changed set retires the ticket before any surface shows the new one.
+    const changed = { ...next, binding: "session-A/set-A/version-2/50x10", act: vi.fn(() => true) };
+    frames.set(changed);
+    expect(frames.interact(`${ticket.token}:log`)).toBe(false);
+    expect(changed.act).not.toHaveBeenCalled();
+  });
+  it("refuses a ticket minted for a frame that was replaced while it was being made", async () => {
+    const frames = framePublisher();
+    const next = frame();
+    const scheduled = frames.set(next);
+    const pending = frames.ticket(next, scheduled);
+    frames.set({ ...next, selection: "set-B" });
+    expect(await pending).toBeUndefined();
+  });
 });
