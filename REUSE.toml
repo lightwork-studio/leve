@@ -26,7 +26,7 @@ SPDX-FileCopyrightText = "Leve contributors"
 SPDX-License-Identifier = "LicenseRef-Leve-Brand"
 
 [[annotations]]
-path = "apps/mobile/media/exercises/*.webp"
+path = ["apps/mobile/media/exercises/*.webp", "apps/mobile/media/exercises/thumbs/*.webp"]
 precedence = "closest"
 SPDX-FileCopyrightText = ["Dmitry Fedorov (anatomy model)", "Leve contributors"]
 SPDX-License-Identifier = "LicenseRef-Leve-Exercise-Images"

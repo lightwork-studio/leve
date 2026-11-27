@@ -343,7 +343,7 @@ export function ExercisePicker({
                   last && styles.rowLast,
                 ]}
               >
-                <MusclePreview targets={item} />
+                <MusclePreview exerciseId={item.id} targets={item} />
                 <View style={styles.info}>
                   <Text style={styles.name} numberOfLines={1}>
                     {item.name}
@@ -415,9 +415,11 @@ const sheet = themedStyles((c) => ({
   row: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: space.lg,
-    paddingVertical: 10,
-    minHeight: 58,
+    // The picture sits closer to the card's edge than the text would.
+    paddingLeft: 10,
+    paddingRight: space.lg,
+    paddingVertical: 8,
+    minHeight: 64,
     gap: space.md,
     backgroundColor: c.s1,
     borderLeftWidth: 1,

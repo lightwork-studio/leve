@@ -3572,6 +3572,51 @@ it("shows an exercise's image at the top of its sheet and its screen, and leaves
   expect(host.textContent).toContain("This exercise");
 });
 
+it("shows each card's thumbnail beside its name, or its number without one, with the rest time under the name", async () => {
+  const workout = beginWorkout(store);
+  addExercise(store, workout, EXERCISES.bench, 0);
+  addExercise(store, workout, EXERCISES.plank, 0);
+  await act(() => root.render(h(ActiveWorkoutScreen)));
+  const heading = (name: string) =>
+    host.querySelector<HTMLElement>(`button[aria-expanded][aria-label="${name}"]`);
+  // The card's head: the picture, then the title area that the expanding button fills.
+  const title = (name: string) => heading(name)?.parentElement ?? null;
+  const thumb = (name: string) => title(name)?.parentElement?.firstElementChild ?? null;
+  expect(thumb("Bench Press")?.querySelector("img")?.getAttribute("src")).toMatch(
+    /\/thumbs\/barbell-bench-press\.webp$/,
+  );
+  expect(thumb("Plank")?.querySelector("img")).toBeNull();
+  expect(thumb("Plank")?.textContent).toMatch(/^0[12]$/);
+  // Nothing is shaded over a picture until its exercise is done.
+  expect(thumb("Bench Press")?.childElementCount).toBe(1);
+  expect(thumb("Plank")?.childElementCount).toBe(1);
+  for (const name of ["Bench Press", "Plank"]) {
+    expect(
+      title(name)?.querySelector(`[aria-label^="Rest "][aria-label$=" for ${name}. Change it"]`),
+    ).not.toBeNull();
+  }
+});
+
+it("shades a finished card's thumbnail under a check, and drops the number of one without an image", async () => {
+  const workout = beginWorkout(store);
+  addExercise(store, workout, EXERCISES.bench, 0);
+  addExercise(store, workout, EXERCISES.plank, 0);
+  for (const entry of store.list("workout_exercise", { parentId: workout })) {
+    for (const set of store.list("workout_set", { parentId: entry.id })) {
+      logSet(store, set.id, { weightKg: 60, reps: 8, durationSeconds: 60 });
+    }
+  }
+  await act(() => root.render(h(ActiveWorkoutScreen)));
+  const thumb = (name: string) =>
+    host.querySelector(`button[aria-expanded][aria-label="${name}"]`)?.parentElement?.parentElement
+      ?.firstElementChild ?? null;
+  // The picture stays, with the shade over it; the number gives way to the same shade.
+  expect(thumb("Bench Press")?.querySelector("img")).not.toBeNull();
+  expect(thumb("Bench Press")?.childElementCount).toBe(2);
+  expect(thumb("Plank")?.childElementCount).toBe(2);
+  expect(thumb("Plank")?.textContent).toBe("");
+});
+
 it("identifies a custom exercise with no earlier sessions from the workout entry", async () => {
   const active = beginWorkout(store);
   canGoBack.mockReturnValue(false);
@@ -3862,13 +3907,17 @@ it("shows each superset on the live and completed cards independently of its tem
   ];
   const groupOn = (element: Element | null) =>
     element?.textContent?.match(/Superset \d+/)?.[0] ?? null;
-  // Each card names its exercise and, under it, the superset it belongs to.
+  // Each card names its exercise and, on the line under it, the superset it belongs to.
   const headings = Array.from(
     host.querySelectorAll<HTMLButtonElement>("button[aria-expanded]"),
   ).filter((el) => /^Press \d$/.test(el.getAttribute("aria-label") ?? ""));
-  expect(headings.map((heading) => [heading.getAttribute("aria-label"), groupOn(heading)])).toEqual(
-    expected,
-  );
+  expect(
+    headings.map((heading) => [
+      heading.getAttribute("aria-label"),
+      // The line under the name (after the name), before its rest button.
+      groupOn(heading.nextElementSibling?.nextElementSibling?.firstElementChild ?? null),
+    ]),
+  ).toEqual(expected);
   finishWorkout(store, detailId, {
     title: "Paired presses",
     countForRoutine: false,

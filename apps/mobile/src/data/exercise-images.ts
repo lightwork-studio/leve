@@ -72,6 +72,86 @@ import standingDumbbellPress from "../../media/exercises/standing-dumbbell-press
 import standingDumbbellTricepsExtension from "../../media/exercises/standing-dumbbell-triceps-extension.webp";
 import stiffLeggedBarbellDeadlift from "../../media/exercises/stiff-legged-barbell-deadlift.webp";
 import sumoDeadlift from "../../media/exercises/sumo-deadlift.webp";
+import abRollerThumb from "../../media/exercises/thumbs/ab-roller.webp";
+import arnoldDumbbellPressThumb from "../../media/exercises/thumbs/arnold-dumbbell-press.webp";
+import backSquatThumb from "../../media/exercises/thumbs/back-squat.webp";
+import barbellBenchPressThumb from "../../media/exercises/thumbs/barbell-bench-press.webp";
+import barbellCurlThumb from "../../media/exercises/thumbs/barbell-curl.webp";
+import barbellGluteBridgeThumb from "../../media/exercises/thumbs/barbell-glute-bridge.webp";
+import barbellHipThrustThumb from "../../media/exercises/thumbs/barbell-hip-thrust.webp";
+import barbellInclineBenchPressMediumGripThumb from "../../media/exercises/thumbs/barbell-incline-bench-press-medium-grip.webp";
+import barbellRowThumb from "../../media/exercises/thumbs/barbell-row.webp";
+import barbellShrugThumb from "../../media/exercises/thumbs/barbell-shrug.webp";
+import bicepsCurlThumb from "../../media/exercises/thumbs/biceps-curl.webp";
+import bodyweightCalfRaiseThumb from "../../media/exercises/thumbs/bodyweight-calf-raise.webp";
+import bodyweightLungeThumb from "../../media/exercises/thumbs/bodyweight-lunge.webp";
+import bodyweightSquatThumb from "../../media/exercises/thumbs/bodyweight-squat.webp";
+import buttLiftBridgeThumb from "../../media/exercises/thumbs/butt-lift-bridge.webp";
+import butterflyThumb from "../../media/exercises/thumbs/butterfly.webp";
+import cableCrossoverThumb from "../../media/exercises/thumbs/cable-crossover.webp";
+import cableHipAbductionThumb from "../../media/exercises/thumbs/cable-hip-abduction.webp";
+import cableLateralRaiseThumb from "../../media/exercises/thumbs/cable-lateral-raise.webp";
+import chinUpThumb from "../../media/exercises/thumbs/chin-up.webp";
+import closeGripBarbellBenchPressThumb from "../../media/exercises/thumbs/close-grip-barbell-bench-press.webp";
+import crossBodyHammerCurlThumb from "../../media/exercises/thumbs/cross-body-hammer-curl.webp";
+import crunchesThumb from "../../media/exercises/thumbs/crunches.webp";
+import deadHangThumb from "../../media/exercises/thumbs/dead-hang.webp";
+import deadliftThumb from "../../media/exercises/thumbs/deadlift.webp";
+import dumbbellBenchPressThumb from "../../media/exercises/thumbs/dumbbell-bench-press.webp";
+import dumbbellDeadliftThumb from "../../media/exercises/thumbs/dumbbell-deadlift.webp";
+import dumbbellFlyesThumb from "../../media/exercises/thumbs/dumbbell-flyes.webp";
+import dumbbellLungesThumb from "../../media/exercises/thumbs/dumbbell-lunges.webp";
+import dumbbellRearLungeThumb from "../../media/exercises/thumbs/dumbbell-rear-lunge.webp";
+import dumbbellRomanianDeadliftThumb from "../../media/exercises/thumbs/dumbbell-romanian-deadlift.webp";
+import dumbbellShoulderPressThumb from "../../media/exercises/thumbs/dumbbell-shoulder-press.webp";
+import dumbbellShrugThumb from "../../media/exercises/thumbs/dumbbell-shrug.webp";
+import dumbbellSquatThumb from "../../media/exercises/thumbs/dumbbell-squat.webp";
+import dumbbellWalkingLungeThumb from "../../media/exercises/thumbs/dumbbell-walking-lunge.webp";
+import ezBarCurlThumb from "../../media/exercises/thumbs/ez-bar-curl.webp";
+import facePullThumb from "../../media/exercises/thumbs/face-pull.webp";
+import frontDumbbellRaiseThumb from "../../media/exercises/thumbs/front-dumbbell-raise.webp";
+import frontPlateRaiseThumb from "../../media/exercises/thumbs/front-plate-raise.webp";
+import gobletSquatThumb from "../../media/exercises/thumbs/goblet-squat.webp";
+import hackSquatThumb from "../../media/exercises/thumbs/hack-squat.webp";
+import hammerCurlsThumb from "../../media/exercises/thumbs/hammer-curls.webp";
+import hangingKneeRaiseThumb from "../../media/exercises/thumbs/hanging-knee-raise.webp";
+import hyperextensionsBackExtensionsThumb from "../../media/exercises/thumbs/hyperextensions-back-extensions.webp";
+import inclineDumbbellPressThumb from "../../media/exercises/thumbs/incline-dumbbell-press.webp";
+import kettlebellSwingThumb from "../../media/exercises/thumbs/kettlebell-swing.webp";
+import lateralLungeThumb from "../../media/exercises/thumbs/lateral-lunge.webp";
+import lateralRaiseThumb from "../../media/exercises/thumbs/lateral-raise.webp";
+import legCurlThumb from "../../media/exercises/thumbs/leg-curl.webp";
+import legExtensionsThumb from "../../media/exercises/thumbs/leg-extensions.webp";
+import legPressThumb from "../../media/exercises/thumbs/leg-press.webp";
+import machineSeatedRowThumb from "../../media/exercises/thumbs/machine-seated-row.webp";
+import oneArmDumbbellRowThumb from "../../media/exercises/thumbs/one-arm-dumbbell-row.webp";
+import oneArmSideLateralsThumb from "../../media/exercises/thumbs/one-arm-side-laterals.webp";
+import overheadPressThumb from "../../media/exercises/thumbs/overhead-press.webp";
+import parallelBarDipThumb from "../../media/exercises/thumbs/parallel-bar-dip.webp";
+import preacherCurlThumb from "../../media/exercises/thumbs/preacher-curl.webp";
+import pullUpThumb from "../../media/exercises/thumbs/pull-up.webp";
+import pushupsThumb from "../../media/exercises/thumbs/pushups.webp";
+import rackPullsThumb from "../../media/exercises/thumbs/rack-pulls.webp";
+import reverseBarbellCurlThumb from "../../media/exercises/thumbs/reverse-barbell-curl.webp";
+import romanianDeadliftThumb from "../../media/exercises/thumbs/romanian-deadlift.webp";
+import seatedBarbellMilitaryPressThumb from "../../media/exercises/thumbs/seated-barbell-military-press.webp";
+import seatedCableRowsThumb from "../../media/exercises/thumbs/seated-cable-rows.webp";
+import seatedLegCurlThumb from "../../media/exercises/thumbs/seated-leg-curl.webp";
+import seatedSideLateralRaiseThumb from "../../media/exercises/thumbs/seated-side-lateral-raise.webp";
+import singleLegGluteBridgeThumb from "../../media/exercises/thumbs/single-leg-glute-bridge.webp";
+import splitSquatWithDumbbellsThumb from "../../media/exercises/thumbs/split-squat-with-dumbbells.webp";
+import standingDumbbellCalfRaiseThumb from "../../media/exercises/thumbs/standing-dumbbell-calf-raise.webp";
+import standingDumbbellPressThumb from "../../media/exercises/thumbs/standing-dumbbell-press.webp";
+import standingDumbbellTricepsExtensionThumb from "../../media/exercises/thumbs/standing-dumbbell-triceps-extension.webp";
+import stiffLeggedBarbellDeadliftThumb from "../../media/exercises/thumbs/stiff-legged-barbell-deadlift.webp";
+import sumoDeadliftThumb from "../../media/exercises/thumbs/sumo-deadlift.webp";
+import trapBarDeadliftThumb from "../../media/exercises/thumbs/trap-bar-deadlift.webp";
+import tricepsPushdownThumb from "../../media/exercises/thumbs/triceps-pushdown.webp";
+import tricepsPushdownRopeAttachmentThumb from "../../media/exercises/thumbs/triceps-pushdown-rope-attachment.webp";
+import uprightBarbellRowThumb from "../../media/exercises/thumbs/upright-barbell-row.webp";
+import wallSitThumb from "../../media/exercises/thumbs/wall-sit.webp";
+import wideGripLatPulldownThumb from "../../media/exercises/thumbs/wide-grip-lat-pulldown.webp";
+import zottmanCurlThumb from "../../media/exercises/thumbs/zottman-curl.webp";
 import trapBarDeadlift from "../../media/exercises/trap-bar-deadlift.webp";
 import tricepsPushdown from "../../media/exercises/triceps-pushdown.webp";
 import tricepsPushdownRopeAttachment from "../../media/exercises/triceps-pushdown-rope-attachment.webp";
@@ -167,7 +247,99 @@ const IMAGES: Readonly<Record<string, ImageSourcePropType>> = {
   "builtin:zottman-curl": zottmanCurl,
 };
 
+/**
+ * The small square crop of each image, framed on the whole person (media/exercises/thumbs), for
+ * lists and cards.
+ */
+const THUMBS: Readonly<Record<string, ImageSourcePropType>> = {
+  "builtin:ab-roller": abRollerThumb,
+  "builtin:arnold-dumbbell-press": arnoldDumbbellPressThumb,
+  "builtin:back-squat": backSquatThumb,
+  "builtin:barbell-bench-press": barbellBenchPressThumb,
+  "builtin:barbell-curl": barbellCurlThumb,
+  "builtin:barbell-glute-bridge": barbellGluteBridgeThumb,
+  "builtin:barbell-hip-thrust": barbellHipThrustThumb,
+  "builtin:barbell-incline-bench-press-medium-grip": barbellInclineBenchPressMediumGripThumb,
+  "builtin:barbell-row": barbellRowThumb,
+  "builtin:barbell-shrug": barbellShrugThumb,
+  "builtin:biceps-curl": bicepsCurlThumb,
+  "builtin:bodyweight-calf-raise": bodyweightCalfRaiseThumb,
+  "builtin:bodyweight-lunge": bodyweightLungeThumb,
+  "builtin:bodyweight-squat": bodyweightSquatThumb,
+  "builtin:butt-lift-bridge": buttLiftBridgeThumb,
+  "builtin:butterfly": butterflyThumb,
+  "builtin:cable-crossover": cableCrossoverThumb,
+  "builtin:cable-hip-abduction": cableHipAbductionThumb,
+  "builtin:cable-lateral-raise": cableLateralRaiseThumb,
+  "builtin:chin-up": chinUpThumb,
+  "builtin:close-grip-barbell-bench-press": closeGripBarbellBenchPressThumb,
+  "builtin:cross-body-hammer-curl": crossBodyHammerCurlThumb,
+  "builtin:crunches": crunchesThumb,
+  "builtin:dead-hang": deadHangThumb,
+  "builtin:deadlift": deadliftThumb,
+  "builtin:dumbbell-bench-press": dumbbellBenchPressThumb,
+  "builtin:dumbbell-deadlift": dumbbellDeadliftThumb,
+  "builtin:dumbbell-flyes": dumbbellFlyesThumb,
+  "builtin:dumbbell-lunges": dumbbellLungesThumb,
+  "builtin:dumbbell-rear-lunge": dumbbellRearLungeThumb,
+  "builtin:dumbbell-romanian-deadlift": dumbbellRomanianDeadliftThumb,
+  "builtin:dumbbell-shoulder-press": dumbbellShoulderPressThumb,
+  "builtin:dumbbell-shrug": dumbbellShrugThumb,
+  "builtin:dumbbell-squat": dumbbellSquatThumb,
+  "builtin:dumbbell-walking-lunge": dumbbellWalkingLungeThumb,
+  "builtin:ez-bar-curl": ezBarCurlThumb,
+  "builtin:face-pull": facePullThumb,
+  "builtin:front-dumbbell-raise": frontDumbbellRaiseThumb,
+  "builtin:front-plate-raise": frontPlateRaiseThumb,
+  "builtin:goblet-squat": gobletSquatThumb,
+  "builtin:hack-squat": hackSquatThumb,
+  "builtin:hammer-curls": hammerCurlsThumb,
+  "builtin:hanging-knee-raise": hangingKneeRaiseThumb,
+  "builtin:hyperextensions-back-extensions": hyperextensionsBackExtensionsThumb,
+  "builtin:incline-dumbbell-press": inclineDumbbellPressThumb,
+  "builtin:kettlebell-swing": kettlebellSwingThumb,
+  "builtin:lateral-lunge": lateralLungeThumb,
+  "builtin:lateral-raise": lateralRaiseThumb,
+  "builtin:leg-curl": legCurlThumb,
+  "builtin:leg-extensions": legExtensionsThumb,
+  "builtin:leg-press": legPressThumb,
+  "builtin:machine-seated-row": machineSeatedRowThumb,
+  "builtin:one-arm-dumbbell-row": oneArmDumbbellRowThumb,
+  "builtin:one-arm-side-laterals": oneArmSideLateralsThumb,
+  "builtin:overhead-press": overheadPressThumb,
+  "builtin:parallel-bar-dip": parallelBarDipThumb,
+  "builtin:preacher-curl": preacherCurlThumb,
+  "builtin:pull-up": pullUpThumb,
+  "builtin:pushups": pushupsThumb,
+  "builtin:rack-pulls": rackPullsThumb,
+  "builtin:reverse-barbell-curl": reverseBarbellCurlThumb,
+  "builtin:romanian-deadlift": romanianDeadliftThumb,
+  "builtin:seated-barbell-military-press": seatedBarbellMilitaryPressThumb,
+  "builtin:seated-cable-rows": seatedCableRowsThumb,
+  "builtin:seated-leg-curl": seatedLegCurlThumb,
+  "builtin:seated-side-lateral-raise": seatedSideLateralRaiseThumb,
+  "builtin:single-leg-glute-bridge": singleLegGluteBridgeThumb,
+  "builtin:split-squat-with-dumbbells": splitSquatWithDumbbellsThumb,
+  "builtin:standing-dumbbell-calf-raise": standingDumbbellCalfRaiseThumb,
+  "builtin:standing-dumbbell-press": standingDumbbellPressThumb,
+  "builtin:standing-dumbbell-triceps-extension": standingDumbbellTricepsExtensionThumb,
+  "builtin:stiff-legged-barbell-deadlift": stiffLeggedBarbellDeadliftThumb,
+  "builtin:sumo-deadlift": sumoDeadliftThumb,
+  "builtin:trap-bar-deadlift": trapBarDeadliftThumb,
+  "builtin:triceps-pushdown": tricepsPushdownThumb,
+  "builtin:triceps-pushdown-rope-attachment": tricepsPushdownRopeAttachmentThumb,
+  "builtin:upright-barbell-row": uprightBarbellRowThumb,
+  "builtin:wall-sit": wallSitThumb,
+  "builtin:wide-grip-lat-pulldown": wideGripLatPulldownThumb,
+  "builtin:zottman-curl": zottmanCurlThumb,
+};
+
 /** The exercise's image, or null when it has none (most exercises, and every custom one). */
 export function exerciseImage(id: string): ImageSourcePropType | null {
   return Object.hasOwn(IMAGES, id) ? (IMAGES[id] ?? null) : null;
+}
+
+/** The exercise's thumbnail, or null when it has no image. */
+export function exerciseThumb(id: string): ImageSourcePropType | null {
+  return Object.hasOwn(THUMBS, id) ? (THUMBS[id] ?? null) : null;
 }
