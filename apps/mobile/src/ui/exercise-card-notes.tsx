@@ -14,6 +14,7 @@ export function ExerciseCardNotes({
   exerciseName,
   workoutId,
   notes,
+  commentsById,
   add = true,
   pinnedOnly = false,
   variant = "inset",
@@ -26,6 +27,7 @@ export function ExerciseCardNotes({
   workoutId: string | null;
   /** The notes as the card lists them; a plain list shows them in that order without labels. */
   notes: CardNotes | readonly ExerciseNote[] | undefined;
+  commentsById?: ReadonlyMap<string, NoteComment[]> | undefined;
   add?: boolean;
   /** A new note is always pinned, as on the exercise's own screen. */
   pinnedOnly?: boolean;
@@ -40,10 +42,8 @@ export function ExerciseCardNotes({
     : "pinned" in notes
       ? [...notes.pinned, ...notes.lastTime, ...notes.today]
       : notes;
-  // Read only when there is a note to show: a card without notes, or one that opens before the
-  // workout's notes are read, lists no comments.
   const comments =
-    all.length > 0 ? commentsByNote(store, "exercise_note") : new Map<string, NoteComment[]>();
+    commentsById ?? (all.length > 0 ? commentsByNote(store, "exercise_note") : undefined);
   const lastTime = new Set(notes && "pinned" in notes ? notes.lastTime.map((note) => note.id) : []);
   const lines: NoteLine[] = all.map((note) => ({
     id: note.id,
@@ -51,7 +51,7 @@ export function ExerciseCardNotes({
     pinned: note.pinned,
     createdAt: note.createdAt,
     agent: note.agent,
-    comments: comments.get(note.id) ?? [],
+    comments: comments?.get(note.id) ?? [],
     ...(lastTime.has(note.id) ? { label: "Last time" } : {}),
     pinTo: exerciseName,
     pinnedHint: `Shows on every ${exerciseName}`,
