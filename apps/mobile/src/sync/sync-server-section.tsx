@@ -2,6 +2,7 @@ import { fetch as expoFetch } from "expo/fetch";
 import Constants from "expo-constants";
 import { useEffect, useRef, useState } from "react";
 import { Text } from "react-native";
+import { subscribeDevicePreferences } from "../data/device-preference-store.ts";
 import { space, type } from "../theme.ts";
 import { ActionRow, SettingRow } from "../ui/choice-row.tsx";
 import { Dialog, DialogField } from "../ui/dialog.tsx";
@@ -25,8 +26,11 @@ import {
   subscribeServerChoice,
 } from "./own-server-store.ts";
 import { builtInServerConfigured, ownServerAvailable, syncServerUrl } from "./sync-config.ts";
+import { setSyncPaused, syncPaused } from "./sync-preferences.ts";
 
 const OWN_NOTE = "Changes stay on this phone while a server switch is waiting for your answer.";
+const OWN_PAUSED_NOTE =
+  "Sync is paused. New workouts and changes stay on this phone until you resume it.";
 const BUILT_IN_NOTE =
   "To sync with a server you or someone you trust runs, open the pairing link its operator gives you, or paste it here.";
 
@@ -51,8 +55,16 @@ function Section({ link }: { link: PairingLink | null }) {
     if (link) setConnecting(link);
   }, [link]);
   const builtIn = builtInServerConfigured();
+  // A paired server has no account section (that is for the build's own sign-in), so pausing and
+  // resuming sync live here for it.
+  const [, setPreferences] = useState(0);
+  useEffect(() => subscribeDevicePreferences(() => setPreferences((n) => n + 1)), []);
+  const paused = !!own && syncPaused();
   return (
-    <Group label="Sync server" footnote={problem ?? (own ? OWN_NOTE : BUILT_IN_NOTE)}>
+    <Group
+      label="Sync server"
+      footnote={problem ?? (paused ? OWN_PAUSED_NOTE : own ? OWN_NOTE : BUILT_IN_NOTE)}
+    >
       <SettingRow
         label={own ? serverLabel(own.server) : builtIn ? "Leve" : "None"}
         hint={
@@ -67,6 +79,18 @@ function Section({ link }: { link: PairingLink | null }) {
       >
         {null}
       </SettingRow>
+      {own ? (
+        <ActionRow
+          label={paused ? "Resume sync" : "Pause sync"}
+          divider
+          accessibilityHint={
+            paused
+              ? "Syncs this phone with the server again"
+              : "Stops syncing until you resume. Changes stay on this phone"
+          }
+          onPress={() => setSyncPaused(!paused)}
+        />
+      ) : null}
       <ActionRow
         label={own ? "Connect to another server" : "Connect to your own server"}
         divider
@@ -76,7 +100,11 @@ function Section({ link }: { link: PairingLink | null }) {
         <ActionRow
           label={builtIn ? "Use Leve's server" : "Disconnect"}
           divider
-          accessibilityHint="Asks first if anything on this phone hasn't synced"
+          accessibilityHint={
+            builtIn
+              ? "Asks first if anything on this phone hasn't synced"
+              : "Changes stay on this phone, and every screen says it isn't syncing"
+          }
           onPress={() => {
             try {
               chooseBuiltInServer();

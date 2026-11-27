@@ -4,7 +4,10 @@ import { act, createElement as h, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Conflict } from "../src/data/conflicts.ts";
-import { forgetDevicePreferences } from "../src/data/device-preference-store.ts";
+import {
+  forgetDevicePreferences,
+  writeDevicePreference,
+} from "../src/data/device-preference-store.ts";
 import {
   chooseBuiltInServer,
   chooseOwnServer,
@@ -12,7 +15,11 @@ import {
   ownServer,
 } from "../src/sync/own-server-store.ts";
 import { SyncHost } from "../src/sync/sync-host.tsx";
-import { signInReminderDue } from "../src/sync/sync-preferences.ts";
+import {
+  setSignedOutOnPurpose,
+  signedOutOnPurpose,
+  syncPaused,
+} from "../src/sync/sync-preferences.ts";
 import type { SyncSessionOptions, SyncStatus } from "../src/sync/sync-session.ts";
 import { clerk } from "./support/clerk-expo.ts";
 import { files } from "./support/expo-file-system.ts";
@@ -83,10 +90,12 @@ vi.mock("expo-router", () => ({
   },
   usePathname: () => route.path,
 }));
+/** Whether the build has a sync server of its own. */
+const config = vi.hoisted(() => ({ builtIn: true }));
 vi.mock("../src/sync/sync-config.ts", () => ({
   syncEnabled: () => true,
   syncServerUrl: "https://sync.test",
-  builtInServerConfigured: () => true,
+  builtInServerConfigured: () => config.builtIn,
   ownServerAvailable: () => true,
 }));
 const data = vi.hoisted(() => ({
@@ -183,6 +192,7 @@ beforeEach(() => {
   forgetDevicePreferences();
   clerk.reset();
   clerk.signedIn = true;
+  config.builtIn = true;
   Object.assign(data, {
     account: null,
     server: null,
@@ -266,25 +276,20 @@ it("asks to combine, and answers with the person's choice", async () => {
   expect(session().calls).toContain("replace");
 });
 
-it("lets the combine question wait, sending and deleting nothing", async () => {
+it("can't put off combining: signing out keeps the data here, sending and deleting nothing", async () => {
+  clerk.signedIn = true;
   await render();
   await report({ prompt: { kind: "combine" } });
-  await tap("Not now");
-  expect(screen()).toBe("");
+  expect(screen()).not.toContain("Not now");
+  expect(document.querySelector("[aria-label=Cancel]")).toBeNull();
+  await tap("Keep them here and sign out");
+  expect(clerk.calls).toContain("signOut");
   expect(session().calls).not.toContain("combine");
   expect(session().calls).not.toContain("replace");
-});
-
-it("asks the next account's question even after Not now on the last one", async () => {
+  // The phone never synced: it is simply on its own again, with nothing to say.
   await render();
-  await report({ prompt: { kind: "combine" } });
-  await tap("Not now");
   expect(screen()).toBe("");
-  clerk.userId = "user_2";
-  await render();
-  expect(session().options.account).toBe("user_2");
-  await report({ prompt: { kind: "combine" } });
-  expect(screen()).toContain("aren't in your account yet");
+  expect(data.resets).toEqual([]);
 });
 
 it("warns before another account's unsynced changes are deleted", async () => {
@@ -303,56 +308,115 @@ it("warns before another account's unsynced changes are deleted", async () => {
   expect(session().calls).not.toContain("replace");
 });
 
-it("lets the account question wait, deleting nothing", async () => {
+it("can't put off the account question, and says so when signing out fails", async () => {
+  clerk.signedIn = true;
   clerk.signOutFails = true;
   data.unsyncedCount = 2;
   await render();
   await report({ prompt: { kind: "switch", reason: "account" } });
+  expect(screen()).not.toContain("Not now");
   await tap("Keep them and sign out");
   expect(screen()).toContain("Signing out didn't work.");
-  // A failed sign-out doesn't silence the sign-in reminder.
-  expect(signInReminderDue(Date.now())).toBe(true);
-  await tap("Not now");
-  expect(screen()).toBe("");
+  // A failed sign-out isn't taken for one made on purpose.
+  expect(signedOutOnPurpose()).toBe(false);
+  // Still asking: nothing was decided.
+  expect(screen()).toContain("Delete and switch");
+  expect(session().calls).not.toContain("replace");
+  // Offline, signing out may keep failing: pausing sync is the way out, deleting nothing.
+  await tap("Pause sync");
+  expect(syncPaused()).toBe(true);
+  expect(screen()).toContain("Sync paused");
   expect(session().calls).not.toContain("replace");
 });
 
-it("waits until the workout in progress ends", async () => {
+it("says on every screen that changes kept for another account aren't syncing", async () => {
+  clerk.signedIn = true;
+  data.account = "user_0";
+  data.unsyncedCount = 2;
+  await render();
+  await report({ prompt: { kind: "switch", reason: "account" } });
+  await tap("Keep them and sign out");
+  await render();
+  expect(screen()).toContain("Signed out");
+  expect(screen()).toContain("New workouts and changes stay on this phone until you sign in.");
+  await tap("Sign in");
+  expect(route.pushed).toEqual(["/settings"]);
+});
+
+it("holds questions back only for a workout logged on this phone, and says one is waiting", async () => {
+  clerk.signedIn = true;
+  // This phone has noted that no workout of its own runs.
+  writeDevicePreference("sync.workoutHere", "");
+  // A workout started on another phone synced here: it doesn't hold anything back.
   data.workout = true;
   await render();
   await report({ prompt: { kind: "update" } });
-  expect(screen()).toBe("");
+  expect(screen()).toContain("This version of Leve can't sync anymore.");
+  expect(session().options.loggingHere?.()).toBe(false);
+
+  // Logged on this phone: nothing covers it, and a note says a question waits.
+  await act(async () => writeDevicePreference("sync.workoutHere", "w"));
+  expect(screen()).not.toContain("This version of Leve can't sync anymore.");
+  expect(screen()).toContain("Sync has a question for you. It comes up once this workout ends.");
+  expect(session().options.loggingHere?.()).toBe(true);
+
+  // Open on its live screen here counts too, even before anything is logged on it.
+  await act(async () => writeDevicePreference("sync.workoutHere", ""));
+  route.path = "/workout/active";
+  await render();
+  expect(screen()).toContain("It comes up once this workout ends.");
+
+  // Ended: the question comes up straight away.
   data.workout = false;
   await render();
   expect(screen()).toContain("This version of Leve can't sync anymore.");
-  // It can be put aside, so the app stays usable for logging, and comes back on return.
-  await tap("Not now");
-  expect(screen()).toBe("");
+});
+
+it("can't put off an update: pausing sync is the way out, and every screen says so", async () => {
+  clerk.signedIn = true;
+  await render();
+  await report({ prompt: { kind: "update" } });
+  expect(screen()).not.toContain("Not now");
+  expect(document.querySelector("[aria-label='Not now']")).toBeNull();
+  await tap("Pause sync");
+  expect(syncPaused()).toBe(true);
+  // The session stops, nothing is asked, and the note stays.
+  expect(session().calls).toContain("stop");
+  const sessionsWhilePaused = sessions.created.length;
+  expect(screen()).toContain("Sync paused");
+  expect(screen()).toContain("New workouts and changes stay on this phone until you resume.");
   await act(async () => {
     for (const listener of appState.listeners) listener("active");
   });
-  expect(screen()).toContain("This version of Leve can't sync anymore.");
+  await render();
+  expect(sessions.created).toHaveLength(sessionsWhilePaused);
+  expect(screen()).toContain("Sync paused");
+
+  await tap("Resume");
+  expect(syncPaused()).toBe(false);
+  expect(sessions.created).toHaveLength(sessionsWhilePaused + 1);
+  expect(screen()).not.toContain("Sync paused");
 });
 
-it("asks to sign in again when the sign-in ran out, and remembers later and ignore", async () => {
+it("asks to sign in again whenever the sign-in ran out, with pausing as the way out", async () => {
   data.account = "user_1";
   clerk.signedIn = false;
+  // What an earlier version's "Remind me later" or "Ignore" saved no longer holds the question back.
+  writeDevicePreference("sync.signInReminder", new Date(Date.now() + 60 * 60_000).toISOString());
   await render();
   expect(screen()).toContain("Until you sign in again, new workouts and changes stay only on this");
+  writeDevicePreference("sync.signInReminder", "off");
+  await render();
+  expect(screen()).toContain("Until you sign in again, new workouts and changes stay only on this");
+  expect(screen()).not.toContain("Remind me later");
+  expect(screen()).not.toContain("Ignore");
 
-  await tap("Remind me later");
+  await tap("Pause sync");
   await render();
-  expect(screen()).toBe("");
-  expect(signInReminderDue(Date.now())).toBe(false);
-  expect(signInReminderDue(Date.now() + 25 * 60 * 60_000)).toBe(true);
-
-  files.clear();
-  forgetDevicePreferences();
+  expect(screen()).toContain("Sync paused");
+  await tap("Resume");
   await render();
-  await tap("Ignore");
-  await render();
-  expect(screen()).toBe("");
-  expect(signInReminderDue(Date.now() + 365 * 24 * 60 * 60_000)).toBe(false);
+  expect(screen()).toContain("Your sign-in has run out.");
 });
 
 it("doesn't ask a phone that never synced to sign in", async () => {
@@ -368,6 +432,16 @@ it("signs in again from the prompt when the server refused the sign-in", async (
   expect(screen()).toContain("Your sign-in has run out.");
   await tap("Sign in with Apple");
   expect(clerk.calls).toEqual(["signOut", "apple", "setActive sess_1"]);
+});
+
+it("says on every screen when the sync server needs an update, with pausing as the way out", async () => {
+  clerk.signedIn = true;
+  await render();
+  await report({ serverOutdated: true });
+  expect(screen()).toContain("Your sync server needs an update before this phone can sync.");
+  await tap("Pause");
+  expect(syncPaused()).toBe(true);
+  expect(screen()).toContain("Sync paused");
 });
 
 it("notes a day without syncing only when changes are waiting", async () => {
@@ -411,15 +485,128 @@ describe("a server the person paired", () => {
     expect(screen()).not.toContain("Sign in again");
     await tap("Open Settings");
     expect(route.pushed).toEqual(["/settings"]);
-    expect(screen()).not.toContain("no longer accepts");
+    expect(screen()).not.toContain("Open Settings");
     expect(screen()).not.toContain("Training");
     route.path = "/settings";
     await act(async () => {
       for (const listener of appState.listeners) listener("active");
     });
-    expect(screen()).not.toContain("no longer accepts");
+    expect(screen()).toContain("Connect again in Settings using a new pairing link.");
     await report({ prompt: { kind: "combine" } });
     expect(screen()).toContain("Your account already has data");
+    expect(screen()).toContain("Pausing sync keeps them on this phone only.");
+  });
+
+  it("can't put off connecting again: leaving Settings unconnected asks again, or sync pauses", async () => {
+    chooseOwnServer(home);
+    route.path = "/";
+    await render();
+    await report({ prompt: { kind: "sign_in" } });
+    expect(screen()).not.toContain("Not now");
+    await tap("Open Settings");
+    route.path = "/history";
+    await render();
+    expect(screen()).toContain("Open Settings");
+    await tap("Open Settings");
+    route.path = "/settings";
+    await render();
+    expect(screen()).toContain("Connect again in Settings using a new pairing link.");
+    expect(screen()).not.toContain("Open Settings");
+    route.path = "/";
+    await render();
+    expect(screen()).toContain("no longer accepts this phone");
+    await tap("Pause sync");
+    await render();
+    expect(syncPaused()).toBe(true);
+    expect(screen()).toContain("Sync paused");
+  });
+
+  it("keeps never-synced data on the phone by pausing, not by leaving for another server", async () => {
+    const other = { ...home, server: "https://other.example", device: "d2" };
+    chooseOwnServer(other);
+    chooseOwnServer(home);
+    await render();
+    await report({ prompt: { kind: "combine" } });
+    expect(screen()).toContain("Pausing sync keeps them on this phone only.");
+    expect(screen()).not.toContain("disconnect");
+    expect(screen()).not.toContain("sign out");
+    await tap("Pause sync");
+    await render();
+    expect(syncPaused()).toBe(true);
+    expect(ownServer()).toEqual(home);
+    expect(session().calls).not.toContain("combine");
+    expect(session().calls).not.toContain("replace");
+    forgetDevicePreferences();
+    expect(syncPaused()).toBe(true);
+  });
+
+  it("warns when a paired Combine pause only lasts until restart and lets it be saved again", async () => {
+    const preferences = "document/leve-device-preferences.json";
+    files.set(preferences, "invalid");
+    chooseOwnServer(home);
+    await render();
+    await report({ prompt: { kind: "combine" } });
+    await tap("Pause sync");
+    expect(session().calls).toContain("stop");
+    expect(screen()).toContain("Sync can restart when you reopen the app.");
+    files.set(preferences, "{}");
+    await tap("Save pause");
+    expect(screen()).not.toContain("Sync can restart when you reopen the app.");
+    forgetDevicePreferences();
+    expect(syncPaused()).toBe(true);
+  });
+
+  it.each([false, true])(
+    "offers a way back when leaving for Leve while signed out (previous sign-out: %s)",
+    async (signedOut) => {
+      chooseOwnServer(home);
+      chooseBuiltInServer();
+      clerk.signedIn = false;
+      setSignedOutOnPurpose(signedOut);
+      data.server = home.server;
+      data.account = home.account;
+      await render();
+      expect(screen()).not.toContain("Your sign-in has run out");
+      expect(screen()).toContain("This phone's data belongs to sync.home.example");
+      await tap("Switch back");
+      expect(ownServer()).toEqual(home);
+    },
+  );
+
+  it("says so when a paired server was left in a build without a server of its own", async () => {
+    config.builtIn = false;
+    chooseOwnServer(home);
+    chooseBuiltInServer();
+    data.server = home.server;
+    data.account = home.account;
+    await render();
+    expect(screen()).toContain("Not syncing");
+    expect(screen()).toContain("This phone's data belongs to sync.home.example");
+    keychain.failWrites = true;
+    await tap("Switch back");
+    expect(ownServer()).toBeNull();
+    expect(screen()).toContain("Switching back didn't work. Try again.");
+    keychain.failWrites = false;
+    await tap("Switch back");
+    await render();
+    expect(ownServer()).toEqual(home);
+    expect(session().options).toMatchObject({ server: home.server });
+  });
+
+  it("offers pausing sync, not Not now, when another server's data has nowhere to go back to", async () => {
+    chooseOwnServer(home);
+    await render();
+    // The data belongs to a server this phone no longer has a pairing for.
+    data.server = "https://gone.example";
+    data.account = "someone";
+    data.unsyncedCount = 1;
+    await report({ prompt: { kind: "switch", reason: "server" } });
+    expect(screen()).toContain("Bring them to this server");
+    expect(screen()).not.toContain("Not now");
+    expect(screen()).not.toContain("switch back");
+    await tap("Pause sync");
+    await render();
+    expect(syncPaused()).toBe(true);
   });
 
   it("keeps unsynced changes by switching back to the server they belong to", async () => {
@@ -432,7 +619,7 @@ describe("a server the person paired", () => {
     await report({ prompt: { kind: "switch", reason: "server" } });
     expect(screen()).toContain("2 changes that haven't reached the previous server");
     expect(screen()).not.toContain("Keep them and sign out");
-    await tap("Switch back");
+    await tap("Keep them and switch back");
     // Back on the build's own server, signed in with Clerk.
     expect(ownServer()).toBeNull();
     expect(session().options).toMatchObject({ server: "https://sync.test", account: "user_1" });
@@ -446,7 +633,7 @@ describe("a server the person paired", () => {
     data.account = home.account;
     data.unsyncedCount = 1;
     await report({ prompt: { kind: "switch", reason: "server" } });
-    await tap("Switch back");
+    await tap("Keep them and switch back");
     expect(ownServer()).toEqual(home);
     expect(session().options).toMatchObject({ server: home.server });
   });
@@ -492,7 +679,7 @@ describe("a server the person paired", () => {
     data.unsyncedCount = 1;
     await report({ prompt: { kind: "switch", reason: "server" } });
     expect(screen()).toContain("Bring them to this server");
-    expect(screen()).not.toContain("Switch back");
+    expect(screen()).not.toContain("switch back");
   });
 
   it("syncs nowhere while the keychain can't be read", async () => {
@@ -537,7 +724,7 @@ describe("a server the person paired", () => {
     chooseOwnServer(home);
     await render();
     await report({ prompt: { kind: "switch", reason: "server" } });
-    expect(screen()).not.toContain("Switch back");
+    expect(screen()).not.toContain("switch back");
   });
 
   it("offers to bring the phone's data along to another server, even with all of it synced", async () => {
@@ -639,11 +826,13 @@ it("goes through conflicts one at a time, with nothing chosen in advance", async
   expect(screen()).toBe("");
 });
 
-it("waits for the workout to end, and says why a choice was refused", async () => {
+it("waits for this phone's workout to end, and says why a choice was refused", async () => {
   pending.conflicts = [folderConflict("routine_folder:f1", "Push")];
   data.workout = true;
+  writeDevicePreference("sync.workoutHere", "w");
   await render();
-  expect(screen()).toBe("");
+  expect(screen()).not.toContain("Changed in two places");
+  expect(screen()).toContain("It comes up once this workout ends.");
   data.workout = false;
   await render();
   pending.refuse = "This changed in the meantime. Have a look at the latest versions.";
@@ -655,7 +844,7 @@ it("waits for the workout to end, and says why a choice was refused", async () =
   expect(screen()).toContain("Choose a version");
 });
 
-it("can't keep a change the server refused", async () => {
+it("can't keep a phone version that can't be kept", async () => {
   pending.conflicts = [
     {
       ...folderConflict("routine_folder:f1", "Push"),
@@ -682,6 +871,59 @@ it("can't keep a change the server refused", async () => {
   expect(pending.settled).toEqual([["routine_folder:f1", "account"]]);
 });
 
+it("offers trying a refused change again, saying so, with pausing still on offer", async () => {
+  clerk.signedIn = true;
+  pending.conflicts = [
+    {
+      ...folderConflict("routine_folder:f1", "Push"),
+      phone: {
+        lines: [{ label: "Name", value: "Push B (couldn't be saved)" }],
+        choosable: true,
+        confirm: "Try again",
+        retry: "Your account didn't take this change. Trying again sends it unchanged.",
+      },
+      account: {
+        lines: [{ label: "Name", value: "Push" }],
+        choosable: true,
+        confirm: "Undo my change",
+      },
+    },
+  ];
+  await render();
+  expect(screen()).toContain("Trying again sends it unchanged.");
+  expect(screen()).toContain("Pause sync");
+  await tap("On this phone: Name Push B (couldn't be saved)");
+  await tap("Try again");
+  expect(pending.settled).toEqual([["routine_folder:f1", "phone"]]);
+});
+
+it("offers pausing sync for a conflict whose phone version can't be kept yet", async () => {
+  clerk.signedIn = true;
+  pending.conflicts = [
+    {
+      ...folderConflict("routine_folder:f1", "Push"),
+      phone: {
+        lines: [{ label: "Name", value: "Push B" }],
+        choosable: false,
+        confirm: "Keep this version",
+        why: "Your sync server needs an update before it can take this version.",
+      },
+    },
+  ];
+  await render();
+  expect(screen()).toContain("Your sync server needs an update");
+  await tap("Pause sync");
+  expect(pending.settled).toEqual([]);
+  expect(screen()).not.toContain("Changed in two places");
+  expect(screen()).toContain("Sync paused");
+  // A conflict both sides of which can be kept offers no pause.
+  await tap("Resume");
+  pending.conflicts = [folderConflict("routine_folder:f2", "Pull")];
+  await render();
+  expect(screen()).toContain("Pull B");
+  expect(screen()).not.toContain("Pause sync");
+});
+
 it("leads a conflict reviewed on its screen there, stays away meanwhile, and asks again on leaving", async () => {
   pending.conflicts = [
     {
@@ -695,8 +937,9 @@ it("leads a conflict reviewed on its screen there, stays away meanwhile, and ask
   ];
   await render();
   expect(screen()).toContain("Deleted in your account, but this phone has changes in it.");
-  // No choosing here, and no way around it but reviewing.
+  // No choosing here: reviewing, or pausing sync if the review can't settle it yet.
   expect(screen()).not.toContain("Choose a version");
+  expect(screen()).toContain("Pause sync");
   await tap("Review it");
   expect(route.pushed).toEqual([{ pathname: "/workout/[id]", params: { id: "w1" } }]);
   expect(screen()).toBe("");
@@ -729,4 +972,59 @@ it("asks again after leaving a review screen it was already on", async () => {
   await render();
   await render();
   expect(screen()).toContain("Review it");
+});
+
+it("asks once more, with a copy offered, before deleting work kept nowhere else", async () => {
+  pending.conflicts = [
+    {
+      ...folderConflict("workout:w1|workout:w1", "Offline Day"),
+      phone: {
+        lines: [{ label: "Holds", value: "1 exercise · 3 sets" }],
+        choosable: false,
+        confirm: "Keep the workout",
+        why: "This phone's change couldn't be saved in your account.",
+      },
+      account: {
+        lines: [{ label: "Workout", value: "Not in your account" }],
+        choosable: true,
+        confirm: "Delete it",
+        warning:
+          "Your account has no copy of this phone's version, so deleting it can't be undone.",
+      },
+    },
+  ];
+  await render();
+  await tap("In your account: Workout Not in your account");
+  await tap("Delete it");
+  expect(pending.settled).toEqual([]);
+  expect(screen()).toContain("so deleting it can't be undone");
+  // A double tap doesn't count as the second confirm.
+  await tap("Delete it for good");
+  expect(pending.settled).toEqual([]);
+  await tap("Save a copy first");
+  expect(data.exported).toBe(1);
+  expect(screen()).toContain("A copy is saved.");
+  await act(() => new Promise((resolve) => setTimeout(resolve, 650)));
+  await tap("Delete it for good");
+  expect(pending.settled).toEqual([["workout:w1|workout:w1", "account"]]);
+});
+
+it("shows the same note on screens drawn above the app, such as the live workout", async () => {
+  clerk.signedIn = true;
+  const { SyncNoteBanner } = await import("../src/sync/sync-note.tsx");
+  const above = document.createElement("div");
+  document.body.append(above);
+  const modal = createRoot(above);
+  await act(async () => modal.render(h(SyncNoteBanner)));
+  expect(above.textContent).toBe("");
+  data.workout = true;
+  writeDevicePreference("sync.workoutHere", "w");
+  await render();
+  await report({ prompt: { kind: "update" } });
+  expect(above.textContent).toContain("It comes up once this workout ends.");
+  data.workout = false;
+  await render();
+  expect(above.textContent).toBe("");
+  await act(async () => modal.unmount());
+  above.remove();
 });

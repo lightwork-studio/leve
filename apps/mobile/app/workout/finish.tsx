@@ -14,7 +14,8 @@ import {
 } from "../../src/data/workout-review.ts";
 import { autoTitle, setLabel, setNumbers, setProgress } from "../../src/model/live.ts";
 import { measurementName, missingMeasurements } from "../../src/model/log-values.ts";
-import { radius, space, type } from "../../src/theme.ts";
+import { SyncNoteBanner } from "../../src/sync/sync-note.tsx";
+import { gutter, radius, space, type } from "../../src/theme.ts";
 import { DestructiveButton } from "../../src/ui/action-sheet.tsx";
 import { afterFeedback } from "../../src/ui/after-feedback.ts";
 import { ToggleRow } from "../../src/ui/choice-row.tsx";
@@ -196,6 +197,8 @@ export default function FinishScreen() {
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top + space.sm }]}>
+      {/* This screen covers the app's own sync note: a question waiting, sync paused. */}
+      <SyncNoteBanner style={styles.syncNote} />
       <View style={styles.sheet}>
         <View style={styles.grabber} />
         <View style={styles.bar}>
@@ -493,6 +496,7 @@ function FinishReadouts({
 
 const sheet = themedStyles((c) => ({
   screen: { flex: 1, backgroundColor: c.bg },
+  syncNote: { paddingHorizontal: gutter.group - 2, paddingBottom: space.sm },
   emptyState: { padding: space.xl, gap: space.lg },
   sheet: {
     flex: 1,

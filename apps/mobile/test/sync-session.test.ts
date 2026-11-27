@@ -29,6 +29,8 @@ let tokens: Map<string, string>;
 let offline: boolean;
 /** When set, the server answers update_required. */
 let tooOld: boolean;
+/** When set, the server answers that it is the one that needs an update. */
+let serverTooOld: boolean;
 let requests: string[];
 /** Called as a hello goes out, so a test can act in the middle of connecting. */
 let onHello: (() => void) | null;
@@ -49,6 +51,7 @@ beforeEach(() => {
   ]);
   offline = false;
   tooOld = false;
+  serverTooOld = false;
   requests = [];
   onHello = null;
   sessions = [];
@@ -72,10 +75,11 @@ const connect =
     if (!account) {
       return { status: 401, body: { error: { code: "unauthorized", message: "sign in again" } } };
     }
-    if (tooOld) {
+    if (tooOld || serverTooOld) {
+      const update = serverTooOld ? "server" : "client";
       return {
         status: 400,
-        body: { error: { code: "update_required", message: "update", update: "client" } },
+        body: { error: { code: "update_required", message: "update", update } },
       };
     }
     return serviceTransport(service, account)(path, body);
@@ -110,6 +114,7 @@ function start(
   options: {
     token?: (fresh: boolean) => Promise<string | null>;
     timing?: Partial<SyncTiming>;
+    loggingHere?: () => boolean;
     server?: string;
   } = {},
 ) {
@@ -128,6 +133,7 @@ function start(
       events.startedOver += 1;
     },
     connect: connect as (server: string, headers: unknown) => Transport,
+    ...(options.loggingHere ? { loggingHere: options.loggingHere } : {}),
     timing: {
       offline: [20],
       error: 20,
@@ -288,6 +294,34 @@ it("never takes a workout in progress away, even when all of it synced", async (
   // The finished workout hasn't synced: now it asks.
   await until(() => session.status.prompt !== null);
   expect(session.status.prompt).toEqual({ kind: "switch", reason: "account" });
+});
+
+it("doesn't hold a switch back for a workout logged on another phone", async () => {
+  const store = await phone();
+  store.put("workout", "w-live", {
+    title: "Push",
+    startedAt: "2026-11-25T08:00:00.000Z",
+    endedAt: null,
+  });
+  const alice = start(store, "alice").session;
+  await until(() => store.get("workout", "w-live")?.status === "synced");
+  alice.stop();
+
+  // Running on another of Alice's phones, not logged here: everything here is in her account.
+  const free = start(store, "bob", { loggingHere: () => false });
+  await until(() => free.events.startedOver > 0);
+  free.session.stop();
+
+  // Logged here: held back, and the status says so, so the app can say a question waits.
+  let logging = true;
+  const held = start(store, "bob", { loggingHere: () => logging });
+  await until(() => held.session.status.heldForWorkout === true);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  expect(held.events.startedOver).toBe(0);
+  expect(requests.filter((line) => line.startsWith("bob"))).toEqual([]);
+  logging = false;
+  await until(() => held.events.startedOver > 0);
+  expect(held.session.status.heldForWorkout).toBe(false);
 });
 
 it("sends nothing more once stopped, even from a sync already under way", async () => {
@@ -467,6 +501,17 @@ it("asks for an update when the server no longer syncs with this version", async
   const { session } = start(store, "alice");
   await until(() => session.status.prompt !== null);
   expect(session.status.prompt).toEqual({ kind: "update" });
+});
+
+it("says straight away when the server needs an update, keeps checking, and clears it once it syncs", async () => {
+  const store = await phone();
+  serverTooOld = true;
+  const { session } = start(store, "alice");
+  await until(() => session.status.serverOutdated === true);
+  expect(session.status.prompt).toBeNull();
+  serverTooOld = false;
+  await until(() => session.status.lastSynced !== null);
+  expect(session.status.serverOutdated).toBe(false);
 });
 
 it("sends an edit soon after it is made, and hears about changes made elsewhere", async () => {

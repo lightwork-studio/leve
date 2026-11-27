@@ -16,6 +16,7 @@ import { newId } from "./ids.ts";
 import { PREVIEW_STORAGE } from "./preview-storage.ts";
 import { applyAppChange } from "./read.ts";
 import { seedSyntheticData, wantsSampleData } from "./seed.ts";
+import { noteWorkoutHere } from "./workout-here.ts";
 
 const DATABASE_PATH = `/${PREVIEW_STORAGE}/device.db`;
 
@@ -108,6 +109,8 @@ export function AppDataProvider({
     const store = current.current;
     if (!store) throw new Error("The data isn't open");
     const { result, historyVersion } = applyAppChange(store, fn, scope);
+    // Started or logged here: this phone's workout, which holds sync questions back until it ends.
+    if (scope === "active-workout") noteWorkoutHere(store);
     setState((previous) =>
       previous.status === "ready"
         ? {

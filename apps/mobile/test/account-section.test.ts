@@ -5,7 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AccountProvider } from "../src/account/account-provider.tsx";
 import { AccountSection, signInProblem } from "../src/account/account-section.tsx";
-import { signInReminderDue } from "../src/sync/sync-preferences.ts";
+import { signedOutOnPurpose, syncPaused } from "../src/sync/sync-preferences.ts";
 import { ClerkAPIResponseError, clerk } from "./support/clerk-expo.ts";
 import { files } from "./support/expo-file-system.ts";
 
@@ -144,7 +144,7 @@ it("in a build that syncs, warns before signing out with unsynced changes", asyn
   expect(text()).toContain("Sign in to back up your workouts");
   await tap("Sign in with Apple");
   expect(text()).toContain("Your workouts sync with this account.");
-  expect(signInReminderDue(Date.now())).toBe(true);
+  expect(signedOutOnPurpose()).toBe(false);
 
   syncing.unsynced = 2;
   await tap("Sign out");
@@ -165,7 +165,7 @@ it("in a build that syncs, warns before signing out with unsynced changes", asyn
   expect(clerk.calls.at(-1)).toBe("signOut");
   expect(dialog()).toBeNull();
   // Signed out on purpose: the app won't ask to sign in again.
-  expect(signInReminderDue(Date.now())).toBe(false);
+  expect(signedOutOnPurpose()).toBe(true);
 
   // Nothing waiting: signing out doesn't ask.
   syncing.unsynced = 0;
@@ -173,6 +173,18 @@ it("in a build that syncs, warns before signing out with unsynced changes", asyn
   await tap("Sign out");
   expect(clerk.calls.at(-1)).toBe("signOut");
   expect(dialog()).toBeNull();
+});
+
+it("in a build that syncs, pauses and resumes sync, and says while it is paused", async () => {
+  syncing.on = true;
+  await render();
+  await tap("Sign in with Apple");
+  await tap("Pause sync");
+  expect(syncPaused()).toBe(true);
+  expect(text()).toContain("Sync is paused.");
+  await tap("Resume sync");
+  expect(syncPaused()).toBe(false);
+  expect(text()).toContain("Your workouts sync with this account.");
 });
 
 it("stays quietly signed out when the Apple sheet is dismissed", async () => {

@@ -7,9 +7,10 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { Platform, Text, View } from "react-native";
 import { useAppData } from "../data/app-data.tsx";
+import { subscribeDevicePreferences } from "../data/device-preference-store.ts";
 import { ownServer, subscribeServerChoice } from "../sync/own-server-store.ts";
 import { ownServerAvailable, syncEnabled } from "../sync/sync-config.ts";
-import { setSignInReminder } from "../sync/sync-preferences.ts";
+import { setSignedOutOnPurpose, setSyncPaused, syncPaused } from "../sync/sync-preferences.ts";
 import { unsyncedChanges } from "../sync/sync-session.ts";
 import { radius, space, type } from "../theme.ts";
 import { ActionRow, SettingRow } from "../ui/choice-row.tsx";
@@ -32,6 +33,8 @@ const SYNC_SIGNED_OUT_NOTE =
   "Sign in to back up your workouts and have them on every phone you sign in on. Everything works without an account.";
 const SYNC_SIGNED_IN_NOTE =
   "Your workouts sync with this account. Signing out keeps everything on this phone.";
+const SYNC_PAUSED_NOTE =
+  "Sync is paused. New workouts and changes stay on this phone until you resume it.";
 const SIGN_OUT_FAILED = "Signing out didn't work. Check the connection and try again.";
 
 /** The account in Settings: Sign in with Apple, or who is signed in and a way to sign out. */
@@ -58,6 +61,10 @@ function Account() {
   /** Changes that would wait for this account, asked about before signing out. */
   const [unsynced, setUnsynced] = useState<number | null>(null);
   const working = useRef(false);
+  // Pausing from the sync question or the banner shows here too.
+  const [, setPreferences] = useState(0);
+  useEffect(() => subscribeDevicePreferences(() => setPreferences((n) => n + 1)), []);
+  const paused = syncing && syncPaused();
 
   const run = async (work: () => Promise<void>, failed: (error: unknown) => string) => {
     if (working.current) return;
@@ -81,20 +88,20 @@ function Account() {
     run(async () => {
       // A dismissed sheet has nothing to report.
       if (!(await appleSignIn())) return;
-      setSignInReminder("");
+      setSignedOutOnPurpose(false);
       haptic.success();
     }, signInProblem);
 
   const signOutNow = () =>
     run(
       async () => {
-        // Signed out on purpose: don't ask to sign in again. Set first, so the question can't
-        // flash up between signing out and this.
-        setSignInReminder("off");
+        // Signed out on purpose: don't ask to sign in again (every screen says it isn't syncing).
+        // Set first, so the question can't flash up between signing out and this.
+        setSignedOutOnPurpose(true);
         try {
           await signOut();
         } catch (error) {
-          setSignInReminder("");
+          setSignedOutOnPurpose(false);
           throw error;
         }
       },
@@ -113,10 +120,27 @@ function Account() {
   if (isSignedIn) {
     const email = user?.primaryEmailAddress?.emailAddress;
     return (
-      <Group label="Account" footnote={problem ?? (syncing ? SYNC_SIGNED_IN_NOTE : SIGNED_IN_NOTE)}>
+      <Group
+        label="Account"
+        footnote={
+          problem ?? (paused ? SYNC_PAUSED_NOTE : syncing ? SYNC_SIGNED_IN_NOTE : SIGNED_IN_NOTE)
+        }
+      >
         <SettingRow label="Signed in with Apple" {...(email ? { hint: email } : {})}>
           {null}
         </SettingRow>
+        {syncing ? (
+          <ActionRow
+            label={paused ? "Resume sync" : "Pause sync"}
+            divider
+            accessibilityHint={
+              paused
+                ? "Syncs this phone with your account again"
+                : "Stops syncing until you resume. Changes stay on this phone"
+            }
+            onPress={() => setSyncPaused(!paused)}
+          />
+        ) : null}
         <ActionRow
           label={busy ? "Signing out…" : "Sign out"}
           divider

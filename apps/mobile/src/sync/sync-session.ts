@@ -34,6 +34,16 @@ export interface SyncStatus {
   lastSynced: number | null;
   /** When syncing started failing, if it has failed since the last sync. */
   failingSince: number | null;
+  /**
+   * The sync server is older than this app accepts: nothing syncs until it is updated. The session
+   * keeps checking, and the app says so on every screen.
+   */
+  serverOutdated?: boolean;
+  /**
+   * Replacing this phone's data for another account waits for the workout being logged here to
+   * end. Nothing syncs meanwhile, so the app says a question is waiting.
+   */
+  heldForWorkout?: boolean;
 }
 
 export interface SyncSessionOptions {
@@ -55,6 +65,12 @@ export interface SyncSessionOptions {
    */
   startOver(): void;
   lastSynced?: number | null;
+  /**
+   * Whether a workout is being logged on this phone, which replacing its data must never take
+   * away. Defaults to any workout in progress; the app counts only one logged here, since another
+   * phone's workout synced here would otherwise hold the switch back for as long as it runs.
+   */
+  loggingHere?: () => boolean;
   /** Builds the transport; tests reach an in-process server. */
   connect?: (server: string, headers: RequestHeaders) => Transport;
   now?: () => number;
@@ -379,8 +395,13 @@ export class SyncSession {
         }
       }
     } else if (state.account !== this.#options.account || state.server !== this.#options.server) {
-      // Never take a workout in progress away; look again once it ends.
-      if (store.activeWorkout()) return this.#timing.busy;
+      // Never take a workout being logged here away; look again once it ends.
+      const logging = this.#options.loggingHere ?? (() => store.activeWorkout() !== null);
+      if (logging()) {
+        if (!this.#status.heldForWorkout) this.#setStatus({ heldForWorkout: true });
+        return this.#timing.busy;
+      }
+      if (this.#status.heldForWorkout) this.#setStatus({ heldForWorkout: false });
       const otherServer = state.server !== this.#options.server;
       // Another server: ask, even with everything synced, since the person may want to bring the
       // phone's data along rather than start from what the new server holds.
@@ -422,6 +443,7 @@ export class SyncSession {
         this.#setStatus({
           lastSynced: this.#now(),
           failingSince: null,
+          serverOutdated: false,
           ...(this.#status.prompt?.kind === "sign_in" ? { prompt: null } : {}),
         });
         return null;
@@ -444,6 +466,7 @@ export class SyncSession {
           return null;
         }
         this.#options.log?.("sync paused: the server needs an update");
+        if (!this.#status.serverOutdated) this.#setStatus({ serverOutdated: true });
         return this.#retryAfter(this.#timing.serverUpdate);
       case "error":
         this.#options.log?.(`sync failed: ${outcome.error}`);

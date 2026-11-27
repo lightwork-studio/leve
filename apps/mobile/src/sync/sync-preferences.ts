@@ -1,33 +1,48 @@
-import { readDevicePreference, writeDevicePreference } from "../data/device-preference-store.ts";
+import {
+  hasUnsavedDevicePreference,
+  readDevicePreference,
+  writeDevicePreference,
+} from "../data/device-preference-store.ts";
 
 // Sync's own notes on this phone, kept beside the other device preferences and never synced.
 
-const SIGN_IN_REMINDER = "sync.signInReminder";
+/**
+ * Written only by a deliberate sign-out. Earlier versions kept "sync.signInReminder" instead, which
+ * "Ignore" and "Remind me later" on the sign-in question wrote too. It is no longer read, so
+ * whatever it holds, a lapsed sign-in asks again (once, for someone who had signed out on purpose).
+ */
+const SIGNED_OUT = "sync.signedOut";
+const PAUSED = "sync.paused";
 const LAST_SYNCED = "sync.lastSynced";
 
-/** How long "Remind me later" waits before asking to sign in again. */
-export const REMIND_LATER_MS = 24 * 60 * 60_000;
-
 /**
- * Whether to ask to sign in again now: not after the person signed out on purpose or chose to
- * ignore it, and not before a "Remind me later" has run out.
+ * Whether the person signed out on purpose (from Settings, or to keep data that isn't the signed-in
+ * account's). Then the app doesn't ask them to sign in again: it says, on every screen, that this
+ * phone's data isn't syncing. A sign-in that ran out by itself always asks.
  */
-export function signInReminderDue(now: number): boolean {
-  const value = readDevicePreference(SIGN_IN_REMINDER);
-  if (value === "off") return false;
-  if (typeof value === "string" && value) {
-    const after = Date.parse(value);
-    if (Number.isFinite(after) && after > now) return false;
-  }
-  return true;
+export function signedOutOnPurpose(): boolean {
+  return readDevicePreference(SIGNED_OUT) === true;
 }
 
-/** "off": don't ask (signed out on purpose, or ignored). A time: ask again after it. "": ask. */
-export function setSignInReminder(value: "off" | "" | number): void {
-  writeDevicePreference(
-    SIGN_IN_REMINDER,
-    typeof value === "number" ? new Date(value).toISOString() : value,
-  );
+export function setSignedOutOnPurpose(value: boolean): void {
+  writeDevicePreference(SIGNED_OUT, value);
+}
+
+/**
+ * Whether the person paused sync: the way out of a question that can't be answered yet, such as an
+ * update this phone can't install right now. Nothing syncs and nothing is asked until they resume,
+ * and every screen says so.
+ */
+export function syncPaused(): boolean {
+  return readDevicePreference(PAUSED) === true;
+}
+
+export function syncPauseIsTemporary(): boolean {
+  return hasUnsavedDevicePreference(PAUSED);
+}
+
+export function setSyncPaused(value: boolean): void {
+  writeDevicePreference(PAUSED, value);
 }
 
 export function readLastSynced(): number | null {

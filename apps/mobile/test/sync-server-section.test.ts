@@ -3,12 +3,14 @@
 import { act, createElement as h, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { forgetDevicePreferences } from "../src/data/device-preference-store.ts";
 import {
   chooseOwnServer,
   forgetServerChoice,
   ownServer,
   previousServer,
 } from "../src/sync/own-server-store.ts";
+import { syncPaused } from "../src/sync/sync-preferences.ts";
 import { SyncServerSection } from "../src/sync/sync-server-section.tsx";
 import { keychain } from "./support/expo-secure-store.ts";
 
@@ -170,6 +172,19 @@ it("goes back to the build's own server, remembering the paired one", async () =
   expect(ownServer()).toBeNull();
   expect(previousServer()).toEqual(home);
   expect(screen()).toContain("sync.leve.example");
+});
+
+it("pauses and resumes sync with a paired server, which has no account section", async () => {
+  forgetDevicePreferences();
+  await render();
+  expect(screen()).not.toContain("Pause sync");
+  chooseOwnServer({ server: "https://sync.home.example", account: "a", device: "d", token: "t" });
+  await render();
+  await tap("Pause sync");
+  expect(syncPaused()).toBe(true);
+  expect(screen()).toContain("Sync is paused.");
+  await tap("Resume sync");
+  expect(syncPaused()).toBe(false);
 });
 
 it("offers to disconnect when the build has no server of its own, and is absent where not offered", async () => {

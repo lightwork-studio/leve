@@ -6,7 +6,7 @@ import {
 } from "expo-apple-authentication";
 import { router, usePathname } from "expo-router";
 import { channel } from "expo-updates";
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { AppState, Linking, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { signInProblem, useAppleSignIn } from "../account/apple-sign-in.ts";
@@ -14,6 +14,7 @@ import { buildInfo } from "../build-info.ts";
 import { useAppData } from "../data/app-data.tsx";
 import { conflicts, type ReviewTarget } from "../data/conflicts.ts";
 import { subscribeDevicePreferences } from "../data/device-preference-store.ts";
+import { startNotingWorkoutHere, workoutHere } from "../data/workout-here.ts";
 import { gutter, radius, space, type } from "../theme.ts";
 import { Button } from "../ui/buttons.tsx";
 import { Dialog } from "../ui/dialog.tsx";
@@ -33,11 +34,14 @@ import {
   syncEnabled,
   syncServerUrl,
 } from "./sync-config.ts";
+import { publishSyncNote, type SyncNote } from "./sync-note.tsx";
 import {
-  REMIND_LATER_MS,
   readLastSynced,
-  setSignInReminder,
-  signInReminderDue,
+  setSignedOutOnPurpose,
+  setSyncPaused,
+  signedOutOnPurpose,
+  syncPaused,
+  syncPauseIsTemporary,
   writeLastSynced,
 } from "./sync-preferences.ts";
 import { SyncSession, type SyncStatus, unsyncedChanges } from "./sync-session.ts";
@@ -62,19 +66,29 @@ function workoutCount(store: ReturnType<typeof useAppData>["store"]): number {
   return Number(store.db.get("SELECT count(*) AS n FROM records WHERE kind = 'workout'")?.n ?? 0);
 }
 
+/** Paths of the workout's own screens, where nothing may cover the logging. */
+const LOGGING_PATHS = new Set(["/workout/active", "/workout/finish"]);
+
+/** Where a paired server is connected again. */
+const SETTINGS = "/settings";
+
 /**
- * Syncs this phone with the signed-in account while the app runs, and asks only when the person
- * has to decide something: whether to combine this phone's data with an account that has data,
- * whether to delete unsynced changes when another account signs in, to sign in again, or to update
- * the app. Being offline or a server that is briefly down shows nothing; only a day without
- * syncing does, as a note. Nothing is asked during a workout: questions wait until it ends.
+ * Syncs this phone with the signed-in account while the app runs. It never stops silently:
+ * anything that stops sync, for the whole app or for one record, is put to the person, and can't
+ * be put off. It asks whether to combine this phone's data with an account that has data, whether
+ * to delete unsynced changes when another account signs in, to sign in again, to update the app,
+ * and about each conflict. Where an answer can't be given yet, the way out is pausing sync (or,
+ * for another account's data, signing out), and while sync isn't running every screen says so.
+ * Being offline or a server that is briefly down shows nothing; only a day without syncing does,
+ * as a note. Nothing covers a workout being logged on this phone: its questions wait, said in a
+ * note, until it ends.
  */
 export function SyncHost() {
   const own = useOwnServer();
   // If the keychain is locked, wait before choosing which account to sync.
-  if (own === undefined || !syncEnabled()) return null;
+  if (own === undefined) return null;
   // A new pairing is a new session, even with the same account id.
-  if (own) {
+  if (own && syncEnabled()) {
     const key = `${own.server} ${own.device}`;
     return builtInServerConfigured() ? (
       <PairedSyncWithClerk key={key} own={own} />
@@ -82,8 +96,56 @@ export function SyncHost() {
       <Sync key={key} connection={ownConnection(own)} />
     );
   }
-  if (!builtInServerConfigured()) return null;
-  return <ClerkSync />;
+  if (builtInServerConfigured() && syncEnabled()) return <ClerkSync />;
+  // No server to sync with: a paired one was left in a build without one of its own. Data that
+  // belongs to an account says so, never silently.
+  return ownServerAvailable() ? <Disconnected /> : null;
+}
+
+/**
+ * This phone's data belongs to a server it isn't syncing with now (left in Settings, or the
+ * build's own server chosen without signing in): a note on every screen, with the way back.
+ */
+function useElsewhereNote(
+  bound: { server: string | null; account: string | null } | null,
+): SyncNote | null {
+  const [failedServer, setFailedServer] = useState<string | null>(null);
+  if (!bound || bound.server === null || bound.account === null) return null;
+  const server = bound.server;
+  const label = serverLabel(server);
+  const canSwitchBack = switchesBackToData(bound, null);
+  const problem =
+    canSwitchBack && failedServer === server ? " Switching back didn't work. Try again." : "";
+  return {
+    label: "Not syncing",
+    message: `This phone's data belongs to ${label}. Changes stay on this phone until it syncs there again.${problem}`,
+    action: canSwitchBack
+      ? {
+          label: "Switch back",
+          hint: `Returns to ${label}`,
+          onPress: () => {
+            try {
+              switchBack();
+              setFailedServer(null);
+            } catch {
+              setFailedServer(server);
+            }
+          },
+        }
+      : {
+          label: "Settings",
+          hint: "Opens Settings to connect a server",
+          onPress: () => router.push(SETTINGS),
+        },
+  };
+}
+
+function Disconnected() {
+  const { store } = useAppData();
+  const note = useElsewhereNote(store.syncState());
+  useEffect(() => publishSyncNote(note));
+  useEffect(() => () => publishSyncNote(null), []);
+  return note ? <NotSyncing note={note} /> : null;
 }
 
 /** Who the phone syncs as, and with which server. */
@@ -181,17 +243,14 @@ function Sync({
   const own = connection.kind === "own";
   const { store, version, change, reset, exportData } = useAppData();
   const [status, setStatus] = useState<SyncStatus>(IDLE);
-  /** "Not now" on a question: hidden until the session restarts; sync stays paused meanwhile. */
-  const [later, setLater] = useState(false);
-  const [refusedLater, setRefusedLater] = useState(false);
-  /** "Not now" on the update question: hidden until the app next comes to the front. */
-  const [updateLater, setUpdateLater] = useState(false);
   /** A conflict being reviewed on its own screen, and whether that screen has opened yet. */
   const [reviewing, setReviewing] = useState<{
     key: string;
     path: string;
     arrived: boolean;
   } | null>(null);
+  /** Settings, opened from "Connect again": on its way, or there. Leaving it asks again. */
+  const [reconnecting, setReconnecting] = useState<"going" | "there" | null>(null);
   const pathname = usePathname();
   useEffect(() => {
     setReviewing((current) => {
@@ -201,29 +260,29 @@ function Sync({
       // Left the review screen: the popup asks again if it's still unsettled.
       return current.arrived ? null : current;
     });
+    // Likewise for Settings, opened to connect a paired server again.
+    // (Anywhere else it lands, Settings included and then left, the question comes back.)
+    setReconnecting((current) => (current !== null && pathname === SETTINGS ? "there" : null));
   }, [pathname]);
-  useEffect(() => {
-    const watch = AppState.addEventListener("change", (state) => {
-      if (state === "active") {
-        setUpdateLater(false);
-        setRefusedLater(false);
-      }
-    });
-    return () => watch.remove();
-  }, []);
   /** When the last sync was saved: every wait for changes ends in one, every 25 s or so. */
   const lastWritten = useRef(0);
   const session = useRef<SyncSession | null>(null);
-  // The session outlives renders: it reaches these through refs, and restarts only for another
-  // account or store.
-  const latest = useRef({ getToken, change, reset, userId });
-  latest.current = { getToken, change, reset, userId };
-  // Re-render when a reminder choice is saved.
+  // Re-render when a note of this phone's changes: sync paused, signed out on purpose.
   const [, setPreferences] = useState(0);
   useEffect(() => subscribeDevicePreferences(() => setPreferences((n) => n + 1)), []);
+  const paused = syncPaused();
+  // A workout runs on every phone of the account once it syncs. Only one logged here (or open on
+  // its live screen here) holds questions back; another phone's never does.
+  const logging =
+    !!store.activeWorkout() && (workoutHere(store) !== null || LOGGING_PATHS.has(pathname));
+  // The session outlives renders: it reaches these through refs, and restarts only for another
+  // account or store, or when sync is paused or resumed.
+  const latest = useRef({ getToken, change, reset, userId, logging });
+  latest.current = { getToken, change, reset, userId, logging };
 
   useEffect(() => {
-    if (!isLoaded || !isSignedIn || !userId) return;
+    // Paused: nothing syncs until the person resumes (every screen says so, see below).
+    if (!isLoaded || !isSignedIn || !userId || paused) return;
     const running = new SyncSession({
       store,
       server,
@@ -240,7 +299,6 @@ function Sync({
       },
       onStoreChanged: () => latest.current.change(() => undefined),
       onStatus: (next) => {
-        if (next.prompt?.kind !== "sign_in") setRefusedLater(false);
         setStatus(next);
         if (next.lastSynced !== null && next.lastSynced - lastWritten.current > SAVE_SYNCED_MS) {
           lastWritten.current = next.lastSynced;
@@ -252,11 +310,10 @@ function Sync({
         void latest.current.reset(false);
       },
       lastSynced: readLastSynced(),
+      loggingHere: () => latest.current.logging,
       log: (message) => console.warn(message),
     });
     session.current = running;
-    // A "Not now" was for the question of the session before.
-    setLater(false);
     running.setForeground(AppState.currentState === "active");
     running.start();
     const watch = AppState.addEventListener("change", (state) =>
@@ -268,110 +325,117 @@ function Sync({
       session.current = null;
       setStatus(IDLE);
     };
-  }, [isLoaded, isSignedIn, userId, store, server]);
+  }, [isLoaded, isSignedIn, userId, store, server, paused]);
 
   // Every change to the data passes here; the session sends it shortly, if there is any to send.
   useEffect(() => {
     if (version > 0) session.current?.nudge();
-  }, [version]);
+    startNotingWorkoutHere(store);
+  }, [version, store]);
 
-  // Questions wait until the workout in progress ends.
-  if (store.activeWorkout()) return null;
-
+  // This phone's data belongs to an account, so its changes are meant to sync.
+  const bound = store.syncState();
+  const accountData = bound.account !== null;
+  const disconnected = useElsewhereNote(
+    !own && isLoaded && !isSignedIn && bound.server !== server ? bound : null,
+  );
   const prompt = status.prompt;
-  if (prompt?.kind === "update" && !updateLater) {
-    return <UpdatePrompt onLater={() => setUpdateLater(true)} />;
-  }
-  if (prompt?.kind === "combine" && !later) {
-    return (
-      <CombinePrompt
-        workouts={workoutCount(store)}
-        sampleData={prompt.sampleData === true}
-        onCombine={() => session.current?.combine()}
-        onReplace={() => session.current?.replaceLocalData()}
-        onLater={() => setLater(true)}
-        exportData={exportData}
-      />
-    );
-  }
-  if (prompt?.kind === "switch" && !later) {
-    const keep = switchesBackToData(store.syncState(), builtInAccount)
-      ? { onSwitchBack: () => switchBack() }
-      : null;
-    if (prompt.reason === "server") {
+  const signOutHere = async () => {
+    setSignedOutOnPurpose(true);
+    try {
+      await signOut();
+    } catch (error) {
+      setSignedOutOnPurpose(false);
+      throw error;
+    }
+  };
+  const pause = () => setSyncPaused(true);
+
+  /** The question sync needs answered now, if any. */
+  const ask = (): ReactNode => {
+    if (prompt?.kind === "update") return <UpdatePrompt onPause={pause} />;
+    if (prompt?.kind === "combine")
       return (
-        <MovePrompt
-          server={server}
-          account={connection.accountName}
+        <CombinePrompt
+          workouts={workoutCount(store)}
+          sampleData={prompt.sampleData === true}
+          onCombine={() => session.current?.combine()}
+          onReplace={() => session.current?.replaceLocalData()}
+          // A paired server has no sign-out that keeps the data here (leaving it goes back to the
+          // choice before, which may sync it): pausing sync does.
+          {...(own ? {} : { onSignOut: signOutHere })}
+          onPause={pause}
+          exportData={exportData}
+        />
+      );
+    if (prompt?.kind === "switch") {
+      // Keeping the data means going back, when the choice before is where it belongs; on the
+      // build's own server, otherwise, signing this account out. With neither, pausing sync.
+      const keep = switchesBackToData(store.syncState(), builtInAccount)
+        ? { onSwitchBack: () => switchBack() }
+        : own
+          ? {}
+          : { onSignOut: signOutHere };
+      if (prompt.reason === "server")
+        return (
+          <MovePrompt
+            server={server}
+            account={connection.accountName}
+            unsynced={unsyncedChanges(store)}
+            canMove={!store.hasUnavailableRecords()}
+            onMove={() => session.current?.moveLocalData()}
+            onStartOver={() => session.current?.replaceLocalData()}
+            {...keep}
+            onPause={pause}
+            exportData={exportData}
+          />
+        );
+      return (
+        <SwitchPrompt
+          // Counted now, not when sync asked: work done meanwhile is lost too.
           unsynced={unsyncedChanges(store)}
-          canMove={!store.hasUnavailableRecords()}
-          onMove={() => session.current?.moveLocalData()}
-          onStartOver={() => session.current?.replaceLocalData()}
-          {...(keep ?? {})}
-          onLater={() => setLater(true)}
+          onSwitch={() => session.current?.replaceLocalData()}
+          {...keep}
+          onPause={pause}
           exportData={exportData}
         />
       );
     }
-    return (
-      <SwitchPrompt
-        // Counted now, not when sync asked: work done meanwhile is lost too.
-        unsynced={unsyncedChanges(store)}
-        onSwitch={() => session.current?.replaceLocalData()}
-        // Keeping them means going back, when the choice before is where they belong; on the
-        // build's own server, otherwise, signing this account out.
-        {...(keep
-          ? keep
-          : own
-            ? {}
-            : {
-                onSignOut: async () => {
-                  setSignInReminder("off");
-                  try {
-                    await signOut();
-                  } catch (error) {
-                    setSignInReminder("");
-                    throw error;
-                  }
-                },
-              })}
-        onLater={() => setLater(true)}
-        exportData={exportData}
-      />
-    );
-  }
-
-  const now = Date.now();
-  if (own && prompt?.kind === "sign_in") {
-    // Keep Settings reachable for re-pairing even when this device has a conflict to settle.
-    return refusedLater || pathname === "/settings" ? null : (
-      <RefusedPrompt server={server} onLater={() => setRefusedLater(true)} />
-    );
-  }
-  const lapsed =
-    prompt?.kind === "sign_in" || (isLoaded && !isSignedIn && store.syncState().account !== null);
-  if (!own && lapsed && signInReminderDue(now)) {
-    return (
-      <SignInPrompt
-        signedIn={!!isSignedIn}
-        signOut={signOut}
-        onSignedIn={() => {
-          setSignInReminder("");
-          session.current?.retry();
-        }}
-      />
-    );
-  }
-
-  // Conflicts are settled here and now: one at a time, before the app goes on.
-  const bound = store.syncState();
-  const switching =
-    isSignedIn && bound.account !== null && (bound.server !== server || bound.account !== userId);
-  const pending = switching ? [] : conflicts(store);
-  // While the person is on the screen a conflict sent them to, nothing covers it. Leaving it with
-  // the conflict unsettled brings the popup back.
-  if (reviewing && pending.some((item) => item.key === reviewing.key)) return null;
-  if (pending.length > 0)
+    // A paired server refused this phone: only a new pairing connects it again. Settings, where
+    // that happens, stays uncovered.
+    if (own && prompt?.kind === "sign_in")
+      return pathname === SETTINGS || reconnecting ? null : (
+        <RefusedPrompt
+          server={server}
+          onSettings={() => {
+            setReconnecting("going");
+            router.push(SETTINGS);
+          }}
+          onPause={pause}
+        />
+      );
+    // The sign-in ran out (or the server refused it): asked every time, never set aside.
+    if (!own && (prompt?.kind === "sign_in" || (isLoaded && !isSignedIn && accountData)))
+      return (
+        <SignInPrompt
+          signedIn={!!isSignedIn}
+          signOut={signOut}
+          onSignedIn={() => {
+            setSignedOutOnPurpose(false);
+            session.current?.retry();
+          }}
+          onPause={pause}
+        />
+      );
+    // Conflicts are settled here and now: one at a time, before the app goes on. Not while the
+    // phone's data belongs to another account or server: that question comes first.
+    const switching =
+      isSignedIn && bound.account !== null && (bound.server !== server || bound.account !== userId);
+    const pending = switching ? [] : conflicts(store);
+    if (pending.length === 0) return null;
+    // While the person is on the screen a conflict sent them to, nothing covers it. Leaving it
+    // with the conflict unsettled brings the popup back.
+    if (reviewing && pending.some((item) => item.key === reviewing.key)) return null;
     return (
       <ConflictPrompt
         items={pending}
@@ -383,14 +447,118 @@ function Sync({
           // Already there: no second copy of the screen.
           if (pathname !== path) router.push(item.review.target);
         }}
+        onPause={pause}
       />
     );
+  };
 
-  const since = status.lastSynced ?? status.failingSince;
-  if (isSignedIn && since !== null && now - since > STALE_AFTER_MS && store.hasUnsyncedWork()) {
-    return <StaleNote since={since} />;
-  }
-  return null;
+  /** What sync shows now: a question, or a note on every screen, or nothing. */
+  const decide = (): { question: ReactNode; note: SyncNote | null } => {
+    const none = { question: null, note: null };
+    // Stopped by the person: every screen says so, with the way back. Nothing is asked meanwhile.
+    if (paused && syncPauseIsTemporary())
+      return {
+        question: null,
+        note: {
+          label: "Sync paused for now",
+          message:
+            "Leve couldn't save the pause. Sync can restart when you reopen the app. Keep it open and try saving the pause again.",
+          action: {
+            label: "Save pause",
+            hint: "Tries to keep sync paused after reopening",
+            onPress: pause,
+          },
+        },
+      };
+    if (paused && (isSignedIn || accountData))
+      return {
+        question: null,
+        note: {
+          label: "Sync paused",
+          message: "New workouts and changes stay on this phone until you resume.",
+          action: {
+            label: "Resume",
+            hint: "Syncs this phone with your account again",
+            onPress: () => setSyncPaused(false),
+          },
+        },
+      };
+    // The bound server matters even if the person deliberately signed out of Leve before pairing.
+    if (disconnected) return { question: null, note: disconnected };
+    if (isLoaded && !isSignedIn && accountData && signedOutOnPurpose())
+      return {
+        question: null,
+        note: {
+          label: "Signed out",
+          message: "New workouts and changes stay on this phone until you sign in.",
+          action: {
+            label: "Sign in",
+            hint: "Opens Settings to sign in",
+            onPress: () => router.push("/settings"),
+          },
+        },
+      };
+    const question = ask();
+    // Nothing covers a workout being logged here: the question waits until it ends, and says so.
+    // So does replacing this phone's data for another account, which waits for the same workout.
+    if (logging && (question || status.heldForWorkout))
+      return {
+        question: null,
+        note: {
+          label: "Sync",
+          message: question
+            ? "Sync has a question for you. It comes up once this workout ends."
+            : "Sync is waiting for this workout to end.",
+        },
+      };
+    if (question) return { question, note: null };
+    // Settings stays usable for pairing, with the reason the phone needs to connect again.
+    if (own && prompt?.kind === "sign_in")
+      return {
+        question: null,
+        note: {
+          label: "Not syncing",
+          message: `${serverLabel(server)} no longer accepts this phone. Connect again in Settings using a new pairing link.`,
+          action: { label: "Pause", hint: "Stops syncing until you resume it", onPress: pause },
+        },
+      };
+    // The server is too old for this app: nothing the phone can do but wait or pause, so it says
+    // so straight away, not only after a day.
+    if (status.serverOutdated)
+      return {
+        question: null,
+        note: {
+          label: "Not syncing",
+          message:
+            "Your sync server needs an update before this phone can sync. Changes stay on this phone, and Leve checks again every hour.",
+          action: { label: "Pause", hint: "Stops syncing until you resume it", onPress: pause },
+        },
+      };
+    const since = status.lastSynced ?? status.failingSince;
+    if (
+      isSignedIn &&
+      since !== null &&
+      Date.now() - since > STALE_AFTER_MS &&
+      store.hasUnsyncedWork()
+    ) {
+      const day = new Date(since).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+      return {
+        question: null,
+        note: {
+          label: "Not syncing",
+          message: `Changes haven't synced since ${day}. They're safe on this phone, and Leve keeps trying.`,
+        },
+      };
+    }
+    return none;
+  };
+  const { question, note } = decide();
+  // Screens drawn above this one (the live workout and finishing it are native modals) show the
+  // same note themselves.
+  useEffect(() => publishSyncNote(note));
+  useEffect(() => () => publishSyncNote(null), []);
+  if (question) return question;
+  return note ? <NotSyncing note={note} /> : null;
 }
 
 function Body({ text }: { text: string }) {
@@ -420,23 +588,35 @@ function useExport(exportData: () => Promise<void>) {
   return { busy: state === "busy", note, run };
 }
 
+/**
+ * Data on this phone that never synced, and an account that already has data. It can't be put
+ * off: the way out without deciding is signing out, which keeps the data here, not syncing.
+ */
 function CombinePrompt({
   workouts,
   sampleData,
   onCombine,
   onReplace,
-  onLater,
+  onSignOut,
+  onPause,
   exportData,
 }: {
   workouts: number;
   sampleData: boolean;
   onCombine: () => void;
   onReplace: () => void;
-  onLater: () => void;
+  /** Keeps the data here by signing out of the build's own server. */
+  onSignOut?: () => Promise<void>;
+  /**
+   * Keeps it here without signing out: offered on a paired server, and once signing out failed
+   * (say, offline), so the question never traps anyone.
+   */
+  onPause: () => void;
   exportData: () => Promise<void>;
 }) {
   const styles = useStyles(sheet);
   const [replacing, setReplacing] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
   const saved = useExport(exportData);
   const what = workouts > 0 ? plural(workouts, "workout") : "data";
   // "1 workout" and "data" both read as one thing.
@@ -483,28 +663,102 @@ function CombinePrompt({
             label="Replace with my account's data"
             onPress={() => setReplacing(true)}
           />
-          <Button rank="text" label="Not now" onPress={onLater} />
+          {onSignOut ? (
+            <Button
+              rank="text"
+              label={`Keep ${one ? "it" : "them"} here and sign out`}
+              onPress={() => {
+                setProblem(null);
+                onSignOut().catch(() =>
+                  setProblem(
+                    "Signing out didn't work. Check the connection and try again, or pause sync until you can.",
+                  ),
+                );
+              }}
+            />
+          ) : null}
+          {problem || !onSignOut ? (
+            <Button rank="text" label="Pause sync" onPress={onPause} />
+          ) : null}
         </View>
       }
     >
       <Body
         text={
           sampleData
-            ? "This phone has sample records from an earlier build. Adding this phone's data uploads the sample records along with anything you logged."
-            : `This phone has ${what} that ${one ? "isn't" : "aren't"} in your account yet. Add ${one ? "it" : "them"} to your account, or replace ${one ? "it" : "them"} with what's in your account.`
+            ? `This phone has sample records from an earlier build. Adding this phone's data uploads the sample records along with anything you logged. Nothing syncs until you choose. ${onSignOut ? "Signing out" : "Pausing sync"} keeps everything on this phone only.`
+            : `This phone has ${what} that ${one ? "isn't" : "aren't"} in your account yet. Add ${one ? "it" : "them"} to your account, or replace ${one ? "it" : "them"} with what's in your account. Nothing syncs until you choose. ${onSignOut ? "Signing out" : "Pausing sync"} keeps ${one ? "it" : "them"} on this phone only.`
         }
       />
+      {problem ? <Body text={problem} /> : null}
     </Dialog>
   );
 }
 
-/** The phone's unsynced changes belong to another account on this server. */
+/**
+ * The way to keep this phone's data without deciding now: going back to where it belongs, or
+ * signing out. With neither (a paired server, with nothing to go back to), or once it failed (say,
+ * offline), pausing sync, so the question never traps anyone.
+ */
+function KeepButtons({
+  onSwitchBack,
+  onSignOut,
+  onPause,
+  problem,
+  setProblem,
+}: {
+  onSwitchBack?: (() => void) | undefined;
+  onSignOut?: (() => Promise<void>) | undefined;
+  onPause: () => void;
+  problem: string | null;
+  setProblem: (problem: string | null) => void;
+}) {
+  return (
+    <>
+      {onSwitchBack ? (
+        <Button
+          rank="text"
+          label="Keep them and switch back"
+          onPress={() => {
+            setProblem(null);
+            try {
+              onSwitchBack();
+            } catch {
+              setProblem("Switching back didn't work. Try again, or pause sync until you can.");
+            }
+          }}
+        />
+      ) : onSignOut ? (
+        <Button
+          rank="text"
+          label="Keep them and sign out"
+          onPress={() => {
+            setProblem(null);
+            onSignOut().catch(() =>
+              setProblem(
+                "Signing out didn't work. Check the connection and try again, or pause sync until you can.",
+              ),
+            );
+          }}
+        />
+      ) : null}
+      {problem || (!onSwitchBack && !onSignOut) ? (
+        <Button rank="text" label="Pause sync" onPress={onPause} />
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * This phone's data belongs to another account on this server, with changes that never synced.
+ * It can't be put off: going back to that account, or signing out, keeps them here for it.
+ */
 function SwitchPrompt({
   unsynced,
   onSwitch,
   onSignOut,
   onSwitchBack,
-  onLater,
+  onPause,
   exportData,
 }: {
   unsynced: number;
@@ -513,7 +767,7 @@ function SwitchPrompt({
   onSignOut?: () => Promise<void>;
   /** ... or by going back to the server or pairing the phone used before. */
   onSwitchBack?: () => void;
-  onLater: () => void;
+  onPause: () => void;
   exportData: () => Promise<void>;
 }) {
   const styles = useStyles(sheet);
@@ -538,35 +792,18 @@ function SwitchPrompt({
             busy={saved.busy}
             onPress={saved.run}
           />
-          {onSwitchBack ? (
-            <Button
-              rank="text"
-              label="Keep them and switch back"
-              onPress={() => {
-                try {
-                  onSwitchBack();
-                } catch {
-                  setProblem("Switching back didn't work. Try again.");
-                }
-              }}
-            />
-          ) : onSignOut ? (
-            <Button
-              rank="text"
-              label="Keep them and sign out"
-              onPress={() => {
-                onSignOut().catch(() =>
-                  setProblem("Signing out didn't work. Check the connection and try again."),
-                );
-              }}
-            />
-          ) : null}
-          <Button rank="text" label="Not now" onPress={onLater} />
+          <KeepButtons
+            onSwitchBack={onSwitchBack}
+            onSignOut={onSignOut}
+            onPause={onPause}
+            problem={problem}
+            setProblem={setProblem}
+          />
         </View>
       }
     >
       <Body
-        text={`${plural(unsynced, "change")} on this phone ${one ? "belongs" : "belong"} to the account that was signed in before and ${one ? "hasn't" : "haven't"} synced. Switching to this account deletes ${it} from this phone. ${onSwitchBack ? `To keep ${it}, switch back to the account it used before.` : onSignOut ? `To keep ${it}, sign out and sign in again with the other account.` : `Not now keeps ${it} on this phone, unsynced.`}`}
+        text={`${plural(unsynced, "change")} on this phone ${one ? "belongs" : "belong"} to the account that was signed in before and ${one ? "hasn't" : "haven't"} synced. Switching to this account deletes ${it} from this phone. ${onSwitchBack ? `To keep ${it}, switch back to the account ${one ? "it" : "they"} belong${one ? "s" : ""} to.` : onSignOut ? `To keep ${it}, sign out and sign in again with the other account.` : `To keep ${it}, pause sync: ${it} stay${one ? "s" : ""} on this phone, unsynced, until you decide.`}`}
       />
       {saved.note ? <Body text={saved.note} /> : null}
       {problem ? <Body text={problem} /> : null}
@@ -577,7 +814,8 @@ function SwitchPrompt({
 /**
  * The phone's data belongs to another server than the one it now syncs with. Bringing it along is
  * the first choice: the old server keeps its copy either way, and nothing here is deleted unless
- * the person says so.
+ * the person says so. It can't be put off: going back, signing out or pausing sync keeps the data
+ * here without deciding.
  */
 function MovePrompt({
   server,
@@ -587,7 +825,8 @@ function MovePrompt({
   onMove,
   onStartOver,
   onSwitchBack,
-  onLater,
+  onSignOut,
+  onPause,
   exportData,
 }: {
   server: string;
@@ -597,7 +836,8 @@ function MovePrompt({
   onMove: () => void;
   onStartOver: () => void;
   onSwitchBack?: () => void;
-  onLater: () => void;
+  onSignOut?: () => Promise<void>;
+  onPause: () => void;
   exportData: () => Promise<void>;
 }) {
   const styles = useStyles(sheet);
@@ -648,19 +888,6 @@ function MovePrompt({
             busy={saved.busy}
             onPress={saved.run}
           />
-          {onSwitchBack ? (
-            <Button
-              rank="text"
-              label="Switch back"
-              onPress={() => {
-                try {
-                  onSwitchBack();
-                } catch {
-                  setProblem("Switching back didn't work. Try again.");
-                }
-              }}
-            />
-          ) : null}
           <Button
             rank="text"
             label={
@@ -674,7 +901,13 @@ function MovePrompt({
               else onStartOver();
             }}
           />
-          <Button rank="text" label="Not now" onPress={onLater} />
+          <KeepButtons
+            onSwitchBack={onSwitchBack}
+            onSignOut={onSignOut}
+            onPause={onPause}
+            problem={problem}
+            setProblem={setProblem}
+          />
         </View>
       }
     >
@@ -689,7 +922,7 @@ function MovePrompt({
         text={
           canMove
             ? `Bringing your data adds it to ${destination}. You can review conflicting records after syncing.`
-            : "Update Leve before moving. This phone holds records this version can't read."
+            : "Update Leve before moving. This phone holds records this version can't read. Until then, pausing sync keeps everything on this phone."
         }
       />
       {saved.note ? <Body text={saved.note} /> : null}
@@ -700,38 +933,45 @@ function MovePrompt({
 
 /**
  * A paired server refused this phone's token: its operator signed the phone out, or the account
- * is gone. The data stays; a new pairing link from the operator connects it again.
+ * is gone. The data stays; a new pairing link from the operator connects it again. It can't be
+ * put off: the way out without connecting again is pausing sync.
  */
-function RefusedPrompt({ server, onLater }: { server: string; onLater: () => void }) {
+function RefusedPrompt({
+  server,
+  onSettings,
+  onPause,
+}: {
+  server: string;
+  onSettings: () => void;
+  onPause: () => void;
+}) {
   return (
     <Dialog
       eyebrow="Connect again"
-      onClose={onLater}
-      closeLabel="Not now"
-      confirm={{
-        label: "Open Settings",
-        onPress: () => {
-          onLater();
-          router.push("/settings");
-        },
-      }}
-      footer={<Button rank="text" label="Not now" onPress={onLater} />}
+      confirm={{ label: "Open Settings", onPress: onSettings }}
+      footer={<Button rank="text" label="Pause sync" onPress={onPause} />}
     >
       <Body
-        text={`${serverLabel(server)} no longer accepts this phone. Until you connect again with a new pairing link from whoever runs it, new workouts and changes stay only on this phone.`}
+        text={`${serverLabel(server)} no longer accepts this phone. Until you connect again with a new pairing link from whoever runs it, new workouts and changes stay only on this phone. If you can't connect now, pause sync until you can.`}
       />
     </Dialog>
   );
 }
 
+/**
+ * The sign-in ran out, or the server refused it. It can't be put off: the way out without signing
+ * in is pausing sync, which every screen then shows.
+ */
 function SignInPrompt({
   signedIn,
   signOut,
   onSignedIn,
+  onPause,
 }: {
   signedIn: boolean;
   signOut: () => Promise<void>;
   onSignedIn: () => void;
+  onPause: () => void;
 }) {
   const styles = useStyles(sheet);
   const appearance = useAppearance();
@@ -757,16 +997,11 @@ function SignInPrompt({
       eyebrow="Sign in again"
       footer={
         <View style={styles.actions}>
-          <Button
-            rank="text"
-            label="Remind me later"
-            onPress={() => setSignInReminder(Date.now() + REMIND_LATER_MS)}
-          />
-          <Button rank="text" label="Ignore" onPress={() => setSignInReminder("off")} />
+          <Button rank="text" label="Pause sync" onPress={onPause} />
         </View>
       }
     >
-      <Body text="Your sign-in has run out. Until you sign in again, new workouts and changes stay only on this phone and don't sync." />
+      <Body text="Your sign-in has run out. Until you sign in again, new workouts and changes stay only on this phone and don't sync. If you can't sign in now, pause sync until you can." />
       {problem ? <Body text={problem} /> : null}
       <View style={[styles.apple, busy && styles.waiting]} pointerEvents={busy ? "none" : "auto"}>
         <AppleAuthenticationButton
@@ -786,19 +1021,17 @@ function SignInPrompt({
 }
 
 /**
- * Comes back each time the app comes to the front, but can be put aside: logging works without
- * syncing, so it never stands between someone and their workout.
+ * Can't be put off: the way out without updating is pausing sync, which every screen then shows.
+ * It never stands between someone and the workout they are logging (see Sync).
  */
-function UpdatePrompt({ onLater }: { onLater: () => void }) {
+function UpdatePrompt({ onPause }: { onPause: () => void }) {
   // TestFlight builds (the preview channel) update from TestFlight. Development builds are
   // rebuilt, and App Store builds don't sync yet.
   const testFlight = channel === "preview";
   return (
     <Dialog
       eyebrow="Update Leve"
-      onClose={onLater}
-      closeLabel="Not now"
-      footer={<Button rank="text" label="Not now" onPress={onLater} />}
+      footer={<Button rank="text" label="Pause sync" onPress={onPause} />}
       {...(testFlight
         ? {
             confirm: {
@@ -808,20 +1041,24 @@ function UpdatePrompt({ onLater }: { onLater: () => void }) {
           }
         : {})}
     >
-      <Body text="This version of Leve can't sync anymore. Update it to keep syncing. Until then, everything you log stays on this phone." />
+      <Body text="This version of Leve can't sync anymore. Update it to keep syncing. If you can't update now, pause sync: everything you log stays on this phone until you update and resume." />
     </Dialog>
   );
 }
 
-function StaleNote({ since }: { since: number }) {
+/**
+ * Sync isn't running, or is waiting on the person: a note at the top of every screen, above the
+ * app, until that changes. It can't be dismissed, only acted on.
+ */
+function NotSyncing({ note }: { note: SyncNote }) {
   const styles = useStyles(sheet);
   const insets = useSafeAreaInsets();
-  const day = new Date(since).toLocaleDateString(undefined, { day: "numeric", month: "short" });
   return (
     <View style={[styles.dock, { paddingTop: insets.top + space.sm }]}>
       <Banner
-        label="Not syncing"
-        message={`Changes haven't synced since ${day}. They're safe on this phone, and Leve keeps trying.`}
+        label={note.label}
+        message={note.message}
+        {...(note.action ? { action: note.action } : {})}
       />
     </View>
   );

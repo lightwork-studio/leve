@@ -25,18 +25,18 @@ export function loadDevicePreference(key: string): unknown {
 }
 
 /** Separate keys keep tabs from replacing each other's unrelated preferences. */
-export function saveDevicePreference(key: string, value: boolean | string): void {
-  if (buildInfo.webDemo) return;
+export function saveDevicePreference(key: string, value: boolean | string): boolean {
+  if (buildInfo.webDemo) return false;
   try {
+    const storage = globalThis.localStorage;
+    if (!storage) return false;
     if (key === "trackRir") {
-      globalThis.localStorage?.setItem(
-        KEY,
-        JSON.stringify({ ...readLegacyPreferences(), [key]: value }),
-      );
+      storage.setItem(KEY, JSON.stringify({ ...readLegacyPreferences(), [key]: value }));
     } else {
-      globalThis.localStorage?.setItem(`${KEY}:${key}`, JSON.stringify(value));
+      storage.setItem(`${KEY}:${key}`, JSON.stringify(value));
     }
+    return true;
   } catch {
-    // Kept in memory until the page closes.
+    return false;
   }
 }

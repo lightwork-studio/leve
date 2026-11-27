@@ -22,14 +22,15 @@ export function loadDevicePreference(key: string): unknown {
   }
 }
 
-/** Updates one preference. A failure keeps the value for this session only. */
-export function saveDevicePreference(key: string, value: boolean | string): void {
+/** Reports whether the value will survive a restart. */
+export function saveDevicePreference(key: string, value: boolean | string): boolean {
   try {
     const file = new File(Paths.document, FILE);
     const preferences = { ...readDevicePreferences(file), [key]: value };
     if (!file.exists) file.create();
     file.writeSync(JSON.stringify(preferences));
+    return true;
   } catch {
-    // Kept in memory until the app closes.
+    return false;
   }
 }

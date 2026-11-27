@@ -29,12 +29,22 @@ export interface ConflictLine {
 export interface ConflictSide {
   /** What differs on this side, in plain words. */
   lines: ConflictLine[];
-  /** Whether this side can be kept. A change the server refused can't be. */
+  /** Whether this side can be kept. */
   choosable: boolean;
   /** What keeping this side does, for the confirm button. */
   confirm: string;
   /** Why this side can't be kept, when it can't. */
   why?: string;
+  /**
+   * Keeping this side sends a version the server refused once more, which it may refuse again:
+   * said under it, and pausing sync stays on offer.
+   */
+  retry?: string;
+  /**
+   * Keeping this side loses work that exists nowhere else: said, with an offer to save a copy,
+   * before a second confirm.
+   */
+  warning?: string;
 }
 
 /** The screen where a conflict is reviewed, as expo-router takes it. */
@@ -70,7 +80,16 @@ type RecordCase =
   /** Deleted here and in the account: only the deletion is left to agree on. */
   | "gone_both"
   /** The server refused this phone's version as invalid. */
-  | "rejected";
+  | "rejected"
+  /** Refused, and the account has no version of it (it never got there, or was deleted there). */
+  | "rejected_new"
+  /** The account's version was made by a newer Leve, which this build can't show. */
+  | "newer_there"
+  /**
+   * Deleted here, and the account has no version of it either (a server restore lost it). Keeping
+   * the deletion sends it, so the server keeps a marker and no device offers it again.
+   */
+  | "gone_nowhere";
 
 function accountContent(row: DeviceRecord): JsonObject | null {
   if (row.server?.state === "live") return row.server.content ?? null;
@@ -79,18 +98,22 @@ function accountContent(row: DeviceRecord): JsonObject | null {
 }
 
 function recordCase(row: DeviceRecord): RecordCase | null {
-  // Undoing a refused change takes the account's version. One that never reached the account has
-  // none, and undoing it would also drop what waits below it unseen: it isn't settled here.
-  if (row.status === "invalid") return accountContent(row) ? "rejected" : null;
+  // Undoing a refused change takes the account's version. One the account has no version of is
+  // deleted instead, together with what this phone holds below it, which the popup lists.
+  // Only a newer Leve can show the account's version: nothing here can be weighed against it.
+  if (row.server?.state === "unavailable") return "newer_there";
+  if (row.status === "invalid") return accountContent(row) ? "rejected" : "rejected_new";
   if (row.status !== "conflict") return null;
   // Changed here under something deleted in the account: kept only by copying that ancestor.
-  if (row.problem?.reason === "parent_deleted") return row.content ? "gone_there" : null;
-  if (row.server?.state === "unavailable") return null;
-  // A deletion made here is only weighed against a live version in the account. One the restored
-  // server never had isn't asked about (see groupKey: it doesn't hold back anything else).
+  // Deleted here since, it is gone on both sides: the account's deletion is this phone's too.
+  if (row.problem?.reason === "parent_deleted")
+    return row.content && !row.deleted ? "gone_there" : "gone_both";
+  // A deletion made here is weighed against the account's version: the live one, or after a
+  // restore whose server never had it, its last copy from before (which keeping theirs restores).
   if (row.deleted) {
     if (row.server?.state === "deleted") return "gone_both";
-    return row.server?.state === "live" && row.server.content ? "gone_here" : null;
+    if (accountContent(row)) return "gone_here";
+    return row.server ? null : "gone_nowhere";
   }
   if (!row.content) return null;
   if (row.server?.state === "deleted" || (!row.server && !row.keptContent)) return "gone_there";
@@ -104,6 +127,8 @@ function recordCase(row: DeviceRecord): RecordCase | null {
 function resolutionFor(row: DeviceRecord, side: Side): Resolution["choice"] | "with_parent" | null {
   const which = recordCase(row);
   if (!which) return null;
+  // Gone on both sides with no marker in the account: either choice sends the deletion.
+  if (which === "gone_nowhere") return "keep_mine";
   if (side === "account") return "keep_theirs";
   switch (which) {
     case "both":
@@ -122,14 +147,42 @@ function resolutionFor(row: DeviceRecord, side: Side): Resolution["choice"] | "w
       // Both sides deleted it: the account's deletion is this phone's too.
       return "keep_theirs";
     case "rejected":
+    case "rejected_new":
+      // Sent again unchanged: it can get through once Leve or the server has been fixed. Not one
+      // the account deleted (only saving it as new could keep that), nor one this phone holds
+      // back itself, which no server would take.
+      return row.server?.state === "deleted" || row.problem?.reason === TOO_MANY_DESCENDANTS
+        ? null
+        : "keep_mine";
+    case "newer_there":
       return null;
   }
 }
 
-/** Why a record can't be settled right now (a sync still running, a server that lacks it). */
-function blocked(store: DeviceStore, row: DeviceRecord): boolean {
+/** A deletion this phone holds back itself: the server would refuse the request whole. */
+const TOO_MANY_DESCENDANTS = "invalid:too_many_descendants";
+
+/**
+ * Whether a record can't be settled until the sync running now answers: its upload is on its way,
+ * or the account's version isn't known yet (a server restore, a download to fill in, a connection
+ * still being made). Each ends with that sync, so the popup waits for it.
+ */
+function settling(store: DeviceStore, row: DeviceRecord): boolean {
   const sync = store.syncState();
-  if (row.inFlight || sync.restoring || sync.refreshFrom) return true;
+  return (
+    row.inFlight ||
+    sync.restoring ||
+    !!sync.refreshFrom ||
+    (sync.account !== null && sync.release === null)
+  );
+}
+
+/**
+ * Whether the sync server can't take this phone's version yet: it lacks the feature or fields it
+ * uses, until the server is updated. Only the account's version can be kept meanwhile, or sync
+ * paused (see conflicts). Checked once `settling` is false.
+ */
+function serverLacks(store: DeviceStore, row: DeviceRecord): boolean {
   if (row.kind === "workout_note" || row.kind === "workout_note_comment")
     return workoutNoteReadOnlyReason(store) !== null;
   if (row.kind === "exercise_note" || row.kind === "exercise_note_comment")
@@ -178,18 +231,18 @@ function groupKey(store: DeviceStore, row: DeviceRecord): string | null {
   // A refused change is decided on its own: undoing it shouldn't take valid changes beside it.
   // Split on the status, not on whether it can be settled: one that can't stays out on its own
   // instead of holding back the rest of its workout.
-  if (!base) {
-    // Deleted on both sides, nothing left to place it by: agreed on by itself.
-    return recordCase(row) === "gone_both" ? `${row.kind}:${row.id}` : null;
-  }
+  // Nothing to place it by (deleted on both sides, or its parents gone from this phone): it is
+  // asked about by itself, never left out.
+  if (!base) return `${row.kind}:${row.id}`;
   // A refused change, or a deletion that can only give way to the account's version, is decided
   // on its own, so neither takes valid changes beside it along.
   // (A workout or exercise is reviewed on its screen instead, whole.)
   const splitDeletion =
     deletesAccountChildren(store, row) && row.kind !== "workout" && row.kind !== "workout_exercise";
-  // One the popup can't place at all (a deletion the restored server never had, a version only a
-  // newer app can show) stays out on its own, never holding back the clashes beside it.
-  const unplaced = recordCase(row) === null;
+  // One the popup can't weigh (a version only a newer Leve can show) or place at all (a record in
+  // a state no sync answer leaves it in) stays out on its own, never holding back the clashes
+  // beside it.
+  const unplaced = recordCase(row) === null || recordCase(row) === "newer_there";
   return row.status === "invalid" || splitDeletion || unplaced
     ? `${base}|${row.kind}:${row.id}`
     : base;
@@ -233,13 +286,20 @@ function localBelow(store: DeviceStore, kind: string, id: string): DeviceRecord[
   return below;
 }
 
-/** Whether unsynced work below a record, outside `shown`, is still on its way to the account. */
+/**
+ * Whether unsynced work below a record, outside `shown`, is still on its way to the account: it
+ * uploads in this sync and comes back as part of the conflict. Partially synced work isn't: it is
+ * sent again only once the server supports what was left out, so it is counted under "Holds".
+ */
 function uploadingBelow(store: DeviceStore, kind: string, id: string, shown: Set<string>): boolean {
+  // Pending work of a kind the server doesn't know never uploads: it isn't waited for either.
+  const release = store.syncState().release;
   for (const { kind: child } of store.contract.childKinds(kind)) {
     for (const row of store.list(child, { parentId: id })) {
-      const waiting =
-        !shown.has(`${row.kind}:${row.id}`) &&
-        (row.inFlight || row.status === "pending" || row.status === "partial");
+      const uploads =
+        row.inFlight ||
+        (row.status === "pending" && release !== null && store.contract.hasKind(child, release));
+      const waiting = !shown.has(`${row.kind}:${row.id}`) && uploads;
       if (waiting) return true;
       // Below something the account never had, nothing can upload until it is settled.
       if (row.server && uploadingBelow(store, child, row.id, shown)) return true;
@@ -345,7 +405,12 @@ function routedReview(
   return undefined;
 }
 
-/** Every conflict that can be settled now, oldest first. */
+/**
+ * Every conflict, oldest first, except while the sync running now is still answering one (see
+ * `settling`). Nothing else is left out: one that can't be settled for a while (a server that needs
+ * an update, a change it refused, a version only a newer Leve can show) comes with the phone's side
+ * not choosable and says why, and the popup offers pausing sync instead.
+ */
 export function conflicts(store: DeviceStore): Conflict[] {
   const groups = new Map<string, DeviceRecord[]>();
   for (const row of store.problems()) {
@@ -356,10 +421,11 @@ export function conflicts(store: DeviceStore): Conflict[] {
   const result: Conflict[] = [];
   for (const [key, rows] of groups) {
     const records = [...rows].sort(byDepth);
-    // A part that can't be settled yet holds back its whole group, so a choice never covers only
-    // half of what clashes.
-    if (records.some((row) => !recordCase(row) || blocked(store, row))) continue;
-    // A deletion reaching into a workout is reviewed on the workout's own screen.
+    // A part the sync running now is still answering holds back its whole group until it has, so
+    // a choice never covers only half of what clashes.
+    if (records.some((row) => settling(store, row))) continue;
+    // A deletion reaching into a workout is reviewed on the workout's own screen. Deleted here and
+    // still to upload, it waits for that upload's answer.
     const review = reviewOnScreen(store, key, records);
     if (review === "wait") continue;
     if (review) {
@@ -377,18 +443,16 @@ export function conflicts(store: DeviceStore): Conflict[] {
     if (unsettled) continue;
     // Deleted on both sides at the top: everything below goes with it whichever side is kept.
     const bothDeleted = recordCase(records[0] as DeviceRecord) === "gone_both";
-    const phoneOk = bothDeleted || records.every((row) => phonePlanOk(store, row, shown));
-    // Something kept only by copying what's above it, while that isn't here to copy: neither
-    // side could be chosen without losing it, so it waits with the screen it belongs to.
-    if (
-      !bothDeleted &&
-      !phoneOk &&
-      records.some((row) => resolutionFor(row, "phone") === "with_parent")
-    )
-      continue;
-    result.push(describe(store, key, records, phoneOk));
+    const lacking = records.some((row) => serverLacks(store, row));
+    const placed = records.every((row) => recordCase(row) !== null);
+    const phoneOk =
+      placed && !lacking && (bothDeleted || records.every((row) => phonePlanOk(store, row, shown)));
+    result.push(describe(store, key, records, phoneOk, lacking));
   }
-  return result;
+  // One the popup can't place goes last: the popup shows one at a time, and settling the others
+  // first may settle it too (a review that takes it along, say).
+  const unplaced = (item: Conflict) => item.records.some((row) => recordCase(row) === null);
+  return [...result.filter((item) => !unplaced(item)), ...result.filter(unplaced)];
 }
 
 /* ---------- settling ---------- */
@@ -716,6 +780,8 @@ function describe(
   key: string,
   records: DeviceRecord[],
   phoneOk: boolean,
+  /** The sync server can't take this phone's version yet (see serverLacks). */
+  lacking = false,
 ): Conflict {
   const owner = records[0] as DeviceRecord;
   const phone: ConflictLine[] = [];
@@ -737,7 +803,9 @@ function describe(
     const missing =
       row.server?.state === "deleted" || row.problem?.reason === "parent_deleted"
         ? "Deleted"
-        : "Not in your account";
+        : row.server?.state === "unavailable"
+          ? "Made with a newer Leve"
+          : "Not in your account";
     account.push(...sideLines(store, row, theirs, mine, missing));
     // Keeping a deletion over the account's version deletes everything below it there too: say
     // what that is, beyond the parts that clash.
@@ -768,7 +836,8 @@ function describe(
       }
     }
     // Letting go something the account no longer has drops what this phone holds below it.
-    if (deletedThere(row)) {
+    // Deleting a refused record the account has no version of drops what's below it here too.
+    if (deletedThere(row) || which === "rejected_new") {
       const below = localBelow(store, row.kind, row.id);
       const count = (...kinds: string[]) =>
         below.filter((item) => kinds.includes(item.kind)).length;
@@ -778,6 +847,7 @@ function describe(
           [count("workout_set"), "set"],
           [count("workout_note"), "note"],
           [count("workout_note_comment", "exercise_note_comment"), "comment"],
+          [count("workout_rest"), "rest setting"],
         ] as const
       )
         .filter(([n]) => n > 0)
@@ -834,7 +904,8 @@ function describe(
   const ownerCase = recordCase(owner);
   const ownerGoneThere = ownerCase === "gone_there";
   const ownerGoneHere = ownerCase === "gone_here";
-  const goneBoth = ownerCase === "gone_both";
+  const goneBoth =
+    ownerCase === "gone_both" || records.every((row) => recordCase(row) === "gone_nowhere");
   const missingSettings = owner.kind === "settings" && owner.server === null;
   const accountLabel = missingSettings
     ? owner.keptContent
@@ -842,6 +913,11 @@ function describe(
       : "Default settings"
     : null;
   const rejected = records.some((row) => recordCase(row) === "rejected");
+  const refusedNew = records.some((row) => recordCase(row) === "rejected_new");
+  // Only a newer Leve can show the account's version: neither side can be weighed here.
+  // A state no sync answer should leave a record in: shown, but only pausing sync is offered.
+  const unplaced = records.some((row) => recordCase(row) === null);
+  const newer = records.some((row) => recordCase(row) === "newer_there");
   // Named after the topmost record that clashes, not the group: an exercise deleted in the
   // account leaves its workout in place either way.
   const noun = owner.kind === "workout" ? "workout" : "it";
@@ -857,30 +933,60 @@ function describe(
       ...(phoneOk
         ? {}
         : {
-            why: rejected
-              ? "This phone's change couldn't be saved in your account."
-              : records.some((row) => deletesAccountChildren(store, row))
-                ? "It holds things below it in your account. Keep its version to see them, then delete it again if you want."
-                : "This version can't be kept on its own.",
+            why: unplaced
+              ? "This version of Leve can't settle this one. Pause sync until it is fixed."
+              : newer
+                ? "Your account has a version made with a newer Leve. Update Leve to see both, or keep the account's version without seeing it."
+                : lacking
+                  ? "Your sync server needs an update before it can take this version."
+                  : records.some((row) => row.problem?.reason === TOO_MANY_DESCENDANTS)
+                    ? "It holds too much to delete in one go. Keep the account's version, then delete what's in it a part at a time."
+                    : rejected || refusedNew
+                      ? "This phone's change couldn't be saved in your account."
+                      : records.some((row) => deletesAccountChildren(store, row))
+                        ? "It holds things below it in your account. Keep its version to see them, then delete it again if you want."
+                        : "This version can't be kept on its own.",
           }),
-      confirm: goneBoth
-        ? "Keep it deleted"
-        : ownerGoneThere
-          ? noun === "it"
-            ? "Keep it"
-            : `Keep the ${noun}`
-          : ownerGoneHere
-            ? "Delete it"
-            : "Keep this version",
+      ...(phoneOk && (rejected || refusedNew)
+        ? {
+            retry:
+              "Your account didn't take this change. Trying again sends it unchanged: it gets through once Leve or your sync server is fixed, and if not, this comes back.",
+          }
+        : {}),
+      confirm:
+        phoneOk && (rejected || refusedNew)
+          ? "Try again"
+          : goneBoth
+            ? "Keep it deleted"
+            : ownerGoneThere
+              ? noun === "it"
+                ? "Keep it"
+                : `Keep the ${noun}`
+              : ownerGoneHere
+                ? "Delete it"
+                : "Keep this version",
     },
     account: {
       lines: account,
-      choosable: true,
+      choosable: !unplaced,
+      ...(unplaced ? { why: "This version of Leve can't settle it." } : {}),
+      // Work kept nowhere else goes with this choice: asked once more, with a copy offered.
+      ...(refusedNew
+        ? {
+            warning:
+              "Your account has no copy of this phone's version, so deleting it can't be undone. Save a copy first if you might want it back.",
+          }
+        : newer
+          ? {
+              warning:
+                "This phone's version goes, and this version of Leve can't show your account's. Save a copy first if you might want it back.",
+            }
+          : {}),
       confirm: accountLabel
         ? `Use ${accountLabel.toLowerCase()}`
         : goneBoth
           ? "Keep it deleted"
-          : ownerGoneThere
+          : ownerGoneThere || refusedNew
             ? "Delete it"
             : rejected
               ? "Undo my change"
