@@ -12,9 +12,20 @@ const sharedProgress = vi.fn((_store: unknown, version: number) => {
 });
 const idle: (() => void)[] = [];
 
+// Whether the tabs are on show, and what to tell when they come back.
+let focused = true;
+const listeners: { type: string; listener: () => void }[] = [];
 vi.mock("expo-router", () => ({
-  useNavigation: () => ({ isFocused: () => true, addListener: () => () => {} }),
+  useNavigation: () => navigation,
 }));
+const navigation = {
+  isFocused: () => focused,
+  addListener: (type: string, listener: () => void) => {
+    const entry = { type, listener };
+    listeners.push(entry);
+    return () => listeners.splice(listeners.indexOf(entry), 1);
+  },
+};
 vi.mock("../src/data/app-data.tsx", () => ({
   useAppData: () => ({ store: "store", historyVersion }),
 }));
@@ -39,9 +50,9 @@ vi.mock("../src/data/read.ts", () => ({
 const { useWeekBar } = await import("../src/data/queries.ts");
 
 let shown: unknown;
-function Bar() {
+function Bar({ train = true }: { train?: boolean }) {
   // The mocked weekBarData hands back the records it was given, in place of a week.
-  shown = (useWeekBar(0) as unknown as { records: unknown }).records;
+  shown = (useWeekBar(0, train) as unknown as { records: unknown }).records;
   return null;
 }
 
@@ -75,6 +86,23 @@ it("never reads the whole history in the render that follows an edit", async () 
     await act(() => tree?.update(h(Bar)));
     expect(shown).toEqual([3]);
     expect(idle).toHaveLength(0);
+
+    // On a tab that shows no records, an edit reads nothing, now or later.
+    historyVersion = 4;
+    await act(() => tree?.update(h(Bar, { train: false })));
+    expect(idle).toHaveLength(0);
+    // Nor does one made on a screen over the tabs, until the tabs are back on show.
+    focused = false;
+    await act(() => tree?.update(h(Bar)));
+    expect(idle).toHaveLength(0);
+    expect(shown).toEqual([3]);
+    focused = true;
+    await act(() => {
+      for (const entry of listeners) if (entry.type === "focus") entry.listener();
+    });
+    expect(idle).toHaveLength(1);
+    await act(() => idle.shift()?.());
+    expect(shown).toEqual([4]);
   } finally {
     await act(() => tree?.unmount());
     vi.unstubAllGlobals();

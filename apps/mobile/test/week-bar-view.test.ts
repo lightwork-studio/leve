@@ -159,9 +159,9 @@ it("names the week on top, keeps the frame on every tab, and changes only the ma
       "Tuesday 10, trained, trained 0 of the 4 weeks before",
       "Wednesday 11, trained, trained 2 of the 4 weeks before",
       "Thursday 12, today, not trained, trained 0 of the 4 weeks before",
-      "Friday 13, not trained, trained 0 of the 4 weeks before",
-      "Saturday 14, not trained, trained 0 of the 4 weeks before",
-      "Sunday 15, not trained, trained 0 of the 4 weeks before",
+      "Friday 13, trained 0 of the 4 weeks before",
+      "Saturday 14, trained 0 of the 4 weeks before",
+      "Sunday 15, trained 0 of the 4 weeks before",
     ]);
 
     // Progress: the change on last time, per day.

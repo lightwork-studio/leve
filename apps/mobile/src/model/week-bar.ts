@@ -208,7 +208,7 @@ export function weekBarDayLabel(day: WeekBarDay, mode: WeekBarMode): string {
   if (day.today) parts.push("today");
   if (mode === "history") {
     const weeks = day.habit.filter(Boolean).length;
-    parts.push(day.workouts.length > 0 ? "trained" : "not trained");
+    if (!day.future) parts.push(day.workouts.length > 0 ? "trained" : "not trained");
     parts.push(`trained ${weeks} of the ${HABIT_WEEKS} weeks before`);
   } else if (day.workouts.length === 0) {
     if (!day.future) parts.push("no workout");

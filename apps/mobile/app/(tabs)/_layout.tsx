@@ -116,8 +116,10 @@ const BAR_MODES: Record<string, WeekBarMode> = {
 
 /** The week bar, with the marks and the action of the tab on show. */
 function TabsWeekBar({ tab }: { tab: string }) {
-  const week = useWeekBar(useToday());
-  return <WeekBar week={week} mode={BAR_MODES[tab] ?? "train"} action={useBarAction()} />;
+  const mode = BAR_MODES[tab] ?? "train";
+  // Only Train shows records, so only Train reads the history for them.
+  const week = useWeekBar(useToday(), mode === "train");
+  return <WeekBar week={week} mode={mode} action={useBarAction()} />;
 }
 
 function TabBar({
