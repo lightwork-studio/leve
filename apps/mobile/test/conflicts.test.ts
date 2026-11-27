@@ -385,18 +385,24 @@ it("shows differences a set's weight and reps don't, and a routine's planned tar
     store.put("routine", "fixed", plan(80, { min: 6, max: 8 }));
     store.put("routine", "minimum", plan(80, { min: 6, useRange: true }));
     store.put("routine", "cleared-minimum", plan(80, { min: 6, useRange: true }));
+    store.put("routine", "saved-fixed", plan(80, { min: 6, max: 8, useRange: true }));
+    store.put("routine", "saved-range", plan(80, { min: 6, max: 8 }));
   });
   a.store.put("workout_set", "s1", { ...set(80, 8), rpe: 7 });
   a.store.put("routine", "r1", plan(90));
   a.store.put("routine", "fixed", plan(80, { reps: 9, min: 6, max: 8 }));
   a.store.put("routine", "minimum", plan(80, { min: 7, useRange: true }));
   a.store.put("routine", "cleared-minimum", plan(80, { min: 8, useRange: true }));
+  a.store.put("routine", "saved-fixed", plan(80, { reps: 9, min: 6, max: 8, useRange: true }));
+  a.store.put("routine", "saved-range", plan(80, { min: 7, max: 9 }));
   await a.sync();
   b.store.put("workout_set", "s1", { ...set(80, 8), rpe: 9 });
   b.store.put("routine", "r1", plan(85));
   b.store.put("routine", "fixed", plan(80, { reps: 10, min: 6, max: 8 }));
   b.store.put("routine", "minimum", plan(80, { min: 9, useRange: true }));
   b.store.put("routine", "cleared-minimum", plan(80, { useRange: true }));
+  b.store.put("routine", "saved-fixed", plan(80, { reps: 10, min: 6, max: 8, useRange: true }));
+  b.store.put("routine", "saved-range", plan(80, { min: 10, max: 12 }));
   await b.sync();
 
   const all = conflicts(b.store);
@@ -425,6 +431,36 @@ it("shows differences a set's weight and reps don't, and a routine's planned tar
   expect(all.find((item) => item.key === "routine:cleared-minimum")).toMatchObject({
     phone: { lines: [{ label: "Bench Press", value: "1 set · 80 kg" }] },
     account: { lines: [{ label: "Bench Press", value: "1 set · 80 kg × 8" }] },
+  });
+  expect(all.find((item) => item.key === "routine:saved-fixed")).toMatchObject({
+    phone: {
+      lines: [
+        { label: "Bench Press", value: "1 set · 80 kg × 6–8" },
+        { label: "Bench Press · Set 1 · Saved fixed reps", value: "10" },
+      ],
+    },
+    account: {
+      lines: [
+        { label: "Bench Press", value: "1 set · 80 kg × 6–8" },
+        { label: "Bench Press · Set 1 · Saved fixed reps", value: "9" },
+      ],
+    },
+  });
+  expect(all.find((item) => item.key === "routine:saved-range")).toMatchObject({
+    phone: {
+      lines: [
+        { label: "Bench Press", value: "1 set · 80 kg × 8" },
+        { label: "Bench Press · Set 1 · Saved minimum reps", value: "10" },
+        { label: "Bench Press · Set 1 · Saved maximum reps", value: "12" },
+      ],
+    },
+    account: {
+      lines: [
+        { label: "Bench Press", value: "1 set · 80 kg × 8" },
+        { label: "Bench Press · Set 1 · Saved minimum reps", value: "7" },
+        { label: "Bench Press · Set 1 · Saved maximum reps", value: "9" },
+      ],
+    },
   });
 });
 

@@ -668,6 +668,27 @@ function routineExerciseLines(store: DeviceStore, mine: unknown, theirs: unknown
           value: valueLabel(store, name, exercise[name]),
         });
       }
+      // Switching rep modes keeps the other targets for later use. Compare those
+      // values too so choices with the same active targets can be told apart.
+      const inactive =
+        exercise.useRepRange === true
+          ? ([["reps", "Saved fixed reps"]] as const)
+          : ([
+              ["repRangeMin", "Saved minimum reps"],
+              ["repRangeMax", "Saved maximum reps"],
+            ] as const);
+      const otherSets = new Map(list(match.sets).map((set) => [set.id, set]));
+      list(exercise.sets).forEach((set, setIndex) => {
+        const other = otherSets.get(set.id);
+        if (!other) return;
+        for (const [field, fieldLabel] of inactive) {
+          if (jsonEqual(set[field] ?? null, other[field] ?? null)) continue;
+          lines.push({
+            label: `${label} · Set ${setIndex + 1} · ${fieldLabel}`,
+            value: valueLabel(store, field, set[field]),
+          });
+        }
+      });
     }
   });
   for (const exercise of unmatched.values())
