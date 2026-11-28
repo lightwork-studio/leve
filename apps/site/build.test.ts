@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { expect, it } from "vitest";
-import { buildSite } from "./build.mts";
+import { buildSite, pages } from "./build.mts";
 
 it("packages the landing page and all its assets for a standalone static host", async () => {
   const parent = await mkdtemp(join(tmpdir(), "leve-site-"));
@@ -37,15 +37,28 @@ it("packages the landing page and all its assets for a standalone static host", 
         `https://github.com/lightwork-studio/leve/blob/${revision}/THIRD_PARTY_NOTICES.md`,
       ]),
     );
-    for (const ref of refs) {
-      if (ref.startsWith("https://")) continue;
-      if (ref.startsWith("#")) {
-        expect(html).toContain(`id="${ref.slice(1)}"`);
-      } else if (ref === "./demo/") {
-        expect(await readFile(join(output, ref, "index.html"), "utf8")).toBe(files["index.html"]);
-      } else {
-        expect(ref).toMatch(/^\.\/[\w.-]+$/);
-        expect((await readFile(join(output, ref))).length).toBeGreaterThan(0);
+    // Every page is published, and every page's links and assets resolve in the output.
+    for (const page of pages) {
+      const pageHtml = await readFile(join(output, page), "utf8");
+      const pageRefs = Array.from(
+        pageHtml.matchAll(/(?:href|src|srcset)="([^"]+)"/g),
+        ([, value]) => value,
+      );
+      // The legal pages App Store Connect links to are reachable from every page.
+      expect(pageRefs).toEqual(
+        expect.arrayContaining(["./privacy.html", "./support.html", "./impressum.html"]),
+      );
+      expect(pageHtml).not.toMatch(/github\.com\/lightwork-studio\/leve\/(tree|blob)\/main/);
+      for (const ref of pageRefs) {
+        if (ref.startsWith("https://") || ref.startsWith("mailto:")) continue;
+        if (ref.startsWith("#")) {
+          expect(pageHtml).toContain(`id="${ref.slice(1)}"`);
+        } else if (ref === "./demo/") {
+          expect(await readFile(join(output, ref, "index.html"), "utf8")).toBe(files["index.html"]);
+        } else {
+          expect(ref).toMatch(/^\.\/[\w.-]+$/);
+          expect((await readFile(join(output, ref))).length).toBeGreaterThan(0);
+        }
       }
     }
     expect(await readFile(join(output, "sql.js-LICENSE.txt"), "utf8")).toContain(

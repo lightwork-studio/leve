@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="description" content="How Leve handles your data: what stays on your iPhone, what sync stores, who processes it and your rights." />
+    <title>Privacy policy · Leve</title>
+    <link rel="icon" href="./favicon.png" type="image/png" />
+    <link rel="stylesheet" href="./theme.css" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+
+    <header class="nav shell">
+      <a class="brand" href="./index.html" aria-label="Leve home">
+        <picture>
+          <source srcset="./wordmark-on-light.svg" media="(prefers-color-scheme: light)" />
+          <img src="./wordmark-on-dark.svg" width="92" height="28" alt="Leve" />
+        </picture>
+      </a>
+      <nav class="nav-links" aria-label="Legal">
+        <a href="./privacy.html" aria-current="page">Privacy</a>
+        <a href="./support.html">Support</a>
+        <a href="./impressum.html">Legal notice</a>
+      </nav>
+    </header>
+
+    <main id="main" class="doc shell" tabindex="-1">
+      <p class="kicker">Last updated 28 November 2026</p>
+      <h1>Privacy policy</h1>
+      <p class="doc-lede">
+        This policy covers the Leve app for iPhone from version 1.0 and this website. It explains what data Leve
+        handles, where it goes, why, and what you can do about it.
+      </p>
+
+      <section aria-labelledby="short">
+        <h2 id="short">In short</h2>
+        <ul>
+          <li>Leve works without an account. Until you sign in, your workouts stay on your iPhone and I never receive them.</li>
+          <li>To offer sign-in, Leve checks in with its sign-in service, Clerk, when it starts, even before you sign in. No workout data is sent.</li>
+          <li>Sync is optional. If you sign in with Apple, your workouts, notes and body measurements are stored on a sync server so they reach your other devices.</li>
+          <li>An AI assistant or other tool can read your synced data over MCP only after you connect it and approve the access.</li>
+          <li>Leve has no ads, no analytics and no tracking, and I don’t sell or share your data for marketing.</li>
+          <li>You can delete your account and its synced data in the app at any time.</li>
+        </ul>
+      </section>
+
+      <section aria-labelledby="controller">
+        <h2 id="controller">Who is responsible</h2>
+        <p>The controller under the EU General Data Protection Regulation (GDPR) is:</p>
+        <address>
+          Tim Weber<br />
+          Bleichstraße 32<br />
+          76593 Gernsbach<br />
+          Germany<br />
+          Email: <a href="mailto:weber.tim@hotmail.com">weber.tim@hotmail.com</a>
+        </address>
+        <p>
+          Leve is an independent project run by one person, so “I” in this policy means me. I am not required to
+          appoint a data protection officer. Write to the address above with any privacy question or request.
+        </p>
+      </section>
+
+      <section aria-labelledby="device">
+        <h2 id="device">On your iPhone</h2>
+        <p>
+          Leve saves your workouts, routines, exercises, notes, body measurements and settings in a database on your
+          iPhone. Without sync, this data doesn’t leave the device through Leve and I have no access to it. It is
+          part of your iPhone’s backups (iCloud or your computer), which Apple’s terms and your backup settings
+          govern.
+        </p>
+        <ul>
+          <li><strong>Rest alerts and Live Activities</strong> are scheduled and updated on the iPhone. Leve doesn’t use push notifications, so no notification server receives your data. iOS can show the alerts on a paired Apple Watch.</li>
+          <li><strong>Importing a Hevy CSV export</strong> reads the file you pick on the iPhone. The file isn’t uploaded. Imported workouts are treated like any others, so they sync if you use sync.</li>
+          <li><strong>Sign-in and sync state</strong>, such as Clerk’s client token and your session, are kept in the iPhone’s keychain and app storage. Leve stores only what it needs to offer sign-in and provide the features you use (§ 25 (2) no. 2 TDDDG).</li>
+        </ul>
+      </section>
+
+      <section aria-labelledby="sync">
+        <h2 id="sync">Sync and your Leve account</h2>
+        <p>If you sign in, Leve keeps your data in your account and syncs it with your devices.</p>
+        <h3>Checking for a sign-in</h3>
+        <p>
+          When Leve starts or comes back to the foreground, it asks Clerk whether you are signed in and loads Clerk’s
+          sign-in settings. This happens whether or not you have an account, so that sign-in and sync work when you
+          need them. Clerk receives your IP address, the app’s identity and version and technical details about the
+          device, and Leve stores a Clerk client token in the keychain. The legal basis is my legitimate interest in offering sign-in and sync reliably (Art. 6 (1) (f)
+          GDPR).
+        </p>
+        <h3>Signing in with Apple</h3>
+        <p>
+          You sign in with Apple. Apple passes Leve a stable account identifier and the email address you choose to
+          share, which can be a private relay address from Apple. The first time, you can also share your name. The
+          sign-in service <strong>Clerk</strong> creates your Leve account from these and keeps them, together with
+          your sign-in sessions. For each session, Clerk records information such as the time, IP address, the
+          approximate location derived from it and the device or app used, to keep your account secure.
+        </p>
+        <h3>What the sync server stores</h3>
+        <p>
+          The sync server runs on <strong>Cloudflare</strong> and keeps one database per account. It stores
+          everything you record in Leve: workouts with their exercises, sets and times, routines and folders, custom
+          exercises, workout and exercise notes and their comments, body measurements (bodyweight and body fat) and
+          settings. For deleted items it keeps a marker without content so other devices learn about the deletion.
+          It also keeps short technical receipts for 90 days so it can recognise a change that a device sends twice.
+        </p>
+        <p>
+          The server logs each request, including your IP address, the time and the address requested, to keep the
+          service running and secure. Cloudflare deletes these logs after 7 days.
+        </p>
+        <h3>Health data and your consent</h3>
+        <p>
+          Workouts and body measurements can reveal information about your health. I treat them as health data under
+          Article 9 GDPR and store them on the sync server only with your explicit consent, which Leve asks for
+          before your first sync (Art. 9 (2) (a) GDPR). You can withdraw your consent at any time by deleting your
+          account, which stops sync and deletes your synced data. Withdrawal doesn’t affect what happened before it.
+          Without consent, Leve works as before, on your iPhone only.
+        </p>
+        <h3>Why and on what basis</h3>
+        <ul>
+          <li>Creating your account and syncing your data is how I provide the sync service you asked for (Art. 6 (1) (b) GDPR), together with your explicit consent for health data (Art. 9 (2) (a) GDPR).</li>
+          <li>Session records and server logs protect your account and the service against misuse and help me fix errors. That is my legitimate interest (Art. 6 (1) (f) GDPR).</li>
+        </ul>
+      </section>
+
+      <section aria-labelledby="mcp">
+        <h2 id="mcp">MCP access for assistants</h2>
+        <p>
+          You can connect an AI assistant or another tool to your synced data through the Model Context Protocol
+          (MCP). The tool asks you to sign in to Leve and approve its access on Clerk’s consent screen first. Clerk
+          then issues the tool an access token for your account. Depending on the access you approve, the tool can
+          read your synced workouts, progress, routines, notes, body measurements and settings, or also add, change
+          and delete them. Notes the tool writes are marked with its name or identifier.
+        </p>
+        <p>
+          Leve hands your data to the tool because you asked it to (Art. 6 (1) (b) GDPR) and, for health data, on your
+          explicit consent, which you give when you approve the tool’s access (Art. 9 (2) (a) GDPR). The provider of
+          the tool you connect, for example the company behind an AI assistant, is responsible for what it does with
+          that data under its own privacy policy. To stop access, remove the connection in the tool. An access token
+          the tool already holds keeps working until it expires.
+        </p>
+      </section>
+
+      <section aria-labelledby="updates">
+        <h2 id="updates">App updates</h2>
+        <p>
+          Leve receives fixes as over-the-air updates through Expo’s update service, <strong>EAS Update</strong>.
+          When Leve checks for an update, it sends Expo the build and update version, a random identifier for this
+          installation of Leve and, if an update failed to start, the IDs of failed updates and the last error that
+          stopped Leve from launching. Expo also sees your IP address. Expo uses this to deliver the right update, roll
+          updates out gradually and count installations and failed launches. It contains no workouts, no account
+          details and no identifier that ties it to you. Expo keeps the error text for 3 days. I use this to deliver
+          working updates, which is my legitimate interest (Art. 6 (1) (f) GDPR).
+        </p>
+      </section>
+
+      <section aria-labelledby="apple">
+        <h2 id="apple">Apple</h2>
+        <p>
+          Apple distributes Leve through the App Store and provides Sign in with Apple. Apple processes your data for
+          these purposes as its own controller, under Apple’s privacy policy. If you agreed in your iPhone’s settings
+          to share analytics with app developers, Apple gives me crash reports and aggregated usage statistics without
+          your identity.
+        </p>
+      </section>
+
+      <section aria-labelledby="website">
+        <h2 id="website">This website</h2>
+        <p>
+          This website is hosted on <strong>Cloudflare Pages</strong>. When you visit, Cloudflare processes your IP
+          address and request details to deliver the pages and protect them against attacks. The site sets no cookies
+          and uses no analytics. The live demo runs entirely in your browser with sample workouts and sends nothing
+          you enter to a server. The legal basis is my legitimate interest in running a secure website (Art. 6 (1)
+          (f) GDPR).
+        </p>
+      </section>
+
+      <section aria-labelledby="email">
+        <h2 id="email">Email</h2>
+        <p>
+          If you email me, I use your address and message to answer you (Art. 6 (1) (b) or (f) GDPR). My email is
+          hosted by Microsoft (Outlook.com). I delete the messages once your request is settled, unless I have to keep
+          them for longer by law.
+        </p>
+      </section>
+
+      <section aria-labelledby="recipients">
+        <h2 id="recipients">Service providers and transfers outside the EU</h2>
+        <p>
+          Clerk, Cloudflare and Expo process data on my behalf under data processing agreements. Apple and Microsoft
+          provide their services as their own controllers.
+        </p>
+        <dl class="specs doc-specs">
+          <div>
+            <dt>Clerk</dt>
+            <dd>Clerk, Inc., USA. Accounts, sign-in sessions and MCP access tokens.</dd>
+          </div>
+          <div>
+            <dt>Cloudflare</dt>
+            <dd>Cloudflare, Inc., USA. Sync server, account databases, server logs and this website. Data can be stored in data centres outside the EU.</dd>
+          </div>
+          <div>
+            <dt>Expo</dt>
+            <dd>650 Industries, Inc. (Expo), USA. App updates.</dd>
+          </div>
+          <div>
+            <dt>Microsoft</dt>
+            <dd>Microsoft Ireland Operations Ltd., Ireland, and Microsoft Corporation, USA. Email (Outlook.com).</dd>
+          </div>
+          <div>
+            <dt>Apple</dt>
+            <dd>Apple Distribution International Ltd., Ireland, and Apple Inc., USA, as their own controller. App Store and Sign in with Apple.</dd>
+          </div>
+        </dl>
+        <p>
+          Clerk, Cloudflare, Expo and Microsoft are certified under the EU-U.S. Data Privacy Framework.
+          Transfers to them rely on the European Commission’s adequacy decision for that framework (Art. 45 GDPR) and,
+          where their agreements include them, the EU standard contractual clauses (Art. 46 (2) (c) GDPR).
+        </p>
+      </section>
+
+      <section aria-labelledby="retention">
+        <h2 id="retention">How long data is kept, and deleting it</h2>
+        <ul>
+          <li><strong>Data on your iPhone</strong> stays until you delete it in Leve or delete the app.</li>
+          <li><strong>Your account and synced data</strong> stay while you have an account, including the markers for deleted items. Inactive accounts aren’t deleted automatically.</li>
+          <li><strong>Deleting your account</strong>: in Leve, go to Settings and choose Delete account. This deletes your account at Clerk and your account’s database on the sync server right away, and stops sync. The copy on your iPhone stays until you delete it or the app. Cloudflare can keep recovery copies of the database for up to 30 days before they are gone too. If you can’t use the app, email me and I’ll delete your account for you.</li>
+          <li><strong>Server logs</strong> are deleted after 7 days, and receipts for synced changes after 90 days.</li>
+          <li><strong>Clerk</strong> keeps your account and sessions until your account is deleted. <strong>Expo</strong> keeps update request records to count installations and failed launches of each update, and deletes the error text after 3 days.</li>
+        </ul>
+      </section>
+
+      <section aria-labelledby="rights">
+        <h2 id="rights">Your rights</h2>
+        <p>Under the GDPR you have the right to:</p>
+        <ul>
+          <li>get a copy of your data and information about how it’s processed (Art. 15),</li>
+          <li>have incorrect data corrected (Art. 16),</li>
+          <li>have your data deleted (Art. 17),</li>
+          <li>restrict processing (Art. 18),</li>
+          <li>receive your synced data in a machine-readable format (Art. 20),</li>
+          <li>object to processing based on legitimate interests, for reasons relating to your situation (Art. 21),</li>
+          <li>withdraw consent at any time, with effect for the future (Art. 7 (3)).</li>
+        </ul>
+        <p>
+          Email me to use any of these rights. To protect your account, I may ask you to confirm that the account is
+          yours, for example by telling me the email address shown for Leve under Sign in with Apple in your iPhone’s
+          settings, which may be a private relay address.
+        </p>
+        <p>
+          You can also complain to a data protection supervisory authority, in particular in the EU country where you
+          live or work or where you think the GDPR was infringed. The authority responsible for me is
+          <a href="https://www.baden-wuerttemberg.datenschutz.de/">Der Landesbeauftragte für den Datenschutz und die
+          Informationsfreiheit Baden-Württemberg</a>, Lautenschlagerstraße 20, 70173 Stuttgart, Germany.
+        </p>
+      </section>
+
+      <section aria-labelledby="other">
+        <h2 id="other">Other things to know</h2>
+        <ul>
+          <li>You don’t have to provide any data to use Leve. You need an account only for sync and MCP.</li>
+          <li>Leve makes no automated decisions about you and builds no profiles.</li>
+          <li>Leve isn’t meant for children. If you are under 16, use sync only with a parent’s or guardian’s permission.</li>
+          <li>If Leve starts handling data differently, I’ll update this policy and its date. For significant changes I’ll also tell you in the app.</li>
+        </ul>
+      </section>
+    </main>
+
+    <footer class="foot shell">
+      <span>Leve · workout tracker</span>
+      <nav class="foot-links" aria-label="Legal pages">
+        <a href="./privacy.html">Privacy</a>
+        <a href="./support.html">Support</a>
+        <a href="./impressum.html">Legal notice</a>
+      </nav>
+    </footer>
+  </body>
+</html>

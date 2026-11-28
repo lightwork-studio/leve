@@ -8,6 +8,11 @@ The hero phone loads the real app only after visitors click **Try the live demo*
 with sample workouts and keeps changes in memory for the life of the frame. On hosts other than
 Cloudflare Pages, configure the equivalent of `_redirects` to support refreshing app routes.
 
+`privacy.html`, `support.html` and `impressum.html` hold the privacy policy, support page and legal
+notice. App Store Connect links to the first two, so keep their paths stable, and update the privacy
+policy when the app or sync server starts handling data differently. Every page links to all three
+in its footer.
+
 The build copies the Leve brand assets and the app screens in `shots/`, and generates CSS
 variables from the mobile app’s palette and browser font stacks. The screens were captured from
 the Expo web build with sample data, in a 390 × 844 viewport at 2× in dark appearance.
