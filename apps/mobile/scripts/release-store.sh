@@ -33,10 +33,17 @@ fi
 : "${LEVE_PRODUCTION_EAS_PROJECT_ID:?Configure the production EAS project ID.}"
 : "${EXPO_TOKEN:?Configure the production EAS token.}"
 # An OTA update must be bundled with the same settings as the store build it reaches, sign-in
-# included. Read first, so a broken eas.json stops the release instead of shipping without them.
+# included. They come from this commit's eas.json, so a fix can carry a rotated key. Read first,
+# so a broken eas.json stops the release instead of shipping without them. Only app settings may
+# come from there: this job holds the release credentials, which eas.json must not replace.
 build_env="$(node -e '
-  for (const [key, value] of Object.entries(require("./eas.json").build.production.env))
-    console.log(key + "=" + value)')"
+  for (const [key, value] of Object.entries(require("./eas.json").build.production.env)) {
+    if (!/^(LEVE_APP_VARIANT|EXPO_PUBLIC_[A-Z0-9_]+)$/.test(key) || /[\r\n]/.test(String(value))) {
+      console.error("eas.json sets " + key + " for production, which the release does not take from it.");
+      process.exit(1);
+    }
+    console.log(key + "=" + value);
+  }')"
 while IFS= read -r line; do export "$line"; done <<<"$build_env"
 export LEVE_STORE_VERSION="${tag#v}"
 export EXPO_PUBLIC_COMMIT="${commit:0:7}"

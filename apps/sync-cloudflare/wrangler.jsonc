@@ -27,6 +27,8 @@
       // App Store builds and MCP clients reach production here (MCP_RESOURCE_URL is
       // https://sync.leve.timweb.app/mcp). The development Worker has no custom domain.
       "routes": [{ "pattern": "sync.leve.timweb.app", "custom_domain": true }],
+      // Only there: the phone's data is tied to the exact server URL, so no second address.
+      "workers_dev": false,
       // Bindings aren't inherited by an environment, so they are repeated here
       // (src/wrangler-config.test.ts checks that they match).
       "durable_objects": {

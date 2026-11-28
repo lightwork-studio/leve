@@ -65,6 +65,7 @@ describe("wrangler.jsonc", () => {
 
   it("serves production, and only production, at its custom domain", () => {
     expect(production.routes).toEqual([{ pattern: "sync.leve.timweb.app", custom_domain: true }]);
+    expect(production.workers_dev).toBe(false);
     // Routes are inherited: one at the top level would point the development Worker at it too.
     expect(config.routes).toBeUndefined();
     expect(config.route).toBeUndefined();

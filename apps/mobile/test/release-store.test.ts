@@ -135,6 +135,22 @@ if (args[2] === "env:exec" && args[3] === "production" && args[4].includes("runt
       version: "1.2.3",
       args: expect.arrayContaining(["update", "--channel", "production", "--environment"]),
     });
+
+    // eas.json supplies app settings only, never the release job's credentials or shell setup.
+    for (const [key, value] of [
+      ["EXPO_TOKEN", "from-eas-json"],
+      ["BASH_ENV", "/tmp/payload.sh"],
+      ["EXPO_PUBLIC_SAMPLE_DATA", "off\nEXPO_TOKEN=from-eas-json"],
+    ] as const) {
+      const injected = JSON.parse(config);
+      injected.build.production.env[key] = value;
+      writeFileSync(join(cwd, "eas.json"), JSON.stringify(injected));
+      const refused = release("ota", { builds: finished });
+      expect(refused.status, key).toBe(1);
+      expect(refused.stderr).toContain(`eas.json sets ${key} for production`);
+      expect(refused.stdout).toBe("");
+    }
+    writeFileSync(join(cwd, "eas.json"), config);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
