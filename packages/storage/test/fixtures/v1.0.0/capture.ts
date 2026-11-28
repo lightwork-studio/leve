@@ -1,6 +1,6 @@
 import { copyFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { leveContract } from "@leve/contract";
+import { LEVE_CONTRACT_DEFINITION, leveContract } from "@leve/contract";
 import { deviceStorageDefinition } from "../../../src/device-schema.ts";
 import { openDeviceStore } from "../../../src/device-store.ts";
 import { ServerAccountStore, serverStorageDefinition } from "../../../src/server-store.ts";
@@ -95,6 +95,70 @@ try {
     randomId: () => "unused-submission",
   });
   try {
+    // A v1.0.0 phone negotiates every 1.0 feature and holds notes, replies and rest preferences.
+    phone.setNegotiated("1.0", Object.keys(LEVE_CONTRACT_DEFINITION.features), "lineage-1");
+    const noted = phone.applyPull(
+      [
+        {
+          state: "live",
+          kind: "workout_note",
+          id: "wn-1",
+          revision: 17,
+          content: {
+            workoutId: "w-done",
+            pinned: true,
+            text: "Keep the elbows tucked on bench.",
+            createdAt: "2026-11-09T18:10:00.000Z",
+            agent: null,
+          },
+        },
+        {
+          state: "live",
+          kind: "workout_note_comment",
+          id: "wc-1",
+          revision: 18,
+          content: {
+            noteId: "wn-1",
+            text: "Bar speed looked better on the last set.",
+            createdAt: "2026-11-09T20:00:00.000Z",
+            agent: "Coach",
+          },
+        },
+        {
+          state: "live",
+          kind: "exercise_note",
+          id: "xn-1",
+          revision: 19,
+          content: {
+            exerciseId: "barbell-squat",
+            workoutId: null,
+            pinned: false,
+            text: "Belt from 140 kg.",
+            createdAt: "2026-11-08T09:00:00.000Z",
+            agent: null,
+          },
+        },
+        {
+          state: "live",
+          kind: "workout_rest",
+          id: "w-done",
+          revision: 20,
+          content: { workoutId: "w-done", seconds: 150 },
+        },
+      ],
+      20,
+      { cursor: 14, lineage: "lineage-1" },
+    );
+    if (!noted) throw new Error("capture: the notes page was dropped");
+    phone.put("workout_rest", "w-live", { workoutId: "w-live", seconds: 210 });
+    phone.put("workout_note", "wn-live", {
+      workoutId: "w-live",
+      pinned: false,
+      text: "Knee felt fine today.",
+      createdAt: "2026-11-10T08:40:00.000Z",
+      agent: null,
+    });
+
     // An unsent routine edit keeps the server copy it started from.
     const routine = phone.get("routine", "r-1");
     if (!routine?.content || routine.server?.revision !== 11) {

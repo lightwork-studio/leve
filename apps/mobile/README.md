@@ -119,8 +119,10 @@ A workout running on another phone, which shows here as in progress too, doesn't
 
 ## TestFlight
 
-The TestFlight preview is for disposable test data. Its storage format may change and preview
-workouts may need to be reset. See the [data preservation promise](../../docs/data-compatibility.md#data-preservation-promise).
+The TestFlight preview runs `main` ahead of release and syncs with the development Worker. It can
+carry storage and protocol versions that haven't shipped yet, which the
+[data preservation promise](../../docs/data-compatibility.md#data-preservation-promise) doesn't
+cover, so use test data there.
 
 When deployment is enabled, every push to `main` runs the checks and then `scripts/deploy-ios.sh`.
 

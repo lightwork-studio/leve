@@ -4,7 +4,13 @@ import { afterEach, expect, it } from "vitest";
 import { openDeviceStore } from "../src/device-store.ts";
 import { readStorageMeta } from "../src/meta.ts";
 import { accountDatabasePath, ServerStorage } from "../src/server-store.ts";
-import { dumpFile, engine, removeTempDirs, tempDir } from "../src/test-support/fixtures.ts";
+import {
+  dumpFile,
+  engine,
+  removeTempDirs,
+  schemaOf,
+  tempDir,
+} from "../src/test-support/fixtures.ts";
 import { readDeviceFile } from "../src/test-support/logical.ts";
 
 // Backups written by v1.0.0, the first release that keeps real data (fixtures/v1.0.0/capture.ts).
@@ -13,6 +19,26 @@ import { readDeviceFile } from "../src/test-support/logical.ts";
 afterEach(removeTempDirs);
 
 const fixture = (name: string) => new URL(`fixtures/v1.0.0/${name}`, import.meta.url);
+
+/**
+ * The tables and indexes a new install gets. An opened v1.0.0 database must end up with the same
+ * layout, so a schema change without a new storage version and migration fails here.
+ */
+async function freshLayout(side: "device" | "server"): Promise<string[]> {
+  const directory = tempDir();
+  if (side === "device") {
+    const path = join(directory, "fresh.db");
+    (await openDeviceStore({ engine, path, appVersion: "compatibility-test" })).close();
+    return schemaOf(path);
+  }
+  const storage = new ServerStorage({ engine, directory, appVersion: "compatibility-test" });
+  try {
+    await storage.account("fresh");
+  } finally {
+    await storage.close();
+  }
+  return schemaOf(accountDatabasePath(directory, "fresh"));
+}
 
 /**
  * Every stored value of the backup is still there after the current code opened it. A later layout
@@ -36,20 +62,20 @@ it("opens the v1.0.0 phone backup and keeps every record, upload and sync positi
     storageVersion: 5,
     appVersion: "1.0.0",
     unsyncedWork: true,
-    sync: { account: "acct-1", cursor: 14, release: "1.0", lineage: "lineage-1" },
+    sync: { account: "acct-1", cursor: 20, release: "1.0", lineage: "lineage-1" },
   });
 
   const phone = await openDeviceStore({ engine, path, appVersion: "compatibility-test" });
   try {
     expect(phone.summary()).toMatchObject({
-      synced: 7,
-      pending: 8,
+      synced: 11,
+      pending: 10,
       conflict: 1,
       invalid: 1,
       inFlight: 5,
     });
     expect(phone.hasUnsyncedWork()).toBe(true);
-    expect(phone.syncState()).toMatchObject({ cursor: 14, release: "1.0", lineage: "lineage-1" });
+    expect(phone.syncState()).toMatchObject({ cursor: 20, release: "1.0", lineage: "lineage-1" });
     // The running workout, recorded offline and edited while its upload was in flight.
     expect(phone.activeWorkout()).toMatchObject({
       id: "w-live",
@@ -73,6 +99,23 @@ it("opens the v1.0.0 phone backup and keeps every record, upload and sync positi
     expect(phone.get("workout_set", "s-3")).toMatchObject({ deleted: true, status: "pending" });
     expect(phone.get("workout_exercise", "e-row")).toMatchObject({ deleted: true, inFlight: true });
     expect(phone.get("routine", "r-old")).toMatchObject({ deleted: true, status: "synced" });
+    // Notes, a reply from an agent and rest preferences, synced and pending.
+    expect(phone.get("workout_note", "wn-1")).toMatchObject({
+      status: "synced",
+      content: { workoutId: "w-done", pinned: true },
+    });
+    expect(phone.get("workout_note_comment", "wc-1")).toMatchObject({
+      content: { noteId: "wn-1", agent: "Coach" },
+    });
+    expect(phone.get("exercise_note", "xn-1")).toMatchObject({
+      content: { exerciseId: "barbell-squat", workoutId: null },
+    });
+    expect(phone.get("workout_rest", "w-done")).toMatchObject({ content: { seconds: 150 } });
+    expect(phone.get("workout_rest", "w-live")).toMatchObject({
+      status: "pending",
+      content: { seconds: 210 },
+    });
+    expect(phone.get("workout_note", "wn-live")).toMatchObject({ status: "pending" });
     // An unsent routine edit with the server copy it started from.
     expect(phone.get("routine", "r-1")).toMatchObject({
       status: "pending",
@@ -84,7 +127,9 @@ it("opens the v1.0.0 phone backup and keeps every record, upload and sync positi
   }
 
   expectEveryValueKept(before, path);
+  expect(schemaOf(path)).toEqual(await freshLayout("device"));
   const reopened = readDeviceFile(path);
+  expect(reopened.unsyncedWork).toBe(true);
   expect(reopened.records).toEqual(original.records);
   expect(reopened.submissions).toEqual(original.submissions);
   expect(reopened.submissions.map((s) => [s.submissionId, s.op, s.baseRevision])).toEqual([
@@ -131,6 +176,7 @@ it("opens a v1.0.0 account database in place with its history, deletions and rec
     await storage.close();
   }
   expectEveryValueKept(before, path);
+  expect(schemaOf(path)).toEqual(await freshLayout("server"));
 });
 
 it("restores a v1.0.0 server backup with its records, deletion markers and receipts", async () => {
