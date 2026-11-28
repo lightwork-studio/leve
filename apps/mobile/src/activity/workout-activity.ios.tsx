@@ -8,7 +8,7 @@ import { readDevicePreference, writeDevicePreference } from "../data/device-pref
 import { restTimer } from "../data/rest-timer.ts";
 import { useWorkoutPlayer } from "../ui/live/use-workout-player.ts";
 import { showToast } from "../ui/notice.tsx";
-import { type ActivityTapInbox, activityDelivery } from "./delivery.ts";
+import { type ActivityTapInbox, activityDelivery, activityUpdates } from "./delivery.ts";
 import { workoutFrame } from "./frame.ts";
 import { workoutSession } from "./session.ts";
 
@@ -81,21 +81,14 @@ function LiveWorkout() {
     return () => clearTimeout(timer);
   }, [rest]);
   useEffect(() => {
-    const app = AppState.addEventListener("change", (state) => {
-      if (state === "active") {
-        restTimer.refresh();
-        refresh((n) => n + 1);
-      }
+    const updates = activityUpdates({
+      isActive: () => AppState.currentState === "active",
+      refreshRest: restTimer.refresh,
+      refreshActivity: () => refresh((n) => n + 1),
+      drain: () => void widgets?.session.drain(),
     });
-    const events = widgets?.addUserInteractionListener((event) => {
-      if (event.target === "LeveRestChanged") {
-        // ActivityKit already has the updated timer. Refresh an open workout immediately and
-        // reconcile a background workout on resume, without echoing a lock-screen update.
-        if (AppState.currentState === "active") restTimer.refresh();
-      } else {
-        void widgets.session.drain();
-      }
-    });
+    const app = AppState.addEventListener("change", updates.appStateChanged);
+    const events = widgets?.addUserInteractionListener(updates.interacted);
     void widgets?.session.drain();
     return () => {
       app.remove();
