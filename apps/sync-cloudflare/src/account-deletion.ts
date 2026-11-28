@@ -160,13 +160,16 @@ export interface AppleConfirmation {
  * Deletes the account: checks with Apple that the person asking signs in with the account's Apple
  * ID, then deletes the account's data (`eraseData`), revokes the Sign in with Apple grant and
  * deletes the Clerk user, in that order. A failure before the data goes deletes nothing. Every step
- * can run again, and a user Clerk no longer has counts as deleted, so trying again (with a new
- * code) after any failure finishes it. Throws a DeletionError naming the step that failed.
+ * can run again, so trying again (with a new code) after any failure finishes it. A user Clerk no
+ * longer has counts as deleted only when `erasedBefore` says an earlier attempt already deleted
+ * the data; otherwise it means the Worker's Clerk key is for another instance. Throws a
+ * DeletionError naming the step that failed.
  */
 export async function deleteAccount(
   config: DeletionConfig,
   account: string,
   apple: AppleConfirmation | null,
+  erasedBefore: boolean,
   eraseData: () => Promise<void>,
   options: DeletionOptions = {},
 ): Promise<void> {
@@ -192,9 +195,12 @@ export async function deleteAccount(
   const found = await clerk("GET").catch(() => null);
   if (!found) throw unavailable("Clerk can't be reached");
   if (found.status === 404) {
-    // The sign-in is already gone: an earlier attempt got this far, after deleting the data.
-    await eraseData();
-    return;
+    // An earlier attempt got this far, after deleting the data: make sure it is all gone.
+    if (erasedBefore) {
+      await eraseData();
+      return;
+    }
+    throw new DeletionError("configuration", "Clerk doesn't know the user: check CLERK_SECRET_KEY");
   }
   if (found.status === 401 || found.status === 403) {
     throw new DeletionError("configuration", `Clerk refused the secret key (HTTP ${found.status})`);
@@ -209,6 +215,11 @@ export async function deleteAccount(
     (external) => external.provider === "oauth_apple" || external.provider === "apple",
   );
 
+  // The app signs in with Apple only, so a code without an Apple account on the user means the
+  // Worker reads Clerk wrongly: fail before deleting rather than skip the check.
+  if (apple && !appleAccount) {
+    throw new DeletionError("configuration", "Clerk shows no Apple account for the user");
+  }
   // Before anything is deleted: Apple confirms the code is for the account's own Apple ID.
   let revocation: { clientId: string; secret: string; token: string; hint: string } | null = null;
   if (appleAccount) {
@@ -243,7 +254,10 @@ export async function deleteAccount(
     if (!exchanged.ok) {
       // A used, expired or foreign code: the person can sign in with Apple again. A wrong key,
       // team or client id is the operator's to fix.
-      if (exchanged.status === 400 && tokens?.error === "invalid_grant") {
+      if (
+        exchanged.status === 400 &&
+        (tokens?.error === "invalid_grant" || tokens?.error === "invalid_request")
+      ) {
         throw new DeletionError("apple", "Apple didn't accept the authorization code");
       }
       if (exchanged.status === 400 || exchanged.status === 401) {

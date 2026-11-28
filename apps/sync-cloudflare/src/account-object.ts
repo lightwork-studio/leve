@@ -212,6 +212,8 @@ export class AccountObject extends DurableObject<Env> {
         config,
         account,
         code === undefined ? null : { code, clientId: clientId ?? null },
+        // The marker says an earlier attempt already deleted the data (see #checkMarker).
+        this.#deleted,
         async () => {
           // Through the write service, which also ends downloads waiting on the account.
           const erased = await this.#service.deleteAccount(account);

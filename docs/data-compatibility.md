@@ -472,7 +472,7 @@ join the frozen paths; until then the version 1 layouts may still change.
   `account_deleted`, keeps everything it shows as data that never synced, in one transaction: its
   latest version of each record (pending edits and kept conflicts included) stays, and the server's
   copies, deletions and the sync state go. A phone that gets no answer remembers the request and
-  settles it from what it learns next. `account_deleted` or a sign-in that is gone means the
+  settles it from what it learns next. `account_deleted`, or a sign-in that ended other than by signing out, means the
   account is deleted and the phone keeps its data; a completed sync means nothing was deleted.
   Other phones whose sign-in ended with the account ask to sign in again, as for any lapsed
   sign-in. Their copy stays bound to the deleted account until another account signs in there

@@ -299,8 +299,6 @@ function Sync({
   const [, setDeletions] = useState(0);
   useEffect(() => subscribeAccountDeletion(() => setDeletions((n) => n + 1)), []);
   const deletion = own ? null : accountDeletionState(userId);
-  /** This phone asked for the deletion, and the account's data is gone but its sign-in isn't. */
-  const [unfinishedDeletion, setUnfinishedDeletion] = useState(false);
 
   // A deletion this phone asked for but never heard back about (no answer, or the app closed):
   // once the account's sign-in is gone, so is the account, and the phone keeps its data. A sign-in
@@ -308,6 +306,8 @@ function Sync({
   useEffect(() => {
     const asked = own ? null : accountBeingDeleted();
     if (asked === null || !isLoaded || (isSignedIn && userId === asked)) return;
+    // Signed out on purpose says nothing about the deletion: wait for the next sign-in.
+    if (!isSignedIn && signedOutOnPurpose()) return;
     const data = store.syncState();
     if (data.server === server && data.account === asked) {
       latest.current.change((current) => current.forgetAccount());
@@ -344,8 +344,6 @@ function Sync({
           accountBeingDeleted() === userId &&
           (next.prompt?.kind === "deleted" || (next.lastSynced ?? 0) >= started)
         ) {
-          // Deleted from here, and still signed in: the sign-in part is left to finish.
-          if (next.prompt?.kind === "deleted") setUnfinishedDeletion(true);
           setAccountBeingDeleted(null);
         }
         if (next.lastSynced !== null && next.lastSynced - lastWritten.current > SAVE_SYNCED_MS) {
@@ -412,7 +410,6 @@ function Sync({
             void signOut().catch(() => {});
           }}
           onSettings={() => router.push(SETTINGS)}
-          unfinished={unfinishedDeletion}
         />
       );
     if (prompt?.kind === "update") return <UpdatePrompt onPause={pause} />;
@@ -1038,37 +1035,24 @@ function RefusedPrompt({
 }
 
 /**
- * The account was deleted, here or on another phone. The phone has already kept its data as its
- * own, so signing out is all that's left. Settings stays reachable, where a deletion that didn't
- * finish (the sign-in still works) is finished.
+ * The account's data was deleted, here or on another phone. The phone has already kept its own
+ * data, unsynced. The question stays only while the sign-in still works: once the deletion is done,
+ * the sign-in ends and the question with it. So finishing the deletion in Settings comes first.
  */
 function DeletedPrompt({
   onSignOut,
   onSettings,
-  unfinished,
 }: {
   onSignOut: () => void;
   onSettings: () => void;
-  /** Deleted from this phone without an answer: the sign-in still has to be deleted. */
-  unfinished: boolean;
 }) {
-  if (unfinished)
-    return (
-      <Dialog
-        eyebrow="Finish deleting your account"
-        confirm={{ label: "Open Settings", onPress: onSettings }}
-        footer={<Button rank="text" label="Sign out" onPress={onSignOut} />}
-      >
-        <Body text="Your synced workouts are deleted, but deleting your account didn't finish. Delete it again in Settings to finish. Workouts on this phone stay here." />
-      </Dialog>
-    );
   return (
     <Dialog
       eyebrow="Account deleted"
-      confirm={{ label: "Sign out", onPress: onSignOut }}
-      footer={<Button rank="text" label="Open Settings" onPress={onSettings} />}
+      confirm={{ label: "Finish in Settings", onPress: onSettings }}
+      footer={<Button rank="text" label="Sign out" onPress={onSignOut} />}
     >
-      <Body text="This Leve account was deleted, so this phone no longer syncs. Its workouts stay on this phone." />
+      <Body text="This Leve account's synced workouts were deleted, so this phone no longer syncs. Its workouts stay on this phone. If you're still signed in, delete the account again in Settings to finish." />
     </Dialog>
   );
 }

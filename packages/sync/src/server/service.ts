@@ -709,14 +709,10 @@ export class SyncService {
     if (!this.#storage.deleteAccount) {
       return errorReply("invalid_request", "this server doesn't delete accounts");
     }
-    // Marked first, so a download that wakes during the deletion doesn't read what is going away.
-    this.#deleted.add(accountId);
     try {
       await this.#storage.deleteAccount(accountId);
-    } catch (error) {
-      // Not deleted after all (storage decides what is left): don't claim it was.
-      this.#deleted.delete(accountId);
-      throw error;
+      // Only once it is: a failure leaves what storage kept, and the account isn't called deleted.
+      this.#deleted.add(accountId);
     } finally {
       this.#notify(accountId);
     }

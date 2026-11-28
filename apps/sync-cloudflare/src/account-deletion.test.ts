@@ -34,7 +34,8 @@ const APPLE_USER = "001234.abcdef.0001";
 
 const base64Url = (value: unknown) =>
   btoa(JSON.stringify(value)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-const idToken = (sub: string) => `${base64Url({ alg: "RS256" })}.${base64Url({ sub })}.sig`;
+const idToken = (sub: string | null) =>
+  `${base64Url({ alg: "RS256" })}.${base64Url(sub === null ? {} : { sub })}.sig`;
 const decode = (part: string) =>
   JSON.parse(atob(part.replace(/-/g, "+").replace(/_/g, "/"))) as Record<string, unknown>;
 
@@ -50,7 +51,7 @@ function services({
   user = {
     external_accounts: [{ provider: "oauth_apple", provider_user_id: APPLE_USER }],
   } as Record<string, unknown> | null,
-  appleSub = APPLE_USER,
+  appleSub = APPLE_USER as string | null,
   token = { status: 200 } as { status: number; error?: string },
   revoke = 200,
   clerkDelete = 200,
@@ -147,12 +148,14 @@ async function run(
   service: ReturnType<typeof services>,
   apple: { code: string; clientId: string | null } | null = CODE,
   config: DeletionConfig = CONFIG,
+  erasedBefore = false,
 ) {
   let erased = false;
   const error = await deleteAccount(
     config,
     "user_alice",
     apple,
+    erasedBefore,
     async () => {
       service.calls.push({ method: "ERASE", url: "" });
       erased = true;
@@ -211,12 +214,25 @@ describe("deleteAccount", () => {
     expect((await run(services(), { code: "c", clientId: null })).error).toBeNull();
   });
 
-  it("counts a user Clerk no longer has as deleted, still making sure the data is gone", async () => {
+  it("counts a user Clerk no longer has as deleted after an earlier erase, still making sure", async () => {
     const service = services({ user: null });
-    const { error, erased } = await run(service);
+    const { error, erased } = await run(service, CODE, CONFIG, true);
     expect(error).toBeNull();
     expect(erased).toBe(true);
     expect(service.calls.map((call) => call.method)).toEqual(["GET", "ERASE"]);
+  });
+
+  it("deletes nothing when Clerk doesn't know a user nothing was deleted for yet", async () => {
+    // Such as a secret key from another Clerk instance.
+    const { error, erased } = await run(services({ user: null }));
+    expect(error?.step).toBe("configuration");
+    expect(erased).toBe(false);
+  });
+
+  it("deletes nothing when a code comes for a user without an Apple account", async () => {
+    const service = services({ user: { external_accounts: [] } });
+    expect(await run(service)).toMatchObject({ erased: false, error: { step: "configuration" } });
+    expect(service.deleted()).toBe(false);
   });
 
   it("deletes nothing when Apple's code belongs to another Apple ID", async () => {
@@ -229,14 +245,21 @@ describe("deleteAccount", () => {
     expect(service.deleted()).toBe(false);
   });
 
-  it("deletes nothing when Clerk has no Apple user id to compare with", async () => {
-    const service = services({ user: { external_accounts: [{ provider: "oauth_apple" }] } });
+  it("deletes nothing when either side has no Apple user id to compare", async () => {
+    const service = services({
+      user: { external_accounts: [{ provider: "oauth_apple" }] },
+      appleSub: null,
+    });
     expect(await run(service)).toMatchObject({ erased: false, error: { step: "apple" } });
+    const noSub = services({ appleSub: null });
+    expect(await run(noSub)).toMatchObject({ erased: false, error: { step: "apple" } });
   });
 
   it("deletes nothing when the code was used or expired, or is missing", async () => {
     const used = services({ token: { status: 400, error: "invalid_grant" } });
     expect(await run(used)).toMatchObject({ erased: false, error: { step: "apple" } });
+    const junk = services({ token: { status: 400, error: "invalid_request" } });
+    expect(await run(junk)).toMatchObject({ erased: false, error: { step: "apple" } });
     const missing = services();
     expect(await run(missing, null)).toMatchObject({ erased: false, error: { step: "apple" } });
     expect(used.deleted() || missing.deleted()).toBe(false);

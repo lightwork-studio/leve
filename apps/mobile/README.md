@@ -71,7 +71,7 @@ server) explains what goes and asks once. Then the Apple sheet asks for a fresh 
 which the server needs to revoke Sign in with Apple. The server deletes the account's synced data,
 the Sign in with Apple grant and the Clerk user. The phone keeps every workout it shows as data
 that never synced, then signs out. If no answer arrives, the next sync tells: the phone forgets
-the account once the server says it was deleted or its sign-in is gone, and otherwise carries on. Other phones signed in to the account show
+the account once the server says it was deleted or its sign-in ends (other than by signing out), and otherwise carries on. Other phones signed in to the account show
 **Account deleted** if they still reach the server, or otherwise ask to sign in again.
 
 Syncing runs while the app is open: when it starts, shortly after each change, when it comes back
@@ -108,9 +108,10 @@ A workout running on another phone, which shows here as in progress too, doesn't
   you can. On a paired server, this is **Connect again**: the server no longer accepts the phone,
   and a new pairing link from its operator connects it again. Settings shows why a new link is
   needed and leaves the pairing controls available. You can also pause sync until you have a link.
-- **Account deleted:** the account was deleted, here or on another phone. The phone has already
-  kept its workouts as its own, unsynced data; signing out is all that is left. Settings stays
-  reachable, so a deletion that didn't finish there can be finished.
+- **Account deleted:** the account's synced data was deleted, here or on another phone. The
+  phone has already kept its workouts as its own, unsynced data. The question only stays while the
+  sign-in still works, which means deleting the sign-in didn't finish. So it leads to Settings to
+  delete the account again (Settings stays uncovered), with signing out as the other way.
 - **Update Leve:** the server no longer syncs with this version. Update (TestFlight builds open
   TestFlight), or pause sync until you can.
 - **Changed in two places:** the same workout, routine, entry or setting changed on this phone and

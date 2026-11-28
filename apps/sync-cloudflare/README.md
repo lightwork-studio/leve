@@ -73,11 +73,13 @@ People delete their account in the app (Settings, Account). The phone first asks
 for a fresh authorization code, then sends it to `POST /account/delete` with its session token and
 its bundle id (the identity token's audience). The account's object works through these steps:
 
-1. Reads the Clerk user. If Clerk no longer has it, an earlier attempt already got past step 5,
-   so only step 3 runs again.
+1. Reads the Clerk user. If Clerk no longer has it and the marker says an earlier attempt
+   already deleted the data, only step 3 runs again. Without the marker, nothing is deleted: the
+   secret key is probably for another Clerk instance.
 2. Trades the Apple code for a token at Apple, as the app that sent it, and checks that the code
    belongs to the Apple ID the Clerk user signs in with. Clerk can't do this: its native Apple
-   sign-in never sees an authorization code. A failure here deletes nothing.
+   sign-in never sees an authorization code. A failure here deletes nothing, and so does a code
+   for a user Clerk shows without an Apple account.
 3. Records in the account's marker object that the account is deleted, with the time, then
    deletes all of the account's storage (`deleteAll`): every record, deletion marker, receipt and
    the lineage. The marker lives outside the storage it outlasts.

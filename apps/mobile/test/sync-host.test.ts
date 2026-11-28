@@ -492,14 +492,14 @@ it("says the account was deleted, and signing out stops its sync for good, even 
   data.account = null;
   data.server = null;
   await report({ prompt: { kind: "deleted" } });
-  expect(screen()).toContain("This Leve account was deleted, so this phone no longer syncs.");
+  expect(screen()).toContain("synced workouts were deleted, so this phone no longer syncs.");
   expect(screen()).toContain("Its workouts stay on this phone");
   expect(screen()).not.toContain("Pause sync");
 
   // Settings, where a deletion that didn't finish is finished, isn't covered.
   route.path = "/settings";
   await render();
-  expect(screen()).not.toContain("This Leve account was deleted");
+  expect(screen()).not.toContain("synced workouts were deleted");
   route.path = "/exercises";
   await render();
 
@@ -514,17 +514,29 @@ it("says the account was deleted, and signing out stops its sync for good, even 
   expect(screen()).toBe("");
 });
 
-it("asks to finish a deletion asked for here when only its data is gone", async () => {
+it("leads to Settings to finish the deletion while the sign-in still works", async () => {
   data.account = "user_1";
   data.server = "https://sync.test";
   setAccountBeingDeleted("user_1");
   await render();
   await report({ prompt: { kind: "deleted" } });
   await render();
-  expect(screen()).toContain("deleting your account didn't finish");
+  expect(screen()).toContain("If you're still signed in, delete the account again in Settings");
   expect(accountBeingDeleted()).toBeNull();
-  await tap("Open Settings");
+  await tap("Finish in Settings");
   expect(route.pushed).toContain("/settings");
+});
+
+it("waits for the next sign-in when the person signs out before a deletion is settled", async () => {
+  data.account = "user_1";
+  data.server = "https://sync.test";
+  setAccountBeingDeleted("user_1");
+  setSignedOutOnPurpose(true);
+  clerk.signedIn = false;
+  await render();
+  await render();
+  expect(data.forgotten).toBe(0);
+  expect(accountBeingDeleted()).toBe("user_1");
 });
 
 it("doesn't sync an account while it is being deleted from this phone", async () => {
