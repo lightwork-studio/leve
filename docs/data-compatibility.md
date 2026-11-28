@@ -492,9 +492,10 @@ join the frozen paths; until then the version 1 layouts may still change.
   - The file gives times without a time zone, so two devices in different zones, or two exports of
     the same history, can give one id different content. When the account already holds a copy of
     an imported record, or has deleted it, and the import's version on the device is untouched
-    (never edited, deleted, synced or offered again after a restore), sync keeps the account's
-    version without asking. A deletion settles this way only when nothing below the record was
-    changed on the device. Every other case is a conflict for the person, as usual.
+    (never edited or deleted there, nor offered again after a restore), sync keeps the account's
+    version without asking. A deletion settles this way only when nothing of the imported workout
+    it belongs to was changed on the device. Every other case is a conflict for the person, as
+    usual.
   - Deleting an imported record that never synced keeps its deletion and sends it, rather than
     forgetting the record, so another device's import of the same file can't bring it back. Until
     it is sent, it counts as unsynced work.

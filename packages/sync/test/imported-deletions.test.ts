@@ -44,15 +44,19 @@ async function setup() {
     open.push(store);
     return store;
   };
-  const sync = (store: DeviceStore) =>
+  const client = (store: DeviceStore, pageSize?: number) =>
     new SyncClient({
       store,
       transport: serviceTransport(service, "alice"),
       server: "s",
       account: "alice",
       app: "t",
-    }).sync();
-  return { phone, sync };
+      ...(pageSize ? { pageSize } : {}),
+    });
+  const sync = (store: DeviceStore) => client(store).sync();
+  /** Downloads only, one change per page, so children's deletions arrive before their parent's. */
+  const download = (store: DeviceStore) => client(store, 1).waitForChanges(0);
+  return { phone, sync, download };
 }
 
 /** What an import of one workout writes, under the given id, read in the given time zone. */
@@ -178,6 +182,8 @@ it("asks before a deletion in the account takes a workout whose import was chang
   const { phone, sync } = await setup();
   const first = await phone("first");
   importWorkout(first, IMPORTED);
+  // Synced first, so the account deletes each set on its own as well as the workout.
+  await sync(first);
   first.delete("workout", IMPORTED);
   await sync(first);
 
@@ -188,6 +194,29 @@ it("asks before a deletion in the account takes a workout whose import was chang
   await sync(second);
   expect(second.get("workout", IMPORTED)).toMatchObject({ status: "conflict" });
   expect(second.get("workout_set", SET_2)?.content).toMatchObject({ reps: 6 });
+  // The untouched set stays with it, so saving the workout as new keeps the whole workout.
+  expect(second.list("workout_set")).toHaveLength(2);
+  second.resolve("workout", IMPORTED, { choice: "save_as_new", newId: "copy" });
+  const entry = second.list("workout_exercise", { parentId: "copy" })[0];
+  expect(second.list("workout_set", { parentId: entry?.id })).toHaveLength(2);
+});
+
+it("asks about the whole workout when the account's deletion arrives one record at a time", async () => {
+  const { phone, sync, download } = await setup();
+  const first = await phone("first");
+  const second = await phone("second");
+  await sync(second);
+  importWorkout(first, IMPORTED);
+  await sync(first);
+  first.delete("workout", IMPORTED);
+  await sync(first);
+
+  importWorkout(second, IMPORTED);
+  const set = second.get("workout_set", SET_2)?.content;
+  second.put("workout_set", SET_2, { ...set, reps: 6 });
+  await download(second);
+  expect(second.list("workout_set")).toHaveLength(2);
+  expect(second.get("workout", IMPORTED)).toMatchObject({ status: "conflict" });
 });
 
 it("keeps a deleted set and note of an imported workout deleted when another phone imports it", async () => {

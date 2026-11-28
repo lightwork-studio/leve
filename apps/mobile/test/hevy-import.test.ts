@@ -210,16 +210,21 @@ describe("Hevy CSV import", () => {
       HEADER,
       '"Pull","15 Nov 2026, 18:00","15 Nov 2026, 19:00","","Chest Supported Incline Row (Dumbbell)",,"",0,"warmup",20,6,,0,',
       '"Pull","15 Nov 2026, 18:00","15 Nov 2026, 19:00","","Bench Press (Barbell)",,"",0,"normal",80,5,0,0,',
+      '"Pull","15 Nov 2026, 18:00","15 Nov 2026, 19:00","","Plank",,"",0,"normal",0,0,,60,',
     ].join("\n");
     importHevyWorkouts(store, await prepareHevyImport(zeros));
-    const entries = store.list("workout_exercise").map((entry) => entry.content);
-    expect(entries).toMatchObject([
+    const entries = store.list("workout_exercise");
+    expect(entries.map((entry) => entry.content)).toMatchObject([
       { exerciseType: "weight_reps" },
       { exerciseId: "builtin:barbell-bench-press", exerciseType: "weight_reps" },
+      { exerciseId: "builtin:plank", exerciseType: "duration" },
     ]);
-    for (const set of store.list("workout_set")) {
-      expect(set.content).toMatchObject({ durationSeconds: null, distanceMeters: null });
-    }
+    const [row, bench, plank] = entries.map(
+      (entry) => store.list("workout_set", { parentId: entry.id })[0]?.content,
+    );
+    expect(row).toMatchObject({ durationSeconds: null, distanceMeters: null });
+    expect(bench).toMatchObject({ durationSeconds: null, distanceMeters: null });
+    expect(plank).toMatchObject({ weightKg: null, reps: null, durationSeconds: 60 });
   });
 
   it("names the row that brings in a measurement the exercise can't take", async () => {
@@ -229,6 +234,15 @@ describe("Hevy CSV import", () => {
       '"A","15 Nov 2026, 18:00","15 Nov 2026, 19:00","","Odd Carry",,"",1,"normal",20,,0.1,,',
     ].join("\n");
     await expect(prepareHevyImport(mixed)).rejects.toThrow(
+      "Hevy CSV row 3 combines measurements Leve cannot import.",
+    );
+    // The same sets the other way round: the reps on row 3 are what no longer fit.
+    const reversed = [
+      HEADER,
+      '"A","15 Nov 2026, 18:00","15 Nov 2026, 19:00","","Odd Carry",,"",0,"normal",,,0.1,60,',
+      '"A","15 Nov 2026, 18:00","15 Nov 2026, 19:00","","Odd Carry",,"",1,"normal",,10,,,',
+    ].join("\n");
+    await expect(prepareHevyImport(reversed)).rejects.toThrow(
       "Hevy CSV row 3 combines measurements Leve cannot import.",
     );
   });

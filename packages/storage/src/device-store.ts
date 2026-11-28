@@ -2028,22 +2028,39 @@ export class DeviceStore {
       const row = this.#row(kind, id);
       if (!row || row.status !== "conflict" || !this.#untouchedImport(row)) continue;
       if (row.serverState === "deleted") {
-        // The deletion takes everything below with it: only when none of that was changed here.
-        if (!this.#untouchedBelow(kind, id)) continue;
+        // Only when nothing of the imported workout it belongs to was changed here: a record the
+        // person is asked about can still be saved as new, with everything below it.
+        if (!this.#untouchedTree(row)) continue;
       } else if (row.serverState !== "live") continue;
       this.#keepServerCopy(row);
     }
   }
 
-  /** As the import wrote it: never edited, deleted, synced or offered again after a restore. */
+  /** As the import wrote it: never edited or deleted here, nor offered again after a restore. */
   #untouchedImport(row: RecordRow): boolean {
     return (
       row.id.startsWith(HEVY_ID_PREFIX) &&
+      // A setting that shares its workout's id (rest) is the person's, never the import's.
+      !this.contract.kind(row.kind).parent?.sharedId &&
       row.localState === "live" &&
       row.localSeq === 1 &&
       !row.reoffered &&
       row.keptContent === null
     );
+  }
+
+  /** Whether every local version above and below `row`, up to its top record, is untouched. */
+  #untouchedTree(row: RecordRow): boolean {
+    let top = row;
+    for (let above = this.#parentRow(row); above; above = this.#parentRow(above)) {
+      if (above.localState !== null && !this.#untouchedImport(above)) return false;
+      top = above;
+    }
+    return this.#untouchedBelow(top.kind, top.id);
+  }
+
+  #parentRow(row: RecordRow): RecordRow | null {
+    return row.parentKind && row.parentId ? this.#row(row.parentKind, row.parentId) : null;
   }
 
   /** Whether every local version below `kind/id` is an untouched import. */

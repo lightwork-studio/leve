@@ -125,12 +125,32 @@ function identifyExercise(key: string, entries: readonly HevyExercise[]) {
   if (builtIn && fits(builtIn.type)) return { name, type: builtIn.type, builtIn };
   const type = inferType(new Set(metrics.keys()), key, assisted);
   if (!fits(type)) {
-    const [, row] = [...metrics].find(([metric]) => !usesMetric(type, metric)) ?? [];
     throw new HevyImportError(
-      `Hevy CSV row ${row ?? entries[0]?.row} combines measurements Leve cannot import.`,
+      `Hevy CSV row ${firstUnfitRow(key, entries)} combines measurements Leve cannot import.`,
     );
   }
   return { name, type, builtIn: null };
+}
+
+/** The row whose set first makes the exercise's sets fit no type, read in file order. */
+function firstUnfitRow(key: string, entries: readonly HevyExercise[]) {
+  const metrics = new Set<SetMetric>();
+  let assisted = /\bassisted\b/.test(key);
+  for (const entry of entries) {
+    for (const [index, set] of entry.sets.entries()) {
+      for (const [metric, field] of METRIC_FIELDS) {
+        const value = set[field];
+        if (value !== null && value !== 0) metrics.add(metric);
+      }
+      assisted ||= (set.weightKg ?? 0) < 0;
+      const type = inferType(metrics, key, assisted);
+      const fits =
+        (!assisted || type === "assisted_bodyweight") &&
+        [...metrics].every((metric) => usesMetric(type, metric));
+      if (!fits) return entry.setRows[index] ?? entry.row;
+    }
+  }
+  return entries[0]?.row;
 }
 
 function note(
