@@ -67,7 +67,8 @@ export type FramePublisher = ReturnType<typeof framePublisher>;
  * it between surfaces, so that a set logged from one surface is never logged again from another,
  * and so that a surface gets tickets without an ActivityKit handle. A ticket depends only on the
  * process, the frame's generation, its rest deadline and the digest of its binding, so every
- * surface showing the same frame shows the same ticket.
+ * surface showing the same frame shows the same ticket. Every surface must be given the same
+ * sequence of frames: a surface that sets a different one replaces the frame for all of them.
  */
 export function framePublisher() {
   const epoch = newId(); // A tap from a former process must never authorize a new frame.
@@ -207,7 +208,7 @@ export function workoutSession(
           }
           if (!frame || scheduled !== frames.generation()) return;
           const ticket = await frames.ticket(frame, scheduled);
-          if (!ticket) return;
+          if (!ticket || scheduled !== frames.generation()) return;
           const props = {
             ...frame.display,
             token: ticket.token,
