@@ -210,7 +210,7 @@ it("downloads an account onto an empty phone without asking", async () => {
   expect(events.storeChanges).toBe(1);
 });
 
-it("ignores a regular pull that completes after sync stops, and downloads it on resume", async () => {
+it("ignores a regular pull that is about to apply when sync stops, and downloads it on resume", async () => {
   await otherPhone("alice", "f-other");
   const store = await phone();
   const sent = Promise.withResolvers<void>();
@@ -221,9 +221,12 @@ it("ignores a regular pull that completes after sync stops, and downloads it on 
   };
   const { session, events } = start(store, "alice");
   await sent.promise;
-  session.stop();
   holdPull = null;
   release.resolve();
+  // The transport accepts the reply, but the client has not yet applied it.
+  await Promise.resolve();
+  await Promise.resolve();
+  session.stop();
   // Let the stopped transport deliver its reply before opening a fresh session.
   await new Promise<void>((resolve) => setImmediate(resolve));
   expect(store.get("routine_folder", "f-other")).toBeNull();
@@ -232,6 +235,15 @@ it("ignores a regular pull that completes after sync stops, and downloads it on 
   const resumed = start(store, "alice").session;
   await until(() => resumed.status.lastSynced !== null);
   expect(store.get("routine_folder", "f-other")).toMatchObject({ status: "synced" });
+});
+
+it("does not bind an empty phone when sync stops before its first request", async () => {
+  const store = await phone();
+  const { session } = start(store, "alice");
+  session.stop();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  expect(store.syncState()).toMatchObject({ account: null, server: null });
+  expect(requests).toEqual([]);
 });
 
 it("asks before combining a phone's data with an account that has data, and combines on yes", async () => {

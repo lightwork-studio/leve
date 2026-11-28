@@ -43,6 +43,8 @@ export interface SyncClientOptions {
   releases?: readonly ReleaseId[];
   contract?: Contract;
   pageSize?: number;
+  /** Ending a session also prevents pending responses from changing the device. */
+  signal?: AbortSignal;
 }
 
 class Stop extends Error {
@@ -153,6 +155,7 @@ export class SyncClient {
   }
 
   async #connect(): Promise<ReleaseId> {
+    this.#requireActive();
     this.store.bindAccount(this.#options.server, this.#options.account);
     this.#bindingVersion = this.store.bindingVersion;
     return this.#hello();
@@ -194,7 +197,14 @@ export class SyncClient {
     throw error;
   }
 
+  #requireActive(): void {
+    if (this.#options.signal?.aborted) {
+      throw new Stop({ state: "offline", error: "this sync session has ended" });
+    }
+  }
+
   #requireBinding(): void {
+    this.#requireActive();
     if (this.store.bindingVersion !== this.#bindingVersion) {
       throw new Stop({ state: "offline", error: "the device changed its sync account" });
     }

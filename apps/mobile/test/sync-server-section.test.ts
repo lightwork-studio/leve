@@ -317,6 +317,7 @@ it("keeps a first-time Apple sign-in idle when saving the new destination fails"
   await render();
   await tap("Sync with Leve");
   await tap("Sign in with Apple");
+  await render();
   expect(clerk.signedIn).toBe(true);
   expect(readServerChoice()).toBe("local");
   expect(syncPaused()).toBe(true);

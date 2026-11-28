@@ -175,6 +175,7 @@ export class SyncSession {
     this.#client = new SyncClient({
       store: options.store,
       transport: this.#interruptible(connect(options.server, headers)),
+      signal: this.#abort.signal,
       server: options.server,
       account: options.account,
       app: options.app,
