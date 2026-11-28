@@ -3,7 +3,8 @@
   "paths": [
     "packages/contract/frozen",
     "packages/contract/history",
-    "packages/storage/src/migrations"
+    "packages/storage/src/migrations",
+    "packages/storage/test/fixtures"
   ],
   "shipped": ["1.0"]
 }

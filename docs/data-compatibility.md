@@ -542,7 +542,9 @@ code exists.
   with pending, in-flight, rejected and partially synced data; account isolation. Seeded generated
   sequences print their seed and trace on failure. Expected outcomes come from an independent model,
   not the implementation's helpers.
-- **Storage upgrades:** realistic fixtures from every shipped data-bearing storage version; crash
+- **Storage upgrades:** realistic fixtures from every shipped data-bearing storage version, written
+  by that release's code and kept under the frozen paths, opened by the phone, the self-hosted
+  server and the managed server; crash
   injection (real process termination) while snapshotting, during the upgrade, between commit and
   verification, and during restore; refusing newer storage, including the WAL and hot-journal cases
   above; restoring the snapshot when verification fails; a rehearsed restore on a throwaway database.

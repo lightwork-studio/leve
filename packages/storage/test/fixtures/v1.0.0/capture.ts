@@ -1,9 +1,15 @@
 import { copyFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { leveContract } from "@leve/contract";
+import { deviceStorageDefinition } from "../../../src/device-schema.ts";
 import { openDeviceStore } from "../../../src/device-store.ts";
 import { ServerAccountStore, serverStorageDefinition } from "../../../src/server-store.ts";
-import { engine, removeTempDirs, tempDir } from "../../../src/test-support/fixtures.ts";
+import {
+  buildDeviceFixture,
+  engine,
+  removeTempDirs,
+  tempDir,
+} from "../../../src/test-support/fixtures.ts";
 import { openStorage } from "../../../src/upgrade.ts";
 
 // Capture with the actual v1.0.0 writers before declaring the first release. Tests open the
@@ -14,7 +20,6 @@ const manifest = JSON.parse(
 if (manifest.shipped.includes("1.0")) throw new Error("The 1.0 baseline has shipped");
 
 const appVersion = "1.0.0";
-const release = "1.0";
 const now = "2026-11-10T18:05:00.000Z";
 const lineage = "v1-account-history";
 const directory = tempDir();
@@ -69,40 +74,36 @@ try {
       tx.writeDeleted("body_measurement", "removed-measurement");
     });
 
-    const phone = await openDeviceStore({
-      engine,
-      path: join(directory, "phone.db"),
-      appVersion,
-      now: () => now,
-      randomId: () => "pending-bench-edit",
-    });
-    try {
-      phone.bindAccount("https://sync.example.test", "account");
-      phone.setNegotiated(release, ["workouts", "reps_in_reserve"], lineage);
-      const { records } = account.changesAfter(0, 100);
-      phone.applyPull(
-        records.map(({ content, ...record }) =>
-          record.state === "live" && content
-            ? { ...record, state: "live", content }
-            : {
-                ...record,
-                state: "deleted",
-              },
-        ),
-        account.headRevision(),
-        { cursor: 0, lineage },
-      );
-      phone.put("workout_set", "bench-set", { ...set, reps: 6 });
-      phone.prepareSubmissions(release);
-      phone.put("workout_set", "bench-set", { ...set, reps: 7 });
-      phone.put("workout", "next-session", { ...workout, startedAt: now, endedAt: null });
-      await engine.backup(phone.db, join(directory, "device.sqlite"));
-      await engine.backup(db, join(directory, "server.sqlite"));
-    } finally {
-      phone.close();
-    }
+    await engine.backup(db, join(directory, "server.sqlite"));
   } finally {
     account.close();
+  }
+
+  // The phone: synced, downloaded, pending, in-flight, conflicting, invalid and partially synced
+  // records, deletions and a running workout, written by the v1.0.0 device layout.
+  const phonePath = join(directory, "phone.db");
+  await buildDeviceFixture(phonePath, engine, "1.0", {
+    definition: deviceStorageDefinition(),
+    contract: leveContract,
+    appVersion,
+  });
+  const phone = await openDeviceStore({
+    engine,
+    path: phonePath,
+    appVersion,
+    now: () => now,
+    randomId: () => "unused-submission",
+  });
+  try {
+    // An unsent routine edit keeps the server copy it started from.
+    const routine = phone.get("routine", "r-1");
+    if (!routine?.content || routine.server?.revision !== 11) {
+      throw new Error("capture: expected the synced routine r-1");
+    }
+    phone.put("routine", "r-1", { ...routine.content, title: "Push A (deload)" });
+    await engine.backup(phone.db, join(directory, "device.sqlite"));
+  } finally {
+    phone.close();
   }
 
   for (const name of ["device.sqlite", "server.sqlite"]) {

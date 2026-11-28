@@ -1,3 +1,6 @@
+import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { type JsonObject, MAX_REQUEST_BYTES } from "@leve/contract";
 import { WRITTEN_REVISIONS_HEADER } from "@leve/sync";
@@ -12,8 +15,8 @@ import { durableObjectConnection, type ObjectSqlStorage, type SqlMeter } from ".
 
 type Value = ArrayBuffer | string | number | null;
 
-function fakeObjectStorage() {
-  const db = new DatabaseSync(":memory:");
+function fakeObjectStorage(path = ":memory:") {
+  const db = new DatabaseSync(path);
   const steps = { rows: 0 };
   const storage: ObjectSqlStorage = {
     sql: {
@@ -73,7 +76,7 @@ function fakeObjectStorage() {
       }
     },
   };
-  return { storage, steps };
+  return { storage, steps, close: () => db.close() };
 }
 
 const meter = (): SqlMeter => ({ rowsRead: 0, rowsWritten: 0 });
@@ -193,5 +196,61 @@ describe("reading a sync request", () => {
       body: { note: "é" },
     });
     expect(await readSyncBody(request("{"))).toMatchObject({ refused: { status: 400 } });
+  });
+});
+
+describe("an account database written by v1.0.0", () => {
+  // The managed server opens the same account databases as the self-hosted one. A server storage
+  // version after v1.0.0 needs an upgrade path here before it ships, or this fails.
+  it("opens with its history, deletion markers and receipts, and keeps syncing", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "leve-v1-account-"));
+    const object = fakeObjectStorage(join(dir, "account.sqlite"));
+    try {
+      copyFileSync(
+        new URL("../../../packages/storage/test/fixtures/v1.0.0/server.sqlite", import.meta.url),
+        join(dir, "account.sqlite"),
+      );
+      const store = openAccountDatabase(durableObjectConnection(object.storage, meter()), false);
+      if (!store) throw new Error("the v1.0.0 account was not found");
+      expect(store.lineage()).toBe("v1-account-history");
+      expect(store.transaction((tx) => tx.receipt("first-bench-set"))).toMatchObject({
+        id: "bench-set",
+        revision: 3,
+        wroteRevision: true,
+      });
+      const service = new SyncService({ storage: { account: async () => store } });
+      const pull = await service.pull("a", {
+        release: "1.0",
+        lineage: "v1-account-history",
+        cursor: 0,
+      });
+      expect(pull.body).toMatchObject({
+        cursor: 4,
+        changes: [
+          { kind: "workout", id: "strength", revision: 1, state: "live" },
+          { kind: "workout_exercise", id: "bench-entry", revision: 2, state: "live" },
+          { kind: "workout_set", id: "bench-set", revision: 3, content: { reps: 5 } },
+          { kind: "body_measurement", id: "removed-measurement", revision: 4, state: "deleted" },
+        ],
+      });
+      const push = await service.push("a", {
+        release: "1.0",
+        lineage: "v1-account-history",
+        submissions: [
+          {
+            submissionId: "after-upgrade",
+            op: "put",
+            kind: "workout",
+            id: "w-next",
+            baseRevision: null,
+            content: workout,
+          },
+        ],
+      });
+      expect(push.body).toMatchObject({ results: [{ status: "accepted", revision: 5 }] });
+    } finally {
+      object.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
