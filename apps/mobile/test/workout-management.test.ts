@@ -4539,8 +4539,11 @@ describe("the minimised workout", () => {
       focusExercise: () => {},
       resume,
     });
-    await session.publish(workoutFrame(player, Date.now(), true, "dark"));
+    const reconstructed = workoutFrame(player, Date.now(), true, "dark");
+    if (!reconstructed) throw Error("Missing background frame");
+    expect(await session.adoptExisting(reconstructed, handle.getId())).toBe(true);
     const accepted = session.interact(handle.getId(), ticket);
+    expect(snapshots).toHaveLength(1);
     expect(resume).not.toHaveBeenCalled();
     const saved = store.get("workout_set", set.id)?.content;
     if (scenario === "unchanged") {

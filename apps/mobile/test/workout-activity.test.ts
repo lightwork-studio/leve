@@ -531,37 +531,43 @@ describe("shared frame publisher", () => {
   });
 });
 
-it("updates the Live Activity before acknowledging a headless Log", async () => {
-  const { session, handle } = harness();
-  const next = frame();
-  await session.publish(next);
-  const props = handle.update.mock.calls[0]?.[0];
-  if (!props) throw Error("Missing activity ticket");
-  const pending = {
-    id: "tap",
-    source: handle.getId(),
-    target: `${props.token}:log`,
-    timestamp: Date.now(),
-    reviewOnly: false,
-  };
-  const order: string[] = [];
-  const delivery = activityDelivery(
-    session,
-    {
-      pendingLeveActivityTaps: async () => [pending],
-      finishLeveActivityTap: async (id, applied) => {
-        expect(id).toBe("tap");
-        expect(applied).toBe(true);
-        order.push("acknowledge");
+it.each([true, false])(
+  "handles a recovered Log when the live countdown allows it=%s",
+  async (allowed) => {
+    const { session, handle } = harness();
+    const next = frame();
+    await session.publish(next);
+    const props = handle.update.mock.calls[0]?.[0];
+    if (!props) throw Error("Missing activity ticket");
+    const pending = {
+      id: "tap",
+      source: handle.getId(),
+      target: `${props.token}:log`,
+      timestamp: Date.now(),
+      reviewOnly: false,
+    };
+    const order: string[] = [];
+    const delivery = activityDelivery(
+      session,
+      {
+        pendingLeveActivityTaps: async () => [pending],
+        finishLeveActivityTap: async (id, applied) => {
+          expect(id).toBe("tap");
+          expect(applied).toBe(allowed);
+          order.push("acknowledge");
+        },
+        takeLeveReviewRequest: () => false,
+        canLogLeveActivity: () => allowed,
       },
-      takeLeveReviewRequest: () => false,
-    },
-    () => false,
-    vi.fn(),
-  );
-  await delivery.publish(next, true, async () => {
-    expect(next.act).toHaveBeenCalledExactlyOnceWith("log");
-    order.push("publish");
-  });
-  expect(order).toEqual(["publish", "acknowledge"]);
-});
+      () => false,
+      vi.fn(),
+    );
+    await delivery.recover(next, handle.getId(), async () => {
+      expect(next.act).toHaveBeenCalledExactlyOnceWith("log");
+      order.push("publish");
+    });
+    expect(order).toEqual(allowed ? ["publish", "acknowledge"] : ["acknowledge"]);
+    expect(next.act).toHaveBeenCalledTimes(allowed ? 1 : 0);
+    expect(handle.update).toHaveBeenCalledOnce();
+  },
+);

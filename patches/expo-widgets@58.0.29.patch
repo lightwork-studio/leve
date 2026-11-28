@@ -14,7 +14,7 @@ index b80655d..000443b 100644
      await activity.update(ActivityContent(state: newState, staleDate: staleDate))
    }
 diff --git a/ios/Widgets/AppIntent.swift b/ios/Widgets/AppIntent.swift
-index 1730fff..60b6118 100644
+index 1730fff..f4969e4 100644
 --- a/ios/Widgets/AppIntent.swift
 +++ b/ios/Widgets/AppIntent.swift
 @@ -105,6 +105,9 @@ struct LiveActivityUserInteraction: LiveActivityIntent {
@@ -45,12 +45,12 @@ index 1730fff..60b6118 100644
 +    if let source, let target, target.hasPrefix("leve1.") {
 +      let inbox = LeveActivityInbox.shared
 +      let startsRuntime = await inbox.needsConsumer()
-+      if startsRuntime {
-+        await MainActor.run {
-+          NotificationCenter.default.post(name: Notification.Name("LeveActivityLogNeedsRuntime"), object: nil)
-+        }
-+      }
 +      let applied = await inbox.deliver(source: source, target: target, waitForStartup: startsRuntime) { tap in
++        if startsRuntime {
++          await MainActor.run {
++            NotificationCenter.default.post(name: Notification.Name("LeveActivityLogNeedsRuntime"), object: nil)
++          }
++        }
 +        WidgetsEvents.shared.sendNotification(type: .userEvent, data: tap.event)
 +      }
 +      guard applied else {
@@ -157,10 +157,10 @@ index 55fb9b3..43b6808 100644
  }
 diff --git a/ios/Widgets/LeveActivityTap.swift b/ios/Widgets/LeveActivityTap.swift
 new file mode 100644
-index 0000000..833907f
+index 0000000..d66b29a
 --- /dev/null
 +++ b/ios/Widgets/LeveActivityTap.swift
-@@ -0,0 +1,163 @@
+@@ -0,0 +1,176 @@
 +import Foundation
 +
 +// LiveActivityIntent runs in the containing app process. Keep only the opaque button
@@ -264,11 +264,11 @@ index 0000000..833907f
 +
 +  // False requests foreground delivery. Keep the ticket until the app consumes it.
 +  func deliver(
-+    source: String, target: String, waitForStartup: Bool = false, notify: (LeveActivityTap) -> Void
++    source: String, target: String, waitForStartup: Bool = false, notify: (LeveActivityTap) async -> Void
 +  ) async -> Bool {
 +    do {
 +      let tap = try enqueue(source: source, target: target)
-+      notify(tap)
++      await notify(tap)
 +      return try await result(for: tap.id, waitForStartup: waitForStartup)
 +    } catch {
 +      UserDefaults.standard.set(true, forKey: "LeveReviewWorkout")
@@ -324,14 +324,28 @@ index 0000000..833907f
 +    props["restEnd"] = end
 +  }
 +}
++
++
++// The widget rewrites the deadline segment of a Log ticket after native rest edits.
++func canLogLeveActivity(target: String, props: [String: Any], now: Double) -> Bool {
++  guard props["canLog"] as? Bool == true,
++        let deadline = props["restEnd"] as? Double, deadline <= now,
++        let shown = props["token"] as? String,
++        target.hasSuffix(":log") else { return false }
++  let actual = target.dropLast(4).split(separator: ".", omittingEmptySubsequences: false)
++  let expected = shown.split(separator: ".", omittingEmptySubsequences: false)
++  guard actual.count == 5, expected.count == 5, actual[0] == "leve1" else { return false }
++  return [0, 1, 2, 4].allSatisfy { actual[$0] == expected[$0] }
++}
 diff --git a/ios/Widgets/LeveLiveActivityRest.swift b/ios/Widgets/LeveLiveActivityRest.swift
 new file mode 100644
-index 0000000..e159e57
+index 0000000..05cfe8f
 --- /dev/null
 +++ b/ios/Widgets/LeveLiveActivityRest.swift
-@@ -0,0 +1,86 @@
+@@ -0,0 +1,106 @@
 +import ActivityKit
 +import Foundation
++import UserNotifications
 +
 +// Only the current timer's override lives here. Its opaque key changes on each in-app edit.
 +final class LeveRestOverride: @unchecked Sendable {
@@ -391,6 +405,7 @@ index 0000000..e159e57
 +      change.apply(to: &props)
 +      guard let encoded = Self.encode(props) else { return }
 +      LeveRestOverride.shared.store(change)
++      await LeveRestAlert.follow(change)
 +      let state = LiveActivityAttributes.ContentState(name: "LeveWorkout", props: encoded)
 +      await activity.update(ActivityContent(state: state, staleDate: change.staleDate))
 +      WidgetsEvents.shared.sendNotification(type: .userEvent, data: [
@@ -414,6 +429,24 @@ index 0000000..e159e57
 +      let state = LiveActivityAttributes.ContentState(name: "LeveWorkout", props: encoded)
 +      await activity.update(ActivityContent(state: state, staleDate: stale))
 +    }
++  }
++}
++
++// Leve's rest-end alert (apps/mobile/modules/leve-rest-alert) follows a rest changed here, since
++// Leve's JavaScript may not run again before iOS suspends it. Only an alert that is already
++// pending moves, so nothing is scheduled while the person has the alert turned off.
++enum LeveRestAlert {
++  static let id = "leve.rest"
++
++  static func follow(_ change: LeveRestChange) async {
++    let center = UNUserNotificationCenter.current()
++    let pending = await center.pendingNotificationRequests()
++    guard let alert = pending.first(where: { $0.identifier == id }) else { return }
++    center.removePendingNotificationRequests(withIdentifiers: [id])
++    let seconds = change.end / 1000 - Date().timeIntervalSince1970
++    guard change.end > 0, seconds > 0 else { return }
++    let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(1, seconds), repeats: false)
++    try? await center.add(UNNotificationRequest(identifier: id, content: alert.content, trigger: trigger))
 +  }
 +}
 diff --git a/ios/Widgets/WidgetLiveActivity.swift b/ios/Widgets/WidgetLiveActivity.swift
@@ -526,13 +559,26 @@ index 4d135c4..c273464 100644
        LiveActivityBanner(context: context, nodes: nodes)
      } else if let node = nodes["banner"] as? [String: Any] {
 diff --git a/ios/WidgetsModule.swift b/ios/WidgetsModule.swift
-index 285136b..e1361bf 100644
+index 285136b..db99e7a 100644
 --- a/ios/WidgetsModule.swift
 +++ b/ios/WidgetsModule.swift
-@@ -59,6 +59,23 @@ public final class WidgetsModule: Module {
+@@ -59,6 +59,36 @@ public final class WidgetsModule: Module {
        }
      }
 
++    Function("canLogLeveActivity") { (source: String, target: String) -> Bool in
++      guard let activity = Activity<LiveActivityAttributes>.activities.first(where: { $0.id == source }),
++            activity.activityState == .active || activity.activityState == .stale,
++            activity.content.state.name == "LeveWorkout",
++            let data = activity.content.state.props?.data(using: .utf8),
++            var props = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
++        else { return false }
++      if let key = props["restKey"] as? String {
++        LeveRestOverride.shared.change(for: key)?.apply(to: &props)
++      }
++      return canLogLeveActivity(target: target, props: props, now: Date().timeIntervalSince1970 * 1000)
++    }
++
 +    Function("leveRestChange") { (key: String) -> [String: Double]? in
 +      guard let change = LeveRestOverride.shared.change(for: key) else { return nil }
 +      return ["start": change.start, "end": change.end]

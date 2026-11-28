@@ -10,6 +10,7 @@ import { useWorkoutPlayer } from "../ui/live/use-workout-player.ts";
 import { showToast } from "../ui/notice.tsx";
 import { type ActivityTapInbox, activityDelivery } from "./delivery.ts";
 import { workoutFrame } from "./frame.ts";
+import { refreshAfterLog } from "./log-player.ios.ts";
 import { workoutSession } from "./session.ts";
 
 /** The workout this phone last showed a Live Activity for. */
@@ -74,6 +75,7 @@ function LiveWorkout() {
   const appearance = useAppearanceSetting();
   const [revision, refresh] = useState(0);
   const rest = player?.rest;
+  const latestStore = useRef(player?.store);
   useEffect(() => {
     if (!rest) return;
     const timer = setTimeout(
@@ -90,8 +92,16 @@ function LiveWorkout() {
       }
     });
     const events = widgets?.addUserInteractionListener((event) => {
-      if (event.target === "LeveRestChanged") restTimer.refresh();
-      else void widgets.session.drain();
+      if (event.target === "LeveRestChanged") {
+        restTimer.refresh();
+      } else {
+        const store = latestStore.current;
+        void widgets.session.drain(
+          store && AppState.currentState !== "active"
+            ? () => refreshAfterLog(store, widgets.activity)
+            : undefined,
+        );
+      }
     });
     void widgets?.session.drain();
     return () => {
@@ -101,6 +111,7 @@ function LiveWorkout() {
   }, []);
   const lastRevision = useRef(-1);
   useLayoutEffect(() => {
+    latestStore.current = player?.store;
     if (!widgets) return;
     const frame = workoutFrame(
       player,

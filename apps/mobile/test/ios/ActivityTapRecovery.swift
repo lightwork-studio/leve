@@ -25,6 +25,7 @@ struct ActivityTapRecovery {
       try await inbox.finish(id: taps[0].id.uuidString, applied: false, reviewed: true)
     case "verify":
       verifyRestActions()
+      verifyLogDeadline()
       let cold = LeveActivityInbox(root: root)
       let loading = await cold.needsConsumer()
       precondition(loading)
@@ -73,6 +74,21 @@ struct ActivityTapRecovery {
     default:
       preconditionFailure("Unexpected test phase")
     }
+  }
+
+  static func verifyLogDeadline() {
+    let button = "leve1.process.1.90000.digest:log"
+    var props: [String: Any] = [
+      "canLog": true, "token": "leve1.process.1.100000.digest", "restEnd": 100_000.0
+    ]
+    precondition(canLogLeveActivity(target: button, props: props, now: 110_000))
+    props["restEnd"] = 120_000.0
+    precondition(!canLogLeveActivity(target: button, props: props, now: 110_000))
+    props["restEnd"] = 0.0
+    precondition(canLogLeveActivity(target: button, props: props, now: 110_000))
+    precondition(!canLogLeveActivity(target: "leve1.process.2.0.digest:log", props: props, now: 110_000))
+    props["canLog"] = false
+    precondition(!canLogLeveActivity(target: button, props: props, now: 110_000))
   }
 
   static func verifyRestActions() {
