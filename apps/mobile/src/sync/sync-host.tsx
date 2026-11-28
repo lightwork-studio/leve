@@ -8,17 +8,15 @@ import { router, usePathname } from "expo-router";
 import { channel } from "expo-updates";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { AppState, Linking, Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { signInProblem, useAppleSignIn } from "../account/apple-sign-in.ts";
 import { buildInfo } from "../build-info.ts";
 import { useAppData } from "../data/app-data.tsx";
 import { conflicts, type ReviewTarget } from "../data/conflicts.ts";
 import { subscribeDevicePreferences } from "../data/device-preference-store.ts";
 import { startNotingWorkoutHere, workoutHere } from "../data/workout-here.ts";
-import { gutter, radius, space, type } from "../theme.ts";
+import { radius, space, type } from "../theme.ts";
 import { Button } from "../ui/buttons.tsx";
 import { Dialog } from "../ui/dialog.tsx";
-import { Banner } from "../ui/notice.tsx";
 import { themedStyles, useAppearance, useStyles } from "../ui/themed.ts";
 import { ConflictPrompt } from "./conflict-prompt.tsx";
 import { type OwnServer, serverLabel } from "./own-server.ts";
@@ -123,6 +121,9 @@ function useElsewhereNote(
     restore && failedServer === server ? " Switching back didn't work. Try again." : "";
   return {
     label: "Not syncing",
+    tone: "problem",
+    tag: "Not syncing",
+    short: `data on ${label}`,
     message: `This phone's data belongs to ${label}. Changes stay on this phone until it syncs there again.${problem}`,
     action: restore
       ? {
@@ -141,6 +142,7 @@ function useElsewhereNote(
           label: "Settings",
           hint: "Opens Settings to connect a server",
           onPress: () => router.push(SETTINGS),
+          opensSettings: true,
         },
   };
 }
@@ -148,22 +150,25 @@ function useElsewhereNote(
 function Disconnected({ local = false }: { local?: boolean }) {
   const { store } = useAppData();
   const boundNote = useElsewhereNote(store.syncState());
-  const note =
+  const note: SyncNote | null =
     boundNote ??
     (local
       ? {
           label: "Sync off",
+          tone: "quiet",
+          tag: "Sync off",
           message: "New workouts and changes stay on this phone.",
           action: {
             label: "Settings",
             hint: "Opens Settings to choose where to sync",
             onPress: () => router.push(SETTINGS),
+            opensSettings: true,
           },
         }
       : null);
   useEffect(() => publishSyncNote(note));
   useEffect(() => () => publishSyncNote(null), []);
-  return note ? <NotSyncing note={note} /> : null;
+  return null;
 }
 
 /** Who the phone syncs as, and with which server. */
@@ -460,6 +465,9 @@ function Sync({
         question: null,
         note: {
           label: "Sync paused for now",
+          tone: "problem",
+          tag: "Paused",
+          short: "pause not saved",
           message:
             "Leve couldn't save the pause. Sync can restart when you reopen the app. Keep it open and try saving the pause again.",
           action: {
@@ -474,6 +482,8 @@ function Sync({
         question: null,
         note: {
           label: "Sync paused",
+          tone: "quiet",
+          tag: "Paused",
           message: "New workouts and changes stay on this phone until you resume.",
           action: {
             label: "Resume",
@@ -489,11 +499,15 @@ function Sync({
         question: null,
         note: {
           label: "Signed out",
+          tone: "quiet",
+          tag: "Signed out",
+          short: "not syncing",
           message: "New workouts and changes stay on this phone until you sign in.",
           action: {
             label: "Sign in",
             hint: "Opens Settings to sign in",
             onPress: () => router.push("/settings"),
+            opensSettings: true,
           },
         },
       };
@@ -505,6 +519,9 @@ function Sync({
         question: null,
         note: {
           label: "Sync",
+          tone: "quiet",
+          tag: "Sync waits",
+          short: question ? "question after this workout" : "waits for this workout",
           message: question
             ? "Sync has a question for you. It comes up once this workout ends."
             : "Sync is waiting for this workout to end.",
@@ -517,6 +534,9 @@ function Sync({
         question: null,
         note: {
           label: "Not syncing",
+          tone: "problem",
+          tag: "Not syncing",
+          short: "connect again",
           message: `${serverLabel(server)} no longer accepts this phone. Connect again in Settings using a new pairing link.`,
           action: { label: "Pause", hint: "Stops syncing until you resume it", onPress: pause },
         },
@@ -528,6 +548,9 @@ function Sync({
         question: null,
         note: {
           label: "Not syncing",
+          tone: "problem",
+          tag: "Not syncing",
+          short: "server needs update",
           message:
             "Your sync server needs an update before this phone can sync. Changes stay on this phone, and Leve checks again every hour.",
           action: { label: "Pause", hint: "Stops syncing until you resume it", onPress: pause },
@@ -545,6 +568,9 @@ function Sync({
         question: null,
         note: {
           label: "Not syncing",
+          tone: "problem",
+          tag: "Not synced",
+          short: `since ${day}`,
           message: `Changes haven't synced since ${day}. They're safe on this phone, and Leve keeps trying.`,
         },
       };
@@ -552,12 +578,11 @@ function Sync({
     return none;
   };
   const { question, note } = decide();
-  // Screens drawn above this one (the live workout and finishing it are native modals) show the
-  // same note themselves.
+  // The week bar shows the note as a tag on the tabs, every other screen as a line at its top (see
+  // SyncLineLayout), and the live workout and finishing it show the line over their sheet.
   useEffect(() => publishSyncNote(note));
   useEffect(() => () => publishSyncNote(null), []);
-  if (question) return question;
-  return note ? <NotSyncing note={note} /> : null;
+  return question;
 }
 
 function Body({ text }: { text: string }) {
@@ -1045,33 +1070,10 @@ function UpdatePrompt({ onPause }: { onPause: () => void }) {
   );
 }
 
-/**
- * Sync isn't running, or is waiting on the person: a note at the top of every screen, above the
- * app, until that changes. It can't be dismissed, only acted on.
- */
-function NotSyncing({ note }: { note: SyncNote }) {
-  const styles = useStyles(sheet);
-  const insets = useSafeAreaInsets();
-  return (
-    <View style={[styles.dock, { paddingTop: insets.top + space.sm }]}>
-      <Banner
-        label={note.label}
-        message={note.message}
-        {...(note.action ? { action: note.action } : {})}
-      />
-    </View>
-  );
-}
-
 const sheet = themedStyles((c) => ({
   body: { ...type.body, fontSize: 15, lineHeight: 22, color: c.fg2, marginTop: space.sm },
   actions: { alignItems: "center", gap: 2 },
   apple: { marginTop: space.md, marginRight: 4 },
   appleButton: { height: 44, width: "100%" },
   waiting: { opacity: 0.5 },
-  dock: {
-    paddingHorizontal: gutter.group - 2,
-    paddingBottom: space.sm,
-    backgroundColor: c.bg,
-  },
 }));

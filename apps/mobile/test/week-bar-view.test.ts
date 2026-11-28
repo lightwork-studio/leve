@@ -205,6 +205,25 @@ it("names the week on top, keeps the frame on every tab, and changes only the ma
   }
 });
 
+it("puts a status, such as sync's tag, in the line on top, just before the action", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  let tree: ReactTestRenderer | undefined;
+  try {
+    await act(() => {
+      tree = create(
+        h(WeekBar, { week, mode: "train", action: h("settings"), status: h("sync-tag") }),
+      );
+    });
+    const root = (tree as ReactTestRenderer).root;
+    const tag = root.findByType("sync-tag" as never);
+    const row = tag.parent;
+    const order = (row?.children ?? []).map((c) => (typeof c === "string" ? c : c.type));
+    expect(order.slice(-2)).toEqual(["sync-tag", "settings"]);
+  } finally {
+    await act(() => tree?.unmount());
+  }
+});
+
 it("folds the days into the line on top, out of reach and out of the way of what scrolls under", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   let tree: ReactTestRenderer | undefined;

@@ -8,7 +8,7 @@ import {
 import { Easing } from "react-native";
 import { useReducedMotion } from "react-native-reanimated";
 import { radius, space } from "../theme.ts";
-import type { StackScreen, Transition } from "./stack.tsx";
+import type { ScreenLayout, StackScreen, Transition } from "./stack.tsx";
 import { useColors } from "./themed.ts";
 
 /** How narrow a cover is at the bottom edge: about as wide as the running-workout bar. */
@@ -118,11 +118,12 @@ const OPTIONS: Record<Transition, StackNavigationOptions> = {
  * uses the JavaScript stack with the same kinds of transition as phones. Browsers have no swipe to
  * close. Under reduced motion, screens change without moving.
  */
-export function AppStack({ screens }: { screens: StackScreen[] }) {
+export function AppStack({ screens, layout }: { screens: StackScreen[]; layout?: ScreenLayout }) {
   const reduced = useReducedMotion();
   const c = useColors();
   return (
     <Stack
+      {...(layout ? { screenLayout: layout } : {})}
       screenOptions={{
         headerShown: false,
         // A card fills the window and scrolls inside: the page itself never scrolls, so anything
