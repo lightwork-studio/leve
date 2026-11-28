@@ -56,7 +56,8 @@ EAS `development` and `preview` environments, and in your shell or `.env` for a 
 App Store build signs in with Clerk's production instance and syncs with the production Worker
 (`leve-sync-prod`) at `https://sync.leve.timweb.app`, set as `EXPO_PUBLIC_SYNC_URL` in the EAS
 `production` environment. Store OTA updates are bundled with the same `eas.json` settings as the
-store build. Browsers never sync.
+store build. Keep those keys out of the EAS `production` environment: its values would override
+them in updates but not in builds. Browsers never sync.
 
 Development and TestFlight builds can also sync with a server the person runs
 ([apps/sync-node](../sync-node/README.md)), whatever server the build has. Under Settings, Sync

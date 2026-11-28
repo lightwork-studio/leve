@@ -42,6 +42,10 @@ build_env="$(node -e '
       console.error("eas.json sets " + key + " for production, which the release does not take from it.");
       process.exit(1);
     }
+    if (key === "LEVE_APP_VARIANT" && value !== "production") {
+      console.error("eas.json sets LEVE_APP_VARIANT for production to " + value + ".");
+      process.exit(1);
+    }
     console.log(key + "=" + value);
   }')"
 while IFS= read -r line; do export "$line"; done <<<"$build_env"

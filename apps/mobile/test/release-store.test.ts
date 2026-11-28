@@ -140,6 +140,7 @@ if (args[2] === "env:exec" && args[3] === "production" && args[4].includes("runt
     for (const [key, value] of [
       ["EXPO_TOKEN", "from-eas-json"],
       ["BASH_ENV", "/tmp/payload.sh"],
+      ["LEVE_APP_VARIANT", "preview"],
       ["EXPO_PUBLIC_SAMPLE_DATA", "off\nEXPO_TOKEN=from-eas-json"],
     ] as const) {
       const injected = JSON.parse(config);
