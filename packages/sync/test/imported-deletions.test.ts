@@ -240,6 +240,24 @@ it("keeps a deleted set and note of an imported workout deleted when another pho
   expect(first.list("exercise_note")).toEqual([]);
 });
 
+it("asks about a rest setting the person made on an imported workout", async () => {
+  const { phone, sync } = await setup();
+  const first = await phone("first");
+  importWorkout(first, IMPORTED);
+  first.put("workout_rest", IMPORTED, { workoutId: IMPORTED, seconds: 90 });
+  await sync(first);
+
+  const second = await phone("second");
+  importWorkout(second, IMPORTED);
+  // Shares the workout's id, but the person chose it: it is never settled as an import.
+  second.put("workout_rest", IMPORTED, { workoutId: IMPORTED, seconds: 120 });
+  await sync(second);
+  expect(second.get("workout_rest", IMPORTED)).toMatchObject({
+    status: "conflict",
+    content: { seconds: 120 },
+  });
+});
+
 it("still forgets a deleted workout that never synced when it was not imported", async () => {
   const { phone, sync } = await setup();
   const store = await phone("only");
