@@ -3,6 +3,7 @@ import {
   type Contract,
   clientContract,
   compareReleases,
+  HEVY_ID_PREFIX,
   type JsonObject,
   jsonBytes,
   jsonEqual,
@@ -160,7 +161,10 @@ interface RecordRow {
   partialFields: string[];
   /** The last server copy of a local version carried through a restore (see the schema). */
   keptContent: JsonObject | null;
-  /** A server had this record before a restore, or may have committed an abandoned create. */
+  /**
+   * A server had this record before a restore, may have committed an abandoned create, or may
+   * get it from another device's import of the same file.
+   */
   seenOnServer: boolean;
 }
 
@@ -756,10 +760,15 @@ export class DeviceStore {
     const row = this.#row(kind, id);
     if (!row) return;
     const inFlight = this.#submissionFor(kind, id);
+    // Another phone can import the same file and create this record under the same id. Keep its
+    // deletion even when the local copy never synced, so that import cannot bring it back.
+    const imported = id.startsWith(HEVY_ID_PREFIX);
     if (!this.#knownToServer(row) && !inFlight) {
-      // Never reached the server: nothing to tell it.
-      this.#purge(kind, id);
-      return;
+      if (!imported) {
+        this.#purge(kind, id);
+        return;
+      }
+      this.#purgeDescendants(kind, id);
     }
     if (row.serverState === "deleted" && row.localState === null) return;
     this.#write({
@@ -775,6 +784,7 @@ export class DeviceStore {
       keptContent:
         row.keptContent ?? (row.reoffered && row.serverRevision === null ? row.localContent : null),
       status: row.status === "conflict" ? "conflict" : "pending",
+      seenOnServer: row.seenOnServer || imported,
       ...(row.status === "invalid"
         ? { problem: null, problemRevision: null, problemAt: null }
         : {}),
@@ -1782,6 +1792,7 @@ export class DeviceStore {
             break;
         }
       }
+      this.#settleUntouchedImports();
     });
   }
 
@@ -1996,6 +2007,69 @@ export class DeviceStore {
       problemRevision: current?.revision ?? null,
       problemAt: this.#now(),
     });
+  }
+
+  /**
+   * An import only adds data. When the account already holds its own copy of an imported record
+   * (another phone imported the same workout, perhaps in another time zone) or deleted it, and
+   * nothing the import wrote here has been changed since, the account's copy stands without
+   * asking. Anything the person changed is still brought to them.
+   */
+  #settleUntouchedImports(): void {
+    if (this.syncState().restoring) return;
+    const conflicts = this.db
+      .all(
+        "SELECT kind, id FROM records WHERE status = 'conflict' AND problem IN ('exists', 'deleted') AND substr(id, 1, ?) = ?",
+        [HEVY_ID_PREFIX.length, HEVY_ID_PREFIX],
+      )
+      .map((row) => ({ kind: String(row.kind), id: String(row.id) }));
+    for (const { kind, id } of conflicts) {
+      // Settling a deleted parent can already have settled this record.
+      const row = this.#row(kind, id);
+      if (!row || row.status !== "conflict" || !this.#untouchedImport(row)) continue;
+      if (row.serverState === "deleted") {
+        // Only when nothing of the imported workout it belongs to was changed here: a record the
+        // person is asked about can still be saved as new, with everything below it.
+        if (!this.#untouchedTree(row)) continue;
+      } else if (row.serverState !== "live") continue;
+      this.#keepServerCopy(row);
+    }
+  }
+
+  /** As the import wrote it: never edited or deleted here, nor offered again after a restore. */
+  #untouchedImport(row: RecordRow): boolean {
+    return (
+      row.id.startsWith(HEVY_ID_PREFIX) &&
+      // A setting that shares its workout's id (rest) is the person's, never the import's.
+      !this.contract.kind(row.kind).parent?.sharedId &&
+      row.localState === "live" &&
+      row.localSeq === 1 &&
+      !row.reoffered &&
+      row.keptContent === null
+    );
+  }
+
+  /** Whether every local version above and below `row`, up to its top record, is untouched. */
+  #untouchedTree(row: RecordRow): boolean {
+    let top = row;
+    for (let above = this.#parentRow(row); above; above = this.#parentRow(above)) {
+      if (above.localState !== null && !this.#untouchedImport(above)) return false;
+      top = above;
+    }
+    return this.#untouchedBelow(top.kind, top.id);
+  }
+
+  #parentRow(row: RecordRow): RecordRow | null {
+    return row.parentKind && row.parentId ? this.#row(row.parentKind, row.parentId) : null;
+  }
+
+  /** Whether every local version below `kind/id` is an untouched import. */
+  #untouchedBelow(kind: string, id: string): boolean {
+    return this.#children(kind, id).every(
+      (child) =>
+        (child.localState === null || this.#untouchedImport(child)) &&
+        this.#untouchedBelow(child.kind, child.id),
+    );
   }
 
   #settleMatchingDeletion(row: RecordRow): void {
@@ -2343,6 +2417,7 @@ export class DeviceStore {
             this.#observeRelease(change.kind, change.id, change.revision, requested.release);
         }
       }
+      this.#settleUntouchedImports();
       this.db.run("UPDATE sync_state SET cursor = ? WHERE id = 1", [cursor]);
       if (refreshFrom && requested?.lastPage)
         this.db.run("UPDATE sync_state SET refresh_from = NULL WHERE id = 1");

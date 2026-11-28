@@ -23,7 +23,7 @@ The iPhone app stores workouts on the device. Sync runs on the
 [Cloudflare sync server](apps/sync-cloudflare/README.md) or on a
 [Node sync server you host yourself](apps/sync-node/README.md), which has its own accounts and
 paired phones; development and TestFlight builds pair with it under Settings. Both are development
-previews: use disposable data in an environment you control. Hevy CSV import and MCP access are
-planned.
+previews: use disposable data in an environment you control. Settings can add workouts from a
+Hevy CSV export. MCP access is planned.
 
 [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [Licenses](LICENSE.md) · [Branding](TRADEMARKS.md)

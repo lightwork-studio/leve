@@ -8,7 +8,7 @@ import { readDevicePreference, writeDevicePreference } from "../data/device-pref
 import { restTimer } from "../data/rest-timer.ts";
 import { useWorkoutPlayer } from "../ui/live/use-workout-player.ts";
 import { showToast } from "../ui/notice.tsx";
-import { type ActivityTapInbox, activityDelivery } from "./delivery.ts";
+import { type ActivityTapInbox, activityDelivery, activityUpdates } from "./delivery.ts";
 import { workoutFrame } from "./frame.ts";
 import { refreshAfterLog } from "./log-player.ios.ts";
 import { workoutSession } from "./session.ts";
@@ -85,25 +85,24 @@ function LiveWorkout() {
     return () => clearTimeout(timer);
   }, [rest]);
   useEffect(() => {
-    const app = AppState.addEventListener("change", (state) => {
-      if (state === "active") {
-        restTimer.refresh();
-        refresh((n) => n + 1);
-      }
+    const drain = () => {
+      if (!widgets) return;
+      const store = latestStore.current;
+      void widgets.session.drain(
+        store && AppState.currentState !== "active"
+          ? () => refreshAfterLog(store, widgets.activity)
+          : undefined,
+      );
+    };
+    const updates = activityUpdates({
+      isActive: () => AppState.currentState === "active",
+      refreshRest: restTimer.refresh,
+      refreshActivity: () => refresh((n) => n + 1),
+      drain,
     });
-    const events = widgets?.addUserInteractionListener((event) => {
-      if (event.target === "LeveRestChanged") {
-        restTimer.refresh();
-      } else {
-        const store = latestStore.current;
-        void widgets.session.drain(
-          store && AppState.currentState !== "active"
-            ? () => refreshAfterLog(store, widgets.activity)
-            : undefined,
-        );
-      }
-    });
-    void widgets?.session.drain();
+    const app = AppState.addEventListener("change", updates.appStateChanged);
+    const events = widgets?.addUserInteractionListener(updates.interacted);
+    drain();
     return () => {
       app.remove();
       events?.remove();

@@ -4,6 +4,7 @@ import {
   activityBackgroundTint,
   background,
   buttonStyle,
+  contentTransition,
   font,
   foregroundStyle,
   frame,
@@ -33,6 +34,8 @@ function workoutLayout(p: WorkoutContent, env: LiveActivityEnvironment) {
   const ink = paper ? graphite : bone;
   const ground = paper ? bone : graphite;
   const fraction = p.total ? p.done / p.total : 0;
+  // The countdown should show a changed deadline immediately, without a content fade.
+  const timerTransition = contentTransition("identity");
   const interval = { lower: new Date(p.restStart), upper: new Date(p.restEnd) };
   const small = [font({ size: 12, design: "monospaced" }), lineLimit(1), privacySensitive()];
   const big = [
@@ -51,6 +54,7 @@ function workoutLayout(p: WorkoutContent, env: LiveActivityEnvironment) {
       timerInterval={interval}
       modifiers={[
         progressViewStyle("circular"),
+        timerTransition,
         tint(bone),
         font({ size: 9, design: "monospaced" }),
         monospacedDigit(),
@@ -80,7 +84,7 @@ function workoutLayout(p: WorkoutContent, env: LiveActivityEnvironment) {
     />
   );
   const metric = resting ? (
-    <Text timerInterval={interval} modifiers={big} />
+    <Text timerInterval={interval} modifiers={[...big, timerTransition]} />
   ) : (
     <Text modifiers={big}>{p.measurements || p.exercise}</Text>
   );
@@ -127,7 +131,7 @@ function workoutLayout(p: WorkoutContent, env: LiveActivityEnvironment) {
     </VStack>
   );
   const progress = resting ? (
-    <ProgressView timerInterval={interval} modifiers={[tint(ink)]} />
+    <ProgressView timerInterval={interval} modifiers={[tint(ink), timerTransition]} />
   ) : (
     <ProgressView value={fraction} modifiers={[tint(ink)]} />
   );

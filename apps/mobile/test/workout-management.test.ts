@@ -63,6 +63,7 @@ import { dockTarget } from "../src/ui/live/targets.ts";
 import { buildWorkoutPlayer, useWorkoutPlayer } from "../src/ui/live/use-workout-player.ts";
 import { SetEditor } from "../src/ui/set-editor.tsx";
 import { useSetStopwatch } from "../src/ui/use-set-stopwatch.ts";
+import { workoutInputs } from "../src/ui/use-workout-inputs.ts";
 import { useWorkoutSelection } from "../src/ui/use-workout-selection.ts";
 import { WorkoutDetailsEditor } from "../src/ui/workout-details-editor.tsx";
 import { feedbackScheduler } from "./support/feedback.ts";
@@ -4455,6 +4456,7 @@ describe("the minimised workout", () => {
   it.each([
     "unchanged",
     "edited",
+    "lost draft",
     "committed before acknowledgement",
     "logged then undone",
     "another account",
@@ -4499,8 +4501,20 @@ describe("the minimised workout", () => {
     const capture = (frame: ReturnType<typeof workoutFrame>) => {
       pending = session.publish(frame);
     };
+    if (scenario === "lost draft") {
+      workoutInputs(store).update(workout, (inputs) => ({
+        ...inputs,
+        drafts: { [set.id]: { reps: "12" } },
+      }));
+    }
     await act(() => root.render(h(PlayerProbe, { capture })));
     await pending;
+    if (scenario === "lost draft") {
+      expect(snapshots[0]).toMatchObject({
+        canLog: true,
+        measurements: expect.stringContaining("12"),
+      });
+    }
     const ticket = snapshots[0]?.token + ":log";
     if (scenario === "edited") updateSet(store, set.id, { reps: 10 });
     if (scenario === "committed before acknowledgement" || scenario === "logged then undone") {

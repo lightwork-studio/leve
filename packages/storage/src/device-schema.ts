@@ -24,8 +24,8 @@ import type { StorageDefinition, UpgradeStep } from "./upgrade.ts";
  * A local version carried through a server restore keeps the record's last server copy in
  * kept_content until the restored server shows its own copy, so keeping theirs can offer it again.
  *
- * seen_on_server keeps deletions deliverable when a restore cleared the server copy or an
- * abandoned create may already have committed.
+ * seen_on_server keeps deletions deliverable when a restore cleared the server copy, an
+ * abandoned create may already have committed, or another device may import the same record.
  *
  * Released migrations never change. A new layout bumps DEVICE_STORAGE_VERSION, adds an upgrade
  * step and a fixture of the previous version.
