@@ -4,7 +4,8 @@ import { signInAsync } from "expo-apple-authentication";
  * Deleting the signed-in Leve account. The build's sync server deletes the account's synced data,
  * revokes its Sign in with Apple grant and deletes the sign-in itself. The phone keeps its workouts
  * as data that never synced. Apple only lets a server revoke a grant with a fresh authorization
- * code, so deleting starts with the Apple sheet, which also confirms who is asking.
+ * code, so deleting starts with the Apple sheet. The server checks with Apple that the code is for
+ * the account's own Apple ID before it deletes anything.
  */
 
 /**
@@ -25,22 +26,45 @@ const UNFINISHED =
   "Your synced workouts are deleted from the server, but deleting your account didn't finish. Try again to finish it.";
 const OTHER_APPLE_ID =
   "Apple didn't confirm this account. Try again with the Apple ID you use for Leve.";
+const APPLE_FAILED = "Apple couldn't confirm it's you. Try again.";
 const NOT_AVAILABLE = "Deleting accounts isn't available right now. Try again later.";
 const SIGN_IN_AGAIN = "Sign in again, then delete your account.";
+
+/** What the Apple sheet gave for a deletion: a fresh code, and the app it was issued to. */
+export interface AppleConfirmation {
+  code: string;
+  /** The bundle id (the identity token's audience), which the server redeems the code as. */
+  clientId: string | null;
+}
+
+/** The audience of Apple's identity token: the bundle id of the app that asked. */
+function audience(identityToken: string | null): string | null {
+  try {
+    const part = identityToken?.split(".")[1];
+    if (!part) return null;
+    const base64 = part.replace(/-/g, "+").replace(/_/g, "/");
+    const claims = JSON.parse(atob(base64 + "=".repeat((4 - (base64.length % 4)) % 4))) as {
+      aud?: unknown;
+    };
+    return typeof claims.aud === "string" ? claims.aud : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * A fresh authorization code from the Apple sheet, or null when the person dismissed it. The server
  * revokes the grant it belongs to.
  */
-export async function appleAuthorizationCode(): Promise<string | null> {
+export async function appleConfirmation(): Promise<AppleConfirmation | null> {
   try {
-    const { authorizationCode } = await signInAsync({ requestedScopes: [] });
+    const { authorizationCode, identityToken } = await signInAsync({ requestedScopes: [] });
     if (!authorizationCode) throw new DeletionProblem(DELETION_FAILED);
-    return authorizationCode;
+    return { code: authorizationCode, clientId: audience(identityToken) };
   } catch (error) {
     if ((error as { code?: unknown } | null)?.code === "ERR_REQUEST_CANCELED") return null;
     if (error instanceof DeletionProblem) throw error;
-    throw new DeletionProblem(OTHER_APPLE_ID);
+    throw new DeletionProblem(APPLE_FAILED);
   }
 }
 
@@ -56,12 +80,12 @@ type Fetch = (
 export async function requestAccountDeletion({
   server,
   token,
-  appleAuthorizationCode,
+  apple,
   fetch: fetchFn = (url, init) => fetch(url, init),
 }: {
   server: string;
   token: string;
-  appleAuthorizationCode: string;
+  apple: AppleConfirmation;
   fetch?: Fetch;
 }): Promise<void> {
   let response: Awaited<ReturnType<Fetch>>;
@@ -69,7 +93,11 @@ export async function requestAccountDeletion({
     response = await fetchFn(`${server}/account/delete`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-      body: JSON.stringify({ appleAuthorizationCode }),
+      // Apple issues the code to this build's bundle id; the server needs it to redeem the code.
+      body: JSON.stringify({
+        appleAuthorizationCode: apple.code,
+        ...(apple.clientId ? { appleClientId: apple.clientId } : {}),
+      }),
     });
   } catch {
     // The request may have arrived: sync finds out (see accountBeingDeleted).
@@ -77,13 +105,15 @@ export async function requestAccountDeletion({
   }
   if (response.status === 200) return;
   if (response.status === 401) throw new DeletionProblem(SIGN_IN_AGAIN);
-  // Which step failed: the server deletes the synced data before the sign-in.
+  // Which step failed: only `sign_in` comes after the server deleted the synced data.
   const body = (await response.json().catch(() => null)) as { step?: unknown } | null;
   switch (body?.step) {
     case "configuration":
       throw new DeletionProblem(NOT_AVAILABLE);
     case "apple":
-      throw new DeletionProblem(OTHER_APPLE_ID, "data");
+      throw new DeletionProblem(OTHER_APPLE_ID);
+    case "unavailable":
+      throw new DeletionProblem(DELETION_FAILED);
     case "sign_in":
       throw new DeletionProblem(UNFINISHED, "data");
     default:

@@ -70,26 +70,30 @@ Remove `MCP_WRITES_ENABLED` to disable writes while keeping reads available.
 ## Account deletion
 
 People delete their account in the app (Settings, Account). The phone first asks the Apple sheet
-for a fresh authorization code, then sends it to `POST /account/delete` with its session token.
-The account's object then works through these steps:
+for a fresh authorization code, then sends it to `POST /account/delete` with its session token and
+its bundle id (the identity token's audience). The account's object works through these steps:
 
-1. Records in the account's marker object that the account is deleted, with the time. This lives
-   outside the account's storage, which the next step removes.
-2. Deletes all of the account's storage (`deleteAll`): every record, deletion marker, receipt
-   and the lineage.
-3. Trades the Apple code for a token at Apple and revokes it, after checking that the code
+1. Reads the Clerk user. If Clerk no longer has it, an earlier attempt already got past step 5,
+   so only step 3 runs again.
+2. Trades the Apple code for a token at Apple, as the app that sent it, and checks that the code
    belongs to the Apple ID the Clerk user signs in with. Clerk can't do this: its native Apple
-   sign-in never sees an authorization code.
-4. Deletes the Clerk user through Clerk's Backend API. That ends the user's sessions, and Clerk
+   sign-in never sees an authorization code. A failure here deletes nothing.
+3. Records in the account's marker object that the account is deleted, with the time, then
+   deletes all of the account's storage (`deleteAll`): every record, deletion marker, receipt and
+   the lineage. The marker lives outside the storage it outlasts.
+4. Revokes the Apple token from step 2.
+5. Deletes the Clerk user through Clerk's Backend API. That ends the user's sessions, and Clerk
    issues no new session or MCP access tokens for it.
 
-Every step can run again. A deletion that stops after step 1 is finished by the next request
-for the account, from any phone. A retry from the phone (with a new Apple code) finishes steps 3
-and 4, and a user Clerk no longer has counts as deleted. From step 1 on, every sync, MCP and
-admin request for the account is answered `account_deleted` (410), and the account is never
-created again under the same Clerk id. Failures name the step in `step`: `configuration`
-(nothing was deleted), `apple` (data deleted, Apple refused the code: sign in with Apple again)
-or `sign_in` (data deleted, Apple or Clerk unreachable: retry).
+Every step can run again. A deletion that stops between recording the marker and `deleteAll` is
+finished by the next request for the account, from any phone. A retry from the phone, with a new
+Apple code, finishes steps 4 and 5. From step 3 on, every sync, MCP and admin request for the
+account is answered `account_deleted` (410), and the account is never created again under the same
+Clerk id. Failures name the step in `step`. Before step 3, nothing was deleted: `configuration`
+(a secret is missing, or Apple or Clerk refuses the Worker's keys), `apple` (Apple refused the
+code, or it is another app's or another Apple ID's: sign in with Apple again) and `unavailable`
+(Apple or Clerk couldn't be reached: retry). After it, `sign_in`: the data is deleted, but
+revoking or deleting the user didn't finish, so retry.
 
 It needs these secrets on each Worker. Until all of them are set, deletion answers 503 and deletes
 nothing:
@@ -99,7 +103,7 @@ npx wrangler@4.158.0 secret put CLERK_SECRET_KEY   # Clerk API keys → Secret k
 npx wrangler@4.158.0 secret put APPLE_TEAM_ID      # Apple developer team id
 npx wrangler@4.158.0 secret put APPLE_KEY_ID       # id of a key with Sign in with Apple enabled
 npx wrangler@4.158.0 secret put APPLE_PRIVATE_KEY  # that key's .p8 file, as is
-npx wrangler@4.158.0 secret put APPLE_CLIENT_ID    # app.leve.dev here; app.leve.production with --env=production
+npx wrangler@4.158.0 secret put APPLE_CLIENT_ID    # bundle ids, comma-separated: app.leve.dev,app.leve.preview here; app.leve.production with --env=production
 ```
 
 `CLERK_SECRET_KEY` can manage every user of its Clerk instance. Keep it on this Worker only. The

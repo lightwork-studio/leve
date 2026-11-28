@@ -16,9 +16,10 @@ export const clerk = {
   appleFlow: (async () => ({ createdSessionId: "sess_1" })) as Flow,
   calls: [] as string[],
   /** What the bare Apple sheet (expo-apple-authentication's signInAsync) answers. */
-  appleSheet: (async () => ({ authorizationCode: "apple-code" })) as () => Promise<{
-    authorizationCode: string | null;
-  }>,
+  appleSheet: (async () => ({
+    authorizationCode: "apple-code",
+    identityToken: `e30.${btoa(JSON.stringify({ aud: "app.leve.dev" }))}.sig`,
+  })) as () => Promise<{ authorizationCode: string | null; identityToken?: string | null }>,
   signOutFails: false,
   providerProps: null as Record<string, unknown> | null,
   reset() {
@@ -30,7 +31,10 @@ export const clerk = {
     clerk.noToken = false;
     clerk.email = undefined;
     clerk.appleFlow = async () => ({ createdSessionId: "sess_1" });
-    clerk.appleSheet = async () => ({ authorizationCode: "apple-code" });
+    clerk.appleSheet = async () => ({
+      authorizationCode: "apple-code",
+      identityToken: `e30.${btoa(JSON.stringify({ aud: "app.leve.dev" }))}.sig`,
+    });
     clerk.calls = [];
   },
 };

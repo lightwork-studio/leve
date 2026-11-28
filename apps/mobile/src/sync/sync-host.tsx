@@ -299,6 +299,8 @@ function Sync({
   const [, setDeletions] = useState(0);
   useEffect(() => subscribeAccountDeletion(() => setDeletions((n) => n + 1)), []);
   const deletion = own ? null : accountDeletionState(userId);
+  /** This phone asked for the deletion, and the account's data is gone but its sign-in isn't. */
+  const [unfinishedDeletion, setUnfinishedDeletion] = useState(false);
 
   // A deletion this phone asked for but never heard back about (no answer, or the app closed):
   // once the account's sign-in is gone, so is the account, and the phone keeps its data. A sign-in
@@ -342,6 +344,8 @@ function Sync({
           accountBeingDeleted() === userId &&
           (next.prompt?.kind === "deleted" || (next.lastSynced ?? 0) >= started)
         ) {
+          // Deleted from here, and still signed in: the sign-in part is left to finish.
+          if (next.prompt?.kind === "deleted") setUnfinishedDeletion(true);
           setAccountBeingDeleted(null);
         }
         if (next.lastSynced !== null && next.lastSynced - lastWritten.current > SAVE_SYNCED_MS) {
@@ -408,6 +412,7 @@ function Sync({
             void signOut().catch(() => {});
           }}
           onSettings={() => router.push(SETTINGS)}
+          unfinished={unfinishedDeletion}
         />
       );
     if (prompt?.kind === "update") return <UpdatePrompt onPause={pause} />;
@@ -1040,10 +1045,23 @@ function RefusedPrompt({
 function DeletedPrompt({
   onSignOut,
   onSettings,
+  unfinished,
 }: {
   onSignOut: () => void;
   onSettings: () => void;
+  /** Deleted from this phone without an answer: the sign-in still has to be deleted. */
+  unfinished: boolean;
 }) {
+  if (unfinished)
+    return (
+      <Dialog
+        eyebrow="Finish deleting your account"
+        confirm={{ label: "Open Settings", onPress: onSettings }}
+        footer={<Button rank="text" label="Sign out" onPress={onSignOut} />}
+      >
+        <Body text="Your synced workouts are deleted, but deleting your account didn't finish. Delete it again in Settings to finish. Workouts on this phone stay here." />
+      </Dialog>
+    );
   return (
     <Dialog
       eyebrow="Account deleted"

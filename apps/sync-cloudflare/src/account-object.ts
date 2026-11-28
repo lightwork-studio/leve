@@ -9,7 +9,7 @@ import { openAccountDatabase, readSyncBody, startNewLineage, syncResponse } from
 import {
   DeletionError,
   type DeletionStep,
-  deleteSignIn,
+  deleteAccount,
   deletionConfig,
 } from "./account-deletion.ts";
 import { durableObjectConnection, type SqlMeter } from "./do-sql.ts";
@@ -175,9 +175,10 @@ export class AccountObject extends DurableObject<Env> {
   }
 
   /**
-   * The signed-in person deletes their account: its data, then its Sign in with Apple grant and
-   * its Clerk user (see account-deletion.ts). Every step can be repeated, so trying again after a
-   * failure finishes the deletion. Nothing is deleted while the Worker can't do all of it.
+   * The signed-in person deletes their account: once Apple confirms it is the account's Apple ID,
+   * its data, then its Sign in with Apple grant and its Clerk user (see account-deletion.ts). Every
+   * step can be repeated, so trying again after a failure finishes the deletion. Nothing is
+   * deleted while the Worker can't do all of it.
    */
   async #deleteAccount(request: Request, account: string): Promise<Response> {
     // Failures name the step that failed, so the phone knows whether the data is already gone.
@@ -194,20 +195,35 @@ export class AccountObject extends DurableObject<Env> {
     }
     const read = await readSyncBody(request);
     if ("refused" in read) return syncResponse(read.refused);
-    const code = (read.body as { appleAuthorizationCode?: unknown } | null)?.appleAuthorizationCode;
+    const body = read.body as { appleAuthorizationCode?: unknown; appleClientId?: unknown } | null;
+    const code = body?.appleAuthorizationCode;
+    const clientId = body?.appleClientId;
     if (code !== undefined && (typeof code !== "string" || code === "" || code.length > 4096)) {
       return json(400, errorReply("invalid_request", "appleAuthorizationCode").body);
     }
-    const erased = await this.#service.deleteAccount(account);
-    if (erased.status !== 200) return syncResponse(erased);
+    if (
+      clientId !== undefined &&
+      (typeof clientId !== "string" || !/^[\w.-]{1,255}$/.test(clientId))
+    ) {
+      return json(400, errorReply("invalid_request", "appleClientId").body);
+    }
     try {
-      await deleteSignIn(config, account, code ?? null);
+      await deleteAccount(
+        config,
+        account,
+        code === undefined ? null : { code, clientId: clientId ?? null },
+        async () => {
+          // Through the write service, which also ends downloads waiting on the account.
+          const erased = await this.#service.deleteAccount(account);
+          if (erased.status !== 200) throw new Error("the account's data wasn't deleted");
+        },
+      );
     } catch (error) {
       if (!(error instanceof DeletionError)) throw error;
-      console.error("deleting the sign-in didn't finish:", error.message);
-      return error.reason === "apple"
-        ? failed(400, errorReply("invalid_request", error.message), "apple")
-        : failed(503, errorReply("unavailable", "deleting the sign-in didn't finish"), "sign_in");
+      console.error(`deleting the account stopped at ${error.step}:`, error.message);
+      return error.step === "apple"
+        ? failed(400, errorReply("invalid_request", "sign in with Apple again"), "apple")
+        : failed(503, errorReply("unavailable", "deleting the account didn't finish"), error.step);
     }
     return json(200, { deleted: true });
   }

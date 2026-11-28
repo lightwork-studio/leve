@@ -23,8 +23,11 @@ export interface DeletionConfig {
   appleKeyId: string;
   /** That key's private part (the `.p8` file: a PKCS #8 PEM). */
   applePrivateKey: string;
-  /** The app's bundle id, which Apple issued the authorization codes to. */
-  appleClientId: string;
+  /**
+   * The bundle ids of the apps that may delete accounts here, which Apple issues authorization
+   * codes to (one Worker can serve several builds, such as Leve Dev and Leve Preview).
+   */
+  appleClientIds: string[];
 }
 
 export interface DeletionEnv {
@@ -42,32 +45,32 @@ export function deletionConfig(env: DeletionEnv): DeletionConfig | null {
     appleTeamId: env.APPLE_TEAM_ID?.trim() ?? "",
     appleKeyId: env.APPLE_KEY_ID?.trim() ?? "",
     applePrivateKey: env.APPLE_PRIVATE_KEY?.trim() ?? "",
-    appleClientId: env.APPLE_CLIENT_ID?.trim() ?? "",
   };
-  return Object.values(config).every(Boolean) ? config : null;
+  const appleClientIds = (env.APPLE_CLIENT_ID ?? "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
+  if (!Object.values(config).every(Boolean) || appleClientIds.length === 0) return null;
+  return { ...config, appleClientIds };
 }
 
 /**
- * Which step of `POST /account/delete` failed, in its failure answers. `configuration`: the Worker
- * lacks a secret and deleted nothing. `apple`: the data is deleted, but Apple didn't accept the
- * authorization code (used, expired, or another Apple ID's); sign in with Apple again and retry.
- * `sign_in`: the data is deleted, but Apple or Clerk couldn't be reached or refused the Worker's
- * keys; retrying finishes it.
+ * Which step of `POST /account/delete` failed, in its failure answers. Before the data is deleted:
+ * `configuration` (the Worker lacks a secret or can't use its keys), `apple` (Apple didn't
+ * accept the authorization code: used, expired, another app's or another Apple ID's; sign in with
+ * Apple again), `unavailable` (Apple or Clerk couldn't be reached; try again). After it:
+ * `sign_in` (the data is deleted, but revoking Apple's grant or deleting the Clerk user didn't
+ * finish; trying again finishes it).
  */
-export type DeletionStep = "configuration" | "apple" | "sign_in";
+export type DeletionStep = "configuration" | "apple" | "unavailable" | "sign_in";
 
-/** Why the sign-in part of a deletion didn't finish. */
+/** Why a deletion didn't finish, and at which step (see DeletionStep). */
 export class DeletionError extends Error {
   override name = "DeletionError";
-  /**
-   * `apple`: Apple didn't accept the authorization code, or it belongs to another Apple ID than the
-   * account's; the person can sign in with Apple again and retry. `unavailable`: Apple or Clerk
-   * couldn't be reached or refused the Worker's keys; retrying later finishes it.
-   */
-  readonly reason: "apple" | "unavailable";
-  constructor(reason: "apple" | "unavailable", message: string) {
+  readonly step: DeletionStep;
+  constructor(step: DeletionStep, message: string) {
     super(message);
-    this.reason = reason;
+    this.step = step;
   }
 }
 
@@ -106,7 +109,11 @@ function decodeJsonPart(part: string | undefined): Record<string, unknown> | nul
  * The client secret Apple's REST API wants from a native app: a short-lived ES256 JWT signed with
  * the Sign in with Apple key, naming the team, the key and the app.
  */
-export async function appleClientSecret(config: DeletionConfig, now = Date.now()): Promise<string> {
+export async function appleClientSecret(
+  config: DeletionConfig,
+  clientId: string,
+  now = Date.now(),
+): Promise<string> {
   const der = Uint8Array.from(
     atob(config.applePrivateKey.replace(/-----(BEGIN|END) PRIVATE KEY-----|\s|\\n/g, "")),
     (c) => c.charCodeAt(0),
@@ -124,7 +131,7 @@ export async function appleClientSecret(config: DeletionConfig, now = Date.now()
     iat: issued,
     exp: issued + 300,
     aud: "https://appleid.apple.com",
-    sub: config.appleClientId,
+    sub: clientId,
   })}`;
   // Web Crypto signs ECDSA as r and s side by side, which is the form JWS uses.
   const signature = new Uint8Array(
@@ -142,55 +149,87 @@ interface ClerkExternalAccount {
   provider_user_id?: unknown;
 }
 
+/** What the phone sends from the Apple sheet: a fresh authorization code, and which app asked. */
+export interface AppleConfirmation {
+  code: string;
+  /** The bundle id of the app that got the code; one of the configured ones. */
+  clientId: string | null;
+}
+
 /**
- * Deletes the Clerk user, after revoking its Sign in with Apple grant with `appleCode`, a fresh
- * authorization code the phone got from Apple for the same Apple ID. Run it after the account's
- * data is gone: the user is deleted last, so a retry (with a new code) can still sign in and
- * finish. A user Clerk no longer has counts as deleted.
+ * Deletes the account: checks with Apple that the person asking signs in with the account's Apple
+ * ID, then deletes the account's data (`eraseData`), revokes the Sign in with Apple grant and
+ * deletes the Clerk user, in that order. A failure before the data goes deletes nothing. Every step
+ * can run again, and a user Clerk no longer has counts as deleted, so trying again (with a new
+ * code) after any failure finishes it. Throws a DeletionError naming the step that failed.
  */
-export async function deleteSignIn(
+export async function deleteAccount(
   config: DeletionConfig,
   account: string,
-  appleCode: string | null,
+  apple: AppleConfirmation | null,
+  eraseData: () => Promise<void>,
   options: DeletionOptions = {},
 ): Promise<void> {
   const fetchFn = options.fetch ?? ((input, init) => fetch(input, init));
   const now = options.now ?? Date.now;
+  let erased = false;
+  const unavailable = (what: string, response?: Response) =>
+    new DeletionError(
+      erased ? "sign_in" : "unavailable",
+      `${what}${response ? ` (HTTP ${response.status})` : ""}`,
+    );
   const clerk = (method: string) =>
     fetchFn(`${CLERK_API}/users/${encodeURIComponent(account)}`, {
       method,
       headers: { authorization: `Bearer ${config.clerkSecretKey}` },
     });
-  const unavailable = (what: string, response?: Response) =>
-    new DeletionError("unavailable", `${what}${response ? ` (HTTP ${response.status})` : ""}`);
+  const form = (fields: Record<string, string>) => ({
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams(fields).toString(),
+  });
 
   const found = await clerk("GET").catch(() => null);
   if (!found) throw unavailable("Clerk can't be reached");
-  if (found.status === 404) return;
+  if (found.status === 404) {
+    // The sign-in is already gone: an earlier attempt got this far, after deleting the data.
+    await eraseData();
+    return;
+  }
+  if (found.status === 401 || found.status === 403) {
+    throw new DeletionError("configuration", `Clerk refused the secret key (HTTP ${found.status})`);
+  }
   if (!found.ok) throw unavailable("Clerk refused to read the user", found);
   const user = (await found.json().catch(() => null)) as {
     external_accounts?: ClerkExternalAccount[];
   } | null;
   if (!user) throw unavailable("Clerk sent an unreadable user");
   // The Backend API names providers `oauth_apple`; the Frontend API, plain `apple`.
-  const apple = (user.external_accounts ?? []).find(
+  const appleAccount = (user.external_accounts ?? []).find(
     (external) => external.provider === "oauth_apple" || external.provider === "apple",
   );
 
-  if (apple) {
-    if (!appleCode) throw new DeletionError("apple", "sign in with Apple again to delete");
-    const form = (fields: Record<string, string>) => ({
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams(fields).toString(),
-    });
-    const secret = await appleClientSecret(config, now());
+  // Before anything is deleted: Apple confirms the code is for the account's own Apple ID.
+  let revocation: { clientId: string; secret: string; token: string; hint: string } | null = null;
+  if (appleAccount) {
+    if (!apple) throw new DeletionError("apple", "sign in with Apple again to delete");
+    const clientId =
+      apple.clientId ?? (config.appleClientIds.length === 1 ? config.appleClientIds[0] : null);
+    if (!clientId || !config.appleClientIds.includes(clientId)) {
+      throw new DeletionError("apple", "the code is for an app this server doesn't know");
+    }
+    let secret: string;
+    try {
+      secret = await appleClientSecret(config, clientId, now());
+    } catch {
+      throw new DeletionError("configuration", "APPLE_PRIVATE_KEY can't be used");
+    }
     const exchanged = await fetchFn(
       `${APPLE_AUTH}/token`,
       form({
-        client_id: config.appleClientId,
+        client_id: clientId,
         client_secret: secret,
-        code: appleCode,
+        code: apple.code,
         grant_type: "authorization_code",
       }),
     ).catch(() => null);
@@ -202,17 +241,27 @@ export async function deleteSignIn(
       id_token?: unknown;
     } | null;
     if (!exchanged.ok) {
-      // A used, expired or foreign code: the person can sign in with Apple again. Anything else
-      // (a wrong key, team or client id) is the operator's to fix.
+      // A used, expired or foreign code: the person can sign in with Apple again. A wrong key,
+      // team or client id is the operator's to fix.
       if (exchanged.status === 400 && tokens?.error === "invalid_grant") {
         throw new DeletionError("apple", "Apple didn't accept the authorization code");
+      }
+      if (exchanged.status === 400 || exchanged.status === 401) {
+        throw new DeletionError(
+          "configuration",
+          `Apple refused the client (HTTP ${exchanged.status})`,
+        );
       }
       throw unavailable("Apple refused the token request", exchanged);
     }
     // Straight from Apple over TLS, so its claims can be read without checking its signature.
     const identity =
       typeof tokens?.id_token === "string" ? decodeJsonPart(tokens.id_token.split(".")[1]) : null;
-    if (!identity || identity.sub !== apple.provider_user_id) {
+    if (
+      typeof identity?.sub !== "string" ||
+      typeof appleAccount.provider_user_id !== "string" ||
+      identity.sub !== appleAccount.provider_user_id
+    ) {
       throw new DeletionError("apple", "the authorization code is for another Apple ID");
     }
     const [token, hint] =
@@ -222,13 +271,20 @@ export async function deleteSignIn(
           ? [tokens.access_token, "access_token"]
           : [null, null];
     if (!token || !hint) throw unavailable("Apple sent no token to revoke");
+    revocation = { clientId, secret, token, hint };
+  }
+
+  await eraseData();
+  erased = true;
+
+  if (revocation) {
     const revoked = await fetchFn(
       `${APPLE_AUTH}/revoke`,
       form({
-        client_id: config.appleClientId,
-        client_secret: secret,
-        token,
-        token_type_hint: hint,
+        client_id: revocation.clientId,
+        client_secret: revocation.secret,
+        token: revocation.token,
+        token_type_hint: revocation.hint,
       }),
     ).catch(() => null);
     if (!revoked) throw unavailable("Apple can't be reached");

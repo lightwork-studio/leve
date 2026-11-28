@@ -514,6 +514,19 @@ it("says the account was deleted, and signing out stops its sync for good, even 
   expect(screen()).toBe("");
 });
 
+it("asks to finish a deletion asked for here when only its data is gone", async () => {
+  data.account = "user_1";
+  data.server = "https://sync.test";
+  setAccountBeingDeleted("user_1");
+  await render();
+  await report({ prompt: { kind: "deleted" } });
+  await render();
+  expect(screen()).toContain("deleting your account didn't finish");
+  expect(accountBeingDeleted()).toBeNull();
+  await tap("Open Settings");
+  expect(route.pushed).toContain("/settings");
+});
+
 it("doesn't sync an account while it is being deleted from this phone", async () => {
   setAccountDeletionState("user_1", "deleting");
   await render();

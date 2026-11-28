@@ -11,6 +11,7 @@ import {
   syncServerUrl,
 } from "../sync/sync-config.ts";
 import {
+  accountBeingDeleted,
   setAccountBeingDeleted,
   setSignedOutOnPurpose,
   setSyncPaused,
@@ -26,7 +27,7 @@ import { Group } from "../ui/group.tsx";
 import { haptic } from "../ui/haptics.ts";
 import { themedStyles, useStyles } from "../ui/themed.ts";
 import {
-  appleAuthorizationCode,
+  appleConfirmation,
   DELETION_FAILED,
   DeletionProblem,
   requestAccountDeletion,
@@ -148,25 +149,23 @@ function Account() {
         const account = userId;
         if (!account) throw new DeletionProblem(DELETION_FAILED);
         // The Apple sheet: a fresh code to revoke Sign in with Apple with. Dismissed: nothing happens.
-        const code = await appleAuthorizationCode();
-        if (code === null) return;
+        const apple = await appleConfirmation();
+        if (apple === null) return;
         // Sync stops meanwhile. If no answer comes back, sync finds out later whether it worked.
+        // An earlier attempt may still be unsettled: this one failing can't settle it.
+        const earlier = accountBeingDeleted();
         setAccountDeletionState(account, "deleting");
         setAccountBeingDeleted(account);
         try {
           const token = await getToken({ skipCache: true });
           if (!token) throw new DeletionProblem(DELETION_FAILED);
-          await requestAccountDeletion({
-            server: syncServerUrl,
-            token,
-            appleAuthorizationCode: code,
-          });
+          await requestAccountDeletion({ server: syncServerUrl, token, apple });
         } catch (error) {
           const outcome = error instanceof DeletionProblem ? error.deleted : "nothing";
           if (outcome === "data") forgetDeletedAccount(account);
           else {
             setAccountDeletionState(account, null);
-            if (outcome === "nothing") setAccountBeingDeleted(null);
+            if (outcome === "nothing") setAccountBeingDeleted(earlier);
           }
           throw error;
         }
@@ -197,7 +196,15 @@ function Account() {
       <Group
         label="Account"
         footnote={
-          problem ?? (paused ? SYNC_PAUSED_NOTE : syncing ? SYNC_SIGNED_IN_NOTE : SIGNED_IN_NOTE)
+          // Deleted, but signing out didn't work (offline): the session is gone on the server.
+          problem ??
+          (deleted
+            ? DELETED_NOTE
+            : paused
+              ? SYNC_PAUSED_NOTE
+              : syncing
+                ? SYNC_SIGNED_IN_NOTE
+                : SIGNED_IN_NOTE)
         }
       >
         <SettingRow label="Signed in with Apple" {...(email ? { hint: email } : {})}>
@@ -225,7 +232,7 @@ function Account() {
             else void signOutNow();
           }}
         />
-        {canDelete ? (
+        {canDelete && !deleted ? (
           <ActionRow
             label="Delete account"
             danger

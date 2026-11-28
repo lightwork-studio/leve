@@ -74,11 +74,15 @@ afterEach(() => {
 function account(env: Record<string, string> = SECRETS) {
   const fake = fakeObjectStorage();
   const markerStorage = new Map<string, unknown>();
+  const faults = Object.assign(fake.faults, { marker: false });
   const marker = new RestoreMarker(
     {
       storage: {
         get: async (key: string) => markerStorage.get(key),
-        put: async (key: string, value: unknown) => void markerStorage.set(key, value),
+        put: async (key: string, value: unknown) => {
+          if (faults.marker) throw new Error("the marker object was reset");
+          markerStorage.set(key, value);
+        },
         delete: async (key: string) => markerStorage.delete(key),
       },
     } as never,
@@ -90,7 +94,7 @@ function account(env: Record<string, string> = SECRETS) {
   };
   const start = () =>
     new AccountObject({ storage: fake.storage, abort: () => {} } as never, fullEnv as never);
-  return { ...fake, marker, markerStorage, start };
+  return { ...fake, faults, marker, markerStorage, start };
 }
 
 async function post(object: AccountObject, path: string, body: unknown) {
@@ -194,7 +198,7 @@ describe("deleting an account from the phone", () => {
     expect(appleGrant).toBe(false);
   });
 
-  it("keeps the sign-in after Apple refuses the code, and finishes on a retry with a new one", async () => {
+  it("deletes nothing when Apple refuses the code, and deletes everything on a retry", async () => {
     const one = account();
     const object = one.start();
     await withData(object);
@@ -202,13 +206,46 @@ describe("deleting an account from the phone", () => {
 
     const reply = await post(object, ACCOUNT_DELETE_PATH, { appleAuthorizationCode: "used" });
     expect(reply).toMatchObject({ status: 400, body: { step: "apple" } });
-    expect(one.tables()).toEqual([]);
+    expect(one.tables()).toContain("records");
+    expect(one.markerStorage.size).toBe(0);
     expect(clerkUser).toBe(true);
+    expect(await post(object, "/sync/hello", { releases: ["1.0"], app: "test" })).toMatchObject({
+      status: 200,
+    });
 
     appleAccepts = true;
     const retry = await post(object, ACCOUNT_DELETE_PATH, { appleAuthorizationCode: "fresh" });
     expect(retry.status).toBe(200);
+    expect(one.tables()).toEqual([]);
     expect(clerkUser).toBe(false);
+  });
+
+  it("doesn't claim a deletion when recording it failed", async () => {
+    const one = account();
+    one.faults.marker = true;
+    const object = one.start();
+    await withData(object);
+
+    const reply = await post(object, ACCOUNT_DELETE_PATH, { appleAuthorizationCode: "code" });
+    expect(reply.status).toBe(503);
+    expect(reply.body.step).toBeUndefined();
+    expect(one.tables()).toContain("records");
+    expect(clerkUser).toBe(true);
+    // Other phones keep syncing: nothing was deleted.
+    expect(await post(object, "/sync/hello", { releases: ["1.0"], app: "test" })).toMatchObject({
+      status: 200,
+    });
+  });
+
+  it("answers MCP and the operator's endpoints that the account is gone", async () => {
+    const one = account();
+    const object = one.start();
+    await withData(object);
+    await post(object, ACCOUNT_DELETE_PATH, { appleAuthorizationCode: "code" });
+    for (const path of ["/mcp", "/admin/export", "/admin/stats", "/admin/restore"]) {
+      expect(await post(object, path, { bookmark: "b" }), path).toMatchObject(deleted);
+    }
+    expect(one.tables()).toEqual([]);
   });
 
   it("answers the same after a lost answer, once the sign-in is already gone", async () => {

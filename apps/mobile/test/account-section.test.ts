@@ -363,7 +363,7 @@ it("deletes the account after a clear warning and Apple, keeps the phone's data 
     {
       url: "https://sync.test/account/delete",
       authorization: "Bearer token-user_1",
-      body: { appleAuthorizationCode: "apple-code" },
+      body: { appleAuthorizationCode: "apple-code", appleClientId: "app.leve.dev" },
     },
   ]);
   expect(data.forgotten).toBe(1);
@@ -458,4 +458,39 @@ it("offers no deletion in a build without a server of its own", async () => {
   await render();
   expect(text()).toContain("Signed in with Apple");
   expect(text()).not.toContain("Delete account");
+});
+
+it("keeps an earlier unanswered deletion to settle when a retry gets nowhere", async () => {
+  clerk.signedIn = true;
+  vi.stubGlobal("fetch", async () => {
+    throw new TypeError("Network request failed");
+  });
+  await render();
+  await tap("Delete account");
+  await confirmDeletion();
+  expect(accountBeingDeleted()).toBe("user_1");
+
+  // The first request did arrive and deleted the sign-in: no new token for the retry.
+  clerk.noToken = true;
+  await tap("Delete account");
+  await confirmDeletion();
+  expect(accountBeingDeleted()).toBe("user_1");
+  expect(data.forgotten).toBe(0);
+});
+
+it("deletes nothing when Apple doesn't confirm the account's Apple ID", async () => {
+  clerk.signedIn = true;
+  const sent = deletionServer(async () =>
+    Response.json(
+      { error: { code: "invalid_request", message: "x" }, step: "apple" },
+      { status: 400 },
+    ),
+  );
+  await render();
+  await tap("Delete account");
+  await confirmDeletion();
+  expect(sent[0]?.body).toMatchObject({ appleAuthorizationCode: "apple-code" });
+  expect(data.forgotten).toBe(0);
+  expect(accountBeingDeleted()).toBeNull();
+  expect(text()).toContain("Try again with the Apple ID you use for Leve.");
 });

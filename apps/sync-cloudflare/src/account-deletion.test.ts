@@ -8,7 +8,7 @@ import {
   CLERK_API,
   type DeletionConfig,
   DeletionError,
-  deleteSignIn,
+  deleteAccount,
   deletionConfig,
 } from "./account-deletion.ts";
 
@@ -28,7 +28,7 @@ const CONFIG: DeletionConfig = {
   appleTeamId: "TEAM123456",
   appleKeyId: "KEY1234567",
   applePrivateKey: PEM,
-  appleClientId: "app.leve.dev",
+  appleClientIds: ["app.leve.dev"],
 };
 const APPLE_USER = "001234.abcdef.0001";
 
@@ -102,20 +102,21 @@ describe("deletionConfig", () => {
       APPLE_TEAM_ID: "T",
       APPLE_KEY_ID: "K",
       APPLE_PRIVATE_KEY: PEM,
-      APPLE_CLIENT_ID: "app.leve.dev",
+      APPLE_CLIENT_ID: "app.leve.dev, app.leve.preview",
     };
-    expect(deletionConfig(env)).not.toBeNull();
+    expect(deletionConfig(env)?.appleClientIds).toEqual(["app.leve.dev", "app.leve.preview"]);
     for (const key of Object.keys(env)) {
       expect(deletionConfig({ ...env, [key]: " " }), key).toBeNull();
       expect(deletionConfig({ ...env, [key]: undefined }), key).toBeNull();
     }
+    expect(deletionConfig({ ...env, APPLE_CLIENT_ID: " , " })).toBeNull();
   });
 });
 
 describe("appleClientSecret", () => {
   it("is an ES256 JWT Apple can verify with the key", async () => {
     const now = Date.UTC(2026, 10, 28, 12);
-    const secret = await appleClientSecret(CONFIG, now);
+    const secret = await appleClientSecret(CONFIG, "app.leve.dev", now);
     const [header, claims, signature] = secret.split(".") as [string, string, string];
     expect(decode(header)).toEqual({ alg: "ES256", kid: "KEY1234567" });
     expect(decode(claims)).toEqual({
@@ -139,18 +140,46 @@ describe("appleClientSecret", () => {
   });
 });
 
-describe("deleteSignIn", () => {
-  it("revokes the Apple grant, then deletes the Clerk user", async () => {
+const CODE = { code: "apple-code", clientId: "app.leve.dev" };
+
+/** Runs a deletion, recording among the calls when the account's data was erased. */
+async function run(
+  service: ReturnType<typeof services>,
+  apple: { code: string; clientId: string | null } | null = CODE,
+  config: DeletionConfig = CONFIG,
+) {
+  let erased = false;
+  const error = await deleteAccount(
+    config,
+    "user_alice",
+    apple,
+    async () => {
+      service.calls.push({ method: "ERASE", url: "" });
+      erased = true;
+    },
+    { fetch: service.fetch },
+  ).then(
+    () => null,
+    (e: unknown) => e,
+  );
+  return { error: error as DeletionError | null, erased };
+}
+
+describe("deleteAccount", () => {
+  it("checks with Apple first, then erases the data, revokes the grant and deletes the Clerk user", async () => {
     const service = services();
-    await deleteSignIn(CONFIG, "user_alice", "apple-code", { fetch: service.fetch });
+    const { error } = await run(service);
+    expect(error).toBeNull();
     expect(service.calls.map((call) => `${call.method} ${call.url}`)).toEqual([
       `GET ${CLERK_API}/users/user_alice`,
       `POST ${APPLE_AUTH}/token`,
+      "ERASE ",
       `POST ${APPLE_AUTH}/revoke`,
       `DELETE ${CLERK_API}/users/user_alice`,
     ]);
     expect(service.calls[0]?.authorization).toBe("Bearer sk_test_secret");
-    const [, exchange, revoke] = service.calls;
+    const exchange = service.calls[1];
+    const revoke = service.calls[3];
     expect(exchange?.form).toMatchObject({
       client_id: "app.leve.dev",
       code: "apple-code",
@@ -165,65 +194,81 @@ describe("deleteSignIn", () => {
     expect(service.deleted()).toBe(true);
   });
 
-  it("counts a user Clerk no longer has as deleted, so a retry after a lost answer succeeds", async () => {
-    const service = services({ user: null });
-    await deleteSignIn(CONFIG, "user_alice", "apple-code", { fetch: service.fetch });
-    expect(service.calls.map((call) => call.method)).toEqual(["GET"]);
+  it("redeems the code for the build that asked, among the configured ones", async () => {
+    const config = { ...CONFIG, appleClientIds: ["app.leve.dev", "app.leve.preview"] };
+    const service = services();
+    const preview = await run(service, { code: "c", clientId: "app.leve.preview" }, config);
+    expect(preview.error).toBeNull();
+    expect(service.calls[1]?.form?.client_id).toBe("app.leve.preview");
+    const secret = service.calls[1]?.form?.client_secret ?? "";
+    expect(decode(secret.split(".")[1] ?? "").sub).toBe("app.leve.preview");
+
+    const refused = await run(services(), { code: "c", clientId: "com.example.other" }, config);
+    expect(refused).toMatchObject({ erased: false, error: { step: "apple" } });
+    // Without a bundle id, only a single configured app can be meant.
+    const unnamed = await run(services(), { code: "c", clientId: null }, config);
+    expect(unnamed).toMatchObject({ erased: false, error: { step: "apple" } });
+    expect((await run(services(), { code: "c", clientId: null })).error).toBeNull();
   });
 
-  it("keeps the user when Apple's code belongs to another Apple ID", async () => {
+  it("counts a user Clerk no longer has as deleted, still making sure the data is gone", async () => {
+    const service = services({ user: null });
+    const { error, erased } = await run(service);
+    expect(error).toBeNull();
+    expect(erased).toBe(true);
+    expect(service.calls.map((call) => call.method)).toEqual(["GET", "ERASE"]);
+  });
+
+  it("deletes nothing when Apple's code belongs to another Apple ID", async () => {
     const service = services({ appleSub: "009999.other.0001" });
-    const error = await deleteSignIn(CONFIG, "user_alice", "apple-code", {
-      fetch: service.fetch,
-    }).catch((e: unknown) => e);
+    const { error, erased } = await run(service);
     expect(error).toBeInstanceOf(DeletionError);
-    expect((error as DeletionError).reason).toBe("apple");
+    expect(error?.step).toBe("apple");
+    expect(erased).toBe(false);
     expect(service.calls.some((call) => call.url.endsWith("/revoke"))).toBe(false);
     expect(service.deleted()).toBe(false);
   });
 
-  it("asks for a new Apple sign-in when the code was used or expired", async () => {
-    const service = services({ token: { status: 400, error: "invalid_grant" } });
-    await expect(
-      deleteSignIn(CONFIG, "user_alice", "used-code", { fetch: service.fetch }),
-    ).rejects.toMatchObject({ reason: "apple" });
-    expect(service.deleted()).toBe(false);
+  it("deletes nothing when Clerk has no Apple user id to compare with", async () => {
+    const service = services({ user: { external_accounts: [{ provider: "oauth_apple" }] } });
+    expect(await run(service)).toMatchObject({ erased: false, error: { step: "apple" } });
   });
 
-  it("refuses without an Apple code while the user signs in with Apple", async () => {
-    const service = services();
-    await expect(
-      deleteSignIn(CONFIG, "user_alice", null, { fetch: service.fetch }),
-    ).rejects.toMatchObject({ reason: "apple" });
-    expect(service.deleted()).toBe(false);
+  it("deletes nothing when the code was used or expired, or is missing", async () => {
+    const used = services({ token: { status: 400, error: "invalid_grant" } });
+    expect(await run(used)).toMatchObject({ erased: false, error: { step: "apple" } });
+    const missing = services();
+    expect(await run(missing, null)).toMatchObject({ erased: false, error: { step: "apple" } });
+    expect(used.deleted() || missing.deleted()).toBe(false);
   });
 
-  it("treats a wrong key or an unrevoked grant as the operator's problem and keeps the user", async () => {
-    for (const setup of [
-      { token: { status: 400, error: "invalid_client" } },
-      { revoke: 500 },
-      { clerkDelete: 500 },
-    ]) {
+  it("deletes nothing while the Worker's keys can't be used", async () => {
+    const badKey = await run(services(), CODE, { ...CONFIG, applePrivateKey: "not a key" });
+    expect(badKey).toMatchObject({ erased: false, error: { step: "configuration" } });
+    const badClient = await run(services({ token: { status: 400, error: "invalid_client" } }));
+    expect(badClient).toMatchObject({ erased: false, error: { step: "configuration" } });
+  });
+
+  it("keeps the user after erasing when revoking or deleting it fails, for a retry to finish", async () => {
+    for (const setup of [{ revoke: 500 }, { clerkDelete: 500 }]) {
       const service = services(setup);
-      await expect(
-        deleteSignIn(CONFIG, "user_alice", "apple-code", { fetch: service.fetch }),
-        JSON.stringify(setup),
-      ).rejects.toMatchObject({ reason: "unavailable" });
+      const { error, erased } = await run(service);
+      expect(erased, JSON.stringify(setup)).toBe(true);
+      expect(error?.step, JSON.stringify(setup)).toBe("sign_in");
       expect(service.deleted(), JSON.stringify(setup)).toBe(false);
     }
   });
 
   it("deletes a user without Apple sign-in without asking Apple", async () => {
     const service = services({ user: { external_accounts: [] } });
-    await deleteSignIn(CONFIG, "user_alice", null, { fetch: service.fetch });
-    expect(service.calls.map((call) => call.method)).toEqual(["GET", "DELETE"]);
+    expect((await run(service, null)).error).toBeNull();
+    expect(service.calls.map((call) => call.method)).toEqual(["GET", "ERASE", "DELETE"]);
     expect(service.deleted()).toBe(true);
   });
 
-  it("says Clerk can't be reached instead of throwing a network error", async () => {
-    const service = services({ clerkDown: true });
-    await expect(
-      deleteSignIn(CONFIG, "user_alice", "apple-code", { fetch: service.fetch }),
-    ).rejects.toMatchObject({ reason: "unavailable" });
+  it("says Clerk can't be reached, before deleting anything", async () => {
+    const { error, erased } = await run(services({ clerkDown: true }));
+    expect(error?.step).toBe("unavailable");
+    expect(erased).toBe(false);
   });
 });
