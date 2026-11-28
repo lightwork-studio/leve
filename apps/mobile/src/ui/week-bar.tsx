@@ -33,7 +33,8 @@ const FOLD_DURATION = 280;
 /**
  * The week over the tabs: "This week" and its dates, the tab's action beside them (after `status`,
  * such as sync's tag, when there is one), and a day per column with a date and a small mark under
- * it. The frame stays put between tabs; only the marks change. Tapping a day that has workouts names them in the line on top; tapping it again goes back.
+ * it. The frame stays put between tabs; only the marks change. Tapping a day that has workouts
+ * names them in the line on top; tapping it again goes back.
  *
  * It floats over the tab, which scrolls under it. Once the tab scrolls (`folded`), the days fold
  * away and the line on top keeps a dot per day. Folding only moves and fades things, so the bar's
