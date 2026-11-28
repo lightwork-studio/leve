@@ -1,4 +1,4 @@
-import { type ExerciseType, LIMITS, usesMetric } from "@leve/core";
+import { EXERCISE_TYPES, type ExerciseType, LIMITS, type SetMetric, usesMetric } from "@leve/core";
 import type { DeviceStore } from "@leve/storage";
 import { builtInExercise } from "./exercises.ts";
 import { formatHevyCsv, type HevyCsvWorkout } from "./hevy-csv.ts";
@@ -111,10 +111,14 @@ export function exportWorkouts(store: DeviceStore, now = new Date()): WorkoutExp
         const notes = noted.has(key) ? [] : (exerciseNotes.get(key) ?? []);
         noted.add(key);
         const type = entry.exerciseType as ExerciseType;
+        // Only what the exercise measures, as history shows it: a stray value on a set would
+        // make the import read the exercise as another kind.
+        const known = (EXERCISE_TYPES as readonly string[]).includes(type);
+        const uses = (metric: SetMetric) => !known || usesMetric(type, metric);
         // Assistance goes out as negative weight, which the import reads as assisted.
         const sign = type === "assisted_bodyweight" ? -1 : 1;
         // Floors and steps go in the reps column, as Hevy writes them for its stair machines.
-        const counted = usesMetric(type, "count");
+        const counted = known && usesMetric(type, "count");
         return {
           name: names.get(entry.exerciseId) ?? entry.exerciseName,
           notes: notes.join("\n\n"),
@@ -123,10 +127,10 @@ export function exportWorkouts(store: DeviceStore, now = new Date()): WorkoutExp
             .filter((set) => set.content.completedAt !== null)
             .map(({ content: set }) => ({
               type: set.type,
-              weightKg: set.weightKg === null ? null : sign * set.weightKg,
-              reps: counted ? set.count : set.reps,
-              distanceMeters: set.distanceMeters,
-              durationSeconds: set.durationSeconds,
+              weightKg: set.weightKg === null || !uses("weight") ? null : sign * set.weightKg,
+              reps: counted ? set.count : uses("reps") ? set.reps : null,
+              distanceMeters: uses("distance") ? set.distanceMeters : null,
+              durationSeconds: uses("duration") ? set.durationSeconds : null,
               rpe: set.rpe,
             })),
         };

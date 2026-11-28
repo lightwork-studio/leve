@@ -126,7 +126,8 @@ function identifyExercise(key: string, entries: readonly HevyExercise[]) {
       }
     }
   }
-  const assisted = /\bassisted\b/.test(key) || sets.some((set) => (set.weightKg ?? 0) < 0);
+  const assisted =
+    sets.some((set) => (set.weightKg ?? 0) < 0) || namedAssisted(key, new Set(metrics.keys()));
   const fits = (type: ExerciseType) =>
     (!assisted || type === "assisted_bodyweight") &&
     [...metrics.keys()].every((metric) => takes(type, metric));
@@ -141,17 +142,25 @@ function identifyExercise(key: string, entries: readonly HevyExercise[]) {
   return { name, type, builtIn: null };
 }
 
+/**
+ * "Assisted" in a name means assistance only for sets of reps: a timed or distance exercise of
+ * that name, such as an assisted stretch, measures what its sets say.
+ */
+const namedAssisted = (key: string, metrics: ReadonlySet<SetMetric>) =>
+  /\bassisted\b/.test(key) && !metrics.has("distance") && !metrics.has("duration");
+
 /** The row whose set first makes the exercise's sets fit no type, read in file order. */
 function firstUnfitRow(key: string, entries: readonly HevyExercise[]) {
   const metrics = new Set<SetMetric>();
-  let assisted = /\bassisted\b/.test(key);
+  let negative = false;
   for (const entry of entries) {
     for (const [index, set] of entry.sets.entries()) {
       for (const [metric, field] of METRIC_FIELDS) {
         const value = set[field];
         if (value !== null && value !== 0) metrics.add(metric);
       }
-      assisted ||= (set.weightKg ?? 0) < 0;
+      negative ||= (set.weightKg ?? 0) < 0;
+      const assisted = negative || namedAssisted(key, metrics);
       const type = inferType(metrics, key, assisted);
       const fits =
         (!assisted || type === "assisted_bodyweight") &&

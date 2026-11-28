@@ -749,4 +749,48 @@ describe("workout CSV export", () => {
       else process.env.TZ = zone;
     }
   });
+
+  it("leaves out values a set holds that its exercise doesn't measure", async () => {
+    store.putMany([
+      customExercise("custom-stretch", "Assisted Stretch", "duration"),
+      ...workoutRecords({
+        id: "w-stray",
+        title: "Stray values",
+        start: new Date(2026, 10, 27, 16, 0),
+        minutes: 30,
+        entries: [
+          {
+            exerciseId: "builtin:plank",
+            name: "Plank",
+            type: "duration",
+            sets: [{ durationSeconds: 60, reps: 1 }],
+          },
+          {
+            exerciseId: "builtin:barbell-bench-press",
+            name: "Barbell Bench Press",
+            type: "weight_reps",
+            sets: [{ weightKg: 60, reps: 5, durationSeconds: 30 }],
+          },
+          // "Assisted" in the name of a timed exercise is not assistance.
+          {
+            exerciseId: "custom-stretch",
+            name: "Assisted Stretch",
+            type: "duration",
+            sets: [{ durationSeconds: 45 }],
+          },
+        ],
+      }),
+    ]);
+    const { fresh, result } = await roundTrip(exportWorkouts(store).csv);
+    expect(result.added).toBe(1);
+    const [workout] = history(fresh);
+    expect(workout?.entries.map(({ exercise, sets }) => ({ exercise, sets }))).toMatchObject([
+      { exercise: "builtin:plank", sets: [{ durationSeconds: 60, reps: null }] },
+      {
+        exercise: "builtin:barbell-bench-press",
+        sets: [{ weightKg: 60, reps: 5, durationSeconds: null }],
+      },
+      { exercise: "custom: Assisted Stretch (duration)", sets: [{ durationSeconds: 45 }] },
+    ]);
+  });
 });
