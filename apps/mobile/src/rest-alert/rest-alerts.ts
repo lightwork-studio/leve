@@ -15,8 +15,9 @@ export interface RestAlertPlan {
 }
 
 /**
- * The alert for a running rest, naming the set that follows it. Only what the Live Activity
- * already shows goes into it: no notes, history or account details.
+ * The alert for a running rest, naming the set that follows it. It uses the same fields the Live
+ * Activity shows, and no notes, history or account details. Unlike the Live Activity it follows
+ * iOS's Show Previews setting on a locked phone.
  */
 export function restAlertPlan(
   rest: { endsAt: number } | null,

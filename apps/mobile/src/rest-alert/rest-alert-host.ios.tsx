@@ -74,7 +74,7 @@ function RestAlert() {
     offered = true;
     Alert.alert(
       "Alert when rest ends?",
-      "Leve can tell you when a rest is over, on this iPhone and on a paired Apple Watch. You can change this in Settings.",
+      "Leve can tell you when a rest is over and which set is next, on this iPhone and on a paired Apple Watch. You can change this in Settings.",
       [
         { text: "Not now", style: "cancel", onPress: () => saveRestAlertSetting(false) },
         {

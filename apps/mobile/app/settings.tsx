@@ -286,7 +286,7 @@ export default function SettingsScreen() {
                   hint={
                     restAlert === "on" && notificationsBlocked
                       ? DENIED_MESSAGE
-                      : "On this iPhone and a paired Apple Watch"
+                      : "Names your next set, on this iPhone and a paired Apple Watch"
                   }
                   on={restAlert === "on" && !notificationsBlocked}
                   onChange={(on) => {
