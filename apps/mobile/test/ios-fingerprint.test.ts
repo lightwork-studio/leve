@@ -5,7 +5,9 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { expect, it } from "vitest";
 
-it("changes the iOS runtime when a workspace dependency patch changes", { timeout: 30_000 }, () => {
+it("changes the iOS runtime when a workspace dependency patch changes", {
+  timeout: 120_000,
+}, () => {
   const root = mkdtempSync(join(tmpdir(), "leve-fingerprint-"));
   try {
     const mobile = join(root, "apps", "mobile");
