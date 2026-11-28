@@ -71,6 +71,15 @@ vi.mock("../src/ui/shake.tsx", () => ({ Shake: "Shake" }));
 vi.mock("../src/ui/live/sheet-drag.ts", () => ({
   useSheetDrag: () => ({ handlers: {}, style: {} }),
 }));
+const spoken = vi.hoisted(() => ({ toasts: [] as string[], announced: [] as string[] }));
+vi.mock("../src/ui/focus.ts", async (actual) => ({
+  ...(await actual<typeof import("../src/ui/focus.ts")>()),
+  announce: (text: string) => spoken.announced.push(text),
+}));
+vi.mock("../src/ui/notice.tsx", async (actual) => ({
+  ...(await actual<typeof import("../src/ui/notice.tsx")>()),
+  showToast: (text: string) => spoken.toasts.push(text),
+}));
 vi.mock("../src/ui/haptics.ts", () => ({
   haptic: { tap: () => {}, select: () => {}, warning: () => {}, success: () => {} },
 }));
@@ -922,7 +931,7 @@ it("deletes a held reading on every phone after confirming, keeps it on Keep and
     const a = await world.phone("a", account);
     const b = await world.phone("b", account);
     store = a.store;
-    const monday = { takenAt: "2026-11-09T07:00:00.000Z", bodyweightKg: 70, fatPercent: null };
+    const monday = { takenAt: "2026-11-09T07:00:00.000Z", bodyweightKg: 70, fatPercent: 18 };
     const tuesday = { takenAt: "2026-11-10T07:00:00.000Z", bodyweightKg: 71, fatPercent: null };
     const wednesday = { takenAt: "2026-11-11T07:00:00.000Z", bodyweightKg: 72, fatPercent: null };
     store.put("body_measurement", "monday", monday);
@@ -972,6 +981,7 @@ it("deletes a held reading on every phone after confirming, keeps it on Keep and
     await act(() => row(day(tuesday.takenAt)).props.onLongPress());
     await confirmAction(root, "Delete measurement");
     await rerender();
+    expect(spoken.announced).toContain("Measurement deleted");
     expect(rows()).toHaveLength(2);
     expect(store.get("body_measurement", "tuesday")?.deleted).toBe(true);
     await a.sync();
@@ -980,28 +990,27 @@ it("deletes a held reading on every phone after confirming, keeps it on Keep and
     expect(b.store.get("body_measurement", "monday")?.content).toEqual(monday);
     expect(b.store.get("body_measurement", "wednesday")?.content).toEqual(wednesday);
 
-    // Screen readers delete through the row's action.
+    // Screen readers delete through the row's action. The sheet names the body fat that goes too.
     await act(() =>
       row(day(monday.takenAt)).props.onAccessibilityAction({
         nativeEvent: { actionName: "delete" },
       }),
     );
-    // Another phone corrects the reading while the sheet is open: the deletion is refused.
-    b.store.put("body_measurement", "monday", { ...monday, bodyweightKg: 69 });
+    expect(
+      sheets()[0]
+        ?.findAllByType(Text)
+        .map((n) => n.children.join(""))[0],
+    ).toMatch(/^The 70 kg reading from .+, with 18% body fat, will be deleted\.$/);
+    // Another phone changes only its body fat while the sheet is open: the deletion is refused.
+    b.store.put("body_measurement", "monday", { ...monday, fatPercent: 17 });
     await b.sync();
     await a.sync();
     await confirmAction(root, "Delete measurement");
     await rerender();
-    expect(root.findByProps({ accessibilityRole: "alert" })).toBeDefined();
-    expect(
-      root.findAll(
-        (n) => n.type === Text && /This measurement changed/.test(String(n.props.children)),
-      ),
-    ).not.toHaveLength(0);
-    expect(store.get("body_measurement", "monday")?.content).toEqual({
-      ...monday,
-      bodyweightKg: 69,
-    });
+    expect(spoken.toasts).toEqual([
+      "This measurement changed. Try again to delete the latest reading.",
+    ]);
+    expect(store.get("body_measurement", "monday")?.content).toEqual({ ...monday, fatPercent: 17 });
     expect(rows()).toHaveLength(2);
     await a.restart();
     store = a.store;

@@ -1,3 +1,4 @@
+import type { JsonObject } from "@leve/contract";
 import { type WeightUnit, weightFromKg } from "@leve/core";
 import { useMemo, useState } from "react";
 import { FlatList, Text, View } from "react-native";
@@ -15,12 +16,13 @@ import { BottomSheet } from "../src/ui/bottom-sheet.tsx";
 import { Button } from "../src/ui/buttons.tsx";
 import { EditorSyncReview, hasEditorConflict } from "../src/ui/editor-sync-review.tsx";
 import { EmptyState } from "../src/ui/empty-state.tsx";
+import { announce } from "../src/ui/focus.ts";
 import { dayLabel, shortDay, timeLabel, weightValue } from "../src/ui/format.ts";
 import { SectionLabel } from "../src/ui/group.tsx";
 import { haptic } from "../src/ui/haptics.ts";
 import { ChevronIcon, PlusIcon } from "../src/ui/icons.tsx";
 import { LineChart } from "../src/ui/line-chart.tsx";
-import { Banner } from "../src/ui/notice.tsx";
+import { Banner, showToast } from "../src/ui/notice.tsx";
 import { HeaderButton, TabTitle } from "../src/ui/screen.tsx";
 import { Tap } from "../src/ui/tap.tsx";
 import { themedStyles, useColors, useStyles } from "../src/ui/themed.ts";
@@ -38,9 +40,16 @@ export default function BodyweightHistory() {
     unit: WeightUnit;
     reviewing?: boolean;
   } | null>(null);
-  // The reading a long press asked to delete, as it was then, and why a deletion was refused.
-  const [deleting, setDeleting] = useState<(typeof measurements)[number] | null>(null);
-  const [deleteError, setDeleteError] = useState("");
+  // The reading a long press asked to delete, with its whole record as it was then.
+  const [deleting, setDeleting] = useState<{
+    reading: (typeof measurements)[number];
+    content: JsonObject;
+  } | null>(null);
+  const askToDelete = (reading: (typeof measurements)[number]) => {
+    const content = store.get("body_measurement", reading.id)?.content;
+    if (content) setDeleting({ reading, content });
+  };
+  const fat = deleting?.content.fatPercent;
   const reading = editor?.reading;
   const conflict = conflicts.find((row) => row.id === reading?.id);
   const reviewing = !!conflict && !!editor?.reviewing;
@@ -114,14 +123,6 @@ export default function BodyweightHistory() {
             <View style={styles.titles}>
               <TabTitle title="Bodyweight" eyebrow="History" />
             </View>
-            {deleteError ? (
-              <Banner
-                label="Delete"
-                message={deleteError}
-                onDismiss={() => setDeleteError("")}
-                style={styles.review}
-              />
-            ) : null}
             {conflicts.map((record) => (
               <View key={record.id} style={styles.review}>
                 <EditorSyncReview record={record} />
@@ -192,13 +193,13 @@ export default function BodyweightHistory() {
               // Holding a reading offers to delete it; screen readers get that as an action.
               accessibilityActions={[{ name: "delete", label: "Delete measurement" }]}
               onAccessibilityAction={({ nativeEvent }) => {
-                if (nativeEvent.actionName === "delete") setDeleting(item);
+                if (nativeEvent.actionName === "delete") askToDelete(item);
               }}
               scaleTo={0.98}
               onPress={() => openEditor(item)}
               onLongPress={() => {
                 haptic.select();
-                setDeleting(item);
+                askToDelete(item);
               }}
             >
               <View style={styles.date}>
@@ -213,20 +214,21 @@ export default function BodyweightHistory() {
       />
       {deleting && (
         <ActionSheet
-          message={`The ${weightValue(deleting.kg, unit)} ${unit} reading from ${dayLabel(new Date(deleting.at).toISOString())} at ${measurementTime(deleting.at)} will be deleted.`}
+          message={`The ${weightValue(deleting.reading.kg, unit)} ${unit} reading from ${dayLabel(new Date(deleting.reading.at).toISOString())} at ${measurementTime(deleting.reading.at)}${typeof fat === "number" ? `, with ${fat.toLocaleString()}% body fat,` : ""} will be deleted.`}
           action="Delete measurement"
           keep="Keep measurement"
           onConfirm={() => {
             setDeleting(null);
             try {
-              change((store) => deleteBodyweight(store, deleting));
+              change((store) => deleteBodyweight(store, deleting.reading.id, deleting.content));
             } catch (cause) {
+              // A toast shows wherever the list is scrolled to, and reads the reason out.
               haptic.warning();
-              setDeleteError((cause as Error).message);
+              showToast((cause as Error).message);
               return;
             }
             haptic.tap();
-            setDeleteError("");
+            announce("Measurement deleted");
           }}
           onClose={() => setDeleting(null)}
         />

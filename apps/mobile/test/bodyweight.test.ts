@@ -121,7 +121,7 @@ it("deletes a reading only as it was seen, never while sync holds a conflicting 
     const b = await world.phone("b", account);
     const takenAt = "2026-11-11T10:00:00.000Z";
     const content = { takenAt, bodyweightKg: 72, fatPercent: null };
-    const seen = { id: "morning", kg: 72, at: Date.parse(takenAt) };
+    const seen = { id: "morning" };
     a.store.put("body_measurement", seen.id, content);
     await a.sync();
     await b.sync();
@@ -131,14 +131,19 @@ it("deletes a reading only as it was seen, never while sync holds a conflicting 
     a.store.put("body_measurement", seen.id, { ...content, bodyweightKg: 73 });
     await a.sync();
     expect(a.store.get("body_measurement", seen.id)?.status).toBe("conflict");
-    const mine = { ...seen, kg: 73 };
-    expect(() => deleteBodyweight(a.store, mine)).toThrow(/Resolve the conflicting/);
+    const mine = { ...content, bodyweightKg: 73 };
+    expect(() => deleteBodyweight(a.store, seen.id, mine)).toThrow(/Resolve the conflicting/);
     expect(a.store.get("body_measurement", seen.id)?.deleted).toBe(false);
-    // On the other phone, the reading as first seen is stale since its correction.
-    expect(() => deleteBodyweight(b.store, seen)).toThrow(/changed/);
-    deleteBodyweight(b.store, { ...seen, kg: 71 });
+    // On the other phone, the reading as first seen is stale since its correction, and so is one
+    // whose body fat changed unseen.
+    expect(() => deleteBodyweight(b.store, seen.id, content)).toThrow(/changed/);
+    const theirs = { ...content, bodyweightKg: 71 };
+    expect(() => deleteBodyweight(b.store, seen.id, { ...theirs, fatPercent: 18 })).toThrow(
+      /changed/,
+    );
+    deleteBodyweight(b.store, seen.id, theirs);
     // A second confirmation has nothing left to delete.
-    deleteBodyweight(b.store, { ...seen, kg: 71 });
+    deleteBodyweight(b.store, seen.id, theirs);
     await b.sync();
     expect(b.store.hasUnsyncedWork()).toBe(false);
     expect(await server.row("alice", "body_measurement", seen.id)).toMatchObject({
