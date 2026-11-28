@@ -45,7 +45,7 @@ arbitrary set edits, undo, notes, exercise browsing, history, Watch-only workout
   `isStale` is set.
 - **Nothing alerts when rest ends with the phone pocketed.** The only signal is
   `haptic.success()` in `active.tsx`, which fires only while the app is in the foreground.
-  Leve has no notifications. This is the largest gap, and the Watch is where it is felt.
+  Before 1b Leve had no notifications. This was the largest gap, and the Watch is where it is felt.
 - **Activity buttons carry tickets.** A button target is
   `leve1.<epoch>.<generation>.<restEnd>.<sha256(binding)>:<action>`. The binding covers sync
   owner, workout, entry, exercise, set, edit version, log values and measurements.
@@ -55,6 +55,9 @@ arbitrary set edits, undo, notes, exercise browsing, history, Watch-only workout
   review.
 - **`WorkoutDisplay` is the privacy boundary.** No notes, history, account identifiers or record
   IDs cross into the extension, and the layout marks its content `privacySensitive()`.
+  The rest-end alert (1b) carries the same fields for the next set, but as a notification it
+  follows iOS's Show Previews setting instead of `privacySensitive()`, and a delivered alert stays
+  in Notification Center until Leve next runs and removes it.
 - **Logging has one path.** `player.log` checks the target and version, writes through the
   device store, and runs the post-log focus and rest behaviour, including superset progression.
 
