@@ -20,6 +20,11 @@ afterEach(removeTempDirs);
 
 const fixture = (name: string) => new URL(`fixtures/v1.0.0/${name}`, import.meta.url);
 
+/** A database's tables and indexes, without the bookkeeping table an upgrade leaves behind. */
+function layoutOf(path: string): string[] {
+  return schemaOf(path).filter((line) => !line.startsWith("table storage_upgrade:"));
+}
+
 /**
  * The tables and indexes a new install gets. An opened v1.0.0 database must end up with the same
  * layout, so a schema change without a new storage version and migration fails here.
@@ -29,7 +34,7 @@ async function freshLayout(side: "device" | "server"): Promise<string[]> {
   if (side === "device") {
     const path = join(directory, "fresh.db");
     (await openDeviceStore({ engine, path, appVersion: "compatibility-test" })).close();
-    return schemaOf(path);
+    return layoutOf(path);
   }
   const storage = new ServerStorage({ engine, directory, appVersion: "compatibility-test" });
   try {
@@ -37,7 +42,7 @@ async function freshLayout(side: "device" | "server"): Promise<string[]> {
   } finally {
     await storage.close();
   }
-  return schemaOf(accountDatabasePath(directory, "fresh"));
+  return layoutOf(accountDatabasePath(directory, "fresh"));
 }
 
 /**
@@ -127,7 +132,7 @@ it("opens the v1.0.0 phone backup and keeps every record, upload and sync positi
   }
 
   expectEveryValueKept(before, path);
-  expect(schemaOf(path)).toEqual(await freshLayout("device"));
+  expect(layoutOf(path)).toEqual(await freshLayout("device"));
   const reopened = readDeviceFile(path);
   expect(reopened.unsyncedWork).toBe(true);
   expect(reopened.records).toEqual(original.records);
@@ -176,7 +181,7 @@ it("opens a v1.0.0 account database in place with its history, deletions and rec
     await storage.close();
   }
   expectEveryValueKept(before, path);
-  expect(schemaOf(path)).toEqual(await freshLayout("server"));
+  expect(layoutOf(path)).toEqual(await freshLayout("server"));
 });
 
 it("restores a v1.0.0 server backup with its records, deletion markers and receipts", async () => {

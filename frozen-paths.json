@@ -4,7 +4,8 @@
     "packages/contract/frozen",
     "packages/contract/history",
     "packages/storage/src/migrations",
-    "packages/storage/test/fixtures"
+    "packages/storage/test/fixtures/v1.0.0/device.sqlite",
+    "packages/storage/test/fixtures/v1.0.0/server.sqlite"
   ],
   "shipped": ["1.0"]
 }
