@@ -1,13 +1,17 @@
 import { useEffect, useState } from "react";
 import { Alert, AppState } from "react-native";
-import { saveRestAlertSetting, useRestAlertSetting } from "../data/rest-alert-setting.ts";
+import {
+  type RestAlertSetting,
+  saveRestAlertSetting,
+  useRestAlertSetting,
+} from "../data/rest-alert-setting.ts";
 import { useWorkoutPlayer } from "../ui/live/use-workout-player.ts";
 import { showToast } from "../ui/notice.tsx";
 import { restAlertNative } from "./native";
 import { restAlertPlan, restAlerts, turnOnRestAlert } from "./rest-alerts.ts";
 
-// One per process, created at launch so that it clears an alert an earlier process left.
-const alerts = restAlertNative ? restAlerts(restAlertNative) : null;
+// Create once when a scene or successful Log takes ownership of the rest alert.
+let alerts: ReturnType<typeof restAlerts> | undefined;
 let offered = false;
 
 export const DENIED_MESSAGE = "Notifications for Leve are off in iOS Settings.";
@@ -40,24 +44,33 @@ export function useNotificationsBlocked() {
 }
 
 export function RestAlertHost() {
-  return alerts && restAlertNative ? <RestAlert /> : null;
+  return restAlertNative ? <RestAlert /> : null;
+}
+
+export function showRestAlert(
+  player: ReturnType<typeof useWorkoutPlayer>,
+  setting: RestAlertSetting,
+) {
+  const plan =
+    player && setting === "on"
+      ? restAlertPlan(
+          player.rest,
+          { exercise: player.name, set: player.setName, values: player.measurements },
+          Date.now(),
+        )
+      : null;
+  if (!restAlertNative) return;
+  alerts ??= restAlerts(restAlertNative);
+  return alerts.show(plan);
 }
 
 function RestAlert() {
   const player = useWorkoutPlayer();
   const setting = useRestAlertSetting();
   const rest = player?.rest ?? null;
-  const plan =
-    player && setting === "on"
-      ? restAlertPlan(
-          rest,
-          { exercise: player.name, set: player.setName, values: player.measurements },
-          Date.now(),
-        )
-      : null;
   // Runs after every render. Unchanged plans cost nothing.
   useEffect(() => {
-    void alerts?.show(plan);
+    void showRestAlert(player, setting);
   });
   useEffect(
     () => () => {

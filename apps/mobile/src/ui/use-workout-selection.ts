@@ -19,13 +19,9 @@ const subscribe = (listener: () => void) => {
   };
 };
 
-/**
- * The selected exercise (and set) of the running workout on this device. It is restored when the
- * live workout opens again, and the minimised workout follows it too.
- */
-export function useWorkoutSelection(store: DeviceStore, tree: WorkoutTree | undefined) {
-  const read = () => selections.get(store);
-  const selection = useSyncExternalStore(subscribe, read, read);
+/** The selected exercise and set of the running workout on this device. */
+export function workoutSelection(store: DeviceStore, tree: WorkoutTree | undefined) {
+  const selection = selections.get(store);
   const currentIndex = tree ? currentEntryIndex(tree) : 0;
   const mine = tree && selection?.workoutId === tree.workout.id ? selection : undefined;
   const selectedIndex = mine
@@ -48,4 +44,10 @@ export function useWorkoutSelection(store: DeviceStore, tree: WorkoutTree | unde
     focusExercise,
     focusSet,
   };
+}
+
+export function useWorkoutSelection(store: DeviceStore, tree: WorkoutTree | undefined) {
+  const read = () => selections.get(store);
+  useSyncExternalStore(subscribe, read, read);
+  return workoutSelection(store, tree);
 }

@@ -129,18 +129,27 @@ function subscribe(listener: () => void) {
   };
 }
 
+function validRest(store: DeviceStore, source: SetRest["source"]) {
+  const { workoutId, entryId, setId, completedAt } = source;
+  if (store.get("workout", workoutId)?.content?.endedAt !== null) return false;
+  if (store.get("workout_exercise", entryId)?.content?.workoutId !== workoutId) return false;
+  return store
+    .list("workout_set", { parentId: entryId })
+    .some((set) => set.id === setId && set.content?.completedAt === completedAt);
+}
+
+export function readWorkoutRest(store: DeviceStore, workoutId: string): SetRest | null {
+  const rest = latestRest(store);
+  return rest?.source.workoutId === workoutId && validRest(store, rest.source) ? rest : null;
+}
+
 export function useRest(store: DeviceStore, workoutId: string | undefined, version: number) {
   const snapshot = () => latestRest(store) ?? null;
   const rest = useSyncExternalStore(subscribe, snapshot, snapshot);
   const source = rest?.source;
   // biome-ignore lint/correctness/useExhaustiveDependencies: version changes on data writes, including remote corrections.
   const valid = useMemo(() => {
-    if (!source) return false;
-    const { workoutId, entryId, setId, completedAt } = source;
-    if (store.get("workout", workoutId)?.content?.endedAt !== null) return false;
-    if (store.get("workout_exercise", entryId)?.content?.workoutId !== workoutId) return false;
-    const sets = store.list("workout_set", { parentId: entryId });
-    return sets.some((set) => set.id === setId && set.content?.completedAt === completedAt);
+    return source != null && validRest(store, source);
   }, [source, store, version]);
   useEffect(() => {
     if (source && !valid) restTimer.skip(store, source.workoutId, source);

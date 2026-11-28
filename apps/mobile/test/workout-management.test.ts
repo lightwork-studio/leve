@@ -31,6 +31,7 @@ import {
   historyData,
   liveData,
   progressData,
+  readAllWorkoutTrees,
   readSettings,
   readWorkoutTree,
   workoutDetail,
@@ -55,12 +56,14 @@ import {
   updateSet,
 } from "../src/data/workout-actions.ts";
 import { writeWorkoutNote } from "../src/data/workout-notes.ts";
-import { emptyWorkoutSet } from "../src/model/live.ts";
+import { currentEntryIndex, emptyWorkoutSet } from "../src/model/live.ts";
 import type { WorkoutSet } from "../src/model/types.ts";
 import { MiniPlayer } from "../src/ui/live/mini-player.tsx";
-import { useWorkoutPlayer } from "../src/ui/live/use-workout-player.ts";
+import { dockTarget } from "../src/ui/live/targets.ts";
+import { buildWorkoutPlayer, useWorkoutPlayer } from "../src/ui/live/use-workout-player.ts";
 import { SetEditor } from "../src/ui/set-editor.tsx";
 import { useSetStopwatch } from "../src/ui/use-set-stopwatch.ts";
+import { workoutInputs } from "../src/ui/use-workout-inputs.ts";
 import { useWorkoutSelection } from "../src/ui/use-workout-selection.ts";
 import { WorkoutDetailsEditor } from "../src/ui/workout-details-editor.tsx";
 import { feedbackScheduler } from "./support/feedback.ts";
@@ -4453,6 +4456,7 @@ describe("the minimised workout", () => {
   it.each([
     "unchanged",
     "edited",
+    "lost draft",
     "committed before acknowledgement",
     "logged then undone",
     "another account",
@@ -4497,8 +4501,20 @@ describe("the minimised workout", () => {
     const capture = (frame: ReturnType<typeof workoutFrame>) => {
       pending = session.publish(frame);
     };
+    if (scenario === "lost draft") {
+      workoutInputs(store).update(workout, (inputs) => ({
+        ...inputs,
+        drafts: { [set.id]: { reps: "12" } },
+      }));
+    }
     await act(() => root.render(h(PlayerProbe, { capture })));
     await pending;
+    if (scenario === "lost draft") {
+      expect(snapshots[0]).toMatchObject({
+        canLog: true,
+        measurements: expect.stringContaining("12"),
+      });
+    }
     const ticket = snapshots[0]?.token + ":log";
     if (scenario === "edited") updateSet(store, set.id, { reps: 10 });
     if (scenario === "committed before acknowledgement" || scenario === "logged then undone") {
@@ -4520,10 +4536,29 @@ describe("the minimised workout", () => {
       store.setNegotiated("1.0", [], scenario === "restored lineage" ? "lineage-B" : "lineage-A");
     }
     const versionBefore = store.editVersion("workout_set", set.id);
+    // The intent's cold path can reconstruct the ordinary player without a React screen.
     session = workoutSession(factory, "leve-preview", memory);
-    await act(() => root.render(h(PlayerProbe, { capture })));
-    await pending;
+    const live = liveData(store);
+    const resume = vi.fn();
+    const player = buildWorkoutPlayer({
+      store,
+      change,
+      live,
+      history: readAllWorkoutTrees(store),
+      rest: null,
+      target: live ? dockTarget(live.tree, currentEntryIndex(live.tree)) : null,
+      drafts: {},
+      setDrafts: () => {},
+      distanceUnits: {},
+      focusExercise: () => {},
+      resume,
+    });
+    const reconstructed = workoutFrame(player, Date.now(), true, "dark");
+    if (!reconstructed) throw Error("Missing background frame");
+    expect(await session.adoptExisting(reconstructed, handle.getId())).toBe(true);
     const accepted = session.interact(handle.getId(), ticket);
+    expect(snapshots).toHaveLength(1);
+    expect(resume).not.toHaveBeenCalled();
     const saved = store.get("workout_set", set.id)?.content;
     if (scenario === "unchanged") {
       expect(accepted).toBe(true);
