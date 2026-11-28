@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 /// <reference lib="dom" />
-import { act, createElement as h, type ReactNode } from "react";
+import { act, createElement as h, type ReactElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Conflict } from "../src/data/conflicts.ts";
 import {
@@ -16,11 +17,13 @@ import {
 } from "../src/sync/own-server-store.ts";
 import { turnSyncOff } from "../src/sync/sync-destination.ts";
 import { SyncHost } from "../src/sync/sync-host.tsx";
+import { SyncLine, SyncLineLayout, SyncTag, useSyncNote } from "../src/sync/sync-note.tsx";
 import {
   setSignedOutOnPurpose,
   setSyncPaused,
   signedOutOnPurpose,
   syncPaused,
+  writeLastSynced,
 } from "../src/sync/sync-preferences.ts";
 import type { SyncSessionOptions, SyncStatus } from "../src/sync/sync-session.ts";
 import { clerk } from "./support/clerk-expo.ts";
@@ -172,9 +175,11 @@ vi.mock("react-native-svg", () => ({
   Polyline: "polyline",
   Rect: "rect",
 }));
-vi.mock("react-native-safe-area-context", () => ({
-  useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
-}));
+vi.mock("react-native-safe-area-context", async () => {
+  const { createContext, useContext } = await import("react");
+  const SafeAreaInsetsContext = createContext({ top: 47, bottom: 34, left: 0, right: 0 });
+  return { SafeAreaInsetsContext, useSafeAreaInsets: () => useContext(SafeAreaInsetsContext) };
+});
 vi.mock("../src/ui/motion.ts", () => ({
   emphasised: undefined,
   pressScale: 1,
@@ -208,7 +213,7 @@ beforeEach(() => {
     unavailableRecords: false,
   });
   Object.assign(pending, { conflicts: [], settled: [], refuse: null });
-  Object.assign(route, { path: "/", pushed: [] });
+  Object.assign(route, { path: "/exercises", pushed: [] });
   sessions.created.length = 0;
   keychain.reset();
   forgetServerChoice();
@@ -221,7 +226,15 @@ afterEach(async () => {
   host.remove();
 });
 
-const render = () => act(() => root.render(h(SyncHost)));
+/** SyncHost, on a pushed screen, where the note is a line at the top (see SyncLineLayout). */
+const render = () =>
+  act(() => root.render(h("div", null, h(SyncHost), h(SyncLine), h(NoteDetails))));
+/** The whole note, as its details say it: the line on screen shows only its label and why. */
+function NoteDetails() {
+  const note = useSyncNote();
+  return note ? h("output", { "data-tone": note.tone }, note.message) : null;
+}
+
 /** Everything on screen, modals included. */
 const screen = () => document.body.textContent ?? "";
 
@@ -539,7 +552,7 @@ describe("a server the person paired", () => {
     await tap("Pause sync");
     await render();
     expect(syncPaused()).toBe(true);
-    expect(screen()).toContain("Sync paused");
+    expect(screen()).toContain("stay on this phone until you resume");
   });
 
   it("keeps never-synced data on the phone by pausing, not by leaving for another server", async () => {
@@ -1066,20 +1079,142 @@ it("asks once more, with a copy offered, before deleting work kept nowhere else"
 
 it("shows the same note on screens drawn above the app, such as the live workout", async () => {
   clerk.signedIn = true;
-  const { SyncNoteBanner } = await import("../src/sync/sync-note.tsx");
   const above = document.createElement("div");
   document.body.append(above);
   const modal = createRoot(above);
-  await act(async () => modal.render(h(SyncNoteBanner)));
+  await act(async () => modal.render(h(SyncLine)));
   expect(above.textContent).toBe("");
   data.workout = true;
   writeDevicePreference("sync.workoutHere", "w");
   await render();
   await report({ prompt: { kind: "update" } });
-  expect(above.textContent).toContain("It comes up once this workout ends.");
+  expect(above.textContent).toBe("Sync · question after this workout");
   data.workout = false;
   await render();
   expect(above.textContent).toBe("");
   await act(async () => modal.unmount());
   above.remove();
+});
+
+/** The tag the week bar shows on the tabs, drawn on its own beside SyncHost. */
+async function renderWithTag() {
+  await act(() =>
+    root.render(h("div", null, h("header", null, h(SyncTag)), h(SyncHost), h(NoteDetails))),
+  );
+}
+const tone = () => document.querySelector("output")?.getAttribute("data-tone");
+const header = () => document.querySelector("header")?.textContent ?? "";
+
+it("says it in the week bar on the tabs, with the details a tap away", async () => {
+  route.path = "/";
+  writeLastSynced(Date.parse("2026-11-26T18:02:00"));
+  await renderWithTag();
+  await act(async () => setSyncPaused(true));
+  expect(header()).toBe("Paused");
+  expect(tone()).toBe("quiet");
+  await tap("Sync paused. New workouts and changes stay on this phone until you resume.");
+  expect(screen()).toMatch(/Last synced (26 Nov|Nov 26), /);
+  await tap("Sync settings");
+  expect(route.pushed).toEqual(["/settings"]);
+  expect(screen()).not.toContain("Last synced");
+  await tap("Sync paused. New workouts and changes stay on this phone until you resume.");
+  await tap("Resume");
+  expect(syncPaused()).toBe(false);
+  expect(header()).toBe("");
+  expect(screen()).not.toContain("Last synced");
+});
+
+it("shows a line with the reason and the action on screens without the week bar", async () => {
+  await render();
+  await act(async () => setSyncPaused(true));
+  expect(screen()).toContain("Sync paused");
+  await tap("Resume");
+  expect(syncPaused()).toBe(false);
+  expect(screen()).toBe("");
+
+  // A problem says why, in red, with the whole message in its details.
+  data.unsynced = true;
+  await report({ lastSynced: Date.now() - 2 * 24 * 60 * 60_000 });
+  expect(screen()).toMatch(/^Not syncing · since (\d+ \w+|\w+ \d+)/);
+  expect(tone()).toBe("problem");
+  await tap("Not syncing");
+  expect(screen()).toContain("They're safe on this phone, and Leve keeps trying.");
+  expect(screen()).toContain("Sync settings");
+});
+
+/** A screen that says where it starts, as screens pad for the status bar. */
+function Screen() {
+  const insets = useSafeAreaInsets();
+  return h("main", null, `starts at ${insets.top}`);
+}
+
+it("puts the line over the top of screens that don't show the note themselves, and moves them down", async () => {
+  // As the stack calls it, with the screen as its child.
+  const layout = SyncLineLayout as (props: {
+    route: { name: string };
+    children?: ReactElement;
+  }) => ReactElement;
+  const screens = (name: string) => h(layout, { route: { name } }, h(Screen));
+  const main = () => document.querySelector("main")?.textContent;
+  const offset = () => {
+    const frame = document.querySelector<HTMLElement>("[data-testid=sync-line-screen]");
+    return frame ? getComputedStyle(frame).paddingTop : null;
+  };
+  await act(() => root.render(h("div", null, h(SyncHost), screens("settings"))));
+  expect(screen()).toBe("starts at 47");
+  expect(offset()).not.toBe("45px");
+  await act(async () => setSyncPaused(true));
+  expect(screen()).toBe("Sync pausedResumestarts at 47");
+  // Down by the line's height; the screen still pads for the status bar, and so do the sheets and
+  // dialogs it opens, which read the same insets.
+  expect(offset()).toBe("45px");
+  // The screen is the same one, not a new one.
+  const shown = document.querySelector("main");
+  await act(async () => setSyncPaused(false));
+  expect(document.querySelector("main")).toBe(shown);
+  expect(main()).toBe("starts at 47");
+  expect(offset()).not.toBe("45px");
+
+  // The tabs say it in the week bar, and the live workout and its summary over their sheet.
+  await act(async () => setSyncPaused(true));
+  for (const name of ["(tabs)", "workout/active", "workout/finish"]) {
+    await act(() => root.render(h("div", null, h(SyncHost), screens(name))));
+    expect(screen()).toBe("starts at 47");
+  }
+});
+
+it("closes the details when the note goes, and doesn't bring them back with the next", async () => {
+  route.path = "/";
+  await renderWithTag();
+  await act(async () => setSyncPaused(true));
+  await tap("Sync paused. New workouts and changes stay on this phone until you resume.");
+  expect(screen()).toContain("Sync settings");
+  await act(async () => setSyncPaused(false));
+  expect(screen()).not.toContain("Sync settings");
+  await act(async () => setSyncPaused(true));
+  expect(header()).toBe("Paused");
+  expect(screen()).not.toContain("Sync settings");
+});
+
+it("doesn't offer Settings twice when the note's own action opens it", async () => {
+  data.account = "user_1";
+  data.server = "https://sync.test";
+  setSignedOutOnPurpose(true);
+  clerk.signedIn = false;
+  await render();
+  expect(screen()).toContain("Signed out");
+  await tap("Signed out");
+  expect(screen()).toContain("until you sign in");
+  expect(screen()).not.toContain("Sync settings");
+  await tap("Sign in");
+  expect(route.pushed).toEqual(["/settings"]);
+});
+
+it("offers no way to Settings from details opened on Settings", async () => {
+  route.path = "/settings";
+  await render();
+  await act(async () => setSyncPaused(true));
+  await tap("Sync paused");
+  expect(screen()).toContain("Resume");
+  expect(screen()).not.toContain("Sync settings");
 });

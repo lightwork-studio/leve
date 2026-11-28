@@ -31,9 +31,10 @@ const MARK_HEIGHT = 14;
 const FOLD_DURATION = 280;
 
 /**
- * The week over the tabs: "This week" and its dates, the tab's action beside them, and a day per
- * column with a date and a small mark under it. The frame stays put between tabs; only the marks
- * change. Tapping a day that has workouts names them in the line on top; tapping it again goes back.
+ * The week over the tabs: "This week" and its dates, the tab's action beside them (after `status`,
+ * such as sync's tag, when there is one), and a day per column with a date and a small mark under
+ * it. The frame stays put between tabs; only the marks change. Tapping a day that has workouts
+ * names them in the line on top; tapping it again goes back.
  *
  * It floats over the tab, which scrolls under it. Once the tab scrolls (`folded`), the days fold
  * away and the line on top keeps a dot per day. Folding only moves and fades things, so the bar's
@@ -43,12 +44,15 @@ export function WeekBar({
   week,
   mode,
   action,
+  status = null,
   folded = false,
   onHeight,
 }: {
   week: Week;
   mode: WeekBarMode;
   action: ReactNode | null;
+  /** A small tag before the action, in the same line, that doesn't change the bar's height. */
+  status?: ReactNode;
   folded?: boolean;
   /**
    * The bar's full height, status bar included, and how much of that still covers the tab once
@@ -134,7 +138,10 @@ export function WeekBar({
             </Animated.View>
           )}
         </View>
-        {action ?? <View style={styles.noAction} />}
+        <View style={styles.end}>
+          {status}
+          {action ?? <View style={styles.noAction} />}
+        </View>
       </View>
       <Animated.View
         pointerEvents={folded ? "none" : "box-none"}
@@ -268,6 +275,7 @@ const sheet = themedStyles((c) => ({
     minHeight: 32,
     paddingLeft: 6,
   },
+  end: { flexDirection: "row", alignItems: "center", gap: 10 },
   headLine: { flexDirection: "row", alignItems: "center", flexShrink: 1, minWidth: 0 },
   head: { ...type.label, color: c.fg3, flexShrink: 1 },
   headStrong: { color: c.fg, fontWeight: "600" },
