@@ -3,8 +3,6 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useMemo, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-// Without an extension, so browsers get the version without sign-in.
-import { AccountSection } from "../src/account/account-section";
 import { buildInfo } from "../src/build-info.ts";
 import { useAppData } from "../src/data/app-data.tsx";
 import {
@@ -32,7 +30,8 @@ import { saveShowTargets, useShowTargets } from "../src/data/show-targets.ts";
 import { canChangeTrackRir, useTrackRir } from "../src/data/track-rir.ts";
 import { pairingLinkFrom } from "../src/sync/own-server.ts";
 import { ownServerAvailable, syncEnabled } from "../src/sync/sync-config.ts";
-import { SyncServerSection } from "../src/sync/sync-server-section.tsx";
+// Without an extension, so browsers get the version without sync or sign-in.
+import { SyncServerSection } from "../src/sync/sync-server-section";
 import { font, gutter, numeral, radius, space, type } from "../src/theme.ts";
 import { ActionSheet, useConfirmation } from "../src/ui/action-sheet.tsx";
 import { ActionRow, ChoiceRow, Stepper, ToggleRow } from "../src/ui/choice-row.tsx";
@@ -204,7 +203,6 @@ export default function SettingsScreen() {
           {/* Values shown on opening are simply there; only later changes animate. */}
           <StillOnOpen>
             <SyncServerSection link={pairing} />
-            <AccountSection />
 
             <Group
               label="Reads as"

@@ -23,9 +23,9 @@ import { themedStyles, useAppearance, useStyles } from "../ui/themed.ts";
 import { ConflictPrompt } from "./conflict-prompt.tsx";
 import { type OwnServer, serverLabel } from "./own-server.ts";
 import {
-  previousServer,
-  readServerChoice,
-  subscribeServerChoice,
+  canRestorePairedServer,
+  chooseBuiltInServer,
+  restorePairedServer,
   switchBack,
 } from "./own-server-store.ts";
 import {
@@ -45,6 +45,7 @@ import {
   writeLastSynced,
 } from "./sync-preferences.ts";
 import { SyncSession, type SyncStatus, unsyncedChanges } from "./sync-session.ts";
+import { useServerChoice } from "./use-server-choice.ts";
 
 /** The path expo-router reports while `target` is open. */
 function reviewPath(target: ReviewTarget): string {
@@ -84,22 +85,26 @@ const SETTINGS = "/settings";
  * note, until it ends.
  */
 export function SyncHost() {
-  const own = useOwnServer();
+  const pairing = ownServerAvailable();
+  const builtIn = builtInServerConfigured();
+  const choice = useServerChoice(pairing || (builtIn && syncEnabled()));
   // If the keychain is locked, wait before choosing which account to sync.
-  if (own === undefined) return null;
+  if (choice === undefined) return null;
+  if (choice === "local") return <Disconnected local />;
+  const own = pairing && typeof choice === "object" ? choice : null;
   // A new pairing is a new session, even with the same account id.
   if (own && syncEnabled()) {
     const key = `${own.server} ${own.device}`;
-    return builtInServerConfigured() ? (
+    return builtIn ? (
       <PairedSyncWithClerk key={key} own={own} />
     ) : (
       <Sync key={key} connection={ownConnection(own)} />
     );
   }
-  if (builtInServerConfigured() && syncEnabled()) return <ClerkSync />;
+  if (builtIn && syncEnabled()) return <ClerkSync />;
   // No server to sync with: a paired one was left in a build without one of its own. Data that
   // belongs to an account says so, never silently.
-  return ownServerAvailable() ? <Disconnected /> : null;
+  return pairing ? <Disconnected /> : null;
 }
 
 /**
@@ -113,19 +118,19 @@ function useElsewhereNote(
   if (!bound || bound.server === null || bound.account === null) return null;
   const server = bound.server;
   const label = serverLabel(server);
-  const canSwitchBack = switchesBackToData(bound, null);
+  const restore = switchBackToData(bound, null);
   const problem =
-    canSwitchBack && failedServer === server ? " Switching back didn't work. Try again." : "";
+    restore && failedServer === server ? " Switching back didn't work. Try again." : "";
   return {
     label: "Not syncing",
     message: `This phone's data belongs to ${label}. Changes stay on this phone until it syncs there again.${problem}`,
-    action: canSwitchBack
+    action: restore
       ? {
           label: "Switch back",
           hint: `Returns to ${label}`,
           onPress: () => {
             try {
-              switchBack();
+              restore();
               setFailedServer(null);
             } catch {
               setFailedServer(server);
@@ -140,9 +145,22 @@ function useElsewhereNote(
   };
 }
 
-function Disconnected() {
+function Disconnected({ local = false }: { local?: boolean }) {
   const { store } = useAppData();
-  const note = useElsewhereNote(store.syncState());
+  const boundNote = useElsewhereNote(store.syncState());
+  const note =
+    boundNote ??
+    (local
+      ? {
+          label: "Sync off",
+          message: "New workouts and changes stay on this phone.",
+          action: {
+            label: "Settings",
+            hint: "Opens Settings to choose where to sync",
+            onPress: () => router.push(SETTINGS),
+          },
+        }
+      : null);
   useEffect(() => publishSyncNote(note));
   useEffect(() => () => publishSyncNote(null), []);
   return note ? <NotSyncing note={note} /> : null;
@@ -161,35 +179,19 @@ interface Connection {
   signOut(): Promise<void>;
 }
 
-/** The paired server, while it is the phone's choice; follows changes made in Settings. */
-function useOwnServer(): OwnServer | null | undefined {
-  const [, setVersion] = useState(0);
-  useEffect(() => subscribeServerChoice(() => setVersion((n) => n + 1)), []);
-  // A keychain that couldn't be read (a locked phone) is read again when the app comes back.
-  useEffect(() => {
-    const watch = AppState.addEventListener("change", (state) => {
-      if (state === "active") setVersion((n) => n + 1);
-    });
-    return () => watch.remove();
-  }, []);
-  return ownServerAvailable() ? readServerChoice() : null;
-}
-
 /**
  * Whether switching back to the choice before reaches the server and account this phone's data
  * belongs to. Anything else would only move the question to another server.
  */
-function switchesBackToData(
+function switchBackToData(
   bound: { server: string | null; account: string | null },
   builtInAccount: string | null,
-): boolean {
-  if (!ownServerAvailable()) return false;
-  const previous = previousServer();
-  if (previous) return previous.server === bound.server && previous.account === bound.account;
-  // The build's own server, if the current choice is a paired one.
-  return (
-    builtInAccount !== null && bound.server === syncServerUrl && bound.account === builtInAccount
-  );
+): (() => void) | null {
+  if (!ownServerAvailable()) return null;
+  if (canRestorePairedServer(bound)) return () => restorePairedServer(bound);
+  if (builtInAccount !== null && bound.server === syncServerUrl && bound.account === builtInAccount)
+    return chooseBuiltInServer;
+  return null;
 }
 
 /** A paired server: always signed in, with the device token it gave this phone. */
@@ -371,11 +373,8 @@ function Sync({
     if (prompt?.kind === "switch") {
       // Keeping the data means going back, when the choice before is where it belongs; on the
       // build's own server, otherwise, signing this account out. With neither, pausing sync.
-      const keep = switchesBackToData(store.syncState(), builtInAccount)
-        ? { onSwitchBack: () => switchBack() }
-        : own
-          ? {}
-          : { onSignOut: signOutHere };
+      const restore = switchBackToData(store.syncState(), builtInAccount);
+      const keep = restore ? { onSwitchBack: restore } : own ? {} : { onSignOut: signOutHere };
       if (prompt.reason === "server")
         return (
           <MovePrompt

@@ -14,9 +14,11 @@ import {
   forgetServerChoice,
   ownServer,
 } from "../src/sync/own-server-store.ts";
+import { turnSyncOff } from "../src/sync/sync-destination.ts";
 import { SyncHost } from "../src/sync/sync-host.tsx";
 import {
   setSignedOutOnPurpose,
+  setSyncPaused,
   signedOutOnPurpose,
   syncPaused,
 } from "../src/sync/sync-preferences.ts";
@@ -222,6 +224,25 @@ afterEach(async () => {
 const render = () => act(() => root.render(h(SyncHost)));
 /** Everything on screen, modals included. */
 const screen = () => document.body.textContent ?? "";
+
+it("stops the session in local mode and does not restart it with the retained Apple account", async () => {
+  data.account = "user_1";
+  data.server = "https://sync.test";
+  await render();
+  const active = session();
+  await act(async () => turnSyncOff());
+  expect(active.calls).toContain("stop");
+  expect(screen()).toContain("Changes stay on this phone");
+  expect(clerk.signedIn).toBe(true);
+
+  // The local destination, rather than the pause bit or the Apple session, gates syncing.
+  await act(async () => setSyncPaused(false));
+  forgetDevicePreferences();
+  forgetServerChoice();
+  await render();
+  expect(sessions.created).toHaveLength(1);
+  expect(screen()).not.toContain("Your sign-in has run out");
+});
 const session = () => {
   const current = sessions.created.at(-1);
   if (!current) throw new Error("no session");
@@ -638,6 +659,29 @@ describe("a server the person paired", () => {
     expect(session().options).toMatchObject({ server: home.server });
   });
 
+  it("keeps both pairings when sync is turned off during a pending server move", async () => {
+    const next = { ...home, server: "https://other.example", device: "d2" };
+    chooseOwnServer(home);
+    chooseOwnServer(next);
+    data.server = home.server;
+    data.account = home.account;
+    turnSyncOff();
+    forgetServerChoice();
+    forgetDevicePreferences();
+    await render();
+
+    const stored = JSON.parse(keychain.items.get("sync.ownServer")?.value ?? "{}");
+    expect(stored).toMatchObject({ current: next, previous: home, mode: "local" });
+    expect(syncPaused()).toBe(true);
+    expect(sessions.created).toHaveLength(0);
+    expect(screen()).toContain("This phone's data belongs to sync.home.example");
+    await tap("Switch back");
+    expect(ownServer()).toEqual(home);
+    expect(sessions.created).toHaveLength(0);
+    await tap("Resume");
+    expect(session().options).toMatchObject({ server: home.server, account: home.account });
+  });
+
   it("restarts syncing when another server is paired", async () => {
     chooseOwnServer(home);
     await render();
@@ -670,16 +714,27 @@ describe("a server the person paired", () => {
     expect(screen()).not.toContain("switch back");
   });
 
-  it("offers no way back when the data belongs to a server neither choice is", async () => {
+  it("offers no way back when none of the saved connections matches the account", async () => {
     chooseOwnServer({ ...home, server: "https://third.example", device: "d3" });
     chooseOwnServer(home);
     data.server = "https://sync.test";
-    data.account = "user_1";
+    data.account = "user_0";
     await render();
     data.unsyncedCount = 1;
     await report({ prompt: { kind: "switch", reason: "server" } });
     expect(screen()).toContain("Bring them to this server");
     expect(screen()).not.toContain("switch back");
+  });
+
+  it("can return to the account that owns the data even if the previous choice was another pairing", async () => {
+    chooseOwnServer({ ...home, server: "https://third.example", device: "d3" });
+    chooseOwnServer(home);
+    data.server = "https://sync.test";
+    data.account = "user_1";
+    await render();
+    await report({ prompt: { kind: "switch", reason: "server" } });
+    await tap("Keep them and switch back");
+    expect(session().options).toMatchObject({ server: "https://sync.test", account: "user_1" });
   });
 
   it("syncs nowhere while the keychain can't be read", async () => {

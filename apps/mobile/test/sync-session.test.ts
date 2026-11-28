@@ -34,6 +34,7 @@ let serverTooOld: boolean;
 let requests: string[];
 /** Called as a hello goes out, so a test can act in the middle of connecting. */
 let onHello: (() => void) | null;
+let holdPull: (() => Promise<void>) | null;
 let sessions: SyncSession[];
 let ids = 0;
 
@@ -54,6 +55,7 @@ beforeEach(() => {
   serverTooOld = false;
   requests = [];
   onHello = null;
+  holdPull = null;
   sessions = [];
 });
 afterEach(async () => {
@@ -82,7 +84,9 @@ const connect =
         body: { error: { code: "update_required", message: "update", update } },
       };
     }
-    return serviceTransport(service, account)(path, body);
+    const response = await serviceTransport(service, account)(path, body);
+    if (path === "/sync/pull" && !waits) await holdPull?.();
+    return response;
   };
 
 async function phone(): Promise<DeviceStore> {
@@ -204,6 +208,45 @@ it("downloads an account onto an empty phone without asking", async () => {
   expect(session.status.prompt).toBeNull();
   expect(store.get("routine_folder", "f-other")).toMatchObject({ status: "synced" });
   expect(events.storeChanges).toBe(1);
+});
+
+it("ignores a regular pull that is about to apply when sync stops, and downloads it on resume", async () => {
+  await otherPhone("alice", "f-other");
+  const store = await phone();
+  let pullPending = false;
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  holdPull = () => {
+    pullPending = true;
+    return held;
+  };
+  const { session, events } = start(store, "alice");
+  await until(() => pullPending);
+  holdPull = null;
+  release();
+  // The transport accepts the reply, but the client has not yet applied it.
+  await Promise.resolve();
+  await Promise.resolve();
+  session.stop();
+  // Let the stopped transport deliver its reply before opening a fresh session.
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  expect(store.get("routine_folder", "f-other")).toBeNull();
+  expect(events.storeChanges).toBe(0);
+
+  const resumed = start(store, "alice").session;
+  await until(() => resumed.status.lastSynced !== null);
+  expect(store.get("routine_folder", "f-other")).toMatchObject({ status: "synced" });
+});
+
+it("does not bind an empty phone when sync stops before its first request", async () => {
+  const store = await phone();
+  const { session } = start(store, "alice");
+  session.stop();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  expect(store.syncState()).toMatchObject({ account: null, server: null });
+  expect(requests).toEqual([]);
 });
 
 it("asks before combining a phone's data with an account that has data, and combines on yes", async () => {

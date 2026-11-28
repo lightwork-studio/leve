@@ -41,6 +41,7 @@ vi.mock("../src/sync/sync-config.ts", () => ({
   syncEnabled: () => sync.on,
   syncServerUrl: "",
   builtInServerConfigured: () => false,
+  leveSyncAvailable: () => false,
   ownServerAvailable: () => false,
 }));
 vi.mock("expo-constants", () => ({ default: { expoConfig: { version: "0.1.0" } } }));

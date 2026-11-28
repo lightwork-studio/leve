@@ -8,6 +8,7 @@ import {
   type SyncOutcome,
   type Transport,
   TransportError,
+  type TransportResponse,
 } from "@leve/sync";
 
 import { fetch as expoFetch } from "expo/fetch";
@@ -130,6 +131,7 @@ export class SyncSession {
   readonly #client: SyncClient;
   readonly #now: () => number;
   readonly #timing: SyncTiming;
+  readonly #abort = new AbortController();
   #stopped = false;
   #foreground = true;
   /** A sync (rather than a wait for changes) is due. */
@@ -173,6 +175,7 @@ export class SyncSession {
     this.#client = new SyncClient({
       store: options.store,
       transport: this.#interruptible(connect(options.server, headers)),
+      signal: this.#abort.signal,
       server: options.server,
       account: options.account,
       app: options.app,
@@ -189,6 +192,7 @@ export class SyncSession {
 
   stop(): void {
     this.#stopped = true;
+    this.#abort.abort();
     if (this.#nudge) clearTimeout(this.#nudge);
     this.#stopWaiting?.();
     this.#wake?.();
@@ -301,18 +305,24 @@ export class SyncSession {
    * download fetches the same changes.
    */
   #interruptible(inner: Transport): Transport {
-    return (path, body, options) => {
-      if (!(body as { waitMs?: number } | null)?.waitMs) return inner(path, body, options);
+    return async (path, body) => {
+      if (this.#stopped) throw new TransportError("this sync session has ended");
+      if (!(body as { waitMs?: number } | null)?.waitMs) {
+        const response = await inner(path, body, { signal: this.#abort.signal });
+        // A reply that raced with turning sync off still belongs to the stopped session.
+        if (this.#stopped) throw new TransportError("this sync session has ended");
+        return response;
+      }
       // An edit made while connecting for this wait: send it instead of waiting. Nor wait once the
       // app has gone to the back.
       if (this.#due || this.#stopped || !this.#foreground) {
         this.#interrupted = true;
-        return Promise.reject(new TransportError("stopped waiting"));
+        throw new TransportError("stopped waiting");
       }
       // Closes the request too, so it doesn't hold a connection to the server for nothing.
       const abort = new AbortController();
       const request = inner(path, body, { signal: abort.signal });
-      return new Promise((resolve, reject) => {
+      const response = await new Promise<TransportResponse>((resolve, reject) => {
         const stop = () => {
           this.#interrupted = true;
           abort.abort();
@@ -323,6 +333,8 @@ export class SyncSession {
           if (this.#stopWaiting === stop) this.#stopWaiting = null;
         });
       });
+      if (this.#stopped) throw new TransportError("this sync session has ended");
+      return response;
     };
   }
 
