@@ -4,9 +4,9 @@ import { ownServer } from "./own-server-store.ts";
 
 /**
  * The sync server this build uses, from `EXPO_PUBLIC_SYNC_URL`. Builds without it sync only with a
- * server the person paired themselves (see own-server.ts): the App Store build for now has neither,
- * nor do browsers. Trailing slashes are dropped: the phone's data is tied to this exact string, and
- * the same server written another way would count as another server.
+ * server the person paired themselves (see own-server.ts); browsers have neither. The App Store
+ * build uses the production Worker. Trailing slashes are dropped: the phone's data is tied to this
+ * exact string, and the same server written another way would count as another server.
  */
 export const syncServerUrl = (process.env.EXPO_PUBLIC_SYNC_URL ?? "").trim().replace(/\/+$/, "");
 

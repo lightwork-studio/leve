@@ -63,6 +63,14 @@ describe("wrangler.jsonc", () => {
     expect(Object.keys(config.env ?? {})).toEqual(["production"]);
   });
 
+  it("serves production, and only production, at its custom domain", () => {
+    expect(production.routes).toEqual([{ pattern: "sync.leve.timweb.app", custom_domain: true }]);
+    expect(production.workers_dev).toBe(false);
+    // A route at the top level would belong to the development Worker (and be inherited).
+    expect(config.routes).toBeUndefined();
+    expect(config.route).toBeUndefined();
+  });
+
   it("gives production every binding the development Worker has", () => {
     expect(config.durable_objects).toBeDefined();
     expect(unmatchedKeys(config, production)).toEqual([]);

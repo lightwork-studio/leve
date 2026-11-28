@@ -36,6 +36,8 @@ if (args[2] === "env:exec" && args[3] === "production" && args[4].includes("runt
     variant: process.env.LEVE_APP_VARIANT,
     version: process.env.LEVE_STORE_VERSION,
     sampleData: process.env.EXPO_PUBLIC_SAMPLE_DATA,
+    label: process.env.EXPO_PUBLIC_BUILD_LABEL,
+    clerkKey: process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY,
     buildVersion: config.build.production.env.LEVE_STORE_VERSION,
     submitApp: config.submit.production?.ios.ascAppId,
   }));
@@ -122,10 +124,34 @@ if (args[2] === "env:exec" && args[3] === "production" && args[4].includes("runt
 
     const ota = release("ota", { builds: finished });
     expect(ota.status, ota.stderr).toBe(0);
+    // The update reaches store builds, so it carries their settings, sign-in included.
+    const production = JSON.parse(config).build.production.env;
+    expect(production.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY).toMatch(/^pk_live_/);
     expect(JSON.parse(ota.stdout)).toMatchObject({
+      variant: "production",
+      sampleData: "off",
+      label: "App Store",
+      clerkKey: production.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY,
       version: "1.2.3",
       args: expect.arrayContaining(["update", "--channel", "production", "--environment"]),
     });
+
+    // eas.json supplies app settings only, never the release job's credentials or shell setup.
+    for (const [key, value] of [
+      ["EXPO_TOKEN", "from-eas-json"],
+      ["BASH_ENV", "/tmp/payload.sh"],
+      ["LEVE_APP_VARIANT", "preview"],
+      ["EXPO_PUBLIC_SAMPLE_DATA", "off\nEXPO_TOKEN=from-eas-json"],
+    ] as const) {
+      const injected = JSON.parse(config);
+      injected.build.production.env[key] = value;
+      writeFileSync(join(cwd, "eas.json"), JSON.stringify(injected));
+      const refused = release("ota", { builds: finished });
+      expect(refused.status, key).toBe(1);
+      expect(refused.stderr).toContain(`eas.json sets ${key} for production`);
+      expect(refused.stdout).toBe("");
+    }
+    writeFileSync(join(cwd, "eas.json"), config);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
