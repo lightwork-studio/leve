@@ -1,25 +1,28 @@
+import type { JsonObject } from "@leve/contract";
 import { type WeightUnit, weightFromKg } from "@leve/core";
 import { useMemo, useState } from "react";
 import { FlatList, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppData } from "../src/data/app-data.tsx";
-import { correctBodyweight, recordBodyweight } from "../src/data/bodyweight.ts";
+import { correctBodyweight, deleteBodyweight, recordBodyweight } from "../src/data/bodyweight.ts";
 import { useProgress } from "../src/data/queries.ts";
 import { measurementClock } from "../src/model/measurement-clock.ts";
 import { lineAxis } from "../src/model/progress.ts";
 import { font, gutter, numeral, radius, space, type } from "../src/theme.ts";
-import { DestructiveButton } from "../src/ui/action-sheet.tsx";
+import { ActionSheet, DestructiveButton } from "../src/ui/action-sheet.tsx";
 import { BackLink } from "../src/ui/back-link.tsx";
 import { BodyweightEditor } from "../src/ui/bodyweight-editor.tsx";
 import { BottomSheet } from "../src/ui/bottom-sheet.tsx";
 import { Button } from "../src/ui/buttons.tsx";
 import { EditorSyncReview, hasEditorConflict } from "../src/ui/editor-sync-review.tsx";
 import { EmptyState } from "../src/ui/empty-state.tsx";
+import { announce } from "../src/ui/focus.ts";
 import { dayLabel, shortDay, timeLabel, weightValue } from "../src/ui/format.ts";
 import { SectionLabel } from "../src/ui/group.tsx";
+import { haptic } from "../src/ui/haptics.ts";
 import { ChevronIcon, PlusIcon } from "../src/ui/icons.tsx";
 import { LineChart } from "../src/ui/line-chart.tsx";
-import { Banner } from "../src/ui/notice.tsx";
+import { Banner, showToast } from "../src/ui/notice.tsx";
 import { HeaderButton, TabTitle } from "../src/ui/screen.tsx";
 import { Tap } from "../src/ui/tap.tsx";
 import { themedStyles, useColors, useStyles } from "../src/ui/themed.ts";
@@ -37,6 +40,18 @@ export default function BodyweightHistory() {
     unit: WeightUnit;
     reviewing?: boolean;
   } | null>(null);
+  // The reading a long press asked to delete, with its whole record as it was then.
+  const [deleting, setDeleting] = useState<{
+    reading: (typeof measurements)[number];
+    content: JsonObject;
+  } | null>(null);
+  const askToDelete = (reading: (typeof measurements)[number]) => {
+    // A reading sync found another version of is settled in its review first.
+    if (conflicts.some((row) => row.id === reading.id)) return openEditor(reading);
+    const content = store.get("body_measurement", reading.id)?.content;
+    if (content) setDeleting({ reading, content });
+  };
+  const fat = deleting?.content.fatPercent;
   const reading = editor?.reading;
   const conflict = conflicts.find((row) => row.id === reading?.id);
   const reviewing = !!conflict && !!editor?.reviewing;
@@ -177,8 +192,17 @@ export default function BodyweightHistory() {
               ]}
               accessibilityRole="button"
               accessibilityLabel={`Edit bodyweight for ${dayLabel(iso)} at ${time}, ${weightValue(item.kg, unit)} ${unit}`}
+              // Holding a reading offers to delete it; screen readers get that as an action.
+              accessibilityActions={[{ name: "delete", label: "Delete measurement" }]}
+              onAccessibilityAction={({ nativeEvent }) => {
+                if (nativeEvent.actionName === "delete") askToDelete(item);
+              }}
               scaleTo={0.98}
               onPress={() => openEditor(item)}
+              onLongPress={() => {
+                haptic.select();
+                askToDelete(item);
+              }}
             >
               <View style={styles.date}>
                 <Text style={styles.day}>{dayLabel(iso)}</Text>
@@ -190,6 +214,27 @@ export default function BodyweightHistory() {
           );
         }}
       />
+      {deleting && (
+        <ActionSheet
+          message={`The ${weightValue(deleting.reading.kg, unit)} ${unit} reading from ${dayLabel(new Date(deleting.reading.at).toISOString())} at ${measurementTime(deleting.reading.at)}${typeof fat === "number" ? `, with ${fat.toLocaleString()}% body fat,` : ""} will be deleted.`}
+          action="Delete measurement"
+          keep="Keep measurement"
+          onConfirm={() => {
+            setDeleting(null);
+            try {
+              change((store) => deleteBodyweight(store, deleting.reading.id, deleting.content));
+            } catch (cause) {
+              // A toast shows wherever the list is scrolled to, and reads the reason out.
+              haptic.warning();
+              showToast((cause as Error).message);
+              return;
+            }
+            haptic.tap();
+            announce("Measurement deleted");
+          }}
+          onClose={() => setDeleting(null)}
+        />
+      )}
       {editor && (
         <BottomSheet
           title={editorTitle}
