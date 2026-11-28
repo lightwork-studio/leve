@@ -24,6 +24,9 @@ const assets = {
   "favicon.png": join(brand, "png/favicon.png"),
 };
 
+/** The site's pages. Links to the source on GitHub point at the deployed revision. */
+export const pages = ["index.html", "privacy.html", "support.html", "impressum.html"];
+
 type Surface = Record<keyof typeof graphite, string>;
 
 /** The app's palette roles as CSS variables (commitInk becomes --commit-ink). */
@@ -62,9 +65,14 @@ export async function buildSite(
   if (revision !== "main" && !/^[0-9a-f]{40}$/.test(revision)) {
     throw new Error("Expected a full source commit SHA for the landing page");
   }
-  const html = (await readFile(join(source, "index.html"), "utf8")).replace(
-    /https:\/\/github\.com\/lightwork-studio\/leve\/(tree|blob)\/main/g,
-    (_url, kind) => `https://github.com/lightwork-studio/leve/${kind}/${revision}`,
+  const html = await Promise.all(
+    pages.map(async (page) => ({
+      page,
+      contents: (await readFile(join(source, page), "utf8")).replace(
+        /https:\/\/github\.com\/lightwork-studio\/leve\/(tree|blob)\/main/g,
+        (_url, kind) => `https://github.com/lightwork-studio/leve/${kind}/${revision}`,
+      ),
+    })),
   );
   const demoFiles = await Promise.all(
     ["_expo", "assets"].map((name) => readdir(join(demo, name), { recursive: true })),
@@ -86,7 +94,7 @@ export async function buildSite(
       cp(join(demo, name), join(demoOutput, name), { recursive: true }),
     ),
     writeFile(join(output, "theme.css"), themeCss()),
-    writeFile(join(output, "index.html"), html),
+    ...html.map(({ page, contents }) => writeFile(join(output, page), contents)),
   ]);
 }
 

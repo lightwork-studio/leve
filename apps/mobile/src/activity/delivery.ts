@@ -51,3 +51,32 @@ export function activityDelivery(
     },
   };
 }
+
+/** ActivityKit has already consumed a rest tap. Reconcile the app's timer when it is visible. */
+export function activityUpdates({
+  isActive,
+  refreshRest,
+  refreshActivity,
+  drain,
+}: {
+  isActive(): boolean;
+  refreshRest(): void;
+  refreshActivity(): void;
+  drain(): void;
+}) {
+  return {
+    appStateChanged(state: string) {
+      if (state === "active") {
+        refreshRest();
+        refreshActivity();
+      }
+    },
+    interacted(event: { target?: string }) {
+      if (event.target === "LeveRestChanged") {
+        if (isActive()) refreshRest();
+      } else {
+        drain();
+      }
+    },
+  };
+}
