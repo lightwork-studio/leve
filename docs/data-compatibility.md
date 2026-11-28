@@ -503,12 +503,15 @@ join the frozen paths; until then the version 1 layouts may still change.
 
 ## Data-preservation promise
 
-Until the maintainer declares that Leve holds real data, storage formats may change and development
-data may be reset; development previews given to others must say so. Protocol releases are final
-from the moment they ship (see [Protocol releases](#protocol-releases)). After the declaration,
-every release must upgrade
-existing data (including backup files) automatically from every release made since the
-declaration; "real-data" and "data-bearing" in this repository mean exactly those releases.
+The v1.0.0 App Store release is Leve's first real-data release. Its shipped protocol and storage
+baseline are recorded in [the frozen paths](../frozen-paths.json) and
+[the storage registry](../packages/storage/src/migrations/registry.json). Every release must
+automatically upgrade existing data, including backup files, from every release since v1.0.0.
+These are the "real-data" and "data-bearing" releases.
+
+Before v1.0.0, storage formats could change and development data could be reset. Development
+previews given to others had to say so. Protocol releases are final from the moment they ship
+(see [Protocol releases](#protocol-releases)).
 
 ## Required guardrails
 

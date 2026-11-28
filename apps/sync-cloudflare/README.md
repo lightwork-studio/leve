@@ -13,8 +13,9 @@ account.
 - **Admin** (`/admin/*`) needs the operator token (`ADMIN_TOKEN`, at least 32 characters) and names
   the account in the `x-leve-account` header. Without it the admin endpoints are closed.
 - **MCP** (`/mcp`) uses stateless Streamable HTTP. It takes a Clerk OAuth access token with the MCP
-  endpoint URL as its audience and the `leve:read` scope. Tools can only read the Clerk user's
-  synced workouts, progress, routines, notes, measurements and settings.
+  endpoint URL as its audience. The `leve:read` scope gives access to the Clerk user's synced
+  workouts, progress, routines, notes, measurements and settings. The `leve:write` scope also
+  allows writes when the Worker has writes enabled.
 
 A missing setting, or a key that can't be read, makes sync answer 503 rather than let anyone in.
 A valid key from the wrong instance, an issuer with a trailing `/`, or a token version other than 2

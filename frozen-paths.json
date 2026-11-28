@@ -5,5 +5,5 @@
     "packages/contract/history",
     "packages/storage/src/migrations"
   ],
-  "shipped": []
+  "shipped": ["1.0"]
 }
