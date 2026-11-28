@@ -1160,7 +1160,7 @@ it("puts the line over the top of screens that don't show the note themselves, a
   expect(screen()).toBe("starts at 47");
   expect(offset()).not.toBe("45px");
   await act(async () => setSyncPaused(true));
-  expect(screen()).toBe("starts at 47Sync pausedResume");
+  expect(screen()).toBe("Sync pausedResumestarts at 47");
   // Down by the line's height; the screen still pads for the status bar, and so do the sheets and
   // dialogs it opens, which read the same insets.
   expect(offset()).toBe("45px");

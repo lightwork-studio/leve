@@ -261,11 +261,9 @@ function WithSyncLine({ children }: { children: ReactElement }) {
   const insets = useSafeAreaInsets();
   const [line, setLine] = useState(LINE_ESTIMATE);
   // The same tree with or without the line, so the screen keeps its state when one comes or goes.
+  // The line comes first, as screen readers read it; zIndex draws it over the screen.
   return (
     <View style={styles.screen}>
-      <View testID="sync-line-screen" style={[styles.screen, note ? { paddingTop: line } : null]}>
-        {children}
-      </View>
       {note ? (
         <View style={[styles.dock, { paddingTop: insets.top }]}>
           <View onLayout={(event) => setLine(event.nativeEvent.layout.height)}>
@@ -273,6 +271,9 @@ function WithSyncLine({ children }: { children: ReactElement }) {
           </View>
         </View>
       ) : null}
+      <View testID="sync-line-screen" style={[styles.screen, note ? { paddingTop: line } : null]}>
+        {children}
+      </View>
     </View>
   );
 }
