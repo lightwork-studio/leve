@@ -1,8 +1,13 @@
 import {
+  type DistanceUnit,
+  distanceFromMetres,
   distanceToMetres,
   LIMITS,
   RPE_VALUES,
+  round,
+  type WeightUnit,
   type WorkoutSetContent,
+  weightFromKg,
   weightToKg,
 } from "@leve/core";
 
@@ -34,7 +39,7 @@ export interface HevyWorkout {
 }
 
 /** Read a comma-delimited export, including doubled quotes and newlines inside quoted fields. */
-function* csvRows(source: string) {
+export function* csvRows(source: string) {
   const csv = source.replace(/^\uFEFF/, "");
   const field = /"((?:[^"]|"")*)"|([^",\r\n]*)/y;
   let offset = 0;
@@ -114,6 +119,20 @@ const REQUIRED_COLUMNS = [
   "duration_seconds",
   "rpe",
 ];
+
+/**
+ * Text a spreadsheet could run as a formula: it starts with =, +, - or @ (after any spaces), or
+ * with a tab or carriage return. Leading apostrophes are part of the match, so text that already
+ * starts with one keeps it through an export and import.
+ */
+const FORMULA = /^'*(?:\s*[=+\-@]|[\t\r])/;
+
+/** An apostrophe in front makes spreadsheets show such text as it is instead of running it. */
+export const spreadsheetText = (text: string) => (FORMULA.test(text) ? `'${text}` : text);
+
+/** Takes off the apostrophe `spreadsheetText` adds. */
+const fromSpreadsheetText = (text: string) =>
+  text.startsWith("'") && FORMULA.test(text) ? text.slice(1) : text;
 
 function rowError(row: number, message: string) {
   return new HevyImportError(`Hevy CSV row ${row} has ${message}.`);
@@ -208,16 +227,16 @@ export function parseHevyCsv(csv: string): HevyWorkout[] {
   for (const { fields, rowNumber } of rows) {
     if (fields.length !== header.length) throw rowError(rowNumber, "the wrong number of fields");
     const get = (column: string) => fields[columns.get(column) ?? -1] ?? "";
+    const text = (column: string) => fromSpreadsheetText(get(column));
     const start = get("start_time");
     const end = get("end_time");
-    const title = get("title").trim();
-    const description = get("description");
+    const title = text("title").trim();
+    const description = text("description");
     const key = JSON.stringify([start, end, title, description]);
     if (!workout || key !== lastWorkoutKey) {
       if (title.length > LIMITS.titleLength)
         throw rowError(rowNumber, "a workout title that is too long");
-      if (description.length > LIMITS.noteLength)
-        throw rowError(rowNumber, "a workout description that is too long");
+      // A description longer than one note becomes several (see hevy-import.ts).
       const started = date(start, rowNumber, "start time");
       const ended = date(end, rowNumber, "end time");
       if (ended.timestamp < started.timestamp)
@@ -236,8 +255,8 @@ export function parseHevyCsv(csv: string): HevyWorkout[] {
       exercise = undefined;
     }
 
-    const name = get("exercise_title").trim();
-    const notes = get("exercise_notes");
+    const name = text("exercise_title").trim();
+    const notes = text("exercise_notes");
     const setIndex = index(get("set_index"), rowNumber, "set index");
     const supersetId = index(get("superset_id"), rowNumber, "superset ID");
     const weightValue = number(get(weight), rowNumber, "weight", -Infinity);
@@ -264,8 +283,6 @@ export function parseHevyCsv(csv: string): HevyWorkout[] {
     }
     if (name.length > LIMITS.titleLength)
       throw rowError(rowNumber, "an exercise name that is too long");
-    if (notes.length > LIMITS.noteLength)
-      throw rowError(rowNumber, "exercise notes that are too long");
     if (
       !exercise ||
       name !== exercise.name ||
@@ -288,4 +305,133 @@ export function parseHevyCsv(csv: string): HevyWorkout[] {
   }
   if (workouts.length === 0) throw new HevyImportError("This Hevy CSV has no workouts to import.");
   return workouts;
+}
+
+/** What an export writes for one workout: finished, with its exercises in order. */
+export interface HevyCsvWorkout {
+  title: string;
+  startedAt: string;
+  endedAt: string;
+  description: string;
+  exercises: { name: string; notes: string; supersetId: number | null; sets: HevySet[] }[];
+}
+
+/** The English month abbreviations Hevy writes, which every reading of the file understands. */
+const WRITTEN_MONTHS = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(" ");
+const SET_TYPE_NAMES: Record<HevySet["type"], string> = {
+  normal: "normal",
+  warmup: "warmup",
+  failure: "failure",
+  drop: "dropset",
+};
+
+/** The clock time in the device's zone, to the minute, held in a Date's UTC fields. */
+function wallClock(timestamp: string) {
+  const time = new Date(timestamp);
+  return new Date(
+    Date.UTC(
+      time.getFullYear(),
+      time.getMonth(),
+      time.getDate(),
+      time.getHours(),
+      time.getMinutes(),
+    ),
+  );
+}
+
+/** Hevy's clock time, as `parseHevyCsv` reads it back. */
+function hevyTime(clock: Date) {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  const month = WRITTEN_MONTHS[clock.getUTCMonth()];
+  return `${clock.getUTCDate()} ${month} ${clock.getUTCFullYear()}, ${pad(clock.getUTCHours())}:${pad(clock.getUTCMinutes())}`;
+}
+
+/**
+ * A workout's start and end clock times. When the clocks went back during it, the end reads
+ * earlier than the start; it then becomes the start plus the workout's length.
+ */
+function workoutTimes(startedAt: string, endedAt: string) {
+  const start = wallClock(startedAt);
+  let end = wallClock(endedAt);
+  if (end < start) {
+    const minutes = Math.floor((Date.parse(endedAt) - Date.parse(startedAt)) / 60_000);
+    end = new Date(start.getTime() + Math.max(0, minutes) * 60_000);
+  }
+  return [hevyTime(start), hevyTime(end)];
+}
+
+/** A plain decimal: no exponent, and no float noise from unit conversion. */
+const decimal = (value: number | null, places: number) =>
+  value === null ? "" : String(round(value, places));
+
+const quoted = (field: string) => `"${field.replaceAll('"', '""')}"`;
+
+/**
+ * Workouts as a CSV in the layout of Hevy's export, which `parseHevyCsv` and other apps read: one
+ * row per set, with the workout and exercise repeated on each, weights and distances in the
+ * person's units. A workout or an exercise without sets gets one row of its own.
+ */
+export function formatHevyCsv(
+  workouts: readonly HevyCsvWorkout[],
+  units: { weight: WeightUnit; distance: DistanceUnit },
+): string {
+  const header = [
+    "title",
+    "start_time",
+    "end_time",
+    "description",
+    "exercise_title",
+    "superset_id",
+    "exercise_notes",
+    "set_index",
+    "set_type",
+    units.weight === "kg" ? "weight_kg" : "weight_lbs",
+    "reps",
+    units.distance === "km" ? "distance_km" : "distance_miles",
+    "duration_seconds",
+    "rpe",
+  ];
+  const lines = [header.map(quoted).join(",")];
+  for (const workout of workouts) {
+    const head = [
+      spreadsheetText(workout.title),
+      ...workoutTimes(workout.startedAt, workout.endedAt),
+      spreadsheetText(workout.description),
+    ];
+    const row = (cells: string[]) => lines.push([...head, ...cells].map(quoted).join(","));
+    if (workout.exercises.length === 0) row(Array(header.length - head.length).fill(""));
+    let previous: HevyCsvWorkout["exercises"][number] | undefined;
+    for (const exercise of workout.exercises) {
+      const entry = [
+        spreadsheetText(exercise.name),
+        exercise.supersetId === null ? "" : String(exercise.supersetId),
+        spreadsheetText(exercise.notes),
+      ];
+      if (exercise.sets.length === 0) {
+        // The import starts a new entry when the exercise or superset changes or the set index
+        // goes back. An entry without sets right after one of the same exercise needs an index
+        // to stay apart from it.
+        const follows =
+          previous?.name.trim() === exercise.name.trim() &&
+          previous.supersetId === exercise.supersetId;
+        row([...entry, follows ? "0" : "", "", "", "", "", "", ""]);
+      }
+      for (const [index, set] of exercise.sets.entries()) {
+        row([
+          ...entry,
+          String(index),
+          SET_TYPE_NAMES[set.type],
+          set.weightKg === null ? "" : decimal(weightFromKg(set.weightKg, units.weight), 3),
+          decimal(set.reps, 0),
+          set.distanceMeters === null
+            ? ""
+            : decimal(distanceFromMetres(set.distanceMeters, units.distance), 4),
+          decimal(set.durationSeconds, 3),
+          decimal(set.rpe, 1),
+        ]);
+      }
+      previous = exercise;
+    }
+  }
+  return `${lines.join("\n")}\n`;
 }

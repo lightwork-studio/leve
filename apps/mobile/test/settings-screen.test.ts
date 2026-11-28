@@ -106,6 +106,10 @@ vi.mock("../src/ui/enter.tsx", () => ({
 }));
 const pickCsv = vi.hoisted(() => vi.fn<() => Promise<string | null>>());
 vi.mock("../src/data/pick-csv", () => ({ pickCsv }));
+const shareCsv = vi.hoisted(() =>
+  vi.fn<(name: string, csv: string) => Promise<"shared" | "dismissed" | "downloaded">>(),
+);
+vi.mock("../src/data/share-csv", () => ({ shareCsv }));
 vi.mock("../src/ui/haptics.ts", () => ({
   haptic: { tap: () => {}, select: () => {}, warning: () => {}, success: () => {} },
 }));
@@ -605,4 +609,96 @@ it("explains a file it can't import and writes nothing", async () => {
   await press("Import from Hevy");
   expect(store.list("workout")).toEqual([]);
   expect(host.querySelector('[role="alert"]')).toBeNull();
+});
+
+/** A finished workout with one logged set, as logging leaves it. */
+function addFinishedWorkout(title: string) {
+  const at = "2026-11-20T18:00:00.000Z";
+  store.putMany([
+    {
+      kind: "workout",
+      id: "w-1",
+      content: { title, startedAt: at, endedAt: "2026-11-20T19:00:00.000Z", routineId: null },
+    },
+    {
+      kind: "workout_exercise",
+      id: "w-1-e1",
+      content: {
+        workoutId: "w-1",
+        exerciseId: "builtin:pull-up",
+        exerciseName: "Pull-up",
+        exerciseType: "bodyweight_reps",
+        position: 1,
+        supersetId: null,
+        restSeconds: 0,
+        doubleDumbbellVolume: false,
+      },
+    },
+    {
+      kind: "workout_set",
+      id: "w-1-e1-s1",
+      content: {
+        workoutExerciseId: "w-1-e1",
+        position: 1,
+        type: "normal",
+        weightKg: null,
+        reps: 8,
+        distanceMeters: null,
+        durationSeconds: null,
+        count: null,
+        rpe: null,
+        completedAt: "2026-11-20T19:00:00.000Z",
+      },
+    },
+  ]);
+}
+
+it("exports finished workouts from More, showing the export until the file is ready", async () => {
+  addFinishedWorkout("Pull day");
+  const dump = () => store.db.all("SELECT * FROM records ORDER BY kind, id");
+  const before = dump();
+  shareCsv.mockResolvedValueOnce("shared");
+  await render();
+  feedback.hold();
+  await press("Export workouts");
+  expect(byLabel("Exporting workouts…")).not.toBeNull();
+  expect(shareCsv).not.toHaveBeenCalled();
+  await act(feedback.release);
+  await render();
+  expect(shareCsv).toHaveBeenCalledTimes(1);
+  const [name, csv] = shareCsv.mock.calls[0] ?? [];
+  expect(name).toMatch(/^leve-workouts-\d{4}-\d{2}-\d{2}\.csv$/);
+  expect(csv).toContain('"Pull day"');
+  expect(csv).toContain('"Pull-up"');
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+    `Shared 1 workout as ${name}.`,
+  );
+  expect(byLabel("Export workouts")).not.toBeNull();
+  expect(dump()).toEqual(before);
+});
+
+it("says when there is nothing to export, and when an export fails or is closed", async () => {
+  shareCsv.mockClear();
+  await render();
+  await press("Export workouts");
+  expect(shareCsv).not.toHaveBeenCalled();
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+    "Nothing to exportThere are no finished workouts on this device yet.",
+  );
+
+  addFinishedWorkout("Pull day");
+  shareCsv.mockRejectedValueOnce(new Error("The share sheet couldn't open."));
+  await press("Export workouts");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+    "Not exportedThe share sheet couldn't open.",
+  );
+
+  // Closing the share sheet says nothing more.
+  shareCsv.mockResolvedValueOnce("dismissed");
+  await press("Export workouts");
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+
+  shareCsv.mockResolvedValueOnce("downloaded");
+  await press("Export workouts");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("Downloaded 1 workout as");
 });
