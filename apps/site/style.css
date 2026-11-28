@@ -712,6 +712,93 @@ h1 {
   letter-spacing: 0.04em;
 }
 
+.foot-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+
+.foot-links a {
+  color: var(--fg2);
+  text-decoration: none;
+}
+
+.foot-links a:hover {
+  color: var(--fg);
+}
+
+/* Privacy policy, support and legal notice: one column of plain text. */
+
+.doc {
+  max-width: 760px;
+  padding-block: clamp(32px, 6vw, 72px) 88px;
+  color: var(--fg2);
+}
+
+.doc h1 {
+  margin-top: 18px;
+  color: var(--fg);
+  font-size: clamp(2.4rem, 6vw, 4rem);
+}
+
+/* Low specificity, so the rules below can change the spacing. */
+.doc :where(p, address, section > ul) {
+  margin-top: 14px;
+}
+
+.doc-lede {
+  margin-top: 20px;
+  color: var(--fg);
+  font-size: 1.15rem;
+}
+
+.doc section {
+  margin-top: 48px;
+}
+
+.doc h2 {
+  margin-top: 0;
+  color: var(--fg);
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  letter-spacing: -0.03em;
+}
+
+.doc h3 {
+  margin-top: 28px;
+  color: var(--fg);
+}
+
+.doc address {
+  color: var(--fg);
+  font-style: normal;
+}
+
+.doc section > ul {
+  padding-left: 1.2em;
+  list-style: disc;
+}
+
+.doc section > ul li + li {
+  margin-top: 8px;
+}
+
+.doc strong {
+  color: var(--fg);
+}
+
+.doc a {
+  color: var(--fg);
+  text-underline-offset: 3px;
+}
+
+.doc-specs div {
+  grid-template-columns: 120px minmax(0, 1fr);
+}
+
+.nav-links a[aria-current="page"] {
+  color: var(--fg);
+}
+
 /* Smaller screens */
 
 @media (max-width: 960px) {
