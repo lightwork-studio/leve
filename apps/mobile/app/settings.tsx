@@ -34,8 +34,11 @@ import {
   WEEKDAY_CHOICES,
   WEIGHT_CHOICES,
 } from "../src/data/settings-actions.ts";
+// Without an extension, so browsers download the file in place of the share sheet.
+import { shareCsv } from "../src/data/share-csv";
 import { saveShowTargets, useShowTargets } from "../src/data/show-targets.ts";
 import { canChangeTrackRir, useTrackRir } from "../src/data/track-rir.ts";
+import { exportWorkouts, type WorkoutExport } from "../src/data/workout-export.ts";
 import { restAlertNative } from "../src/rest-alert/native";
 import { DENIED_MESSAGE, useNotificationsBlocked } from "../src/rest-alert/rest-alert-host";
 import { turnOnRestAlert } from "../src/rest-alert/rest-alerts.ts";
@@ -137,6 +140,8 @@ export default function SettingsScreen() {
   const [notice, setNotice] = useState<{ label: string; message: string } | null>(null);
   const [importing, setImporting] = useState(false);
   const importRunning = useRef(false);
+  const [exporting, setExporting] = useState(false);
+  const exportRunning = useRef(false);
   const [trackRir, setTrackRir] = useTrackRir();
   const showTargets = useShowTargets();
   const restAlert = useRestAlertSetting();
@@ -162,6 +167,59 @@ export default function SettingsScreen() {
     announce(message);
   };
 
+  /** The outcome of an import or export takes the banner's place, over a problem saving a setting. */
+  const tell = (label: string, message: string) => {
+    setProblem(null);
+    optimistic.dismiss();
+    setNotice({ label, message });
+    announce(message);
+  };
+
+  /** Shares every finished workout as a CSV. Reads stored data and changes none of it. */
+  const exportAll = async () => {
+    // Already exporting: the press is felt, and the row already says so.
+    if (exportRunning.current) {
+      haptic.tap();
+      return;
+    }
+    exportRunning.current = true;
+    haptic.select();
+    setNotice(null);
+    setExporting(true);
+    try {
+      // Reading a long history is synchronous: let the busy row paint first.
+      const exported = await new Promise<WorkoutExport>((resolve, reject) => {
+        afterFeedback(() => {
+          try {
+            resolve(exportWorkouts(store));
+          } catch (error) {
+            reject(error);
+          }
+        });
+      });
+      if (exported.workouts === 0) {
+        tell("Nothing to export", "There are no finished workouts on this device yet.");
+        return;
+      }
+      const shared = await shareCsv(exported.fileName, exported.csv);
+      const count = `${exported.workouts} workout${exported.workouts === 1 ? "" : "s"}`;
+      if (shared === "dismissed") return;
+      haptic.success();
+      tell(
+        "Exported",
+        shared === "downloaded"
+          ? `Downloaded ${count} as ${exported.fileName}.`
+          : `Shared ${count} as ${exported.fileName}.`,
+      );
+    } catch (error) {
+      haptic.warning();
+      tell("Not exported", (error as Error).message || "Leve couldn't export your workouts.");
+    } finally {
+      exportRunning.current = false;
+      setExporting(false);
+    }
+  };
+
   /** Adds the workouts of a Hevy CSV export. Nothing is written unless the whole file reads. */
   const importFromHevy = async () => {
     // Already importing: the press is felt, and the row already says so.
@@ -173,13 +231,6 @@ export default function SettingsScreen() {
     haptic.select();
     setNotice(null);
     setImporting(true);
-    /** The outcome takes the banner's place, over an earlier problem saving a setting. */
-    const tell = (label: string, message: string) => {
-      setProblem(null);
-      optimistic.dismiss();
-      setNotice({ label, message });
-      announce(message);
-    };
     try {
       const csv = await pickCsv();
       if (csv === null) return;
@@ -420,6 +471,12 @@ export default function SettingsScreen() {
                 choices={WEEKDAY_CHOICES}
                 onChoose={(value) => save({ firstWeekday: value })}
                 divider
+              />
+              <ActionRow
+                label={exporting ? "Exporting workouts…" : "Export workouts"}
+                hint="Every finished workout as a CSV file"
+                divider
+                onPress={() => void exportAll()}
               />
               <ActionRow
                 label={importing ? "Importing from Hevy…" : "Import from Hevy"}
