@@ -530,3 +530,38 @@ describe("shared frame publisher", () => {
     expect(await pending).toBeUndefined();
   });
 });
+
+it("updates the Live Activity before acknowledging a headless Log", async () => {
+  const { session, handle } = harness();
+  const next = frame();
+  await session.publish(next);
+  const props = handle.update.mock.calls[0]?.[0];
+  if (!props) throw Error("Missing activity ticket");
+  const pending = {
+    id: "tap",
+    source: handle.getId(),
+    target: `${props.token}:log`,
+    timestamp: Date.now(),
+    reviewOnly: false,
+  };
+  const order: string[] = [];
+  const delivery = activityDelivery(
+    session,
+    {
+      pendingLeveActivityTaps: async () => [pending],
+      finishLeveActivityTap: async (id, applied) => {
+        expect(id).toBe("tap");
+        expect(applied).toBe(true);
+        order.push("acknowledge");
+      },
+      takeLeveReviewRequest: () => false,
+    },
+    () => false,
+    vi.fn(),
+  );
+  await delivery.publish(next, true, async () => {
+    expect(next.act).toHaveBeenCalledExactlyOnceWith("log");
+    order.push("publish");
+  });
+  expect(order).toEqual(["publish", "acknowledge"]);
+});

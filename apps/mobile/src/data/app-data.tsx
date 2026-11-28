@@ -63,6 +63,28 @@ async function openStore(opened: OpenedEngine, sampleData: boolean): Promise<Dev
   return store;
 }
 
+// A scene can arrive while the intent opens the store. It takes over the same connection and
+// in-memory workout state after the queued writes have finished.
+let foregroundOwnsStore = false;
+let preparedStore: { opened: OpenedEngine; store: DeviceStore } | undefined;
+let backgroundWork = Promise.resolve();
+
+export function beforeWorkoutScene(work: (store: DeviceStore) => Promise<void>): Promise<void> {
+  if (foregroundOwnsStore) return Promise.resolve();
+  backgroundWork = backgroundWork
+    .then(async () => {
+      if (!preparedStore) {
+        const opened = await openEngine();
+        preparedStore = { opened, store: await openStore(opened, buildInfo.sampleData) };
+      }
+      await work(preparedStore.store);
+    })
+    .catch(() => {
+      // The native inbox keeps an unacknowledged tap for the normal foreground handoff.
+    });
+  return backgroundWork;
+}
+
 export function AppDataProvider({
   children,
   loading,
@@ -81,11 +103,15 @@ export function AppDataProvider({
   /** Opens the store. False if it couldn't, and the reason is shown in place of the app. */
   const start = useCallback(async (sampleData = buildInfo.sampleData): Promise<boolean> => {
     try {
+      foregroundOwnsStore = true;
+      await backgroundWork;
+      const prepared = preparedStore;
+      preparedStore = undefined;
       if (!engine.current) {
-        engine.current = await openEngine();
+        engine.current = prepared?.opened ?? (await openEngine());
         engine.current.onSaveProblem(setSaveProblem);
       }
-      const store = await openStore(engine.current, sampleData);
+      const store = prepared?.store ?? (await openStore(engine.current, sampleData));
       current.current = store;
       setState((previous) => ({
         status: "ready",

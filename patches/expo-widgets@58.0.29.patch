@@ -14,13 +14,23 @@ index b80655d..000443b 100644
      await activity.update(ActivityContent(state: newState, staleDate: staleDate))
    }
 diff --git a/ios/Widgets/AppIntent.swift b/ios/Widgets/AppIntent.swift
-index 1730fff..a02fecb 100644
+index 1730fff..60b6118 100644
 --- a/ios/Widgets/AppIntent.swift
 +++ b/ios/Widgets/AppIntent.swift
-@@ -118,13 +118,72 @@ struct LiveActivityUserInteraction: LiveActivityIntent {
+@@ -105,6 +105,9 @@ struct LiveActivityUserInteraction: LiveActivityIntent {
+   // title is not used for non-discoverable intents, but it is required
+   static var title: LocalizedStringResource = "User Interaction"
+   static var isDiscoverable: Bool = false
++  static var openAppWhenRun: Bool = false
++  @available(iOS 26.0, *)
++  static var supportedModes: IntentModes { .background }
+
+   @Parameter(title: "source")
+   var source: String?
+@@ -118,13 +121,78 @@ struct LiveActivityUserInteraction: LiveActivityIntent {
      self.target = target
    }
- 
+
 -  func perform() async throws -> some IntentResult {
 +  func perform() async throws -> some IntentResult & OpensIntent {
 +    var response = IntentResultContainer<Never, ReviewLeveWorkout, Never, Never>.result(opensIntent: ReviewLeveWorkout())
@@ -34,7 +44,13 @@ index 1730fff..a02fecb 100644
 +    }
 +    if let source, let target, target.hasPrefix("leve1.") {
 +      let inbox = LeveActivityInbox.shared
-+      let applied = await inbox.deliver(source: source, target: target) { tap in
++      let startsRuntime = await inbox.needsConsumer()
++      if startsRuntime {
++        await MainActor.run {
++          NotificationCenter.default.post(name: Notification.Name("LeveActivityLogNeedsRuntime"), object: nil)
++        }
++      }
++      let applied = await inbox.deliver(source: source, target: target, waitForStartup: startsRuntime) { tap in
 +        WidgetsEvents.shared.sendNotification(type: .userEvent, data: tap.event)
 +      }
 +      guard applied else {
@@ -48,7 +64,7 @@ index 1730fff..a02fecb 100644
        "target": target as Any,
        "timestamp": Int(Date().timeIntervalSince1970 * 1000)
      ])
- 
+
 +    response.opensIntent = nil
 +    return response
 +  }
@@ -141,10 +157,10 @@ index 55fb9b3..43b6808 100644
  }
 diff --git a/ios/Widgets/LeveActivityTap.swift b/ios/Widgets/LeveActivityTap.swift
 new file mode 100644
-index 0000000..0becfe4
+index 0000000..833907f
 --- /dev/null
 +++ b/ios/Widgets/LeveActivityTap.swift
-@@ -0,0 +1,158 @@
+@@ -0,0 +1,163 @@
 +import Foundation
 +
 +// LiveActivityIntent runs in the containing app process. Keep only the opaque button
@@ -227,15 +243,18 @@ index 0000000..0becfe4
 +    if waiting.contains(uuid) { results[uuid] = applied }
 +  }
 +
-+  func result(for id: UUID) async throws -> Bool {
++  func needsConsumer() -> Bool { !consumerStarted }
++
++  func result(for id: UUID, waitForStartup: Bool = false) async throws -> Bool {
 +    defer {
 +      waiting.remove(id)
 +      results.removeValue(forKey: id)
 +    }
-+    // A scene-less cold launch has no React consumer. Open the app immediately and
-+    // let its first mounted host validate the same ticket after unlocking.
-+    guard consumerStarted else { return false }
-+    for _ in 0..<20 {
++    // Give a scene-less runtime time to load the bundle and open the store. A timeout
++    // keeps the opaque ticket available for the foreground handoff.
++    guard consumerStarted || waitForStartup else { return false }
++    let attempts = waitForStartup ? 80 : 20
++    for _ in 0..<attempts {
 +      if let applied = results[id] { return applied }
 +      try await Task.sleep(nanoseconds: 100_000_000)
 +    }
@@ -244,11 +263,13 @@ index 0000000..0becfe4
 +  }
 +
 +  // False requests foreground delivery. Keep the ticket until the app consumes it.
-+  func deliver(source: String, target: String, notify: (LeveActivityTap) -> Void) async -> Bool {
++  func deliver(
++    source: String, target: String, waitForStartup: Bool = false, notify: (LeveActivityTap) -> Void
++  ) async -> Bool {
 +    do {
 +      let tap = try enqueue(source: source, target: target)
 +      notify(tap)
-+      return try await result(for: tap.id)
++      return try await result(for: tap.id, waitForStartup: waitForStartup)
 +    } catch {
 +      UserDefaults.standard.set(true, forKey: "LeveReviewWorkout")
 +      return false
@@ -401,14 +422,14 @@ index 4d135c4..c273464 100644
 +++ b/ios/Widgets/WidgetLiveActivity.swift
 @@ -19,53 +19,44 @@ struct LiveActivityAttributes: ActivityAttributes {
  }
- 
+
  public struct WidgetLiveActivity: Widget {
 -  @Environment(\.self) var env
 -  
    let widgetContext: AppContext = AppContext()
- 
+
    public init() {}
- 
+
 +  // Each view evaluates the layout with its own environment. A Widget isn't a view, so an
 +  // @Environment property on it reads SwiftUI's defaults (a light colorScheme, whatever the
 +  // system's), not the environment the activity is drawn in.
@@ -467,7 +488,7 @@ index 4d135c4..c273464 100644
 @@ -76,13 +67,24 @@ public struct WidgetLiveActivity: Widget {
    }
  }
- 
+
 +private func liveActivityNodes(
 +  for context: ActivityViewContext<LiveActivityAttributes>,
 +  in environment: EnvironmentValues
@@ -484,7 +505,7 @@ index 4d135c4..c273464 100644
    let context: ActivityViewContext<LiveActivityAttributes>
 -  let nodes: [String: Any]
    let sectionName: String
- 
+
    var body: some View {
 -    if let node = nodes[sectionName] as? [String: Any] {
 +    if let node = liveActivityNodes(for: context, in: env)[sectionName] as? [String: Any] {
@@ -493,12 +514,12 @@ index 4d135c4..c273464 100644
        EmptyView()
 @@ -91,10 +93,11 @@ private struct LiveActivitySectionView: View {
  }
- 
+
  private struct LiveActivityBannerView: View {
 +  @Environment(\.self) private var env
    var context: ActivityViewContext<LiveActivityAttributes>
 -  let nodes: [String: Any]
- 
+
    var body: some View {
 +    let nodes = liveActivityNodes(for: context, in: env)
      if #available(iOS 18.0, *) {
@@ -511,7 +532,7 @@ index 285136b..e1361bf 100644
 @@ -59,6 +59,23 @@ public final class WidgetsModule: Module {
        }
      }
- 
+
 +    Function("leveRestChange") { (key: String) -> [String: Double]? in
 +      guard let change = LeveRestOverride.shared.change(for: key) else { return nil }
 +      return ["start": change.start, "end": change.end]

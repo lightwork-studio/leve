@@ -37,6 +37,8 @@ function loadWidgets() {
   });
   return {
     activity,
+    inbox,
+    workoutActivity,
     session: activityDelivery(
       activity,
       inbox,
@@ -49,7 +51,7 @@ function loadWidgets() {
     addUserInteractionListener,
   };
 }
-const widgets = loadWidgets();
+export const widgets = loadWidgets();
 
 export function UnavailableWorkoutActivity() {
   useEffect(() => {

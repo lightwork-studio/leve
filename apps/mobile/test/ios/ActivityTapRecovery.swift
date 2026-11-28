@@ -25,6 +25,17 @@ struct ActivityTapRecovery {
       try await inbox.finish(id: taps[0].id.uuidString, applied: false, reviewed: true)
     case "verify":
       verifyRestActions()
+      let cold = LeveActivityInbox(root: root)
+      let loading = await cold.needsConsumer()
+      precondition(loading)
+      let wake = try await cold.enqueue(source: "activity", target: "cold:log")
+      let receipt = Task { try await cold.result(for: wake.id, waitForStartup: true) }
+      try await Task.sleep(nanoseconds: 150_000_000)
+      let queued = try await cold.pending()
+      precondition(queued.contains { $0.id == wake.id && !$0.reviewOnly })
+      try await cold.finish(id: wake.id.uuidString, applied: true, reviewed: false)
+      let accepted = try await receipt.value
+      precondition(accepted)
       let pending = try await inbox.pending()
       precondition(pending.isEmpty)
       for applied in [true, false] {
