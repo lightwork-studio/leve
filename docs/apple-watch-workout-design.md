@@ -45,7 +45,7 @@ arbitrary set edits, undo, notes, exercise browsing, history, Watch-only workout
   `isStale` is set.
 - **Nothing alerts when rest ends with the phone pocketed.** The only signal is
   `haptic.success()` in `active.tsx`, which fires only while the app is in the foreground.
-  Before 1b Leve had no notifications. This is the largest gap, and the Watch is where it is felt.
+  Before 1b Leve had no notifications. This was the largest gap, and the Watch is where it is felt.
 - **Activity buttons carry tickets.** A button target is
   `leve1.<epoch>.<generation>.<restEnd>.<sha256(binding)>:<action>`. The binding covers sync
   owner, workout, entry, exercise, set, edit version, log values and measurements.
