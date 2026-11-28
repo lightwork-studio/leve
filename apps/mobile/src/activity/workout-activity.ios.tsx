@@ -10,6 +10,7 @@ import { useWorkoutPlayer } from "../ui/live/use-workout-player.ts";
 import { showToast } from "../ui/notice.tsx";
 import { type ActivityTapInbox, activityDelivery, activityUpdates } from "./delivery.ts";
 import { workoutFrame } from "./frame.ts";
+import { refreshAfterLog } from "./log-player.ios.ts";
 import { workoutSession } from "./session.ts";
 
 /** The workout this phone last showed a Live Activity for. */
@@ -37,6 +38,8 @@ function loadWidgets() {
   });
   return {
     activity,
+    inbox,
+    workoutActivity,
     session: activityDelivery(
       activity,
       inbox,
@@ -49,7 +52,7 @@ function loadWidgets() {
     addUserInteractionListener,
   };
 }
-const widgets = loadWidgets();
+export const widgets = loadWidgets();
 
 export function UnavailableWorkoutActivity() {
   useEffect(() => {
@@ -72,6 +75,7 @@ function LiveWorkout() {
   const appearance = useAppearanceSetting();
   const [revision, refresh] = useState(0);
   const rest = player?.rest;
+  const latestStore = useRef(player?.store);
   useEffect(() => {
     if (!rest) return;
     const timer = setTimeout(
@@ -81,15 +85,24 @@ function LiveWorkout() {
     return () => clearTimeout(timer);
   }, [rest]);
   useEffect(() => {
+    const drain = () => {
+      if (!widgets) return;
+      const store = latestStore.current;
+      void widgets.session.drain(
+        store && AppState.currentState !== "active"
+          ? () => refreshAfterLog(store, widgets.activity)
+          : undefined,
+      );
+    };
     const updates = activityUpdates({
       isActive: () => AppState.currentState === "active",
       refreshRest: restTimer.refresh,
       refreshActivity: () => refresh((n) => n + 1),
-      drain: () => void widgets?.session.drain(),
+      drain,
     });
     const app = AppState.addEventListener("change", updates.appStateChanged);
     const events = widgets?.addUserInteractionListener(updates.interacted);
-    void widgets?.session.drain();
+    drain();
     return () => {
       app.remove();
       events?.remove();
@@ -97,6 +110,7 @@ function LiveWorkout() {
   }, []);
   const lastRevision = useRef(-1);
   useLayoutEffect(() => {
+    latestStore.current = player?.store;
     if (!widgets) return;
     const frame = workoutFrame(
       player,

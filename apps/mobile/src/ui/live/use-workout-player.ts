@@ -1,6 +1,9 @@
+import type { SetDistanceUnit } from "@leve/core";
+import type { DeviceStore } from "@leve/storage";
 import { router } from "expo-router";
-import { useAppData } from "../../data/app-data.tsx";
+import { type AppData, useAppData } from "../../data/app-data.tsx";
 import { useLive, usePastWorkouts } from "../../data/queries.ts";
+import type { liveData, readAllWorkoutTrees } from "../../data/read.ts";
 import { useRest } from "../../data/rest-timer.ts";
 import { logSet } from "../../data/workout-actions.ts";
 import { routineTarget, setProgress } from "../../model/live.ts";
@@ -8,7 +11,7 @@ import { previousValue } from "../../model/log-values.ts";
 import { totalWeight } from "../format.ts";
 import { haptic } from "../haptics.ts";
 import { readSetStopwatch, useSetStopwatch } from "../use-set-stopwatch.ts";
-import { useWorkoutInputs } from "../use-workout-inputs.ts";
+import { type SetDrafts, type UpdateSetDrafts, useWorkoutInputs } from "../use-workout-inputs.ts";
 import { useWorkoutSelection } from "../use-workout-selection.ts";
 import {
   fieldUnit,
@@ -39,13 +42,57 @@ export function useWorkoutPlayer() {
   const target = tree ? dockTarget(tree, focusIndex, pickedSetId) : null;
   // Last time's values, read with the rest of the history while the minimised workout shows.
   const history = usePastWorkouts(!!live);
-  const previous =
-    live && history
-      ? previousForWorkout(history, live.tree, live.settings, live.initialPlan)
-      : null;
   // The set's stopwatch decides whether it can be logged from here.
   useSetStopwatch(store, workoutId ?? "", target?.set.id);
-  if (!live || !tree) return null;
+  return buildWorkoutPlayer({
+    store,
+    change,
+    live,
+    history,
+    rest,
+    target,
+    drafts,
+    setDrafts,
+    distanceUnits,
+    focusExercise,
+    resume: () => router.push("/workout/active"),
+    feedback: haptic,
+  });
+}
+
+/** The activity and on-screen player derive their Log action from the same recorded workout. */
+export function buildWorkoutPlayer({
+  store,
+  change,
+  live,
+  history,
+  rest,
+  target,
+  drafts,
+  setDrafts,
+  distanceUnits,
+  focusExercise,
+  resume,
+  feedback,
+}: {
+  store: DeviceStore;
+  change: AppData["change"];
+  live: ReturnType<typeof liveData>;
+  history: ReturnType<typeof readAllWorkoutTrees> | null;
+  rest: ReturnType<typeof useRest>;
+  target: ReturnType<typeof dockTarget>;
+  drafts: SetDrafts;
+  setDrafts: UpdateSetDrafts;
+  distanceUnits: Record<string, SetDistanceUnit>;
+  focusExercise(entryId: string): void;
+  resume(): void;
+  feedback?: Pick<typeof haptic, "tap" | "warning">;
+}) {
+  if (!live) return null;
+  const { tree } = live;
+  const previous = history
+    ? previousForWorkout(history, tree, live.settings, live.initialPlan)
+    : null;
   const { settings, initialPlan } = live;
   const unit = settings.weightUnit;
   const title = tree.workout.content.title || "Workout";
@@ -98,7 +145,6 @@ export function useWorkoutPlayer() {
         .map((metric) => show(metric, previousValue(last, metric), unit, distanceUnit) || "–")
         .join(metrics.includes("reps") ? " × " : " · ")
     : "";
-  const resume = () => router.push("/workout/active");
   const result =
     target &&
     logValues({
@@ -120,7 +166,7 @@ export function useWorkoutPlayer() {
     const type = entry.entry.content.exerciseType;
     if (result === null) return resume();
     const ask = (message: string, metric = metricsOf(type)[0] ?? "reps") => {
-      haptic.warning();
+      feedback?.warning();
       pendingAsk.set(store, {
         workoutId: tree.workout.id,
         entryId: entry.entry.id,
@@ -156,7 +202,7 @@ export function useWorkoutPlayer() {
     } catch (error) {
       return ask((error as Error).message);
     }
-    haptic.tap();
+    feedback?.tap();
     focusExercise(exerciseAfterLog(tree, entry.entry.id));
     afterLog(store, tree.workout.id, entry, set.id, setDrafts);
     return true;

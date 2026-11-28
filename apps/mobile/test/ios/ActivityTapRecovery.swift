@@ -25,6 +25,18 @@ struct ActivityTapRecovery {
       try await inbox.finish(id: taps[0].id.uuidString, applied: false, reviewed: true)
     case "verify":
       verifyRestActions()
+      verifyLogDeadline()
+      let cold = LeveActivityInbox(root: root)
+      let loading = await cold.needsConsumer()
+      precondition(loading)
+      let wake = try await cold.enqueue(source: "activity", target: "cold:log")
+      let receipt = Task { try await cold.result(for: wake.id, waitForStartup: true) }
+      try await Task.sleep(nanoseconds: 150_000_000)
+      let queued = try await cold.pending()
+      precondition(queued.contains { $0.id == wake.id && !$0.reviewOnly })
+      try await cold.finish(id: wake.id.uuidString, applied: true, reviewed: false)
+      let accepted = try await receipt.value
+      precondition(accepted)
       let pending = try await inbox.pending()
       precondition(pending.isEmpty)
       for applied in [true, false] {
@@ -62,6 +74,21 @@ struct ActivityTapRecovery {
     default:
       preconditionFailure("Unexpected test phase")
     }
+  }
+
+  static func verifyLogDeadline() {
+    let button = "leve1.process.1.90000.digest:log"
+    var props: [String: Any] = [
+      "canLog": true, "token": "leve1.process.1.100000.digest", "restEnd": 100_000.0
+    ]
+    precondition(canLogLeveActivity(target: button, props: props, now: 110_000))
+    props["restEnd"] = 120_000.0
+    precondition(!canLogLeveActivity(target: button, props: props, now: 110_000))
+    props["restEnd"] = 0.0
+    precondition(canLogLeveActivity(target: button, props: props, now: 110_000))
+    precondition(!canLogLeveActivity(target: "leve1.process.2.0.digest:log", props: props, now: 110_000))
+    props["canLog"] = false
+    precondition(!canLogLeveActivity(target: button, props: props, now: 110_000))
   }
 
   static func verifyRestActions() {

@@ -61,7 +61,45 @@ function* csvRows(source: string) {
   if (fields.length) yield { fields, rowNumber };
 }
 
-const MONTHS = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".toLowerCase().split(" ");
+/**
+ * Hevy writes month names in the app's language ("22 Nov 2026", "22 Nov. 2026", "4 März 2026").
+ * Each month's names in the languages Leve can read, without accents. A name or abbreviation
+ * matches when it starts one of them and only one month's names.
+ */
+const MONTH_NAMES = [
+  "january januar janner janvier enero gennaio janeiro januari",
+  "february februar fevrier febrero febbraio fevereiro februari",
+  "march marz mars marzo marco maart mrt",
+  "april avril abril aprile",
+  "may mai mayo maggio maio mei maj",
+  "june juni juin junio giugno junho",
+  "july juli juillet julio luglio julho",
+  "august aout agosto augustus",
+  "september septembre septiembre settembre setembro",
+  "october oktober octobre octubre ottobre outubro",
+  "november novembre noviembre novembro",
+  "december dezember decembre diciembre dicembre dezembro",
+].map((names) => names.split(" "));
+
+const plainLetters = (text: string) =>
+  text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+
+/** The month a written month name means, from 0, or -1 when it means none or several. */
+function monthIndex(written: string) {
+  const name = plainLetters(written).replace(/\.$/, "");
+  if (name.length < 3) return -1;
+  const months = MONTH_NAMES.flatMap((names, index) =>
+    names.some((full) => full.startsWith(name)) ? [index] : [],
+  );
+  return months.length === 1 ? (months[0] ?? -1) : -1;
+}
+
+const DATE_TIME =
+  /^(\d{1,2})\.? (?:de )?([^\s\d.,]+\.?) (?:de )?([1-9]\d{3}),? (\d{1,2}):(\d{2})(?: ?([ap])\.? ?m\.?)?$/i;
+
 const REQUIRED_COLUMNS = [
   "title",
   "start_time",
@@ -83,15 +121,23 @@ function rowError(row: number, message: string) {
 
 /** The CSV gives clock times without a time zone. Use the device's zone for the stored timestamp. */
 function date(value: string, row: number, column: string) {
-  const match = /^(\d{1,2}) ([a-z]{3}) ([1-9]\d{3}), (\d{2}):(\d{2})$/i.exec(value.trim());
+  const match = DATE_TIME.exec(value.trim().replace(/\s+/g, " "));
   if (!match) throw rowError(row, `an invalid ${column}`);
   const day = Number(match[1]);
-  const month = MONTHS.indexOf(match[2]?.toLowerCase() ?? "");
+  const month = monthIndex(match[2] ?? "");
   const year = Number(match[3]);
-  const hour = Number(match[4]);
+  const clockHour = Number(match[4]);
   const minute = Number(match[5]);
+  const meridiem = match[6]?.toLowerCase();
+  // A 12-hour clock: 12 AM is midnight and 12 PM noon.
+  const hour = meridiem ? (clockHour % 12) + (meridiem === "p" ? 12 : 0) : clockHour;
   const utc = new Date(Date.UTC(year, month, day, hour, minute));
-  if (month < 0 || utc.getUTCDate() !== day || hour > 23 || minute > 59)
+  if (
+    month < 0 ||
+    utc.getUTCDate() !== day ||
+    (meridiem ? clockHour < 1 || clockHour > 12 : hour > 23) ||
+    minute > 59
+  )
     throw rowError(row, `an invalid ${column}`);
   return {
     key: utc.toISOString().slice(0, 16).replace(/\D/g, ""),

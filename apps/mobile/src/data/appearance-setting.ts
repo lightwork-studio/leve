@@ -7,7 +7,7 @@ import {
 
 export type AppearanceSetting = "system" | "light" | "dark";
 
-function readAppearanceSetting(): AppearanceSetting {
+export function readAppearanceSetting(): AppearanceSetting {
   const value = readDevicePreference("appearance");
   return value === "light" || value === "dark" ? value : "system";
 }

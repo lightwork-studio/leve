@@ -8,7 +8,7 @@ import {
 /** Off until turned on. "unset" means Leve hasn't offered it yet. */
 export type RestAlertSetting = "on" | "off" | "unset";
 
-function readRestAlertSetting(): RestAlertSetting {
+export function readRestAlertSetting(): RestAlertSetting {
   const value = readDevicePreference("restAlert");
   return value === "on" || value === "off" ? value : "unset";
 }
