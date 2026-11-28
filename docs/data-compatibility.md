@@ -129,19 +129,19 @@ reaches a build that keeps real data. From then on none of it changes: a mistake
 retired and replaced by a new number, never edited. Before it ships, nobody keeps real data in it,
 so the frozen-material check only warns about changes and `pnpm contract:freeze <release>
 --refreeze` writes it again. A release can only be listed as shipped once it is frozen, and freezing it
-again and shipping it are separate changes. Until the maintainer's real-data declaration (see
-[Data-preservation promise](#data-preservation-promise)), development previews must not be given to
-anyone who keeps real data in them. Each release's frozen description includes every field's meaning
-and the message rules: answer order, defaults, error codes and their HTTP statuses, and size limits.
+again and shipping it are separate changes. Release `1.0` shipped with v1.0.0 (see
+[Data-preservation promise](#data-preservation-promise)). Each release's frozen description includes
+every field's meaning and the message rules: answer order, defaults, error codes and their HTTP
+statuses, and size limits.
 
-Before the first protocol ships, coordinated development builds use a single draft release,
-`1.0`, with disposable data. Edit the contract and regenerate the draft with
-`pnpm contract:freeze 1.0 --refreeze`. Update the development app and server together when the wire
-format or semantics change, since peers from different builds can both advertise `1.0` and
-disagree on which messages are valid or what they mean. If an integration branch already advertises
-later drafts, re-freezing `1.0` alone leaves those drafts active and can leave their frozen artifacts
-out of date. Keep every advertised draft consistent with its frozen artifacts. Consolidating drafts
-requires updating both peers and checking how existing preview data is read.
+While a new release is in development, coordinated development builds use it as a draft with
+disposable data. Edit the contract and regenerate the draft with
+`pnpm contract:freeze <release> --refreeze`. Update the development app and server together when the
+draft's wire format or semantics change, since peers from different builds can both advertise the
+draft and disagree on which messages are valid or what they mean. If an integration branch
+advertises several drafts, re-freezing one alone leaves the others active and can leave their frozen
+artifacts out of date. Keep every advertised draft consistent with its frozen artifacts.
+Consolidating drafts requires updating both peers and checking how existing preview data is read.
 
 - **Optional additions to a shipped contract** make a new minor release (`1.1`). A new field is
   optional in the logical record, and a record without it is valid. Each new field gets a meaning
@@ -415,8 +415,9 @@ integrity check, foreign-key check where foreign keys exist, record counts, and 
 decode. If verification fails, the snapshot is restored. The snapshot is kept until the next
 successful upgrade. Every release that holds real data must upgrade directly to the newest release,
 including across skipped releases. Released migrations are never edited; later changes add new ones.
-Migrations count as released from the maintainer's real-data declaration, when their files also
-join the frozen paths; until then the version 1 layouts may still change.
+Migrations count as released once their release is listed under `shipped` in `frozen-paths.json`.
+The v1.0.0 layouts (device storage version 5, server storage version 4) and the migrations leading
+to them are released.
 
 - Every build can read a small metadata record whose shape never changes: storage version, the app
   version that wrote it, and whether unsynced work exists: pending, in-flight, rejected and partially

@@ -30,8 +30,8 @@ import {
 
 /*
  * Leve's logical records. Field names carry their unit. Every field lists the protocol release that
- * introduced it. During development, additions go into the draft 1.0 contract. Once a release
- * ships, its schema and meanings are fixed, and optional additions take a new minor release.
+ * introduced it. Release 1.0 has shipped, so its schema and meanings are fixed: optional additions
+ * take a new minor release and breaking changes a new major release.
  */
 
 const MAX_KG = 2000;
