@@ -1,7 +1,7 @@
 # Sync on one Node server
 
 The sync service as a single Node process with one SQLite file per account, for running your own
-sync server. Development preview: use disposable data until Leve declares that it keeps real data.
+sync server. Leve Dev and TestFlight builds can pair with it from Settings.
 
 ## Accounts and phones
 

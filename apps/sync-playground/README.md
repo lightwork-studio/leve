@@ -2,8 +2,8 @@
 
 A local page for trying the data layer by hand. One sync server, two simulated phones and an
 assistant writer run the real `@leve/storage` and `@leve/sync` code on real SQLite files. The
-phones talk to the server over HTTP; the assistant writes through the server's write service, the
-way MCP tools will.
+phones talk to the server over HTTP. The assistant writes through the same server write service
+that MCP tools use.
 
 ```sh
 pnpm dev:sync            # http://127.0.0.1:8787

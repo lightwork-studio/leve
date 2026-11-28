@@ -1,6 +1,10 @@
 # Leve app
 
 The Expo app includes workout logging, routines, workout notes, history, and progress charts.
+Settings can import workouts from a Hevy CSV export.
+
+## Development setup
+
 The web preview starts with sample data. iOS builds that support sync start empty.
 
 ```sh
@@ -52,8 +56,9 @@ A build syncs when it has both a sign-in (`EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY`, s
 for Leve Dev and Leve Preview) and a sync server (`EXPO_PUBLIC_SYNC_URL`). Leve Dev and Leve
 Preview sync with the development Worker (`leve-sync`, see
 [the Worker's README](../sync-cloudflare/README.md)). Set its URL as `EXPO_PUBLIC_SYNC_URL` in the
-EAS `development` and `preview` environments, and in your shell or `.env` for a local build. The
-App Store build has no sync server yet, so it keeps everything on the phone. Browsers never sync.
+EAS `development` and `preview` environments, and in your shell or `.env` for a local build. For
+App Store builds, configure both variables in the EAS `production` environment using the
+production Clerk instance and Worker (`leve-sync-prod`). Browsers never sync.
 
 Development and TestFlight builds can also sync with a server the person runs
 ([apps/sync-node](../sync-node/README.md)), whatever server the build has. Under Settings, Sync
@@ -114,8 +119,10 @@ A workout running on another phone, which shows here as in progress too, doesn't
 
 ## TestFlight
 
-The TestFlight preview is for disposable test data. Its storage format may change and preview
-workouts may need to be reset. See the [data preservation promise](../../docs/data-compatibility.md#data-preservation-promise).
+The TestFlight preview runs `main` ahead of release and syncs with the development Worker. It can
+carry storage and protocol versions that haven't shipped yet, which the
+[data preservation promise](../../docs/data-compatibility.md#data-preservation-promise) doesn't
+cover, so use test data there.
 
 When deployment is enabled, every push to `main` runs the checks and then `scripts/deploy-ios.sh`.
 

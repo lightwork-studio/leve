@@ -1,6 +1,6 @@
-// TEST-ONLY storage versions. No storage version after 1 has shipped, so these synthetic
-// definitions rehearse a real upgrade: they build on the real version-1 definitions and make
-// realistic layout changes. They are never used by production code.
+// TEST-ONLY storage versions. These synthetic definitions build on the original version-1
+// layouts and make realistic changes for upgrade and crash rehearsals. The shipped v1.0.0
+// baseline has separate, fixed backups in test/fixtures/v1.0.0.
 import { createContract, LEVE_CONTRACT_DEFINITION, s } from "@leve/contract";
 import { previewContractThrough as historicalContract } from "../../../contract/test/support/preview-contract.ts";
 import {

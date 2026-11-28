@@ -297,10 +297,18 @@ interface FixtureDriver {
   nextSubmissionId(id: string): void;
 }
 
+/** Which storage layout, contract and app version write a device fixture; version 1 by default. */
+export interface DeviceFixtureLayout {
+  definition?: StorageDefinition;
+  contract?: Contract;
+  appVersion?: string;
+}
+
 async function openFixtureStore(
   path: string,
   onEngine: SqlEngine,
   contract: Contract = fixtureContract,
+  layout: DeviceFixtureLayout = {},
 ): Promise<FixtureDriver> {
   let time: string = PHASE_TIMES.created;
   const queued: string[] = [];
@@ -308,9 +316,9 @@ async function openFixtureStore(
   const store = await openDeviceStore({
     engine: onEngine,
     path,
-    appVersion: OLD_APP,
+    appVersion: layout.appVersion ?? OLD_APP,
     contract,
-    definition: deviceV1,
+    definition: layout.definition ?? deviceV1,
     now: () => time,
     randomId: () => queued.shift() ?? `sub-gen-${++generated}`,
   });
@@ -334,7 +342,8 @@ function dispatchOne(driver: FixtureDriver, submissionId: string): void {
 }
 
 /**
- * Builds realistic version-1 device storage through the real DeviceStore API. The result holds
+ * Builds realistic device storage through the real DeviceStore API, in the version-1 layout unless
+ * `layout` names another. The result holds
  * synced records, a pending edit, a pending deletion, in-flight puts (one with a newer local edit)
  * and an in-flight delete listing the descendant it knew, a conflict with the kept local version, a partially synced record, an invalid record,
  * a deletion marker from the server and a workout still in progress.
@@ -343,11 +352,13 @@ export async function buildDeviceFixture(
   path: string,
   onEngine: SqlEngine = engine,
   release: "1.0" | "partial-rehearsal" = "partial-rehearsal",
+  layout: DeviceFixtureLayout = {},
 ): Promise<void> {
   const driver = await openFixtureStore(
     path,
     onEngine,
-    release === "1.0" ? release10 : fixtureContract,
+    layout.contract ?? (release === "1.0" ? release10 : fixtureContract),
+    layout,
   );
   const { store } = driver;
   try {
