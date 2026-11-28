@@ -1149,8 +1149,12 @@ function Screen() {
 }
 
 it("puts the line over the top of screens that don't show the note themselves, and moves them down", async () => {
-  const screens = (name: string) =>
-    h(SyncLineLayout, { route: { name } }, h(Screen) as ReactElement);
+  // As the stack calls it, with the screen as its child.
+  const layout = SyncLineLayout as (props: {
+    route: { name: string };
+    children?: ReactElement;
+  }) => ReactElement;
+  const screens = (name: string) => h(layout, { route: { name } }, h(Screen));
   const main = () => document.querySelector("main")?.textContent;
   const offset = () => {
     const frame = document.querySelector<HTMLElement>("[data-testid=sync-line-screen]");
