@@ -464,6 +464,20 @@ join the frozen paths; until then the version 1 layouts may still change.
   out and keep them for the old one (or, where neither is possible, pause sync), and every screen
   then says the phone isn't syncing. Signing out never deletes local data; with unsynced work it
   first says the changes wait for the same account. Servers never coordinate with each other.
+- Deleting the account, from Settings while signed in to the managed server, deletes everything
+  that server holds for it, then its sign-in. The server first records, outside the account's own
+  storage, that the account is deleted, and only then deletes its data. A deletion that stops
+  halfway finishes on the next request, and the account can never be created again: every later
+  request for it is answered `account_deleted`. A phone that deletes its account, or later hears
+  `account_deleted`, keeps everything it shows as data that never synced, in one transaction: its
+  latest version of each record (pending edits and kept conflicts included) stays, and the server's
+  copies, deletions and the sync state go. A phone that gets no answer remembers the request and
+  settles it from what it learns next. `account_deleted`, or a sign-in that ended other than by signing out, means the
+  account is deleted and the phone keeps its data; a completed sync means nothing was deleted.
+  Other phones whose sign-in ended with the account ask to sign in again, as for any lapsed
+  sign-in. Their copy stays bound to the deleted account until another account signs in there
+  (see above). A self-hosted server's accounts belong to its operator, and the app doesn't delete
+  them.
 - When the app is pointed at another server, the device asks first, whether or not all of its data
   synced, and never while a workout is being logged on it. It can bring its data to the new
   server, start from what the new server holds (dropping its copy, which the old server still has;

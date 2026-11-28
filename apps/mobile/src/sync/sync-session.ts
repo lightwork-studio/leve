@@ -27,7 +27,12 @@ export type SyncPrompt =
   /** The server no longer accepts the sign-in. */
   | { kind: "sign_in" }
   /** The server no longer syncs with this version of the app. */
-  | { kind: "update" };
+  | { kind: "update" }
+  /**
+   * The account was deleted (here or on another phone). The phone keeps its data as data that
+   * never synced, and only signing out is left.
+   */
+  | { kind: "deleted" };
 
 export interface SyncStatus {
   prompt: SyncPrompt | null;
@@ -471,6 +476,12 @@ export class SyncSession {
           return 0;
         }
         this.#ask({ kind: "sign_in" });
+        return null;
+      case "account_deleted":
+        // Nothing of it is left on the server: keep this phone's data as its own, unsynced.
+        this.#options.store.forgetAccount();
+        this.#options.onStoreChanged();
+        this.#ask({ kind: "deleted" });
         return null;
       case "update_required":
         if (outcome.update === "client") {

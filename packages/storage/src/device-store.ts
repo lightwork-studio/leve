@@ -1360,6 +1360,45 @@ export class DeviceStore {
     if (moved) this.#bindingVersion += 1;
   }
 
+  /**
+   * After the account was deleted: keeps everything this device shows as data that never synced,
+   * and forgets the account, its server and all sync state, in one transaction. Records that only
+   * the account still held go: deletions, what was hidden below them, and copies this build can't
+   * read. Each kept record is this device's latest version (its own edit, if it had one), so
+   * nothing the person sees changes. Connecting to an account later works as for any device that
+   * never synced.
+   */
+  forgetAccount(): void {
+    const forgot = this.#mutate(() => {
+      if (this.syncState().account === null) return false;
+      const rows = this.db.all("SELECT * FROM records").map(toRecordRow);
+      const ancestors = this.#ancestors(rows);
+      const parents = new Map<string, true | number>();
+      const kept = rows.filter((row) => this.#visible(row, parents, ancestors));
+      this.db.run("DELETE FROM submissions");
+      this.db.run("DELETE FROM records");
+      for (const row of kept) {
+        const content = (
+          row.localState !== null ? row.localContent : row.serverContent
+        ) as JsonObject;
+        this.#write({
+          ...this.#emptyRow(row.kind, row.id),
+          ...this.#parentColumns(row.kind, content, row),
+          localState: "live",
+          localContent: content,
+          localSeq: row.localSeq + 1,
+          status: "pending",
+        });
+      }
+      this.db.run(
+        `UPDATE sync_state SET server = NULL, account = NULL, cursor = 0, release = NULL,
+         features = '[]', lineage = NULL, restoring = 0, refresh_from = NULL WHERE id = 1`,
+      );
+      return true;
+    });
+    if (forgot) this.#bindingVersion += 1;
+  }
+
   /** Records the negotiated release; partially synced records the release can now carry resend. */
   setNegotiated(release: ReleaseId, features: readonly string[], lineage?: string): void {
     this.#mutate(() => {

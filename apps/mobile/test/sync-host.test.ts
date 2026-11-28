@@ -4,6 +4,11 @@ import { act, createElement as h, type ReactElement, type ReactNode } from "reac
 import { createRoot, type Root } from "react-dom/client";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  accountDeletionState,
+  forgetAccountDeletionStates,
+  setAccountDeletionState,
+} from "../src/account/account-deletion.ts";
 import type { Conflict } from "../src/data/conflicts.ts";
 import {
   forgetDevicePreferences,
@@ -19,6 +24,8 @@ import { turnSyncOff } from "../src/sync/sync-destination.ts";
 import { SyncHost } from "../src/sync/sync-host.tsx";
 import { SyncLine, SyncLineLayout, SyncTag, useSyncNote } from "../src/sync/sync-note.tsx";
 import {
+  accountBeingDeleted,
+  setAccountBeingDeleted,
   setSignedOutOnPurpose,
   setSyncPaused,
   signedOutOnPurpose,
@@ -115,7 +122,13 @@ const data = vi.hoisted(() => ({
   resets: [] as boolean[],
   unsyncedCount: 0,
   unavailableRecords: false,
+  forgotten: 0,
   store: {
+    forgetAccount: () => {
+      data.forgotten += 1;
+      data.account = null;
+      data.server = null;
+    },
     activeWorkout: () => (data.workout ? { id: "w" } : null),
     syncState: () => ({ account: data.account, server: data.server }),
     hasUnsyncedWork: () => data.unsynced,
@@ -128,7 +141,7 @@ vi.mock("../src/data/app-data.tsx", () => ({
     // The same store on every render, as the app's is until it starts over.
     store: data.store,
     version: data.version,
-    change: (fn: () => unknown) => fn(),
+    change: (fn: (store: unknown) => unknown) => fn(data.store),
     reset: async (sampleData: boolean) => {
       data.resets.push(sampleData);
       return true;
@@ -211,7 +224,10 @@ beforeEach(() => {
     resets: [],
     unsyncedCount: 0,
     unavailableRecords: false,
+    forgotten: 0,
   });
+  forgetAccountDeletionStates();
+  setAccountBeingDeleted(null);
   Object.assign(pending, { conflicts: [], settled: [], refuse: null });
   Object.assign(route, { path: "/exercises", pushed: [] });
   sessions.created.length = 0;
@@ -466,6 +482,93 @@ it("signs in again from the prompt when the server refused the sign-in", async (
   expect(screen()).toContain("Your sign-in has run out.");
   await tap("Sign in with Apple");
   expect(clerk.calls).toEqual(["signOut", "apple", "setActive sess_1"]);
+});
+
+it("says the account was deleted, and signing out stops its sync for good, even offline", async () => {
+  data.account = "user_1";
+  data.server = "https://sync.test";
+  await render();
+  // The session has already kept the phone's data as its own.
+  data.account = null;
+  data.server = null;
+  await report({ prompt: { kind: "deleted" } });
+  expect(screen()).toContain("synced workouts were deleted, so this phone no longer syncs.");
+  expect(screen()).toContain("Its workouts stay on this phone");
+  expect(screen()).not.toContain("Pause sync");
+
+  // Settings, where a deletion that didn't finish is finished, isn't covered.
+  route.path = "/settings";
+  await render();
+  expect(screen()).not.toContain("synced workouts were deleted");
+  route.path = "/exercises";
+  await render();
+
+  clerk.signOutFails = true;
+  const created = sessions.created.length;
+  await tap("Sign out");
+  await render();
+  expect(clerk.calls).toContain("signOut");
+  expect(accountDeletionState("user_1")).toBe("deleted");
+  expect(session().calls).toContain("stop");
+  expect(sessions.created).toHaveLength(created);
+  expect(screen()).toBe("");
+});
+
+it("leads to Settings to finish the deletion while the sign-in still works", async () => {
+  data.account = "user_1";
+  data.server = "https://sync.test";
+  setAccountBeingDeleted("user_1");
+  await render();
+  await report({ prompt: { kind: "deleted" } });
+  await render();
+  expect(screen()).toContain("If you're still signed in, delete the account again in Settings");
+  expect(accountBeingDeleted()).toBeNull();
+  await tap("Finish in Settings");
+  expect(route.pushed).toContain("/settings");
+});
+
+it("waits for the next sign-in when the person signs out before a deletion is settled", async () => {
+  data.account = "user_1";
+  data.server = "https://sync.test";
+  setAccountBeingDeleted("user_1");
+  setSignedOutOnPurpose(true);
+  clerk.signedIn = false;
+  await render();
+  await render();
+  expect(data.forgotten).toBe(0);
+  expect(accountBeingDeleted()).toBe("user_1");
+});
+
+it("doesn't sync an account while it is being deleted from this phone", async () => {
+  setAccountDeletionState("user_1", "deleting");
+  await render();
+  expect(sessions.created).toHaveLength(0);
+  await act(async () => setAccountDeletionState("user_1", null));
+  expect(sessions.created).toHaveLength(1);
+});
+
+it("keeps the data of a deletion it never heard back about once the sign-in is gone", async () => {
+  data.account = "user_1";
+  data.server = "https://sync.test";
+  setAccountBeingDeleted("user_1");
+  clerk.signedIn = false;
+  await render();
+  await render();
+  expect(data.forgotten).toBe(1);
+  expect(accountBeingDeleted()).toBeNull();
+  // Nothing belongs to an account any more: no question to sign in again.
+  expect(screen()).not.toContain("Your sign-in has run out.");
+});
+
+it("carries on syncing when a deletion it never heard back about didn't happen", async () => {
+  data.account = "user_1";
+  data.server = "https://sync.test";
+  setAccountBeingDeleted("user_1");
+  await render();
+  expect(accountBeingDeleted()).toBe("user_1");
+  await report({ lastSynced: Date.now() + 1 });
+  expect(accountBeingDeleted()).toBeNull();
+  expect(data.forgotten).toBe(0);
 });
 
 it("says on every screen when the sync server needs an update, with pausing as the way out", async () => {

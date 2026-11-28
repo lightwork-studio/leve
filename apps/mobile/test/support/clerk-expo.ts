@@ -15,6 +15,11 @@ export const clerk = {
   /** What tapping Sign in with Apple does; by default it signs in as someone. */
   appleFlow: (async () => ({ createdSessionId: "sess_1" })) as Flow,
   calls: [] as string[],
+  /** What the bare Apple sheet (expo-apple-authentication's signInAsync) answers. */
+  appleSheet: (async () => ({
+    authorizationCode: "apple-code",
+    identityToken: `e30.${btoa(JSON.stringify({ aud: "app.leve.dev" }))}.sig`,
+  })) as () => Promise<{ authorizationCode: string | null; identityToken?: string | null }>,
   signOutFails: false,
   providerProps: null as Record<string, unknown> | null,
   reset() {
@@ -26,6 +31,10 @@ export const clerk = {
     clerk.noToken = false;
     clerk.email = undefined;
     clerk.appleFlow = async () => ({ createdSessionId: "sess_1" });
+    clerk.appleSheet = async () => ({
+      authorizationCode: "apple-code",
+      identityToken: `e30.${btoa(JSON.stringify({ aud: "app.leve.dev" }))}.sig`,
+    });
     clerk.calls = [];
   },
 };
@@ -82,6 +91,11 @@ export function useSignInWithApple() {
       };
     },
   };
+}
+
+export async function signInAsync(_options: { requestedScopes: unknown[] }) {
+  clerk.calls.push("apple sheet");
+  return clerk.appleSheet();
 }
 
 export const AppleAuthenticationButtonType = { SIGN_IN: 0 };

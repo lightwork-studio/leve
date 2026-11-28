@@ -45,6 +45,22 @@ export function setSyncPaused(value: boolean): void {
   writeDevicePreference(PAUSED, value);
 }
 
+const DELETING = "sync.deletingAccount";
+
+/**
+ * The account this phone asked its server to delete, while it can't yet tell whether that
+ * happened (no answer came back, or the app closed first). Once it knows, the phone forgets the
+ * account and keeps its data, or carries on syncing if nothing was deleted.
+ */
+export function accountBeingDeleted(): string | null {
+  const value = readDevicePreference(DELETING);
+  return typeof value === "string" && value !== "" ? value : null;
+}
+
+export function setAccountBeingDeleted(account: string | null): void {
+  writeDevicePreference(DELETING, account ?? "");
+}
+
 export function readLastSynced(): number | null {
   const value = readDevicePreference(LAST_SYNCED);
   const time = typeof value === "string" ? Date.parse(value) : Number.NaN;

@@ -1,80 +1,10 @@
-import { DatabaseSync } from "node:sqlite";
 import { type JsonObject, MAX_REQUEST_BYTES } from "@leve/contract";
 import { WRITTEN_REVISIONS_HEADER } from "@leve/sync";
 import { SyncService } from "@leve/sync/server";
 import { describe, expect, it } from "vitest";
 import { openAccountDatabase, readSyncBody, startNewLineage, syncResponse } from "./account-db.ts";
-import { durableObjectConnection, type ObjectSqlStorage, type SqlMeter } from "./do-sql.ts";
-
-// A stand-in for a Durable Object's storage on Node's SQLite. Like the real one it refuses
-// transaction statements, binds only ArrayBuffers, strings, numbers and null, and runs
-// transactions through transactionSync.
-
-type Value = ArrayBuffer | string | number | null;
-
-function fakeObjectStorage() {
-  const db = new DatabaseSync(":memory:");
-  const steps = { rows: 0 };
-  const storage: ObjectSqlStorage = {
-    sql: {
-      exec(query, ...bindings) {
-        if (/\b(BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE)\b/i.test(query)) {
-          throw new Error(`not allowed in a Durable Object: ${query}`);
-        }
-        for (const value of bindings as unknown[]) {
-          if (!(value === null || ["string", "number"].includes(typeof value))) {
-            if (!(value instanceof ArrayBuffer)) throw new TypeError("unsupported binding");
-          }
-        }
-        let rows: Record<string, Value>[] = [];
-        if (bindings.length === 0 && query.includes(";")) db.exec(query);
-        else {
-          const statement = db.prepare(query);
-          const params = bindings.map((v) => (v instanceof ArrayBuffer ? new Uint8Array(v) : v));
-          if (statement.columns().length > 0) {
-            rows = (statement.all(...params) as Record<string, unknown>[]).map((row) =>
-              Object.fromEntries(
-                Object.entries(row).map(([k, v]) => [
-                  k,
-                  v instanceof Uint8Array ? v.slice().buffer : (v as Value),
-                ]),
-              ),
-            );
-          } else statement.run(...params);
-        }
-        let index = 0;
-        return {
-          toArray() {
-            steps.rows += rows.length - index;
-            const rest = rows.slice(index);
-            index = rows.length;
-            return rest;
-          },
-          next() {
-            if (index >= rows.length) return { done: true };
-            steps.rows += 1;
-            return { done: false, value: rows[index++] };
-          },
-          rowsRead: 0,
-          rowsWritten: 0,
-        };
-      },
-    },
-    transactionSync(fn) {
-      db.exec("SAVEPOINT object");
-      try {
-        const result = fn();
-        db.exec("RELEASE object");
-        return result;
-      } catch (error) {
-        db.exec("ROLLBACK TO object");
-        db.exec("RELEASE object");
-        throw error;
-      }
-    },
-  };
-  return { storage, steps };
-}
+import { durableObjectConnection, type SqlMeter } from "./do-sql.ts";
+import { fakeObjectStorage } from "./object-storage-fake.ts";
 
 const meter = (): SqlMeter => ({ rowsRead: 0, rowsWritten: 0 });
 const T = "2026-11-10T08:00:00.000Z";

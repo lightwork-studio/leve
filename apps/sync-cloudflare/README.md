@@ -10,6 +10,8 @@ account.
   Clerk user: a request can't name any other account. Only session tokens of an active session
   count: JWT templates and access tokens signed by the same instance, a session with steps left to
   finish, and a web origin not listed in `CLERK_AUTHORIZED_PARTIES` are refused.
+- **Account deletion** (`POST /account/delete`) needs a Clerk session token like sync, and
+  deletes only the signed-in user's own account (see [Account deletion](#account-deletion)).
 - **Admin** (`/admin/*`) needs the operator token (`ADMIN_TOKEN`, at least 32 characters) and names
   the account in the `x-leve-account` header. Without it the admin endpoints are closed.
 - **MCP** (`/mcp`) uses stateless Streamable HTTP. It takes a Clerk OAuth access token with the MCP
@@ -65,6 +67,57 @@ Remove `MCP_WRITES_ENABLED` to disable writes while keeping reads available.
 
 [clerk-mcp]: https://clerk.com/docs/guides/ai/mcp/build-mcp-server
 
+## Account deletion
+
+People delete their account in the app (Settings, Account). The phone first asks the Apple sheet
+for a fresh authorization code, then sends it to `POST /account/delete` with its session token and
+its bundle id (the identity token's audience). The account's object works through these steps:
+
+1. Reads the Clerk user. If Clerk no longer has it and the marker says an earlier attempt
+   already deleted the data, only step 3 runs again. Without the marker, nothing is deleted: the
+   secret key is probably for another Clerk instance.
+2. Trades the Apple code for a token at Apple, as the app that sent it, and checks that the code
+   belongs to the Apple ID the Clerk user signs in with. Clerk can't do this: its native Apple
+   sign-in never sees an authorization code. A failure here deletes nothing, and so does a code
+   for a user Clerk shows without an Apple account.
+3. Records in the account's marker object that the account is deleted, with the time, then
+   deletes all of the account's storage (`deleteAll`): every record, deletion marker, receipt and
+   the lineage. The marker lives outside the storage it outlasts.
+4. Revokes the Apple token from step 2.
+5. Deletes the Clerk user through Clerk's Backend API. That ends the user's sessions, and Clerk
+   issues no new session or MCP access tokens for it.
+
+Every step can run again. A deletion that stops between recording the marker and `deleteAll` is
+finished by the next request for the account, from any phone. A retry from the phone, with a new
+Apple code, finishes steps 4 and 5. From step 3 on, every sync, MCP and admin request for the
+account is answered `account_deleted` (410), and the account is never created again under the same
+Clerk id. Failures name the step in `step`. Before step 3, nothing was deleted: `configuration`
+(a secret is missing, or Apple or Clerk refuses the Worker's keys), `apple` (Apple refused the
+code, or it is another app's or another Apple ID's: sign in with Apple again) and `unavailable`
+(Apple or Clerk couldn't be reached: retry). After it, `sign_in`: the data is deleted, but
+revoking or deleting the user didn't finish, so retry.
+
+It needs these secrets on each Worker. Until all of them are set, deletion answers 503 and deletes
+nothing:
+
+```sh
+npx wrangler@4.158.0 secret put CLERK_SECRET_KEY   # Clerk API keys → Secret keys (sk_…), same instance as CLERK_ISSUER
+npx wrangler@4.158.0 secret put APPLE_TEAM_ID      # Apple developer team id
+npx wrangler@4.158.0 secret put APPLE_KEY_ID       # id of a key with Sign in with Apple enabled
+npx wrangler@4.158.0 secret put APPLE_PRIVATE_KEY  # that key's .p8 file, as is
+npx wrangler@4.158.0 secret put APPLE_CLIENT_ID    # bundle ids, comma-separated: app.leve.dev,app.leve.preview here; app.leve.production with --env=production
+```
+
+`CLERK_SECRET_KEY` can manage every user of its Clerk instance. Keep it on this Worker only. The
+marker object keeps only the time of each deletion, under an id derived from the Clerk user id.
+Durable Objects offer point-in-time recovery for the past 30 days, and Cloudflare doesn't say
+whether that covers storage removed with `deleteAll`. So count deleted data as recoverable by the
+operator for up to 30 days; Leve never restores a deleted account. Workers logs keep the
+failing step for their retention period, but no account data.
+
+**Turning it off:** delete `CLERK_SECRET_KEY` (`secret delete`). Deletion then answers 503 and
+deletes nothing, and sync is unaffected.
+
 ## Workers
 
 | Worker           | Clerk instance | Used by                          | Deployed by CI                                          |
@@ -111,9 +164,11 @@ release's App Store run is re-run; re-running it also queues another store build
 
 - `src/gate.ts` decides which account a request may reach and hands it to that account's object;
   `src/session-token.ts` checks Clerk session tokens.
-- `src/account-object.ts` holds one account: it runs the sync service and has admin endpoints for
-  stats, export, point-in-time restore and deletion. A small marker object per account remembers a
-  restore in progress, so the restored account starts a new lineage before it answers anything.
+- `src/account-object.ts` holds one account: it runs the sync service, deletes the account when
+  its owner asks, and has admin endpoints for stats, export, point-in-time restore and deletion.
+  A small marker object per account remembers a restore in progress, so the restored account
+  starts a new lineage before it answers anything, and that the account was deleted.
+- `src/account-deletion.ts` revokes the Sign in with Apple grant and deletes the Clerk user.
 - `src/account-db.ts` creates the account database and turns service replies into responses.
 - `src/do-sql.ts` adapts the object's SQLite database to the storage packages. Objects refuse
   `BEGIN`, so transactions use `transactionSync`.

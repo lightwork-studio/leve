@@ -25,6 +25,11 @@ export type SyncOutcome =
   | { state: "offline"; error: string }
   /** The server no longer accepts this sign-in: sign in again. Everything stays queued. */
   | { state: "signed_out" }
+  /**
+   * The account was deleted: it never syncs again. The device keeps its data, which forgetting the
+   * account (`DeviceStore.forgetAccount`) turns into data that never synced.
+   */
+  | { state: "account_deleted" }
   /** The server answered something this build can't accept; nothing was applied. */
   | { state: "error"; error: string };
 
@@ -225,6 +230,7 @@ export class SyncClient {
       // Neither says anything about this request: the sign-in, or the server for a while.
       const { code, message } = this.#error(response.body);
       if (code === "unauthorized") throw new Stop({ state: "signed_out" });
+      if (code === "account_deleted") throw new Stop({ state: "account_deleted" });
       if (code === "unavailable")
         throw new Stop({ state: "offline", error: `unavailable: ${message}` });
     }

@@ -3,9 +3,18 @@
 import { act, createElement as h, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import {
+  accountDeletionState,
+  forgetAccountDeletionStates,
+} from "../src/account/account-deletion.ts";
 import { AccountProvider } from "../src/account/account-provider.tsx";
 import { AccountSection, signInProblem } from "../src/account/account-section.tsx";
-import { signedOutOnPurpose, syncPaused } from "../src/sync/sync-preferences.ts";
+import {
+  accountBeingDeleted,
+  setAccountBeingDeleted,
+  signedOutOnPurpose,
+  syncPaused,
+} from "../src/sync/sync-preferences.ts";
 import { ClerkAPIResponseError, clerk } from "./support/clerk-expo.ts";
 import { files } from "./support/expo-file-system.ts";
 
@@ -28,13 +37,31 @@ vi.mock("../src/account/clerk-key.ts", () => ({
     return key.value;
   },
 }));
-const syncing = vi.hoisted(() => ({ on: false, unsynced: 0 }));
+const syncing = vi.hoisted(() => ({ on: false, unsynced: 0, builtIn: true }));
 vi.mock("../src/sync/sync-config.ts", () => ({
   syncEnabled: () => syncing.on,
-  syncServerUrl: "",
+  syncServerUrl: "https://sync.test",
+  builtInServerConfigured: () => syncing.builtIn,
   ownServerAvailable: () => true,
 }));
-vi.mock("../src/data/app-data.tsx", () => ({ useAppData: () => ({ store: {} }) }));
+/** The phone's data, bound to the signed-in account; forgetting it is all the section does to it. */
+const data = vi.hoisted(() => ({
+  bound: { server: "https://sync.test", account: "user_1" } as {
+    server: string | null;
+    account: string | null;
+  },
+  forgotten: 0,
+}));
+vi.mock("../src/data/app-data.tsx", () => {
+  const store = {
+    syncState: () => data.bound,
+    forgetAccount: () => {
+      data.forgotten += 1;
+      data.bound = { server: null, account: null };
+    },
+  };
+  return { useAppData: () => ({ store, change: (fn: (s: typeof store) => unknown) => fn(store) }) };
+});
 vi.mock("../src/sync/sync-session.ts", () => ({ unsyncedChanges: () => syncing.unsynced }));
 vi.mock("../src/ui/haptics.ts", () => ({
   haptic: { tap: () => {}, select: () => {}, warning: () => {}, success: () => {} },
@@ -84,6 +111,12 @@ beforeEach(() => {
   key.value = "pk_test_x";
   syncing.on = false;
   syncing.unsynced = 0;
+  syncing.builtIn = true;
+  data.bound = { server: "https://sync.test", account: "user_1" };
+  data.forgotten = 0;
+  forgetAccountDeletionStates();
+  setAccountBeingDeleted(null);
+  vi.unstubAllGlobals();
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -284,4 +317,180 @@ it("steps aside while the phone syncs with a server the person paired", async ()
   expect(text()).toBe("");
   await act(async () => store.chooseBuiltInServer());
   expect(text()).toContain("Account");
+});
+
+/** The deletion requests the phone sent, answered by `answer`. */
+function deletionServer(answer: () => Promise<Response>) {
+  const sent: { url: string; authorization: string | null; body: unknown }[] = [];
+  vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+    sent.push({
+      url,
+      authorization: new Headers(init.headers).get("authorization"),
+      body: JSON.parse(String(init.body)),
+    });
+    return answer();
+  });
+  return sent;
+}
+
+const dialog = () => document.querySelector<HTMLElement>("[role=dialog]");
+async function confirmDeletion() {
+  await act(async () => {
+    [...(dialog()?.querySelectorAll<HTMLElement>("[role=button]") ?? [])]
+      .find((element) => element.textContent?.includes("Delete account"))
+      ?.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  await render();
+}
+
+it("deletes the account after a clear warning and Apple, keeps the phone's data and signs out", async () => {
+  syncing.on = true;
+  clerk.signedIn = true;
+  const sent = deletionServer(async () => Response.json({ deleted: true }));
+  await render();
+  await tap("Delete account");
+  // Nothing happens before the person confirms.
+  expect(sent).toEqual([]);
+  expect(clerk.calls).toEqual([]);
+  expect(dialog()?.textContent).toContain("everything synced to it");
+  expect(dialog()?.textContent).toContain("It can't be undone.");
+  expect(dialog()?.textContent).toContain("Your workouts stay on this phone");
+
+  await confirmDeletion();
+  expect(clerk.calls).toEqual(["apple sheet", "signOut"]);
+  expect(sent).toEqual([
+    {
+      url: "https://sync.test/account/delete",
+      authorization: "Bearer token-user_1",
+      body: { appleAuthorizationCode: "apple-code", appleClientId: "app.leve.dev" },
+    },
+  ]);
+  expect(data.forgotten).toBe(1);
+  expect(accountDeletionState("user_1")).toBe("deleted");
+  expect(accountBeingDeleted()).toBeNull();
+  expect(signedOutOnPurpose()).toBe(false);
+  expect(dialog()).toBeNull();
+  expect(text()).toContain("Your Leve account is deleted. Your workouts stay on this phone");
+  expect(text()).toContain("Sign in with Apple");
+});
+
+it("deletes nothing when the Apple sheet is dismissed", async () => {
+  clerk.signedIn = true;
+  clerk.appleSheet = async () => {
+    throw Object.assign(new Error("canceled"), { code: "ERR_REQUEST_CANCELED" });
+  };
+  const sent = deletionServer(async () => Response.json({ deleted: true }));
+  await render();
+  await tap("Delete account");
+  await confirmDeletion();
+  expect(sent).toEqual([]);
+  expect(data.forgotten).toBe(0);
+  expect(accountBeingDeleted()).toBeNull();
+  expect(text()).toContain("Signed in with Apple");
+});
+
+it("forgets the account but stays signed in when only the sign-in part failed, so it can be retried", async () => {
+  clerk.signedIn = true;
+  deletionServer(async () =>
+    Response.json(
+      { error: { code: "unavailable", message: "x" }, step: "sign_in" },
+      { status: 503 },
+    ),
+  );
+  await render();
+  await tap("Delete account");
+  await confirmDeletion();
+  expect(data.forgotten).toBe(1);
+  expect(accountDeletionState("user_1")).toBe("deleted");
+  expect(accountBeingDeleted()).toBeNull();
+  expect(clerk.calls).not.toContain("signOut");
+  expect(text()).toContain("Try again to finish it.");
+  expect(text()).toContain("Delete account");
+});
+
+it("changes nothing on the phone when the server wasn't set up to delete", async () => {
+  clerk.signedIn = true;
+  deletionServer(async () =>
+    Response.json(
+      { error: { code: "unavailable", message: "x" }, step: "configuration" },
+      { status: 503 },
+    ),
+  );
+  await render();
+  await tap("Delete account");
+  await confirmDeletion();
+  expect(data.forgotten).toBe(0);
+  expect(accountDeletionState("user_1")).toBeNull();
+  expect(accountBeingDeleted()).toBeNull();
+  expect(text()).toContain("isn't available right now");
+});
+
+it("leaves it to sync to find out whether a deletion without an answer happened", async () => {
+  clerk.signedIn = true;
+  vi.stubGlobal("fetch", async () => {
+    throw new TypeError("Network request failed");
+  });
+  await render();
+  await tap("Delete account");
+  await confirmDeletion();
+  expect(data.forgotten).toBe(0);
+  // Sync runs again, and the phone remembers to check.
+  expect(accountDeletionState("user_1")).toBeNull();
+  expect(accountBeingDeleted()).toBe("user_1");
+  expect(text()).toContain("Leve couldn't delete your account.");
+});
+
+it("leaves another server's data alone", async () => {
+  clerk.signedIn = true;
+  data.bound = { server: "https://elsewhere.test", account: "someone" };
+  deletionServer(async () => Response.json({ deleted: true }));
+  await render();
+  await tap("Delete account");
+  await confirmDeletion();
+  expect(data.forgotten).toBe(0);
+  expect(accountDeletionState("user_1")).toBe("deleted");
+});
+
+it("offers no deletion in a build without a server of its own", async () => {
+  syncing.builtIn = false;
+  clerk.signedIn = true;
+  await render();
+  expect(text()).toContain("Signed in with Apple");
+  expect(text()).not.toContain("Delete account");
+});
+
+it("keeps an earlier unanswered deletion to settle when a retry gets nowhere", async () => {
+  clerk.signedIn = true;
+  vi.stubGlobal("fetch", async () => {
+    throw new TypeError("Network request failed");
+  });
+  await render();
+  await tap("Delete account");
+  await confirmDeletion();
+  expect(accountBeingDeleted()).toBe("user_1");
+
+  // The first request did arrive and deleted the sign-in: no new token for the retry.
+  clerk.noToken = true;
+  await tap("Delete account");
+  await confirmDeletion();
+  expect(accountBeingDeleted()).toBe("user_1");
+  expect(data.forgotten).toBe(0);
+});
+
+it("deletes nothing when Apple doesn't confirm the account's Apple ID", async () => {
+  clerk.signedIn = true;
+  const sent = deletionServer(async () =>
+    Response.json(
+      { error: { code: "invalid_request", message: "x" }, step: "apple" },
+      { status: 400 },
+    ),
+  );
+  await render();
+  await tap("Delete account");
+  await confirmDeletion();
+  expect(sent[0]?.body).toMatchObject({ appleAuthorizationCode: "apple-code" });
+  expect(data.forgotten).toBe(0);
+  expect(accountBeingDeleted()).toBeNull();
+  expect(text()).toContain("Try again with the Apple ID you use for Leve.");
 });
