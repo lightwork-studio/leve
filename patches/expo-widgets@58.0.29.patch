@@ -308,9 +308,10 @@ new file mode 100644
 index 0000000..e159e57
 --- /dev/null
 +++ b/ios/Widgets/LeveLiveActivityRest.swift
-@@ -0,0 +1,86 @@
+@@ -0,0 +1,106 @@
 +import ActivityKit
 +import Foundation
++import UserNotifications
 +
 +// Only the current timer's override lives here. Its opaque key changes on each in-app edit.
 +final class LeveRestOverride: @unchecked Sendable {
@@ -370,6 +371,7 @@ index 0000000..e159e57
 +      change.apply(to: &props)
 +      guard let encoded = Self.encode(props) else { return }
 +      LeveRestOverride.shared.store(change)
++      await LeveRestAlert.follow(change)
 +      let state = LiveActivityAttributes.ContentState(name: "LeveWorkout", props: encoded)
 +      await activity.update(ActivityContent(state: state, staleDate: change.staleDate))
 +      WidgetsEvents.shared.sendNotification(type: .userEvent, data: [
@@ -393,6 +395,24 @@ index 0000000..e159e57
 +      let state = LiveActivityAttributes.ContentState(name: "LeveWorkout", props: encoded)
 +      await activity.update(ActivityContent(state: state, staleDate: stale))
 +    }
++  }
++}
++
++// Leve's rest-end alert (apps/mobile/modules/leve-rest-alert) follows a rest changed here, since
++// Leve's JavaScript may not run again before iOS suspends it. Only an alert that is already
++// pending moves, so nothing is scheduled while the person has the alert turned off.
++enum LeveRestAlert {
++  static let id = "leve.rest"
++
++  static func follow(_ change: LeveRestChange) async {
++    let center = UNUserNotificationCenter.current()
++    let pending = await center.pendingNotificationRequests()
++    guard let alert = pending.first(where: { $0.identifier == id }) else { return }
++    center.removePendingNotificationRequests(withIdentifiers: [id])
++    let seconds = change.end / 1000 - Date().timeIntervalSince1970
++    guard change.end > 0, seconds > 0 else { return }
++    let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(1, seconds), repeats: false)
++    try? await center.add(UNNotificationRequest(identifier: id, content: alert.content, trigger: trigger))
 +  }
 +}
 diff --git a/ios/Widgets/WidgetLiveActivity.swift b/ios/Widgets/WidgetLiveActivity.swift

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Alert, AppState } from "react-native";
 import { saveRestAlertSetting, useRestAlertSetting } from "../data/rest-alert-setting.ts";
 import { useWorkoutPlayer } from "../ui/live/use-workout-player.ts";
@@ -11,6 +11,33 @@ const alerts = restAlertNative ? restAlerts(restAlertNative) : null;
 let offered = false;
 
 export const DENIED_MESSAGE = "Notifications for Leve are off in iOS Settings.";
+
+/** Whether notifications for Leve are off in iOS Settings, checked again whenever Leve returns. */
+export function useNotificationsBlocked() {
+  const [blocked, setBlocked] = useState(false);
+  useEffect(() => {
+    const native = restAlertNative;
+    if (!native) return;
+    let live = true;
+    const check = () => {
+      native.permission().then(
+        (status) => {
+          if (live) setBlocked(status === "denied");
+        },
+        () => {},
+      );
+    };
+    check();
+    const app = AppState.addEventListener("change", (state) => {
+      if (state === "active") check();
+    });
+    return () => {
+      live = false;
+      app.remove();
+    };
+  }, []);
+  return blocked;
+}
 
 export function RestAlertHost() {
   return alerts && restAlertNative ? <RestAlert /> : null;

@@ -4,3 +4,7 @@ export function RestAlertHost() {
 }
 
 export const DENIED_MESSAGE = "Notifications for Leve are off in iOS Settings.";
+
+export function useNotificationsBlocked() {
+  return false;
+}

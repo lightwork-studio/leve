@@ -30,7 +30,7 @@ import {
 import { saveShowTargets, useShowTargets } from "../src/data/show-targets.ts";
 import { canChangeTrackRir, useTrackRir } from "../src/data/track-rir.ts";
 import { restAlertNative } from "../src/rest-alert/native";
-import { DENIED_MESSAGE } from "../src/rest-alert/rest-alert-host";
+import { DENIED_MESSAGE, useNotificationsBlocked } from "../src/rest-alert/rest-alert-host";
 import { turnOnRestAlert } from "../src/rest-alert/rest-alerts.ts";
 import { pairingLinkFrom } from "../src/sync/own-server.ts";
 import { ownServerAvailable, syncEnabled } from "../src/sync/sync-config.ts";
@@ -128,6 +128,7 @@ export default function SettingsScreen() {
   const [trackRir, setTrackRir] = useTrackRir();
   const showTargets = useShowTargets();
   const restAlert = useRestAlertSetting();
+  const notificationsBlocked = useNotificationsBlocked();
   const appearance = useAppearanceSetting();
   const buildDetails = [
     `version ${VERSION}`,
@@ -282,8 +283,12 @@ export default function SettingsScreen() {
               {restAlertNative && (
                 <ToggleRow
                   label="Alert when rest ends"
-                  hint="On this iPhone and a paired Apple Watch"
-                  on={restAlert === "on"}
+                  hint={
+                    restAlert === "on" && notificationsBlocked
+                      ? DENIED_MESSAGE
+                      : "On this iPhone and a paired Apple Watch"
+                  }
+                  on={restAlert === "on" && !notificationsBlocked}
                   onChange={(on) => {
                     haptic.select();
                     if (!on) return saveRestAlertSetting(false);
