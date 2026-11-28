@@ -1,25 +1,21 @@
 import { useAuth, useUser } from "@clerk/expo";
-import {
-  AppleAuthenticationButton,
-  AppleAuthenticationButtonStyle,
-  AppleAuthenticationButtonType,
-} from "expo-apple-authentication";
 import { useEffect, useRef, useState } from "react";
-import { Platform, Text, View } from "react-native";
+import { Platform, Text } from "react-native";
 import { useAppData } from "../data/app-data.tsx";
 import { subscribeDevicePreferences } from "../data/device-preference-store.ts";
 import { ownServer, subscribeServerChoice } from "../sync/own-server-store.ts";
 import { ownServerAvailable, syncEnabled } from "../sync/sync-config.ts";
 import { setSignedOutOnPurpose, setSyncPaused, syncPaused } from "../sync/sync-preferences.ts";
 import { unsyncedChanges } from "../sync/sync-session.ts";
-import { radius, space, type } from "../theme.ts";
+import { space, type } from "../theme.ts";
 import { ActionRow, SettingRow } from "../ui/choice-row.tsx";
 import { Dialog } from "../ui/dialog.tsx";
 import { announce } from "../ui/focus.ts";
 import { Group } from "../ui/group.tsx";
 import { haptic } from "../ui/haptics.ts";
-import { themedStyles, useAppearance, useStyles } from "../ui/themed.ts";
+import { themedStyles, useStyles } from "../ui/themed.ts";
 import { signInProblem, useAppleSignIn } from "./apple-sign-in.ts";
+import { AppleSignInButton } from "./apple-sign-in-button.tsx";
 import { clerkPublishableKey } from "./clerk-key.ts";
 
 export { signInProblem };
@@ -178,33 +174,6 @@ function Account() {
   );
 }
 
-export function AppleSignInButton({ busy, onPress }: { busy: boolean; onPress: () => void }) {
-  const styles = useStyles(sheet);
-  const appearance = useAppearance();
-  return (
-    <View
-      style={[styles.signIn, busy && styles.waiting]}
-      pointerEvents={busy ? "none" : "auto"}
-      accessibilityElementsHidden={busy}
-    >
-      <AppleAuthenticationButton
-        buttonType={AppleAuthenticationButtonType.SIGN_IN}
-        buttonStyle={
-          appearance === "paper"
-            ? AppleAuthenticationButtonStyle.BLACK
-            : AppleAuthenticationButtonStyle.WHITE
-        }
-        cornerRadius={radius.button}
-        style={styles.appleButton}
-        onPress={onPress}
-      />
-    </View>
-  );
-}
-
 const sheet = themedStyles((c) => ({
   warning: { ...type.body, fontSize: 15, lineHeight: 22, color: c.fg2, marginTop: space.sm },
-  signIn: { padding: space.md },
-  appleButton: { height: 44, width: "100%" },
-  waiting: { opacity: 0.5 },
 }));
