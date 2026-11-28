@@ -205,6 +205,81 @@ describe("Hevy CSV import", () => {
     ).toEqual(["weight_duration", "weight_duration"]);
   });
 
+  it("ignores zeros Hevy writes in columns an exercise doesn't use", async () => {
+    const zeros = [
+      HEADER,
+      '"Pull","15 Nov 2026, 18:00","15 Nov 2026, 19:00","","Chest Supported Incline Row (Dumbbell)",,"",0,"warmup",20,6,,0,',
+      '"Pull","15 Nov 2026, 18:00","15 Nov 2026, 19:00","","Bench Press (Barbell)",,"",0,"normal",80,5,0,0,',
+    ].join("\n");
+    importHevyWorkouts(store, await prepareHevyImport(zeros));
+    const entries = store.list("workout_exercise").map((entry) => entry.content);
+    expect(entries).toMatchObject([
+      { exerciseType: "weight_reps" },
+      { exerciseId: "builtin:barbell-bench-press", exerciseType: "weight_reps" },
+    ]);
+    for (const set of store.list("workout_set")) {
+      expect(set.content).toMatchObject({ durationSeconds: null, distanceMeters: null });
+    }
+  });
+
+  it("names the row that brings in a measurement the exercise can't take", async () => {
+    const mixed = [
+      HEADER,
+      '"A","15 Nov 2026, 18:00","15 Nov 2026, 19:00","","Odd Carry",,"",0,"normal",20,10,,,',
+      '"A","15 Nov 2026, 18:00","15 Nov 2026, 19:00","","Odd Carry",,"",1,"normal",20,,0.1,,',
+    ].join("\n");
+    await expect(prepareHevyImport(mixed)).rejects.toThrow(
+      "Hevy CSV row 3 combines measurements Leve cannot import.",
+    );
+  });
+
+  it("finds Leve's exercise for a Hevy name with its equipment, only when the equipment agrees", async () => {
+    const names = [
+      "Lateral Raise (Dumbbell)",
+      "Leg Press (Machine)",
+      "Deadlift (Barbell)",
+      "Chin Up",
+      "Leg Press (Cable)",
+    ];
+    const rows = names.map(
+      (name, i) =>
+        `"Mix","15 Nov 2026, 18:00","15 Nov 2026, 19:00","","${name}",,"",${i},"normal",${name === "Chin Up" ? "" : 10},8,,,`,
+    );
+    const [workout] = await prepareHevyImport([HEADER, ...rows].join("\n"));
+    const ids = workout?.records
+      .filter((record) => record.kind === "workout_exercise")
+      .map((record) => record.content.exerciseId);
+    expect(ids?.slice(0, 4)).toEqual([
+      "builtin:lateral-raise",
+      "builtin:leg-press",
+      "builtin:deadlift",
+      "builtin:chin-up",
+    ]);
+    expect(ids?.[4]).toMatch(/^hevy:exercise:/);
+  });
+
+  it("leaves an imported custom exercise as the person changed it when a later export uses it", async () => {
+    const first = `${HEADER}\n"A","15 Nov 2026, 18:00","15 Nov 2026, 19:00","","Landmine Rotation",,"",0,"normal",20,10,,,`;
+    importHevyWorkouts(store, await prepareHevyImport(first));
+    const [custom] = store.list("custom_exercise");
+    if (!custom?.content) throw Error("Missing custom exercise");
+    store.put("custom_exercise", custom.id, { ...custom.content, name: "Landmine Twist" });
+
+    const later = `${first}\n"B","16 Nov 2026, 18:00","16 Nov 2026, 19:00","","Landmine Rotation",,"",0,"normal",25,10,,,`;
+    expect(importHevyWorkouts(store, await prepareHevyImport(later))).toEqual({
+      added: 1,
+      existing: 1,
+      deleted: 0,
+    });
+    expect(store.list("custom_exercise").map((exercise) => exercise.content?.name)).toEqual([
+      "Landmine Twist",
+    ]);
+    expect(store.list("workout_exercise").map((entry) => entry.content?.exerciseId)).toEqual([
+      custom.id,
+      custom.id,
+    ]);
+  });
+
   it("says what an import did", () => {
     expect(hevyImportSummary({ added: 3, existing: 0, deleted: 0 })).toBe("Added 3 workouts.");
     expect(hevyImportSummary({ added: 1, existing: 1, deleted: 0 })).toBe(

@@ -5,7 +5,6 @@ import {
   leveContract,
 } from "@leve/contract";
 import {
-  type BuiltInExercise,
   builtInExercise,
   type ExerciseType,
   exerciseLibrary,
@@ -19,9 +18,14 @@ import { type HevyExercise, HevyImportError, parseHevyCsv } from "./hevy-csv.ts"
 type RecordWrite = { kind: string; id: string; content: JsonObject };
 type WorkoutImport = { id: string; records: RecordWrite[] };
 
+/** Hevy's "Pull Up" and Leve's "Pull-up" are the same name. */
 function normalizedName(name: string) {
-  return name.normalize("NFKC").trim().toLowerCase().replace(/\s+/g, " ");
+  return name.normalize("NFKC").trim().toLowerCase().replace(/\s+/g, " ").replace(/\b-\b/g, " ");
 }
+
+/** Hevy's equipment label against the library's ("Kettlebell" and "Kettlebells"). */
+const sameEquipment = (a: string, b: string) =>
+  normalizedName(a).replace(/s$/, "") === normalizedName(b).replace(/s$/, "");
 
 /** Hevy names that differ from the name of the same exercise in Leve's library. */
 export const HEVY_ALIASES = new Map([
@@ -33,11 +37,24 @@ export const HEVY_ALIASES = new Map([
   ["overhead press (barbell)", "builtin:overhead-press"],
   ["triceps pushdown (cable)", "builtin:triceps-pushdown"],
   ["bicep curl (dumbbell)", "builtin:biceps-curl"],
+  ["bicep curl (barbell)", "builtin:barbell-curl"],
+  ["hammer curl (dumbbell)", "builtin:hammer-curls"],
+  ["bent over row (barbell)", "builtin:barbell-row"],
+  ["lat pulldown (cable)", "builtin:wide-grip-lat-pulldown"],
+  ["leg extension (machine)", "builtin:leg-extensions"],
+  ["hip thrust (barbell)", "builtin:barbell-hip-thrust"],
+  ["chest fly (dumbbell)", "builtin:dumbbell-flyes"],
+  ["lunge (dumbbell)", "builtin:dumbbell-lunges"],
+  ["triceps dip", "builtin:dips-triceps-version"],
   ["pull up", "builtin:pull-up"],
+  ["chin up", "builtin:chin-up"],
+  ["push up", "builtin:pushups"],
+  ["crunch", "builtin:crunches"],
   ["running (treadmill)", "builtin:running-treadmill"],
 ]);
 
-const exercisesByName = new Map<string, BuiltInExercise | null>();
+type LibraryExercise = (typeof exerciseLibrary)[number];
+const exercisesByName = new Map<string, LibraryExercise | null>();
 for (const exercise of exerciseLibrary) {
   for (const label of new Set([
     normalizedName(exercise.name),
@@ -53,7 +70,13 @@ function matchExercise(name: string) {
   const exact = exercisesByName.get(name);
   if (exact) return exact;
   const withEquipment = /^(.+) \((.+)\)$/.exec(name);
-  return withEquipment ? exercisesByName.get(`${withEquipment[2]} ${withEquipment[1]}`) : undefined;
+  if (!withEquipment) return undefined;
+  const [, base = "", equipment = ""] = withEquipment;
+  // "Deadlift (Barbell)" is "Barbell Deadlift"; "Leg Press (Machine)" is "Leg Press" on a machine.
+  const swapped = exercisesByName.get(`${equipment} ${base}`);
+  if (swapped) return swapped;
+  const plain = exercisesByName.get(base);
+  return plain && sameEquipment(plain.equipment, equipment) ? plain : undefined;
 }
 
 const METRIC_FIELDS = [
@@ -81,28 +104,30 @@ function inferType(metrics: ReadonlySet<SetMetric>, name: string, assisted: bool
 function identifyExercise(key: string, entries: readonly HevyExercise[]) {
   const builtIn = matchExercise(key);
   const sets = entries.flatMap((entry) => entry.sets);
-  const metrics = new Set<SetMetric>();
-  for (const set of sets) {
-    for (const [metric, field] of METRIC_FIELDS) {
-      const value = set[field];
-      // Some bodyweight sets put a zero in the weight column.
-      if (
-        value !== null &&
-        !(metric === "weight" && value === 0 && builtIn?.type === "bodyweight_reps")
-      )
-        metrics.add(metric);
+  /** Each measurement the sets give, with the CSV row that first gives it. */
+  const metrics = new Map<SetMetric, number>();
+  for (const entry of entries) {
+    for (const [index, set] of entry.sets.entries()) {
+      for (const [metric, field] of METRIC_FIELDS) {
+        // Hevy writes zeros in columns an exercise doesn't use, such as a duration of 0 on a
+        // strength set. Only a real value decides what the exercise measures.
+        const value = set[field];
+        if (value !== null && value !== 0 && !metrics.has(metric))
+          metrics.set(metric, entry.setRows[index] ?? entry.row);
+      }
     }
   }
   const assisted = /\bassisted\b/.test(key) || sets.some((set) => (set.weightKg ?? 0) < 0);
   const fits = (type: ExerciseType) =>
     (!assisted || type === "assisted_bodyweight") &&
-    [...metrics].every((metric) => usesMetric(type, metric));
+    [...metrics.keys()].every((metric) => usesMetric(type, metric));
   const name = entries[0]?.name ?? key;
   if (builtIn && fits(builtIn.type)) return { name, type: builtIn.type, builtIn };
-  const type = inferType(metrics, key, assisted);
+  const type = inferType(new Set(metrics.keys()), key, assisted);
   if (!fits(type)) {
+    const [, row] = [...metrics].find(([metric]) => !usesMetric(type, metric)) ?? [];
     throw new HevyImportError(
-      `Hevy CSV row ${entries[0]?.row} combines measurements Leve cannot import.`,
+      `Hevy CSV row ${row ?? entries[0]?.row} combines measurements Leve cannot import.`,
     );
   }
   return { name, type, builtIn: null };
@@ -249,10 +274,14 @@ export async function prepareHevyImport(csv: string): Promise<WorkoutImport[]> {
               ...set,
               workoutExerciseId: entryId,
               position: setIndex + 1,
+              // Measurements the type doesn't use stay empty, whatever the file wrote there.
               weightKg:
                 set.weightKg === null || !usesMetric(type, "weight")
                   ? null
                   : Math.abs(set.weightKg),
+              reps: usesMetric(type, "reps") ? set.reps : null,
+              distanceMeters: usesMetric(type, "distance") ? set.distanceMeters : null,
+              durationSeconds: usesMetric(type, "duration") ? set.durationSeconds : null,
               count: null,
               completedAt: workout.endedAt,
             },

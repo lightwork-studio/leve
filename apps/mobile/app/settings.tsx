@@ -158,7 +158,11 @@ export default function SettingsScreen() {
 
   /** Adds the workouts of a Hevy CSV export. Nothing is written unless the whole file reads. */
   const importFromHevy = async () => {
-    if (importRunning.current) return;
+    // Already importing: the press is felt, and the row already says so.
+    if (importRunning.current) {
+      haptic.tap();
+      return;
+    }
     importRunning.current = true;
     haptic.select();
     setNotice(null);
