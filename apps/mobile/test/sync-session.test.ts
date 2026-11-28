@@ -667,3 +667,35 @@ it("doesn't offer to move another account's data on the same server", async () =
   expect(store.syncState()).toMatchObject({ server: SERVER, account: "alice" });
   expect(session.status.prompt).toEqual({ kind: "switch", reason: "account" });
 });
+
+it("keeps the phone's data as its own once its account was deleted, and asks nothing else", async () => {
+  service = new SyncService({
+    storage: { account: (id) => storage.account(id), deleteAccount: async () => {} },
+  });
+  const store = await phone();
+  folder(store, "f-synced", "Synced");
+  const { session, events } = start(store, "alice");
+  await until(() => session.status.lastSynced !== null);
+  expect(store.syncState().account).toBe("alice");
+
+  await service.deleteAccount("alice");
+  // An edit made meanwhile: the next sync hears that the account is gone.
+  folder(store, "f-new", "Made after");
+  session.nudge();
+  await until(() => session.status.prompt !== null);
+  expect(session.status.prompt).toEqual({ kind: "deleted" });
+  expect(store.syncState()).toMatchObject({ account: null, server: null });
+  expect(store.list("routine_folder").map((record) => [record.id, record.status])).toEqual([
+    ["f-new", "pending"],
+    ["f-synced", "pending"],
+  ]);
+  expect(events.storeChanges).toBeGreaterThan(0);
+
+  // Nothing more goes out for the deleted account.
+  const sent = requests.length;
+  session.nudge();
+  session.setForeground(true);
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  expect(requests.length).toBe(sent);
+  expect(requests.at(-1)).toMatch(/^alice \/sync\//);
+});

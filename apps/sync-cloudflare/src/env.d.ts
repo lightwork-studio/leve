@@ -12,4 +12,10 @@ interface Env {
   MCP_RESOURCE_URL?: string;
   MCP_WRITES_ENABLED?: string;
   MCP_CLIENT_NAMES?: string;
+  // Deleting accounts (see account-deletion.ts): Clerk's Backend API and the Sign in with Apple key.
+  CLERK_SECRET_KEY?: string;
+  APPLE_TEAM_ID?: string;
+  APPLE_KEY_ID?: string;
+  APPLE_PRIVATE_KEY?: string;
+  APPLE_CLIENT_ID?: string;
 }

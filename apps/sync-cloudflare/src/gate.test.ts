@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  ACCOUNT_DELETE_PATH,
   ACCOUNT_HEADER,
   CLIENT_HEADER,
   type GateEnv,
@@ -170,6 +171,31 @@ describe("signing in to sync", () => {
       expect([name, response.status]).toEqual([name, 401]);
       expect(await response.json()).toMatchObject({ error: { code: "unauthorized" } });
       expect([name, reached]).toEqual([name, []]);
+    }
+  });
+
+  it("deletes only the signed-in user's own account, and only with a session token", async () => {
+    const { send, reached } = setup();
+    const response = await send(ACCOUNT_DELETE_PATH, await sign({}), {
+      [ACCOUNT_HEADER]: "user_bob",
+    });
+    expect(response.status).toBe(200);
+    expect(reached.map((r) => [r.account, r.header, r.auth])).toEqual([
+      ["user_alice", "user_alice", null],
+    ]);
+    const refused: Record<string, string | null> = {
+      "no token": null,
+      "operator token": ADMIN_TOKEN,
+      "access token": await sign({}, { header: { alg: "RS256", typ: "at+jwt" } }),
+      expired: await sign({ iat: now() - 120, nbf: now() - 120, exp: now() - 60 }),
+    };
+    for (const [name, token] of Object.entries(refused)) {
+      const attempt = setup();
+      const answer = await attempt.send(ACCOUNT_DELETE_PATH, token, {
+        [ACCOUNT_HEADER]: "user_bob",
+      });
+      expect([name, answer.status]).toEqual([name, 401]);
+      expect([name, attempt.reached]).toEqual([name, []]);
     }
   });
 

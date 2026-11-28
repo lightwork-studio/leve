@@ -66,6 +66,7 @@ export const ERROR_CODES = [
   "update_required",
   "cursor_reset",
   "unavailable",
+  "account_deleted",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 
@@ -337,7 +338,7 @@ export const RELEASE_RULES = {
   invalid: `${invalidReasons} not_deletable: a delete of a singleton kind.`,
   pull: "Changes after cursor in revision order. limit defaults to 100 (at most 500); waitMs (default 0, at most 25000) waits for a first change. Kinds the release doesn't have are skipped. A record the release can't represent is sent as unavailable. Save the page's cursor together with its changes.",
   errors:
-    "invalid_request (HTTP 400): malformed request. unauthorized (401). unsupported_release (400): the server doesn't accept this release; serverReleases lists those it does. update_required (426): no common release; update names the side to update. cursor_reset (409): download everything again after connecting. unavailable (503): try again later.",
+    "invalid_request (HTTP 400): malformed request. unauthorized (401). unsupported_release (400): the server doesn't accept this release; serverReleases lists those it does. update_required (426): no common release; update names the side to update. cursor_reset (409): download everything again after connecting. unavailable (503): try again later. account_deleted (410): the account was deleted and can't be used again; stop syncing with it, keep local data and sign out.",
 } as const;
 
 /** Shared-ID children are deleted only together with their owner. */

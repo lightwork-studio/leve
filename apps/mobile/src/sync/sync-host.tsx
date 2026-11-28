@@ -8,6 +8,11 @@ import { router, usePathname } from "expo-router";
 import { channel } from "expo-updates";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { AppState, Linking, Text, View } from "react-native";
+import {
+  accountDeletionState,
+  setAccountDeletionState,
+  subscribeAccountDeletion,
+} from "../account/account-deletion.ts";
 import { signInProblem, useAppleSignIn } from "../account/apple-sign-in.ts";
 import { buildInfo } from "../build-info.ts";
 import { useAppData } from "../data/app-data.tsx";
@@ -34,7 +39,9 @@ import {
 } from "./sync-config.ts";
 import { publishSyncNote, type SyncNote } from "./sync-note.tsx";
 import {
+  accountBeingDeleted,
   readLastSynced,
+  setAccountBeingDeleted,
   setSignedOutOnPurpose,
   setSyncPaused,
   signedOutOnPurpose,
@@ -287,9 +294,30 @@ function Sync({
   const latest = useRef({ getToken, change, reset, userId, logging });
   latest.current = { getToken, change, reset, userId, logging };
 
+  // An account deleted from this phone (or being deleted) never syncs again, even while Clerk still
+  // lists its session.
+  const [, setDeletions] = useState(0);
+  useEffect(() => subscribeAccountDeletion(() => setDeletions((n) => n + 1)), []);
+  const deletion = own ? null : accountDeletionState(userId);
+
+  // A deletion this phone asked for but never heard back about (no answer, or the app closed):
+  // once the account's sign-in is gone, so is the account, and the phone keeps its data. A sign-in
+  // that still works finds out from the server instead (see onStatus below).
+  useEffect(() => {
+    const asked = own ? null : accountBeingDeleted();
+    if (asked === null || !isLoaded || (isSignedIn && userId === asked)) return;
+    const data = store.syncState();
+    if (data.server === server && data.account === asked) {
+      latest.current.change((current) => current.forgetAccount());
+      writeLastSynced(null);
+    }
+    setAccountBeingDeleted(null);
+  }, [own, isLoaded, isSignedIn, userId, store, server]);
+
   useEffect(() => {
     // Paused: nothing syncs until the person resumes (every screen says so, see below).
-    if (!isLoaded || !isSignedIn || !userId || paused) return;
+    if (!isLoaded || !isSignedIn || !userId || paused || deletion !== null) return;
+    const started = Date.now();
     const running = new SyncSession({
       store,
       server,
@@ -307,6 +335,15 @@ function Sync({
       onStoreChanged: () => latest.current.change(() => undefined),
       onStatus: (next) => {
         setStatus(next);
+        // A deletion this phone never heard back about: the account was deleted after all (the
+        // session has forgotten it), or it synced again, so nothing was.
+        if (
+          !own &&
+          accountBeingDeleted() === userId &&
+          (next.prompt?.kind === "deleted" || (next.lastSynced ?? 0) >= started)
+        ) {
+          setAccountBeingDeleted(null);
+        }
         if (next.lastSynced !== null && next.lastSynced - lastWritten.current > SAVE_SYNCED_MS) {
           lastWritten.current = next.lastSynced;
           writeLastSynced(next.lastSynced);
@@ -332,7 +369,7 @@ function Sync({
       session.current = null;
       setStatus(IDLE);
     };
-  }, [isLoaded, isSignedIn, userId, store, server, paused]);
+  }, [isLoaded, isSignedIn, userId, store, server, paused, deletion, own]);
 
   // Every change to the data passes here; the session sends it shortly, if there is any to send.
   useEffect(() => {
@@ -360,6 +397,19 @@ function Sync({
 
   /** The question sync needs answered now, if any. */
   const ask = (): ReactNode => {
+    // Settings, where a deletion that didn't finish is finished, stays uncovered.
+    if (prompt?.kind === "deleted")
+      return pathname === SETTINGS ? null : (
+        <DeletedPrompt
+          onSignOut={() => {
+            // Stops this account's sync even if signing out fails (offline): nothing is left of it.
+            if (userId) setAccountDeletionState(userId, "deleted");
+            setSignedOutOnPurpose(false);
+            void signOut().catch(() => {});
+          }}
+          onSettings={() => router.push(SETTINGS)}
+        />
+      );
     if (prompt?.kind === "update") return <UpdatePrompt onPause={pause} />;
     if (prompt?.kind === "combine")
       return (
@@ -978,6 +1028,29 @@ function RefusedPrompt({
       <Body
         text={`${serverLabel(server)} no longer accepts this phone. Until you connect again with a new pairing link from whoever runs it, new workouts and changes stay only on this phone. If you can't connect now, pause sync until you can.`}
       />
+    </Dialog>
+  );
+}
+
+/**
+ * The account was deleted, here or on another phone. The phone has already kept its data as its
+ * own, so signing out is all that's left. Settings stays reachable, where a deletion that didn't
+ * finish (the sign-in still works) is finished.
+ */
+function DeletedPrompt({
+  onSignOut,
+  onSettings,
+}: {
+  onSignOut: () => void;
+  onSettings: () => void;
+}) {
+  return (
+    <Dialog
+      eyebrow="Account deleted"
+      confirm={{ label: "Sign out", onPress: onSignOut }}
+      footer={<Button rank="text" label="Open Settings" onPress={onSettings} />}
+    >
+      <Body text="This Leve account was deleted, so this phone no longer syncs. Its workouts stay on this phone." />
     </Dialog>
   );
 }

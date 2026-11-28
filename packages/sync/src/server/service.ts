@@ -45,9 +45,18 @@ export interface Reply<T> {
   writtenRevisions?: string;
 }
 
+/** Storage that can delete a whole account, for hosts where people delete their own account. */
+export interface AccountEraser {
+  /**
+   * Deletes everything stored for the account and makes sure it can't be opened or created again.
+   * Repeating it after an interruption finishes the deletion.
+   */
+  deleteAccount(accountId: string): Promise<void>;
+}
+
 export interface SyncServiceOptions {
   /** Opens account databases: files on a server, or the database of an account's Durable Object. */
-  storage: Pick<ServerStorage, "account">;
+  storage: Pick<ServerStorage, "account"> & Partial<AccountEraser>;
   /** Hosts whose storage opens missing accounts must provide a non-creating lookup for MCP. */
   existingAccount?: (accountId: string) => Promise<ServerAccountStore | null>;
   contract?: Contract;
@@ -79,6 +88,7 @@ const STATUS: Record<ErrorCode, number> = {
   update_required: 426,
   cursor_reset: 409,
   unavailable: 503,
+  account_deleted: 410,
 };
 
 export function errorReply(
@@ -93,6 +103,8 @@ export function errorReply(
 export class LineageChangedError extends Error {
   override name = "LineageChangedError";
 }
+
+const deletedReply = () => errorReply("account_deleted", "This account was deleted");
 
 const restoredReply = () =>
   errorReply("cursor_reset", "The account was restored or reset; download everything again");
@@ -124,13 +136,15 @@ type CheckAccess = () => Promise<void>;
 export class SyncService {
   readonly contract: Contract;
   readonly releases: readonly ReleaseId[];
-  readonly #storage: Pick<ServerStorage, "account">;
+  readonly #storage: SyncServiceOptions["storage"];
   readonly #existingAccount: (accountId: string) => Promise<ServerAccountStore | null>;
   readonly #now: () => Date;
   readonly #receiptDays: number;
   readonly #setTimer: NonNullable<SyncServiceOptions["setTimer"]>;
   readonly #randomId: () => string;
   readonly #waiting = new Map<string, Set<() => void>>();
+  /** Accounts deleted through this service: nothing reaches them again. */
+  readonly #deleted = new Set<string>();
 
   constructor(options: SyncServiceOptions) {
     this.#storage = options.storage;
@@ -167,6 +181,7 @@ export class SyncService {
         serverReleases: [...this.releases],
       });
     }
+    if (this.#deleted.has(accountId)) return deletedReply();
     const store = await this.#storage.account(accountId);
     if (checkAccess) await checkAccess();
     return {
@@ -205,6 +220,7 @@ export class SyncService {
     if (ids.size !== submissions.length) {
       return errorReply("invalid_request", "submission ids must be unique within a request");
     }
+    if (this.#deleted.has(accountId)) return deletedReply();
     const store = await this.#storage.account(accountId);
     if (lineage !== store.lineage()) {
       if (checkAccess) await checkAccess();
@@ -240,6 +256,7 @@ export class SyncService {
     options: SubmitOptions = {},
   ): Promise<SubmissionResult[]> {
     if (!this.releases.includes(release)) throw new Error(`Unsupported sync release ${release}`);
+    if (this.#deleted.has(accountId)) throw new Error("the account was deleted");
     const store = options.agent
       ? await this.#existingAccount(accountId)
       : await this.#storage.account(accountId);
@@ -499,6 +516,7 @@ export class SyncService {
     const issues = validate(releaseMessages(this.contract, release).pullRequest, body);
     if (issues.length > 0) return errorReply("invalid_request", describeIssues(issues));
     const request = body as { cursor: number; limit?: number; waitMs?: number; lineage: string };
+    if (this.#deleted.has(accountId)) return deletedReply();
     const store = await this.#storage.account(accountId);
     if (checkAccess) await checkAccess();
     if (request.lineage !== store.lineage()) return restoredReply();
@@ -511,6 +529,8 @@ export class SyncService {
     const waitMs = Math.min(request.waitMs ?? 0, MAX_WAIT_MS);
     if (waitMs > 0 && store.headRevision() === request.cursor) {
       await this.#waitForChange(accountId, waitMs);
+      // Deleted while this request waited: its database is gone.
+      if (this.#deleted.has(accountId)) return deletedReply();
       if (checkAccess) await checkAccess();
       if (request.lineage !== store.lineage()) return restoredReply();
     }
@@ -678,6 +698,24 @@ export class SyncService {
     }
     children("exercise_note_comment", "exercise_note");
     return rows;
+  }
+
+  /**
+   * Deletes the account the signed-in person asked to delete, with everything stored for it.
+   * Waiting downloads end, and later requests for it are answered `account_deleted`. Safe to
+   * repeat: a deletion that was interrupted finishes.
+   */
+  async deleteAccount(accountId: string): Promise<Reply<{ deleted: true }>> {
+    if (!this.#storage.deleteAccount) {
+      return errorReply("invalid_request", "this server doesn't delete accounts");
+    }
+    this.#deleted.add(accountId);
+    try {
+      await this.#storage.deleteAccount(accountId);
+    } finally {
+      this.#notify(accountId);
+    }
+    return { status: 200, body: { deleted: true } };
   }
 
   #waitForChange(accountId: string, ms: number): Promise<void> {

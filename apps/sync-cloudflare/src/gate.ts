@@ -32,6 +32,9 @@ export interface GateEnv {
   MCP_WRITES_ENABLED?: string;
 }
 
+/** Where the signed-in person deletes their own account (see account-object.ts). */
+export const ACCOUNT_DELETE_PATH = "/account/delete";
+
 /** Where MCP lives, and where its protected-resource metadata (RFC 9728) is published. */
 export const MCP_PATH = "/mcp";
 const METADATA_PATH = "/.well-known/oauth-protected-resource";
@@ -52,8 +55,8 @@ function sameSecret(given: string, expected: string): boolean {
 /**
  * Decides which account a request may touch and hands it to that account's Durable Object.
  *
- * - `/sync/*` needs a Clerk session token; the account is the signed-in user, so a user can only
- *   ever reach their own account.
+ * - `/sync/*` and `/account/delete` need a Clerk session token; the account is the signed-in
+ *   user, so a user can only ever reach (or delete) their own account.
  * - `/admin/*` needs the operator's token and names the account in `x-leve-account`.
  */
 export async function handleRequest(request: Request, env: GateEnv): Promise<Response> {
@@ -66,7 +69,7 @@ export async function handleRequest(request: Request, env: GateEnv): Promise<Res
   const authorization = request.headers.get("authorization");
 
   let account: string;
-  if (url.pathname.startsWith("/sync/")) {
+  if (url.pathname.startsWith("/sync/") || url.pathname === ACCOUNT_DELETE_PATH) {
     if (!env.CLERK_ISSUER || !env.CLERK_JWT_KEY) {
       console.error("sign-in is not configured: set CLERK_ISSUER and CLERK_JWT_KEY");
       return reply(503, errorReply("unavailable", "sync is temporarily unavailable").body);
