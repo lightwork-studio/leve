@@ -18,7 +18,6 @@ import { startNotingWorkoutHere, workoutHere } from "../data/workout-here.ts";
 import { gutter, radius, space, type } from "../theme.ts";
 import { Button } from "../ui/buttons.tsx";
 import { Dialog } from "../ui/dialog.tsx";
-import { Banner } from "../ui/notice.tsx";
 import { themedStyles, useAppearance, useStyles } from "../ui/themed.ts";
 import { ConflictPrompt } from "./conflict-prompt.tsx";
 import { type OwnServer, serverLabel } from "./own-server.ts";
@@ -34,7 +33,7 @@ import {
   syncEnabled,
   syncServerUrl,
 } from "./sync-config.ts";
-import { publishSyncNote, type SyncNote } from "./sync-note.tsx";
+import { publishSyncNote, SyncLine, type SyncNote } from "./sync-note.tsx";
 import {
   readLastSynced,
   setSignedOutOnPurpose,
@@ -123,6 +122,9 @@ function useElsewhereNote(
     restore && failedServer === server ? " Switching back didn't work. Try again." : "";
   return {
     label: "Not syncing",
+    tone: "problem",
+    tag: "Not syncing",
+    short: `data on ${label}`,
     message: `This phone's data belongs to ${label}. Changes stay on this phone until it syncs there again.${problem}`,
     action: restore
       ? {
@@ -148,11 +150,13 @@ function useElsewhereNote(
 function Disconnected({ local = false }: { local?: boolean }) {
   const { store } = useAppData();
   const boundNote = useElsewhereNote(store.syncState());
-  const note =
+  const note: SyncNote | null =
     boundNote ??
     (local
       ? {
           label: "Sync off",
+          tone: "quiet",
+          tag: "Sync off",
           message: "New workouts and changes stay on this phone.",
           action: {
             label: "Settings",
@@ -460,6 +464,9 @@ function Sync({
         question: null,
         note: {
           label: "Sync paused for now",
+          tone: "problem",
+          tag: "Paused",
+          short: "pause not saved",
           message:
             "Leve couldn't save the pause. Sync can restart when you reopen the app. Keep it open and try saving the pause again.",
           action: {
@@ -474,6 +481,8 @@ function Sync({
         question: null,
         note: {
           label: "Sync paused",
+          tone: "quiet",
+          tag: "Paused",
           message: "New workouts and changes stay on this phone until you resume.",
           action: {
             label: "Resume",
@@ -489,6 +498,9 @@ function Sync({
         question: null,
         note: {
           label: "Signed out",
+          tone: "quiet",
+          tag: "Signed out",
+          short: "not syncing",
           message: "New workouts and changes stay on this phone until you sign in.",
           action: {
             label: "Sign in",
@@ -505,6 +517,9 @@ function Sync({
         question: null,
         note: {
           label: "Sync",
+          tone: "quiet",
+          tag: "Sync waits",
+          short: question ? "question after this workout" : "waits for this workout",
           message: question
             ? "Sync has a question for you. It comes up once this workout ends."
             : "Sync is waiting for this workout to end.",
@@ -517,6 +532,9 @@ function Sync({
         question: null,
         note: {
           label: "Not syncing",
+          tone: "problem",
+          tag: "Not syncing",
+          short: "connect again",
           message: `${serverLabel(server)} no longer accepts this phone. Connect again in Settings using a new pairing link.`,
           action: { label: "Pause", hint: "Stops syncing until you resume it", onPress: pause },
         },
@@ -528,6 +546,9 @@ function Sync({
         question: null,
         note: {
           label: "Not syncing",
+          tone: "problem",
+          tag: "Not syncing",
+          short: "server needs update",
           message:
             "Your sync server needs an update before this phone can sync. Changes stay on this phone, and Leve checks again every hour.",
           action: { label: "Pause", hint: "Stops syncing until you resume it", onPress: pause },
@@ -545,6 +566,9 @@ function Sync({
         question: null,
         note: {
           label: "Not syncing",
+          tone: "problem",
+          tag: "Not synced",
+          short: `since ${day}`,
           message: `Changes haven't synced since ${day}. They're safe on this phone, and Leve keeps trying.`,
         },
       };
@@ -552,8 +576,8 @@ function Sync({
     return none;
   };
   const { question, note } = decide();
-  // Screens drawn above this one (the live workout and finishing it are native modals) show the
-  // same note themselves.
+  // The week bar shows it as a tag on the tabs, and screens drawn above this one (the live workout
+  // and finishing it are native modals) show the line themselves.
   useEffect(() => publishSyncNote(note));
   useEffect(() => () => publishSyncNote(null), []);
   if (question) return question;
@@ -1045,20 +1069,22 @@ function UpdatePrompt({ onPause }: { onPause: () => void }) {
   );
 }
 
+/** The tabs, where the week bar carries the note as a tag instead. */
+const TAB_PATHS = new Set(["/", "/history", "/progress"]);
+
 /**
- * Sync isn't running, or is waiting on the person: a note at the top of every screen, above the
- * app, until that changes. It can't be dismissed, only acted on.
+ * Sync isn't running, or is waiting on the person: a line at the top of every screen, above the
+ * app, until that changes (on the tabs, a tag in the week bar). It can't be dismissed, only acted
+ * on; tapping it shows the whole note.
  */
 function NotSyncing({ note }: { note: SyncNote }) {
   const styles = useStyles(sheet);
   const insets = useSafeAreaInsets();
+  const pathname = usePathname();
+  if (TAB_PATHS.has(pathname)) return null;
   return (
-    <View style={[styles.dock, { paddingTop: insets.top + space.sm }]}>
-      <Banner
-        label={note.label}
-        message={note.message}
-        {...(note.action ? { action: note.action } : {})}
-      />
+    <View style={[styles.dock, { paddingTop: insets.top }]}>
+      <SyncLine note={note} rule />
     </View>
   );
 }
@@ -1069,9 +1095,5 @@ const sheet = themedStyles((c) => ({
   apple: { marginTop: space.md, marginRight: 4 },
   appleButton: { height: 44, width: "100%" },
   waiting: { opacity: 0.5 },
-  dock: {
-    paddingHorizontal: gutter.group - 2,
-    paddingBottom: space.sm,
-    backgroundColor: c.bg,
-  },
+  dock: { paddingHorizontal: gutter.group, backgroundColor: c.bg },
 }));

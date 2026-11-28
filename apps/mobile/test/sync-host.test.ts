@@ -16,11 +16,13 @@ import {
 } from "../src/sync/own-server-store.ts";
 import { turnSyncOff } from "../src/sync/sync-destination.ts";
 import { SyncHost } from "../src/sync/sync-host.tsx";
+import { SyncLine, SyncTag, useSyncNote } from "../src/sync/sync-note.tsx";
 import {
   setSignedOutOnPurpose,
   setSyncPaused,
   signedOutOnPurpose,
   syncPaused,
+  writeLastSynced,
 } from "../src/sync/sync-preferences.ts";
 import type { SyncSessionOptions, SyncStatus } from "../src/sync/sync-session.ts";
 import { clerk } from "./support/clerk-expo.ts";
@@ -208,7 +210,8 @@ beforeEach(() => {
     unavailableRecords: false,
   });
   Object.assign(pending, { conflicts: [], settled: [], refuse: null });
-  Object.assign(route, { path: "/", pushed: [] });
+  // A pushed screen, where the note is a line at the top; the tabs show it in the week bar.
+  Object.assign(route, { path: "/exercises", pushed: [] });
   sessions.created.length = 0;
   keychain.reset();
   forgetServerChoice();
@@ -221,7 +224,13 @@ afterEach(async () => {
   host.remove();
 });
 
-const render = () => act(() => root.render(h(SyncHost)));
+const render = () => act(() => root.render(h("div", null, h(SyncHost), h(NoteDetails))));
+/** The whole note, as its details say it: the line on screen shows only its label and why. */
+function NoteDetails() {
+  const note = useSyncNote();
+  return note ? h("output", { "data-tone": note.tone }, note.message) : null;
+}
+
 /** Everything on screen, modals included. */
 const screen = () => document.body.textContent ?? "";
 
@@ -539,7 +548,7 @@ describe("a server the person paired", () => {
     await tap("Pause sync");
     await render();
     expect(syncPaused()).toBe(true);
-    expect(screen()).toContain("Sync paused");
+    expect(screen()).toContain("stay on this phone until you resume");
   });
 
   it("keeps never-synced data on the phone by pausing, not by leaving for another server", async () => {
@@ -1066,20 +1075,76 @@ it("asks once more, with a copy offered, before deleting work kept nowhere else"
 
 it("shows the same note on screens drawn above the app, such as the live workout", async () => {
   clerk.signedIn = true;
-  const { SyncNoteBanner } = await import("../src/sync/sync-note.tsx");
   const above = document.createElement("div");
   document.body.append(above);
   const modal = createRoot(above);
-  await act(async () => modal.render(h(SyncNoteBanner)));
+  await act(async () => modal.render(h(SyncLine)));
   expect(above.textContent).toBe("");
   data.workout = true;
   writeDevicePreference("sync.workoutHere", "w");
   await render();
   await report({ prompt: { kind: "update" } });
-  expect(above.textContent).toContain("It comes up once this workout ends.");
+  expect(above.textContent).toBe("Sync · question after this workout");
   data.workout = false;
   await render();
   expect(above.textContent).toBe("");
   await act(async () => modal.unmount());
   above.remove();
+});
+
+/** The tag the week bar shows on the tabs, drawn on its own beside SyncHost. */
+async function renderWithTag() {
+  await act(() =>
+    root.render(h("div", null, h("header", null, h(SyncTag)), h(SyncHost), h(NoteDetails))),
+  );
+}
+const tone = () => document.querySelector("output")?.getAttribute("data-tone");
+const header = () => document.querySelector("header")?.textContent ?? "";
+
+it("says it in the week bar on the tabs, not in a line over them, with the details a tap away", async () => {
+  route.path = "/";
+  writeLastSynced(Date.parse("2026-11-26T18:02:00"));
+  await renderWithTag();
+  await act(async () => setSyncPaused(true));
+  // The tag is all the tabs show: no line, no message.
+  expect(header()).toBe("Paused");
+  expect(tone()).toBe("quiet");
+  expect(screen()).not.toContain("Sync paused");
+  await tap("Sync paused. New workouts and changes stay on this phone until you resume.");
+  expect(screen()).toMatch(/Last synced (26 Nov|Nov 26), /);
+  await tap("Sync settings");
+  expect(route.pushed).toEqual(["/settings"]);
+  expect(screen()).not.toContain("Last synced");
+  await tap("Sync paused. New workouts and changes stay on this phone until you resume.");
+  await tap("Resume");
+  expect(syncPaused()).toBe(false);
+  expect(header()).toBe("");
+  expect(screen()).not.toContain("Last synced");
+});
+
+it("shows a line with the reason and the action on screens without the week bar", async () => {
+  await render();
+  await act(async () => setSyncPaused(true));
+  expect(screen()).toContain("Sync paused");
+  await tap("Resume");
+  expect(syncPaused()).toBe(false);
+  expect(screen()).toBe("");
+
+  // A problem says why, in red, with the whole message in its details.
+  data.unsynced = true;
+  await report({ lastSynced: Date.now() - 2 * 24 * 60 * 60_000 });
+  expect(screen()).toMatch(/^Not syncing · since (\d+ \w+|\w+ \d+)/);
+  expect(tone()).toBe("problem");
+  await tap("Not syncing");
+  expect(screen()).toContain("They're safe on this phone, and Leve keeps trying.");
+  expect(screen()).toContain("Sync settings");
+});
+
+it("offers no way to Settings from details opened on Settings", async () => {
+  route.path = "/settings";
+  await render();
+  await act(async () => setSyncPaused(true));
+  await tap("Sync paused");
+  expect(screen()).toContain("Resume");
+  expect(screen()).not.toContain("Sync settings");
 });

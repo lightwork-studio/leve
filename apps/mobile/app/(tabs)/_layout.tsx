@@ -10,6 +10,7 @@ import Animated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { useWeekBar } from "../../src/data/queries.ts";
+import { SyncTag } from "../../src/sync/sync-note.tsx";
 import { gutter, space, touch, type } from "../../src/theme.ts";
 import { haptic } from "../../src/ui/haptics.ts";
 import { HistoryIcon, ProgressIcon, TrainIcon } from "../../src/ui/icons.tsx";
@@ -164,7 +165,14 @@ function TabsWeekBar({
   const week = useWeekBar(useToday(), mode === "train");
   const folded = useFolded(folding);
   return (
-    <WeekBar week={week} mode={mode} action={useBarAction()} folded={folded} onHeight={onHeight} />
+    <WeekBar
+      week={week}
+      mode={mode}
+      action={useBarAction()}
+      status={<SyncTag />}
+      folded={folded}
+      onHeight={onHeight}
+    />
   );
 }
 

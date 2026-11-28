@@ -18,6 +18,7 @@ import { forgetDevicePreferences } from "../src/data/device-preference-store.ts"
 import { beginWorkout } from "../src/data/workout-actions.ts";
 import { noteWorkoutHere } from "../src/data/workout-here.ts";
 import { SyncHost } from "../src/sync/sync-host.tsx";
+import { useSyncNote } from "../src/sync/sync-note.tsx";
 import { clerk } from "./support/clerk-expo.ts";
 import { files } from "./support/expo-file-system.ts";
 
@@ -197,8 +198,14 @@ const routine = (bench: number[], squat?: number[], benchRest = 90): JsonObject 
 async function show(store: DeviceStore) {
   shown.store = store;
   shown.version += 1;
-  await act(async () => root.render(h(SyncHost)));
+  await act(async () => root.render(h("div", null, h(SyncHost), h(NoteDetails))));
 }
+/** The whole note, as its details say it: the line on screen shows only its label and why. */
+function NoteDetails() {
+  const note = useSyncNote();
+  return note ? h("output", null, note.message) : null;
+}
+
 const screen = () => document.body.textContent ?? "";
 
 it("syncs independent routine exercise changes together without a popup", async () => {
