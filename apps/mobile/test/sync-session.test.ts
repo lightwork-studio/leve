@@ -213,16 +213,19 @@ it("downloads an account onto an empty phone without asking", async () => {
 it("ignores a regular pull that is about to apply when sync stops, and downloads it on resume", async () => {
   await otherPhone("alice", "f-other");
   const store = await phone();
-  const sent = Promise.withResolvers<void>();
-  const release = Promise.withResolvers<void>();
+  let pullPending = false;
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   holdPull = () => {
-    sent.resolve();
-    return release.promise;
+    pullPending = true;
+    return held;
   };
   const { session, events } = start(store, "alice");
-  await sent.promise;
+  await until(() => pullPending);
   holdPull = null;
-  release.resolve();
+  release();
   // The transport accepts the reply, but the client has not yet applied it.
   await Promise.resolve();
   await Promise.resolve();
