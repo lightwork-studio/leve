@@ -1148,19 +1148,28 @@ function Screen() {
   return h("main", null, `starts at ${insets.top}`);
 }
 
-it("puts the line at the top of screens that don't show the note themselves, and moves them under it", async () => {
+it("puts the line over the top of screens that don't show the note themselves, and moves them down", async () => {
   const screens = (name: string) =>
     h(SyncLineLayout, { route: { name } }, h(Screen) as ReactElement);
   const main = () => document.querySelector("main")?.textContent;
+  const offset = () => {
+    const frame = document.querySelector<HTMLElement>("[data-testid=sync-line-screen]");
+    return frame ? getComputedStyle(frame).paddingTop : null;
+  };
   await act(() => root.render(h("div", null, h(SyncHost), screens("settings"))));
   expect(screen()).toBe("starts at 47");
+  expect(offset()).not.toBe("45px");
   await act(async () => setSyncPaused(true));
-  expect(screen()).toBe("Sync pausedResumestarts at 0");
-  // The screen is the same one, not a new one, with the line above it.
+  expect(screen()).toBe("starts at 47Sync pausedResume");
+  // Down by the line's height; the screen still pads for the status bar, and so do the sheets and
+  // dialogs it opens, which read the same insets.
+  expect(offset()).toBe("45px");
+  // The screen is the same one, not a new one.
   const shown = document.querySelector("main");
   await act(async () => setSyncPaused(false));
   expect(document.querySelector("main")).toBe(shown);
   expect(main()).toBe("starts at 47");
+  expect(offset()).not.toBe("45px");
 
   // The tabs say it in the week bar, and the live workout and its summary over their sheet.
   await act(async () => setSyncPaused(true));

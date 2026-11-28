@@ -1,7 +1,7 @@
 import { router, usePathname } from "expo-router";
 import { type ReactElement, useState, useSyncExternalStore } from "react";
 import { type StyleProp, Text, View, type ViewStyle } from "react-native";
-import { SafeAreaInsetsContext, useSafeAreaInsets } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { font, gutter, touch, type } from "../theme.ts";
 import { Button } from "../ui/buttons.tsx";
 import { Dialog } from "../ui/dialog.tsx";
@@ -233,8 +233,7 @@ const OWN_NOTE = new Set(["(tabs)", "workout/active", "workout/finish"]);
 
 /**
  * Every other screen, with the note as a line at its top while there is one, so it moves with the
- * screen. The screen under it then starts below the line rather than under the status bar. For
- * the stack's `screenLayout`.
+ * screen. For the stack's `screenLayout`.
  */
 export function SyncLineLayout({
   route,
@@ -247,28 +246,48 @@ export function SyncLineLayout({
   return <WithSyncLine>{children}</WithSyncLine>;
 }
 
+/** The line's height until it has been measured: a touch target and its hairline. */
+const LINE_ESTIMATE = touch + 1;
+
+/**
+ * The line covers the top of the screen, status bar included, and the screen moves down by the
+ * line's own height. The screen still pads for the status bar itself, so its header lands just
+ * under the line. The insets stay the window's, so sheets and dialogs it opens still clear the
+ * status bar.
+ */
 function WithSyncLine({ children }: { children: ReactElement }) {
   const styles = useStyles(sheet);
   const note = useSyncNote();
   const insets = useSafeAreaInsets();
+  const [line, setLine] = useState(LINE_ESTIMATE);
   // The same tree with or without the line, so the screen keeps its state when one comes or goes.
   return (
     <View style={styles.screen}>
+      <View testID="sync-line-screen" style={[styles.screen, note ? { paddingTop: line } : null]}>
+        {children}
+      </View>
       {note ? (
         <View style={[styles.dock, { paddingTop: insets.top }]}>
-          <SyncLine note={note} rule />
+          <View onLayout={(event) => setLine(event.nativeEvent.layout.height)}>
+            <SyncLine note={note} rule />
+          </View>
         </View>
       ) : null}
-      <SafeAreaInsetsContext.Provider value={note ? { ...insets, top: 0 } : insets}>
-        <View style={styles.screen}>{children}</View>
-      </SafeAreaInsetsContext.Provider>
     </View>
   );
 }
 
 const sheet = themedStyles((c) => ({
   screen: { flex: 1 },
-  dock: { paddingHorizontal: gutter.group, backgroundColor: c.bg },
+  dock: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 1,
+    paddingHorizontal: gutter.group,
+    backgroundColor: c.bg,
+  },
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: c.alert },
   dotQuiet: { backgroundColor: "transparent", borderWidth: 1.5, borderColor: c.fg3 },
   problemText: { color: c.alert },
