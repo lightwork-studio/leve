@@ -236,8 +236,7 @@ export function parseHevyCsv(csv: string): HevyWorkout[] {
     if (!workout || key !== lastWorkoutKey) {
       if (title.length > LIMITS.titleLength)
         throw rowError(rowNumber, "a workout title that is too long");
-      if (description.length > LIMITS.noteLength)
-        throw rowError(rowNumber, "a workout description that is too long");
+      // A description longer than one note becomes several (see hevy-import.ts).
       const started = date(start, rowNumber, "start time");
       const ended = date(end, rowNumber, "end time");
       if (ended.timestamp < started.timestamp)
@@ -284,8 +283,6 @@ export function parseHevyCsv(csv: string): HevyWorkout[] {
     }
     if (name.length > LIMITS.titleLength)
       throw rowError(rowNumber, "an exercise name that is too long");
-    if (notes.length > LIMITS.noteLength)
-      throw rowError(rowNumber, "exercise notes that are too long");
     if (
       !exercise ||
       name !== exercise.name ||
@@ -319,7 +316,8 @@ export interface HevyCsvWorkout {
   exercises: { name: string; notes: string; supersetId: number | null; sets: HevySet[] }[];
 }
 
-const MONTH_NAMES = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(" ");
+/** The English month abbreviations Hevy writes, which every reading of the file understands. */
+const WRITTEN_MONTHS = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(" ");
 const SET_TYPE_NAMES: Record<HevySet["type"], string> = {
   normal: "normal",
   warmup: "warmup",
@@ -327,12 +325,39 @@ const SET_TYPE_NAMES: Record<HevySet["type"], string> = {
   drop: "dropset",
 };
 
-/** Hevy's clock time in the device's zone, to the minute, as `parseHevyCsv` reads it back. */
-function hevyTime(timestamp: string) {
+/** The clock time in the device's zone, to the minute, held in a Date's UTC fields. */
+function wallClock(timestamp: string) {
   const time = new Date(timestamp);
+  return new Date(
+    Date.UTC(
+      time.getFullYear(),
+      time.getMonth(),
+      time.getDate(),
+      time.getHours(),
+      time.getMinutes(),
+    ),
+  );
+}
+
+/** Hevy's clock time, as `parseHevyCsv` reads it back. */
+function hevyTime(clock: Date) {
   const pad = (value: number) => String(value).padStart(2, "0");
-  const month = MONTH_NAMES[time.getMonth()];
-  return `${time.getDate()} ${month} ${time.getFullYear()}, ${pad(time.getHours())}:${pad(time.getMinutes())}`;
+  const month = WRITTEN_MONTHS[clock.getUTCMonth()];
+  return `${clock.getUTCDate()} ${month} ${clock.getUTCFullYear()}, ${pad(clock.getUTCHours())}:${pad(clock.getUTCMinutes())}`;
+}
+
+/**
+ * A workout's start and end clock times. When the clocks went back during it, the end reads
+ * earlier than the start; it then becomes the start plus the workout's length.
+ */
+function workoutTimes(startedAt: string, endedAt: string) {
+  const start = wallClock(startedAt);
+  let end = wallClock(endedAt);
+  if (end < start) {
+    const minutes = Math.floor((Date.parse(endedAt) - Date.parse(startedAt)) / 60_000);
+    end = new Date(start.getTime() + Math.max(0, minutes) * 60_000);
+  }
+  return [hevyTime(start), hevyTime(end)];
 }
 
 /** A plain decimal: no exponent, and no float noise from unit conversion. */
@@ -370,8 +395,7 @@ export function formatHevyCsv(
   for (const workout of workouts) {
     const head = [
       spreadsheetText(workout.title),
-      hevyTime(workout.startedAt),
-      hevyTime(workout.endedAt),
+      ...workoutTimes(workout.startedAt, workout.endedAt),
       spreadsheetText(workout.description),
     ];
     const row = (cells: string[]) => lines.push([...head, ...cells].map(quoted).join(","));

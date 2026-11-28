@@ -8,6 +8,7 @@ import {
   builtInExercise,
   type ExerciseType,
   exerciseLibrary,
+  LIMITS,
   type SetMetric,
   usesMetric,
 } from "@leve/core";
@@ -19,7 +20,7 @@ type RecordWrite = { kind: string; id: string; content: JsonObject };
 type WorkoutImport = { id: string; records: RecordWrite[] };
 
 /** Hevy's "Pull Up" and Leve's "Pull-up" are the same name. */
-function normalizedName(name: string) {
+export function normalizedName(name: string) {
   return name.normalize("NFKC").trim().toLowerCase().replace(/\s+/g, " ").replace(/\b-\b/g, " ");
 }
 
@@ -64,7 +65,8 @@ for (const exercise of exerciseLibrary) {
   }
 }
 
-function matchExercise(name: string) {
+/** The library exercise a normalised name stands for, if any. */
+export function matchExercise(name: string) {
   const alias = HEVY_ALIASES.get(name);
   if (alias) return builtInExercise(alias);
   const exact = exercisesByName.get(name);
@@ -86,8 +88,15 @@ const METRIC_FIELDS = [
   ["duration", "durationSeconds"],
 ] as const;
 
+/** Floors and steps go in the reps column, as Hevy writes them for its stair machines. */
+const takes = (type: ExerciseType, metric: SetMetric) =>
+  usesMetric(type, metric) || (metric === "reps" && usesMetric(type, "count"));
+
 function inferType(metrics: ReadonlySet<SetMetric>, name: string, assisted: boolean): ExerciseType {
   const weight = metrics.has("weight");
+  // Only a count of floors or steps comes with a time and nothing else.
+  if (metrics.has("reps") && metrics.has("duration") && !weight && !metrics.has("distance"))
+    return /\bsteps?\b/.test(name) ? "steps_duration" : "floors_duration";
   if (metrics.has("reps") || !(metrics.has("distance") || metrics.has("duration"))) {
     if (assisted) return "assisted_bodyweight";
     if (!weight) return "bodyweight_reps";
@@ -120,7 +129,7 @@ function identifyExercise(key: string, entries: readonly HevyExercise[]) {
   const assisted = /\bassisted\b/.test(key) || sets.some((set) => (set.weightKg ?? 0) < 0);
   const fits = (type: ExerciseType) =>
     (!assisted || type === "assisted_bodyweight") &&
-    [...metrics.keys()].every((metric) => usesMetric(type, metric));
+    [...metrics.keys()].every((metric) => takes(type, metric));
   const name = entries[0]?.name ?? key;
   if (builtIn && fits(builtIn.type)) return { name, type: builtIn.type, builtIn };
   const type = inferType(new Set(metrics.keys()), key, assisted);
@@ -146,7 +155,7 @@ function firstUnfitRow(key: string, entries: readonly HevyExercise[]) {
       const type = inferType(metrics, key, assisted);
       const fits =
         (!assisted || type === "assisted_bodyweight") &&
-        [...metrics].every((metric) => usesMetric(type, metric));
+        [...metrics].every((metric) => takes(type, metric));
       if (!fits) return entry.setRows[index] ?? entry.row;
     }
   }
@@ -159,6 +168,25 @@ function note(
   content: JsonObject,
 ): RecordWrite {
   return { kind, id, content: { ...content, pinned: false, agent: null } };
+}
+
+/**
+ * A note as Leve keeps it. Text longer than one note, such as several notes a Leve export joined
+ * with blank lines, becomes several notes split at blank lines. Short text stays one note, so its
+ * id doesn't change.
+ */
+function noteParts(text: string): string[] {
+  if (!text.trim()) return [];
+  if (text.length <= LIMITS.noteLength) return [text];
+  const parts: string[] = [];
+  for (const paragraph of text.split("\n\n")) {
+    const last = parts.at(-1);
+    if (last !== undefined && last.length + 2 + paragraph.length <= LIMITS.noteLength)
+      parts[parts.length - 1] = `${last}\n\n${paragraph}`;
+    else parts.push(paragraph);
+  }
+  // A paragraph longer than a note stays whole, and checkRecord names its row.
+  return parts.filter((part) => part.trim());
 }
 
 /** Stops at the first value Leve can't store, naming the CSV row it came from. */
@@ -240,11 +268,11 @@ export async function prepareHevyImport(csv: string): Promise<WorkoutImport[]> {
       },
       workout.row,
     );
-    if (workout.description.trim()) {
+    for (const [part, text] of noteParts(workout.description).entries()) {
       add(
-        note("workout_note", `${id}:note`, {
+        note("workout_note", `${id}:note${part ? `:${part + 1}` : ""}`, {
           workoutId: id,
-          text: workout.description,
+          text,
           createdAt: workout.endedAt,
         }),
         workout.row,
@@ -274,12 +302,12 @@ export async function prepareHevyImport(csv: string): Promise<WorkoutImport[]> {
         },
         exercise.row,
       );
-      if (exercise.notes.trim()) {
+      for (const [part, text] of noteParts(exercise.notes).entries()) {
         add(
-          note("exercise_note", `${entryId}:note`, {
+          note("exercise_note", `${entryId}:note${part ? `:${part + 1}` : ""}`, {
             exerciseId: identified.id,
             workoutId: id,
-            text: exercise.notes,
+            text,
             createdAt: workout.endedAt,
           }),
           exercise.row,
@@ -302,7 +330,7 @@ export async function prepareHevyImport(csv: string): Promise<WorkoutImport[]> {
               reps: usesMetric(type, "reps") ? set.reps : null,
               distanceMeters: usesMetric(type, "distance") ? set.distanceMeters : null,
               durationSeconds: usesMetric(type, "duration") ? set.durationSeconds : null,
-              count: null,
+              count: usesMetric(type, "count") ? set.reps : null,
               completedAt: workout.endedAt,
             },
           },

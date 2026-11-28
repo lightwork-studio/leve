@@ -207,6 +207,7 @@ function history(target: DeviceStore) {
                 reps: set.reps,
                 distanceMeters: set.distanceMeters === null ? null : round(set.distanceMeters, 1),
                 durationSeconds: set.durationSeconds,
+                count: set.count,
                 rpe: set.rpe,
               })),
           };
@@ -590,5 +591,162 @@ describe("workout CSV export", () => {
       .map((exercise) => exercise.name);
     // The import reads "assisted" in a name as assistance, which this bodyweight exercise isn't.
     expect(lost).toEqual(["Assisted Pistol Squat"]);
+  });
+
+  it("keeps exercises with the same name apart, renaming the custom ones", async () => {
+    const entry = (exerciseId: string, name: string, type: ExerciseType, set: SetInput) => ({
+      exerciseId,
+      name,
+      type,
+      sets: [set],
+    });
+    store.putMany([
+      // An archived exercise and the one made in its place, of another type.
+      customExercise("custom-carry-a", "Bucket Carry", "weight_distance"),
+      customExercise("custom-carry-b", "Bucket Carry", "duration"),
+      // A custom exercise named like a library one.
+      customExercise("custom-plank", "Plank", "weight_reps"),
+      ...workoutRecords({
+        id: "w-names",
+        title: "Same names",
+        start: new Date(2026, 10, 27, 18, 0),
+        minutes: 30,
+        entries: [
+          entry("builtin:plank", "Plank", "duration", { durationSeconds: 60 }),
+          entry("custom-plank", "Plank", "weight_reps", { weightKg: 10, reps: 12 }),
+          entry("custom-carry-a", "Bucket Carry", "weight_distance", {
+            weightKg: 30,
+            distanceMeters: 40,
+          }),
+          entry("custom-carry-b", "Bucket Carry", "duration", { durationSeconds: 90 }),
+        ],
+      }),
+    ]);
+    const { fresh, result } = await roundTrip(exportWorkouts(store).csv);
+    expect(result.added).toBe(1);
+    const [workout] = history(fresh);
+    expect(workout?.entries.map((entry) => entry.exercise)).toEqual([
+      "builtin:plank",
+      "custom: Plank (custom) (weight_reps)",
+      "custom: Bucket Carry (weight_distance)",
+      "custom: Bucket Carry (custom) (duration)",
+    ]);
+    const sets = (target: DeviceStore) => history(target)[0]?.entries.map((entry) => entry.sets);
+    expect(sets(fresh)).toEqual(sets(store));
+  });
+
+  it("brings back notes that are longer together than one note", async () => {
+    const long = (letter: string) => `${letter.repeat(5999)}.`;
+    store.putMany([
+      customExercise("custom-landmine", "Landmine Rotation", "weight_reps"),
+      ...workoutRecords({
+        id: "w-notes",
+        title: "Long notes",
+        start: new Date(2026, 10, 27, 7, 0),
+        minutes: 30,
+        notes: [long("a"), long("b"), "short"],
+        entries: [
+          {
+            exerciseId: "custom-landmine",
+            name: "Landmine Rotation",
+            type: "weight_reps",
+            note: long("c"),
+            sets: [{ weightKg: 20, reps: 10 }],
+          },
+        ],
+      }),
+      {
+        kind: "exercise_note",
+        id: "w-notes-e1-note-2",
+        content: {
+          exerciseId: "custom-landmine",
+          workoutId: "w-notes",
+          text: long("d"),
+          pinned: false,
+          createdAt: "2026-11-28T00:00:00.000Z",
+          agent: null,
+        },
+      },
+    ]);
+    const { fresh } = await roundTrip(exportWorkouts(store).csv);
+    expect(history(fresh)).toEqual(history(store));
+    expect(fresh.list("workout_note").map((note) => String(note.content?.text).length)).toEqual([
+      6000,
+      6000 + 2 + 5,
+    ]);
+    expect(fresh.list("exercise_note")).toHaveLength(2);
+  });
+
+  it("carries floors and steps in the reps column", async () => {
+    store.putMany([
+      customExercise("custom-floors", "Tower Climb", "floors_duration"),
+      customExercise("custom-steps", "Tower Steps", "steps_duration"),
+      ...workoutRecords({
+        id: "w-stairs",
+        title: "Stairs",
+        start: new Date(2026, 10, 27, 12, 0),
+        minutes: 45,
+        entries: [
+          {
+            exerciseId: "builtin:stairmaster",
+            name: "Stairmaster",
+            type: "floors_duration",
+            sets: [{ count: 50, durationSeconds: 600 }],
+          },
+          {
+            exerciseId: "custom-floors",
+            name: "Tower Climb",
+            type: "floors_duration",
+            sets: [{ count: 30, durationSeconds: 420 }],
+          },
+          {
+            exerciseId: "custom-steps",
+            name: "Tower Steps",
+            type: "steps_duration",
+            sets: [{ count: 1200, durationSeconds: 900 }],
+          },
+        ],
+      }),
+    ]);
+    const { csv } = exportWorkouts(store);
+    expect([...csvRows(csv)].slice(1).map((row) => row.fields[10])).toEqual(["50", "30", "1200"]);
+    const { fresh } = await roundTrip(csv);
+    expect(history(fresh)).toEqual(history(store));
+  });
+
+  it("writes a workout the clocks went back during so that it imports", async () => {
+    const zone = process.env.TZ;
+    process.env.TZ = "Europe/Berlin";
+    try {
+      // 02:30 summer time to 02:10 winter time on the night the clocks go back.
+      const start = new Date("2026-10-25T00:30:00.000Z");
+      expect(start.getHours()).toBe(2);
+      store.putMany(
+        workoutRecords({
+          id: "w-clock",
+          title: "Night shift",
+          start,
+          minutes: 40,
+          entries: [
+            {
+              exerciseId: "builtin:plank",
+              name: "Plank",
+              type: "duration",
+              sets: [{ durationSeconds: 60 }],
+            },
+          ],
+        }),
+      );
+      const { csv } = exportWorkouts(store);
+      const [, row] = [...csvRows(csv)].map((line) => line.fields);
+      expect([row?.[1], row?.[2]]).toEqual(["25 Oct 2026, 02:30", "25 Oct 2026, 03:10"]);
+      const { fresh, result } = await roundTrip(csv);
+      expect(result.added).toBe(1);
+      const [workout] = history(fresh);
+      expect(workout?.startedAt).toBe(minute(start.toISOString()));
+    } finally {
+      if (zone === undefined) delete process.env.TZ;
+      else process.env.TZ = zone;
+    }
   });
 });
