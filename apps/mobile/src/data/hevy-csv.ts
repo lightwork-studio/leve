@@ -18,7 +18,9 @@ export interface HevyExercise {
   notes: string;
   supersetId: number | null;
   sets: HevySet[];
+  /** The CSV row of the entry's first line, and of each set. */
   row: number;
+  setRows: number[];
 }
 
 export interface HevyWorkout {
@@ -28,6 +30,7 @@ export interface HevyWorkout {
   endedAt: string;
   description: string;
   exercises: HevyExercise[];
+  row: number;
 }
 
 /** Read a comma-delimited export, including doubled quotes and newlines inside quoted fields. */
@@ -128,6 +131,8 @@ function setType(value: string, row: number): HevySet["type"] {
       return "warmup";
     case "failure":
       return "failure";
+    // Hevy writes "dropset"; "drop_set" is accepted as well.
+    case "dropset":
     case "drop_set":
       return "drop";
     default:
@@ -178,6 +183,7 @@ export function parseHevyCsv(csv: string): HevyWorkout[] {
         startedAt: started.timestamp,
         endedAt: ended.timestamp,
         exercises: [],
+        row: rowNumber,
       };
       workouts.push(workout);
       lastWorkoutKey = key;
@@ -220,7 +226,7 @@ export function parseHevyCsv(csv: string): HevyWorkout[] {
       supersetId !== exercise.supersetId ||
       (setIndex !== null && setIndex <= lastSetIndex)
     ) {
-      exercise = { name, notes, supersetId, sets: [], row: rowNumber };
+      exercise = { name, notes, supersetId, sets: [], row: rowNumber, setRows: [] };
       workout.exercises.push(exercise);
       lastSetIndex = -1;
     } else if (notes.trim() && !exercise.notes.trim()) {
@@ -228,7 +234,10 @@ export function parseHevyCsv(csv: string): HevyWorkout[] {
     } else if (notes.trim() && notes !== exercise.notes) {
       throw rowError(rowNumber, "different notes for the same exercise entry");
     }
-    if (hasSet) exercise.sets.push({ ...set, type: setType(get("set_type"), rowNumber) });
+    if (hasSet) {
+      exercise.sets.push({ ...set, type: setType(get("set_type"), rowNumber) });
+      exercise.setRows.push(rowNumber);
+    }
     lastSetIndex = setIndex ?? lastSetIndex + 1;
   }
   if (workouts.length === 0) throw new HevyImportError("This Hevy CSV has no workouts to import.");

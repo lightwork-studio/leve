@@ -21,7 +21,7 @@ const EXPORT = [
   '"Push Day","15 Nov 2026, 18:00","15 Nov 2026, 19:05","Felt strong, ""easy"" day","Bench Press (Barbell)",,"",2,"failure",80,4,,,10',
   '"Push Day","15 Nov 2026, 18:00","15 Nov 2026, 19:05","Felt strong, ""easy"" day","Pull Up",0,"",0,"normal",0,12,,,',
   '"Push Day","15 Nov 2026, 18:00","15 Nov 2026, 19:05","Felt strong, ""easy"" day","Landmine Rotation",0,"",0,"normal",20,10,,,',
-  '"Push Day","15 Nov 2026, 18:00","15 Nov 2026, 19:05","Felt strong, ""easy"" day","Landmine Rotation",0,"",1,"drop_set",15,12,,,',
+  '"Push Day","15 Nov 2026, 18:00","15 Nov 2026, 19:05","Felt strong, ""easy"" day","Landmine Rotation",0,"",1,"dropset",15,12,,,',
   '"Run","16 Nov 2026, 07:30","16 Nov 2026, 08:00","","Running (Treadmill)",,"",0,"normal",,,5.2,1800,',
 ].join("\r\n");
 
@@ -40,7 +40,7 @@ const visible = () =>
 describe("Hevy CSV import", () => {
   it("adds each workout with its exercises, sets and notes", async () => {
     const result = importHevyWorkouts(store, await prepareHevyImport(EXPORT));
-    expect(result).toEqual({ added: 2, skipped: 0 });
+    expect(result).toEqual({ added: 2, existing: 0, deleted: 0 });
 
     const push = "hevy:workout:202611151800:1";
     expect(store.get("workout", push)?.content).toMatchObject({
@@ -112,7 +112,8 @@ describe("Hevy CSV import", () => {
 
     expect(importHevyWorkouts(store, await prepareHevyImport(EXPORT))).toEqual({
       added: 0,
-      skipped: 2,
+      existing: 1,
+      deleted: 1,
     });
     expect(store.get("workout", "hevy:workout:202611160730:1")).toMatchObject({ deleted: true });
     expect(visible()).toEqual(
@@ -178,13 +179,39 @@ describe("Hevy CSV import", () => {
     expect(entries.map((entry) => entry.content.exerciseId)).toEqual([...HEVY_ALIASES.values()]);
   });
 
-  it("says what an import did", () => {
-    expect(hevyImportSummary({ added: 3, skipped: 0 })).toBe("Added 3 workouts.");
-    expect(hevyImportSummary({ added: 1, skipped: 1 })).toBe(
-      "Added 1 workout. 1 workout was already there.",
+  it("names the row of a value outside what Leve stores, before writing anything", async () => {
+    const heavy = `${HEADER}\n"Push","17 Nov 2026, 07:30","17 Nov 2026, 08:00","","Bench Press (Barbell)",,"",0,"normal",80,5,,,\n"Push","17 Nov 2026, 07:30","17 Nov 2026, 08:00","","Bench Press (Barbell)",,"",1,"normal",2500,5,,,`;
+    await expect(prepareHevyImport(heavy)).rejects.toThrow(
+      "Hevy CSV row 3 has a value Leve can't store (weightKg).",
     );
-    expect(hevyImportSummary({ added: 0, skipped: 4 })).toBe(
-      "All 4 workouts in this file are already in Leve.",
+    expect(visible()).toEqual([]);
+  });
+
+  it("stores every entry of a custom exercise with one type that fits all its sets", async () => {
+    const carries = [
+      HEADER,
+      '"A","15 Nov 2026, 18:00","15 Nov 2026, 19:00","","Sled Hold",,"",0,"normal",,,,30,',
+      '"B","16 Nov 2026, 18:00","16 Nov 2026, 19:00","","Sled Hold",,"",0,"normal",40,,,45,',
+    ].join("\n");
+    importHevyWorkouts(store, await prepareHevyImport(carries));
+    expect(store.list("custom_exercise").map((exercise) => exercise.content?.type)).toEqual([
+      "weight_duration",
+    ]);
+    expect(
+      store
+        .list("workout_exercise")
+        .map((entry) => entry.content?.exerciseType)
+        .sort(),
+    ).toEqual(["weight_duration", "weight_duration"]);
+  });
+
+  it("says what an import did", () => {
+    expect(hevyImportSummary({ added: 3, existing: 0, deleted: 0 })).toBe("Added 3 workouts.");
+    expect(hevyImportSummary({ added: 1, existing: 1, deleted: 0 })).toBe(
+      "Added 1 workout. 1 workout was already in Leve.",
+    );
+    expect(hevyImportSummary({ added: 0, existing: 4, deleted: 1 })).toBe(
+      "No new workouts in this file. 4 workouts were already in Leve. 1 workout was deleted in Leve, so it stays deleted.",
     );
   });
 });

@@ -3,7 +3,7 @@ import {
   type Contract,
   clientContract,
   compareReleases,
-  HEVY_WORKOUT_ID_PREFIX,
+  HEVY_ID_PREFIX,
   type JsonObject,
   jsonBytes,
   jsonEqual,
@@ -757,9 +757,9 @@ export class DeviceStore {
     const row = this.#row(kind, id);
     if (!row) return;
     const inFlight = this.#submissionFor(kind, id);
-    // A different device can import the same workout independently. Retain its deletion even
-    // when the local copy never synced, so retrying the import cannot bring it back.
-    const imported = kind === "workout" && id.startsWith(HEVY_WORKOUT_ID_PREFIX);
+    // Another phone can import the same file and create this record under the same id. Keep its
+    // deletion even when the local copy never synced, so that import cannot bring it back.
+    const imported = id.startsWith(HEVY_ID_PREFIX);
     if (!this.#knownToServer(row) && !inFlight) {
       if (!imported) {
         this.#purge(kind, id);

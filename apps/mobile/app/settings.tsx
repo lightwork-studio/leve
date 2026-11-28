@@ -161,7 +161,15 @@ export default function SettingsScreen() {
     if (importRunning.current) return;
     importRunning.current = true;
     haptic.select();
+    setNotice(null);
     setImporting(true);
+    /** The outcome takes the banner's place, over an earlier problem saving a setting. */
+    const tell = (label: string, message: string) => {
+      setProblem(null);
+      optimistic.dismiss();
+      setNotice({ label, message });
+      announce(message);
+    };
     try {
       const csv = await pickCsv();
       if (csv === null) return;
@@ -176,16 +184,11 @@ export default function SettingsScreen() {
           }
         });
       });
-      const message = hevyImportSummary(result);
       haptic.success();
-      setProblem(null);
-      setNotice({ label: "Imported", message });
-      announce(message);
+      tell("Imported", hevyImportSummary(result));
     } catch (error) {
-      const message = (error as Error).message || "Leve couldn't read that file.";
       haptic.warning();
-      setNotice({ label: "Not imported", message });
-      announce(message);
+      tell("Not imported", (error as Error).message || "Leve couldn't read that file.");
     } finally {
       importRunning.current = false;
       setImporting(false);

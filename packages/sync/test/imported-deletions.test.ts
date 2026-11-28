@@ -78,8 +78,59 @@ function importWorkout(store: DeviceStore, id: string) {
         completedAt: T,
       },
     },
+    {
+      kind: "workout_set",
+      id: `${id}:e:1:s:2`,
+      content: {
+        workoutExerciseId: `${id}:e:1`,
+        position: 2,
+        type: "normal",
+        weightKg: 80,
+        reps: 4,
+        completedAt: T,
+      },
+    },
+    {
+      // Exercise notes have no parent: they outlive the workout they were written in.
+      kind: "exercise_note",
+      id: `${id}:e:1:note`,
+      content: {
+        exerciseId: "builtin:barbell-bench-press",
+        workoutId: id,
+        pinned: false,
+        text: "Seat 4",
+        createdAt: T,
+        agent: null,
+      },
+    },
   ]);
 }
+
+it("keeps a deleted set and note of an imported workout deleted when another phone imports it", async () => {
+  const { phone, sync } = await setup();
+  const first = await phone("first");
+  importWorkout(first, IMPORTED);
+  first.delete("workout_set", `${IMPORTED}:e:1:s:2`);
+  first.delete("exercise_note", `${IMPORTED}:e:1:note`);
+  await sync(first);
+
+  const second = await phone("second");
+  importWorkout(second, IMPORTED);
+  await sync(second);
+  // The second phone is asked about the records the first one deleted, not given them back.
+  expect(second.get("workout_set", `${IMPORTED}:e:1:s:2`)).toMatchObject({
+    status: "conflict",
+    server: { state: "deleted" },
+  });
+  expect(second.get("exercise_note", `${IMPORTED}:e:1:note`)).toMatchObject({
+    status: "conflict",
+    server: { state: "deleted" },
+  });
+
+  await sync(first);
+  expect(first.list("workout_set").map((set) => set.id)).toEqual([`${IMPORTED}:e:1:s:1`]);
+  expect(first.list("exercise_note")).toEqual([]);
+});
 
 it("keeps an imported workout deleted on the server when another phone imports it too", async () => {
   const { phone, sync } = await setup();
@@ -89,7 +140,8 @@ it("keeps an imported workout deleted on the server when another phone imports i
   // can import the same file and would otherwise bring the workout back.
   first.delete("workout", IMPORTED);
   expect(first.list("workout_set")).toEqual([]);
-  expect(await sync(first)).toMatchObject({ state: "synced", pushed: 1 });
+  // The workout's deletion, and its exercise note, which outlives the workout.
+  expect(await sync(first)).toMatchObject({ state: "synced", pushed: 2 });
 
   const second = await phone("second");
   importWorkout(second, IMPORTED);
@@ -113,6 +165,7 @@ it("still forgets a deleted workout that never synced when it was not imported",
   importWorkout(store, "w1");
   store.delete("workout", "w1");
   expect(store.get("workout", "w1")).toBeNull();
-  expect(store.summary()).toMatchObject({ pending: 0, inFlight: 0 });
-  expect(await sync(store)).toMatchObject({ state: "synced", pushed: 0 });
+  // Only the exercise note, which outlives the workout, is left to send.
+  expect(store.summary()).toMatchObject({ pending: 1, inFlight: 0 });
+  expect(await sync(store)).toMatchObject({ state: "synced", pushed: 1 });
 });

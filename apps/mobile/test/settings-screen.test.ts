@@ -604,4 +604,5 @@ it("explains a file it can't import and writes nothing", async () => {
   pickCsv.mockResolvedValueOnce(null);
   await press("Import from Hevy");
   expect(store.list("workout")).toEqual([]);
+  expect(host.querySelector('[role="alert"]')).toBeNull();
 });

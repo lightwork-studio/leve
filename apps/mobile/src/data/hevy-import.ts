@@ -1,4 +1,9 @@
-import { HEVY_WORKOUT_ID_PREFIX, type JsonObject } from "@leve/contract";
+import {
+  HEVY_EXERCISE_ID_PREFIX,
+  HEVY_WORKOUT_ID_PREFIX,
+  type JsonObject,
+  leveContract,
+} from "@leve/contract";
 import {
   type BuiltInExercise,
   builtInExercise,
@@ -69,11 +74,15 @@ function inferType(metrics: ReadonlySet<SetMetric>, name: string, assisted: bool
   return weight ? "weight_duration" : "duration";
 }
 
-function identifyExercise(exercise: HevyExercise) {
-  const key = normalizedName(exercise.name);
+/**
+ * How every entry of one exercise is stored: as the built-in exercise when all its sets fit it,
+ * else as one custom exercise whose type fits the sets of every entry in the file.
+ */
+function identifyExercise(key: string, entries: readonly HevyExercise[]) {
   const builtIn = matchExercise(key);
+  const sets = entries.flatMap((entry) => entry.sets);
   const metrics = new Set<SetMetric>();
-  for (const set of exercise.sets) {
+  for (const set of sets) {
     for (const [metric, field] of METRIC_FIELDS) {
       const value = set[field];
       // Some bodyweight sets put a zero in the weight column.
@@ -84,18 +93,19 @@ function identifyExercise(exercise: HevyExercise) {
         metrics.add(metric);
     }
   }
-  const assisted = /\bassisted\b/.test(key) || exercise.sets.some((set) => (set.weightKg ?? 0) < 0);
+  const assisted = /\bassisted\b/.test(key) || sets.some((set) => (set.weightKg ?? 0) < 0);
   const fits = (type: ExerciseType) =>
     (!assisted || type === "assisted_bodyweight") &&
     [...metrics].every((metric) => usesMetric(type, metric));
-  if (builtIn && fits(builtIn.type)) return { key, type: builtIn.type, builtIn };
+  const name = entries[0]?.name ?? key;
+  if (builtIn && fits(builtIn.type)) return { name, type: builtIn.type, builtIn };
   const type = inferType(metrics, key, assisted);
   if (!fits(type)) {
     throw new HevyImportError(
-      `Hevy CSV row ${exercise.row} combines measurements Leve cannot import.`,
+      `Hevy CSV row ${entries[0]?.row} combines measurements Leve cannot import.`,
     );
   }
-  return { key, type, builtIn: null };
+  return { name, type, builtIn: null };
 }
 
 function note(
@@ -106,17 +116,73 @@ function note(
   return { kind, id, content: { ...content, pinned: false, agent: null } };
 }
 
+/** Stops at the first value Leve can't store, naming the CSV row it came from. */
+function checkRecord(record: RecordWrite, row: number) {
+  const content = leveContract.normalize(record.kind, record.content);
+  const [issue] = leveContract.validateContent(record.kind, content, record.id);
+  if (issue) {
+    const field = issue.path.replace(/^\$\.?/, "") || record.kind;
+    throw new HevyImportError(`Hevy CSV row ${row} has a value Leve can't store (${field}).`);
+  }
+}
+
+type IdentifiedExercise = ReturnType<typeof identifyExercise> & {
+  id: string;
+  /** The custom exercise to create; null for a built-in one. */
+  record: RecordWrite | null;
+};
+
 /** Parse and prepare records before opening the device write transaction. */
 export async function prepareHevyImport(csv: string): Promise<WorkoutImport[]> {
   const workouts = parseHevyCsv(csv);
-  const customIds = new Map<string, string>();
+  const entriesByName = new Map<string, HevyExercise[]>();
+  for (const workout of workouts) {
+    for (const exercise of workout.exercises) {
+      const key = normalizedName(exercise.name);
+      const entries = entriesByName.get(key);
+      if (entries) entries.push(exercise);
+      else entriesByName.set(key, [exercise]);
+    }
+  }
+  const exercises = new Map<string, IdentifiedExercise>();
+  for (const [key, entries] of entriesByName) {
+    const identified = identifyExercise(key, entries);
+    if (identified.builtIn) {
+      exercises.set(key, { ...identified, id: identified.builtIn.id, record: null });
+      continue;
+    }
+    const digest = await digestStringAsync(CryptoDigestAlgorithm.SHA256, key);
+    const id = `${HEVY_EXERCISE_ID_PREFIX}${digest.slice(0, 48)}`;
+    const record = {
+      kind: "custom_exercise",
+      id,
+      content: {
+        name: identified.name,
+        type: identified.type,
+        primaryMuscle: "other",
+        secondaryMuscles: [],
+        equipment: "other",
+        usesBodyweight:
+          identified.type === "weighted_bodyweight" || identified.type === "assisted_bodyweight",
+        archived: false,
+      },
+    };
+    checkRecord(record, entries[0]?.row ?? 0);
+    exercises.set(key, { ...identified, id, record });
+  }
+
   const occurrences = new Map<string, number>();
   const result: WorkoutImport[] = [];
   for (const workout of workouts) {
     const occurrence = (occurrences.get(workout.minute) ?? 0) + 1;
     occurrences.set(workout.minute, occurrence);
     const id = `${HEVY_WORKOUT_ID_PREFIX}${workout.minute}:${occurrence}`;
-    const records: RecordWrite[] = [
+    const records: RecordWrite[] = [];
+    const add = (record: RecordWrite, row: number) => {
+      checkRecord(record, row);
+      records.push(record);
+    };
+    add(
       {
         kind: "workout",
         id,
@@ -127,78 +193,72 @@ export async function prepareHevyImport(csv: string): Promise<WorkoutImport[]> {
           routineId: null,
         },
       },
-    ];
+      workout.row,
+    );
     if (workout.description.trim()) {
-      records.push(
+      add(
         note("workout_note", `${id}:note`, {
           workoutId: id,
           text: workout.description,
           createdAt: workout.endedAt,
         }),
+        workout.row,
       );
     }
     for (const [entryIndex, exercise] of workout.exercises.entries()) {
-      const { key, type, builtIn } = identifyExercise(exercise);
+      const identified = exercises.get(normalizedName(exercise.name));
+      if (!identified) throw new HevyImportError(`Hevy CSV row ${exercise.row} has no exercise.`);
+      const { type } = identified;
       const entryId = `${id}:e:${entryIndex + 1}`;
-      let exerciseId = builtIn?.id ?? customIds.get(key);
-      if (!exerciseId) {
-        const digest = await digestStringAsync(CryptoDigestAlgorithm.SHA256, key);
-        exerciseId = `hevy:exercise:${digest.slice(0, 48)}`;
-        customIds.set(key, exerciseId);
-      }
-      if (!builtIn) {
-        records.push({
-          kind: "custom_exercise",
-          id: exerciseId,
+      // Written with the first workout that uses it, unless that one is skipped.
+      if (identified.record) records.push(identified.record);
+      add(
+        {
+          kind: "workout_exercise",
+          id: entryId,
           content: {
-            name: exercise.name,
-            type,
-            primaryMuscle: "other",
-            secondaryMuscles: [],
-            equipment: "other",
-            usesBodyweight: type === "weighted_bodyweight" || type === "assisted_bodyweight",
-            archived: false,
+            workoutId: id,
+            exerciseId: identified.id,
+            exerciseName: exercise.name,
+            exerciseType: type,
+            position: entryIndex + 1,
+            supersetId: exercise.supersetId,
+            restSeconds: 0,
+            doubleDumbbellVolume: false,
           },
-        });
-      }
-      records.push({
-        kind: "workout_exercise",
-        id: entryId,
-        content: {
-          workoutId: id,
-          exerciseId,
-          exerciseName: exercise.name,
-          exerciseType: type,
-          position: entryIndex + 1,
-          supersetId: exercise.supersetId,
-          restSeconds: 0,
-          doubleDumbbellVolume: false,
         },
-      });
+        exercise.row,
+      );
       if (exercise.notes.trim()) {
-        records.push(
+        add(
           note("exercise_note", `${entryId}:note`, {
-            exerciseId,
+            exerciseId: identified.id,
             workoutId: id,
             text: exercise.notes,
             createdAt: workout.endedAt,
           }),
+          exercise.row,
         );
       }
       for (const [setIndex, set] of exercise.sets.entries()) {
-        records.push({
-          kind: "workout_set",
-          id: `${entryId}:s:${setIndex + 1}`,
-          content: {
-            ...set,
-            workoutExerciseId: entryId,
-            position: setIndex + 1,
-            weightKg:
-              set.weightKg === null || !usesMetric(type, "weight") ? null : Math.abs(set.weightKg),
-            count: null,
-            completedAt: workout.endedAt,
+        add(
+          {
+            kind: "workout_set",
+            id: `${entryId}:s:${setIndex + 1}`,
+            content: {
+              ...set,
+              workoutExerciseId: entryId,
+              position: setIndex + 1,
+              weightKg:
+                set.weightKg === null || !usesMetric(type, "weight")
+                  ? null
+                  : Math.abs(set.weightKg),
+              count: null,
+              completedAt: workout.endedAt,
+            },
           },
-        });
+          exercise.setRows[setIndex] ?? exercise.row,
+        );
       }
     }
     result.push({ id, records });
@@ -206,37 +266,55 @@ export async function prepareHevyImport(csv: string): Promise<WorkoutImport[]> {
   return result;
 }
 
+export interface HevyImportResult {
+  added: number;
+  /** Workouts already in Leve, left as they are. */
+  existing: number;
+  /** Workouts deleted in Leve, which an import never brings back. */
+  deleted: number;
+}
+
 /** An existing or deleted workout owns its whole tree. Add the rest in one local transaction. */
-export function importHevyWorkouts(store: DeviceStore, workouts: readonly WorkoutImport[]) {
+export function importHevyWorkouts(
+  store: DeviceStore,
+  workouts: readonly WorkoutImport[],
+): HevyImportResult {
   const writes: RecordWrite[] = [];
   const seen = new Set<string>();
-  let added = 0;
+  const result = { added: 0, existing: 0, deleted: 0 };
   for (const workout of workouts) {
-    if (store.editVersion("workout", workout.id) !== null) continue;
+    const current = store.get("workout", workout.id);
+    if (current) {
+      if (current.deleted) result.deleted++;
+      else result.existing++;
+      continue;
+    }
     for (const record of workout.records) {
       const key = `${record.kind}/${record.id}`;
       if (seen.has(key) || store.editVersion(record.kind, record.id) !== null) continue;
       seen.add(key);
       writes.push(record);
     }
-    added++;
+    result.added++;
   }
   if (writes.length) store.putMany(writes);
-  return { added, skipped: workouts.length - added };
+  return result;
 }
 
 const workoutCount = (count: number) => `${count} workout${count === 1 ? "" : "s"}`;
+const were = (count: number) => (count === 1 ? "was" : "were");
 
 /** What an import did, in a sentence or two. */
-export function hevyImportSummary({ added, skipped }: { added: number; skipped: number }) {
-  if (added === 0) {
-    return skipped === 1
-      ? "The workout in this file is already in Leve."
-      : `All ${skipped} workouts in this file are already in Leve.`;
+export function hevyImportSummary({ added, existing, deleted }: HevyImportResult) {
+  const sentences = [
+    added === 0 ? "No new workouts in this file." : `Added ${workoutCount(added)}.`,
+  ];
+  if (existing) sentences.push(`${workoutCount(existing)} ${were(existing)} already in Leve.`);
+  if (deleted) {
+    const stay = deleted === 1 ? "it stays" : "they stay";
+    sentences.push(
+      `${workoutCount(deleted)} ${were(deleted)} deleted in Leve, so ${stay} deleted.`,
+    );
   }
-  const already =
-    skipped === 0
-      ? ""
-      : ` ${workoutCount(skipped)} ${skipped === 1 ? "was" : "were"} already there.`;
-  return `Added ${workoutCount(added)}.${already}`;
+  return sentences.join(" ");
 }
