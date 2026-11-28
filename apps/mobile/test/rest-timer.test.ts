@@ -2,6 +2,7 @@ import type { DeviceStore } from "@leve/storage";
 import { act, createElement } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
+import { activityUpdates } from "../src/activity/delivery.ts";
 import { readLiveActivityRest } from "../src/data/live-activity-rest";
 import { adjustRest, restProgress, restTimer, useRest } from "../src/data/rest-timer.ts";
 
@@ -48,7 +49,7 @@ function RestProbe({
   return null;
 }
 
-it("adopts lock-screen changes when the app resumes and ignores an earlier rest", () => {
+it("adopts lock-screen changes on resume without echoing background taps", () => {
   const store = {
     get(kind: string) {
       if (kind === "workout") return { content: { endedAt: null } };
@@ -64,6 +65,16 @@ it("adopts lock-screen changes when the app resumes and ignores an earlier rest"
   let view: ReactTestRenderer | undefined;
   let shown: ReturnType<typeof useRest> = null;
   const snapshot = () => shown;
+  let active = false;
+  const refreshActivity = vi.fn();
+  const drain = vi.fn();
+  const updates = activityUpdates({
+    isActive: () => active,
+    refreshRest: restTimer.refresh,
+    refreshActivity,
+    drain,
+  });
+  const restTap = { target: "LeveRestChanged" };
   try {
     restTimer.start(store, "workout", "set", 60);
     act(() => {
@@ -82,12 +93,22 @@ it("adopts lock-screen changes when the app resumes and ignores an earlier rest"
     vi.mocked(readLiveActivityRest).mockImplementation((key) =>
       key === initial.key ? change : null,
     );
-    act(() => restTimer.refresh());
+    act(() => updates.interacted(restTap));
+    expect(snapshot()).toBe(initial);
+    expect(refreshActivity).not.toHaveBeenCalled();
+    expect(drain).not.toHaveBeenCalled();
+    updates.interacted({ target: "leve1.ticket:log" });
+    expect(drain).toHaveBeenCalledOnce();
+
+    active = true;
+    act(() => updates.appStateChanged("active"));
+    expect(refreshActivity).toHaveBeenCalledOnce();
     expect(snapshot()).toMatchObject({ key: initial.key, endsAt: 145_000, totalSeconds: 60 });
     expect(restTimer.expire(store, initial)).toBe(false);
 
     change = { start: 0, end: 0 };
-    act(() => restTimer.refresh());
+    act(() => updates.interacted(restTap));
+    expect(refreshActivity).toHaveBeenCalledOnce();
     expect(snapshot()).toBeNull();
     act(() => restTimer.start(store, "workout", "set", 90));
     expect(snapshot()).toMatchObject({ endsAt: 190_000, totalSeconds: 90 });

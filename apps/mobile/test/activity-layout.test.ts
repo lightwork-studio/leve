@@ -17,6 +17,7 @@ vi.mock("@expo/ui/swift-ui/modifiers", () =>
       "activityBackgroundTint",
       "background",
       "buttonStyle",
+      "contentTransition",
       "font",
       "foregroundStyle",
       "frame",
@@ -227,4 +228,20 @@ it("uses the actual countdown deadline in Log after a native skip", () => {
   const env = { colorScheme: "dark", isStale: false } as const;
   const display = layout({ ...content, token: "leve1.epoch.2.120000.digest", restEnd: 0 }, env);
   expect(targets(display.banner)).toEqual(["leve1.epoch.2.0.digest:log"]);
+});
+
+it("disables content fades for the countdown and its progress views", () => {
+  const view = render(120_000, "dark");
+  const timers: Node[] = [];
+  const visit = (node: unknown) => {
+    if (Array.isArray(node)) {
+      node.forEach(visit);
+    } else if (isValidElement<{ timerInterval?: unknown; children?: unknown }>(node)) {
+      if (node.props.timerInterval) timers.push(node as Node);
+      visit(node.props.children);
+    }
+  };
+  [view.banner, view.expandedBottom, view.compactLeading, view.minimal].forEach(visit);
+  expect(timers).toHaveLength(5);
+  for (const timer of timers) expect(modifier(timer, "contentTransition")).toBe("identity");
 });
