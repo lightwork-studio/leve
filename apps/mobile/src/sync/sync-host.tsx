@@ -22,7 +22,12 @@ import { Banner } from "../ui/notice.tsx";
 import { themedStyles, useAppearance, useStyles } from "../ui/themed.ts";
 import { ConflictPrompt } from "./conflict-prompt.tsx";
 import { type OwnServer, serverLabel } from "./own-server.ts";
-import { previousServer, switchBack } from "./own-server-store.ts";
+import {
+  canRestorePairedServer,
+  chooseBuiltInServer,
+  restorePairedServer,
+  switchBack,
+} from "./own-server-store.ts";
 import {
   builtInServerConfigured,
   ownServerAvailable,
@@ -86,7 +91,7 @@ export function SyncHost() {
   // If the keychain is locked, wait before choosing which account to sync.
   if (choice === undefined) return null;
   if (choice === "local") return <Disconnected local />;
-  const own = pairing ? choice : null;
+  const own = pairing && typeof choice === "object" ? choice : null;
   // A new pairing is a new session, even with the same account id.
   if (own && syncEnabled()) {
     const key = `${own.server} ${own.device}`;
@@ -113,19 +118,19 @@ function useElsewhereNote(
   if (!bound || bound.server === null || bound.account === null) return null;
   const server = bound.server;
   const label = serverLabel(server);
-  const canSwitchBack = switchesBackToData(bound, null);
+  const restore = switchBackToData(bound, null);
   const problem =
-    canSwitchBack && failedServer === server ? " Switching back didn't work. Try again." : "";
+    restore && failedServer === server ? " Switching back didn't work. Try again." : "";
   return {
     label: "Not syncing",
     message: `This phone's data belongs to ${label}. Changes stay on this phone until it syncs there again.${problem}`,
-    action: canSwitchBack
+    action: restore
       ? {
           label: "Switch back",
           hint: `Returns to ${label}`,
           onPress: () => {
             try {
-              switchBack();
+              restore();
               setFailedServer(null);
             } catch {
               setFailedServer(server);
@@ -178,17 +183,15 @@ interface Connection {
  * Whether switching back to the choice before reaches the server and account this phone's data
  * belongs to. Anything else would only move the question to another server.
  */
-function switchesBackToData(
+function switchBackToData(
   bound: { server: string | null; account: string | null },
   builtInAccount: string | null,
-): boolean {
-  if (!ownServerAvailable()) return false;
-  const previous = previousServer();
-  if (previous) return previous.server === bound.server && previous.account === bound.account;
-  // The build's own server, if the current choice is a paired one.
-  return (
-    builtInAccount !== null && bound.server === syncServerUrl && bound.account === builtInAccount
-  );
+): (() => void) | null {
+  if (!ownServerAvailable()) return null;
+  if (canRestorePairedServer(bound)) return () => restorePairedServer(bound);
+  if (builtInAccount !== null && bound.server === syncServerUrl && bound.account === builtInAccount)
+    return chooseBuiltInServer;
+  return null;
 }
 
 /** A paired server: always signed in, with the device token it gave this phone. */
@@ -370,11 +373,8 @@ function Sync({
     if (prompt?.kind === "switch") {
       // Keeping the data means going back, when the choice before is where it belongs; on the
       // build's own server, otherwise, signing this account out. With neither, pausing sync.
-      const keep = switchesBackToData(store.syncState(), builtInAccount)
-        ? { onSwitchBack: () => switchBack() }
-        : own
-          ? {}
-          : { onSignOut: signOutHere };
+      const restore = switchBackToData(store.syncState(), builtInAccount);
+      const keep = restore ? { onSwitchBack: restore } : own ? {} : { onSignOut: signOutHere };
       if (prompt.reason === "server")
         return (
           <MovePrompt

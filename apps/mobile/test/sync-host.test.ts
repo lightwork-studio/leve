@@ -659,6 +659,29 @@ describe("a server the person paired", () => {
     expect(session().options).toMatchObject({ server: home.server });
   });
 
+  it("keeps both pairings when sync is turned off during a pending server move", async () => {
+    const next = { ...home, server: "https://other.example", device: "d2" };
+    chooseOwnServer(home);
+    chooseOwnServer(next);
+    data.server = home.server;
+    data.account = home.account;
+    turnSyncOff();
+    forgetServerChoice();
+    forgetDevicePreferences();
+    await render();
+
+    const stored = JSON.parse(keychain.items.get("sync.ownServer")?.value ?? "{}");
+    expect(stored).toMatchObject({ current: next, previous: home, mode: "local" });
+    expect(syncPaused()).toBe(true);
+    expect(sessions.created).toHaveLength(0);
+    expect(screen()).toContain("This phone's data belongs to sync.home.example");
+    await tap("Switch back");
+    expect(ownServer()).toEqual(home);
+    expect(sessions.created).toHaveLength(0);
+    await tap("Resume");
+    expect(session().options).toMatchObject({ server: home.server, account: home.account });
+  });
+
   it("restarts syncing when another server is paired", async () => {
     chooseOwnServer(home);
     await render();
@@ -691,16 +714,27 @@ describe("a server the person paired", () => {
     expect(screen()).not.toContain("switch back");
   });
 
-  it("offers no way back when the data belongs to a server neither choice is", async () => {
+  it("offers no way back when none of the saved connections matches the account", async () => {
     chooseOwnServer({ ...home, server: "https://third.example", device: "d3" });
     chooseOwnServer(home);
     data.server = "https://sync.test";
-    data.account = "user_1";
+    data.account = "user_0";
     await render();
     data.unsyncedCount = 1;
     await report({ prompt: { kind: "switch", reason: "server" } });
     expect(screen()).toContain("Bring them to this server");
     expect(screen()).not.toContain("switch back");
+  });
+
+  it("can return to the account that owns the data even if the previous choice was another pairing", async () => {
+    chooseOwnServer({ ...home, server: "https://third.example", device: "d3" });
+    chooseOwnServer(home);
+    data.server = "https://sync.test";
+    data.account = "user_1";
+    await render();
+    await report({ prompt: { kind: "switch", reason: "server" } });
+    await tap("Keep them and switch back");
+    expect(session().options).toMatchObject({ server: "https://sync.test", account: "user_1" });
   });
 
   it("syncs nowhere while the keychain can't be read", async () => {

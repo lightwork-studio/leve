@@ -7,6 +7,7 @@ import Svg, { Line, Path, Rect } from "react-native-svg";
 import { AccountSection } from "../account/account-section";
 import { signInProblem, useAppleSignIn } from "../account/apple-sign-in.ts";
 import { AppleSignInButton } from "../account/apple-sign-in-button.tsx";
+import { useAppData } from "../data/app-data.tsx";
 import { subscribeDevicePreferences } from "../data/device-preference-store.ts";
 import { radius, space, type } from "../theme.ts";
 import { ActionRow, SettingRow } from "../ui/choice-row.tsx";
@@ -26,9 +27,10 @@ import {
   serverLabel,
 } from "./own-server.ts";
 import { chooseBuiltInServer, chooseOwnServer } from "./own-server-store.ts";
-import { leveSyncAvailable, ownServerAvailable } from "./sync-config.ts";
+import { leveSyncAvailable, ownServerAvailable, syncServerUrl } from "./sync-config.ts";
 import { turnSyncOff } from "./sync-destination.ts";
 import { setSignedOutOnPurpose, setSyncPaused, syncPaused } from "./sync-preferences.ts";
+import { unsyncedChanges } from "./sync-session.ts";
 import { useServerChoice } from "./use-server-choice.ts";
 
 const SAVE_FAILED = "This phone couldn't save the change. Try again.";
@@ -40,6 +42,7 @@ type Step = "choose" | "leve" | "local" | "link" | "pair" | "signOut";
 interface LeveAccount {
   loaded: boolean;
   signedIn: boolean;
+  userId: string | null;
   email?: string | undefined;
   signIn(): Promise<boolean>;
   signOut(): Promise<void>;
@@ -64,7 +67,7 @@ function ManagedSection({
   link: PairingLink | null;
   ownAvailable: boolean;
 }) {
-  const { isLoaded, isSignedIn, signOut } = useAuth();
+  const { isLoaded, isSignedIn, userId, signOut } = useAuth();
   const { user } = useUser();
   const signIn = useAppleSignIn();
   return (
@@ -74,6 +77,7 @@ function ManagedSection({
       leve={{
         loaded: isLoaded,
         signedIn: !!isSignedIn,
+        userId: userId ?? null,
         email: user?.primaryEmailAddress?.emailAddress,
         signIn,
         signOut: () => signOut(),
@@ -93,17 +97,25 @@ function Section({
 }) {
   const styles = useStyles(sheet);
   const c = useColors();
+  const { store } = useAppData();
+  const bound = store.syncState();
   const choice = useServerChoice();
   const paused = useSyncExternalStore(subscribeDevicePreferences, syncPaused, syncPaused);
-  const own = ownAvailable && choice && choice !== "local" ? choice : null;
-  const destination: Destination = own
-    ? "server"
-    : choice !== "local" && leve?.signedIn
-      ? "leve"
-      : "local";
+  const own = ownAvailable && typeof choice === "object" ? choice : null;
+  const boundToLeve = bound.server === syncServerUrl && bound.account !== null;
+  const leveSelected =
+    leve && choice !== "local" && (leve.signedIn || choice === "leve" || boundToLeve);
+  const destination: Destination = own ? "server" : leveSelected ? "leve" : "local";
+  const signInNeeded = destination === "leve" && !leve?.signedIn;
   const checking = choice === undefined || (!own && choice !== "local" && leve?.loaded === false);
   const status =
-    destination === "local" ? "Sync off" : paused ? "Paused · changes wait here" : "Sync on";
+    destination === "local"
+      ? "Sync off"
+      : paused
+        ? "Paused · changes wait here"
+        : signInNeeded
+          ? "Sign-in needed"
+          : "Sync on";
   const host = own ? serverLabel(own.server) : null;
   const [step, setStep] = useState<Step | null>(link ? "pair" : null);
   const [entry, setEntry] = useState<PairingLink | string>(link ?? "");
@@ -179,7 +191,7 @@ function Section({
         signedIn = signedIn || (await leve.signIn());
         if (!signedIn) return;
         // Keep the old destination until Apple sign-in has completed.
-        chooseBuiltInServer();
+        chooseBuiltInServer(store.syncState());
         setSignedOutOnPurpose(false);
         setSyncPaused(false);
         saved();
@@ -194,7 +206,7 @@ function Section({
       async () => {
         const server = await pair(pairing, Constants.deviceName ?? "iPhone", expoFetch);
         paired = true;
-        chooseOwnServer(server);
+        chooseOwnServer(server, store.syncState());
         setSyncPaused(false);
         announce(`Connected to ${serverLabel(server.server)}`);
         saved();
@@ -208,7 +220,7 @@ function Section({
     );
   };
 
-  const chooseLeve = () => (destination === "leve" ? close() : open("leve"));
+  const chooseLeve = () => (destination === "leve" && !signInNeeded ? close() : open("leve"));
   const deviceOnly = () => (destination === "local" ? close() : open("local"));
   const title = destination === "local" ? "On this iPhone" : destination === "leve" ? "Leve" : host;
   const detail = own
@@ -216,7 +228,9 @@ function Section({
       ? `Account ${own.accountName}`
       : "Your own server"
     : destination === "leve"
-      ? (leve?.email ?? "Signed in with Apple")
+      ? signInNeeded
+        ? "Sign in with Apple"
+        : (leve?.email ?? "Signed in with Apple")
       : "Workouts stay on this phone";
   const note =
     destination !== "local" && paused
@@ -236,13 +250,15 @@ function Section({
               title="Leve"
               detail={
                 destination === "leve"
-                  ? "Current destination"
+                  ? signInNeeded
+                    ? "Current destination · sign in with Apple"
+                    : "Current destination"
                   : leve.signedIn
                     ? "Signed in with Apple"
                     : "Sign in with Apple"
               }
               end={destination === "leve" ? current : null}
-              chevron={destination !== "leve"}
+              chevron={destination !== "leve" || signInNeeded}
               onPress={chooseLeve}
             />
           ) : null}
@@ -394,13 +410,18 @@ function Section({
       ),
     };
   } else if (step === "signOut" && leve?.signedIn && destination !== "leve") {
+    const waiting = boundToLeve && bound.account === leve.userId ? unsyncedChanges(store) : 0;
     dialog = {
       label: "Sign out of Leve",
       title: "Sign out of Leve?",
       content: (
         <>
           <Text style={styles.body}>
-            Your workouts stay on this phone. Switching to Leve again will ask you to sign in.
+            {waiting === 1
+              ? "1 change hasn't synced. It stays on this phone and waits for this Leve account."
+              : waiting > 1
+                ? `${waiting} changes haven't synced. They stay on this phone and wait for this Leve account.`
+                : "Your workouts stay on this phone. Switching to Leve again will ask you to sign in."}
           </Text>
           <View style={styles.actions}>
             <CommitButton
@@ -440,7 +461,12 @@ function Section({
                 </View>
               </View>
               <View style={styles.status}>
-                <View style={[styles.dot, destination !== "local" && !paused && styles.on]} />
+                <View
+                  style={[
+                    styles.dot,
+                    destination !== "local" && !paused && !signInNeeded && styles.on,
+                  ]}
+                />
                 <Text style={styles.statusText}>{status}</Text>
               </View>
             </View>
@@ -467,6 +493,9 @@ function Section({
               </>
             ) : (
               <>
+                {signInNeeded ? (
+                  <Row title="Sign in with Apple" chevron divider onPress={chooseLeve} />
+                ) : null}
                 <ActionRow
                   label={paused ? "Resume sync" : "Pause sync"}
                   divider

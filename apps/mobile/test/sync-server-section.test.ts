@@ -21,6 +21,11 @@ import { keychain } from "./support/expo-secure-store.ts";
 
 const CODE = "R0zFbfeNwBJAytY_ILQ3qw";
 const offered = vi.hoisted(() => ({ own: true, builtIn: true }));
+const bound = vi.hoisted(() => ({
+  server: null as string | null,
+  account: null as string | null,
+  waiting: 0,
+}));
 vi.mock("../src/sync/sync-config.ts", () => ({
   syncServerUrl: "https://sync.leve.example",
   builtInServerConfigured: () => offered.builtIn,
@@ -29,8 +34,10 @@ vi.mock("../src/sync/sync-config.ts", () => ({
 }));
 vi.mock("react-native", () => vi.importActual("react-native-web"));
 vi.mock("expo-constants", () => ({ default: { deviceName: "Alice's iPhone" } }));
-vi.mock("../src/data/app-data.tsx", () => ({ useAppData: () => ({ store: {} }) }));
-vi.mock("../src/sync/sync-session.ts", () => ({ unsyncedChanges: () => 0 }));
+vi.mock("../src/data/app-data.tsx", () => ({
+  useAppData: () => ({ store: { syncState: () => bound } }),
+}));
+vi.mock("../src/sync/sync-session.ts", () => ({ unsyncedChanges: () => bound.waiting }));
 vi.mock("../src/ui/haptics.ts", () => ({
   haptic: { tap: () => {}, select: () => {}, warning: () => {}, success: () => {} },
 }));
@@ -81,6 +88,7 @@ beforeEach(() => {
   files.clear();
   forgetDevicePreferences();
   clerk.reset();
+  Object.assign(bound, { server: null, account: null, waiting: 0 });
   offered.own = true;
   offered.builtIn = true;
   requests = [];
@@ -258,9 +266,34 @@ it("keeps Leve signed in but off across a restart until the user chooses it agai
   expect(screen()).not.toContain("Resume sync");
   await tap("Sync with Leve");
   await tap("Switch to Leve");
-  expect(readServerChoice()).toBeNull();
+  expect(readServerChoice()).toBe("leve");
   expect(syncPaused()).toBe(false);
   expect(clerk.calls).toEqual([]);
+});
+
+it("keeps the destination visible after a legacy Leve sign-in runs out", async () => {
+  Object.assign(bound, { server: "https://sync.leve.example", account: clerk.userId });
+  await render();
+  expect(screen()).toContain("Sign-in needed");
+  expect(screen()).not.toContain("On this iPhone");
+  await tap("Change destination");
+  await tap("On this iPhone");
+  await tap("Turn sync off");
+  expect(readServerChoice()).toBe("local");
+});
+
+it("warns that pending work waits for the retained Leve account before idle sign-out", async () => {
+  clerk.signedIn = true;
+  Object.assign(bound, { server: "https://sync.leve.example", account: clerk.userId, waiting: 2 });
+  chooseOwnServer({ server: "https://sync.home.example", account: "a", device: "d", token: "t" });
+  await render();
+  await tap("Sign out of Leve");
+  expect(screen()).toContain("2 changes haven't synced");
+  expect(screen()).toContain("wait for this Leve account");
+  expect(clerk.calls).toEqual([]);
+  bound.account = "another-leve-user";
+  await render();
+  expect(screen()).not.toContain("changes haven't synced");
 });
 
 it("keeps a paired server selected when Apple sign-in is cancelled", async () => {
