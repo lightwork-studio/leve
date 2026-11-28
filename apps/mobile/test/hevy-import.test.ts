@@ -139,6 +139,38 @@ describe("Hevy CSV import", () => {
     );
   });
 
+  it("reads dates written in the language Hevy runs in", async () => {
+    const at = (when: string) =>
+      parseHevyCsv(`${HEADER}\n"A","${when}","${when}","","Pull Up",,"",0,"normal",,8,,,`)[0]
+        ?.startedAt;
+    const local = (month: number, day: number, hour: number, minute: number) =>
+      new Date(2026, month, day, hour, minute).toISOString();
+    // German, as Hevy writes it: abbreviations with a dot, short names without one.
+    const german = ["Jan.", "Feb.", "März", "Apr.", "Mai", "Juni", "Juli", "Aug.", "Sept."];
+    for (const [month, name] of german.entries()) {
+      expect(at(`22 ${name} 2026, 20:19`)).toBe(local(month, 22, 20, 19));
+    }
+    expect(at("3 Okt. 2026, 07:05")).toBe(local(9, 3, 7, 5));
+    expect(at("22 Nov. 2026, 20:19")).toBe(local(10, 22, 20, 19));
+    expect(at("31 Dez. 2026, 23:59")).toBe(local(11, 31, 23, 59));
+    // Other languages and a 12-hour clock.
+    expect(at("5 févr. 2026, 18:00")).toBe(local(1, 5, 18, 0));
+    expect(at("5 de ago. de 2026, 18:00")).toBe(local(7, 5, 18, 0));
+    expect(at("5 Aug 2026, 6:30 PM")).toBe(local(7, 5, 18, 30));
+    expect(at("5 Aug 2026, 12:10 a.m.")).toBe(local(7, 5, 0, 10));
+    expect(at("5 Aug 2026, 12:10 PM")).toBe(local(7, 5, 12, 10));
+    // A name that means no month, or more than one, is still refused.
+    for (const when of [
+      "5 Ju 2026, 18:00",
+      "5 Jui 2026, 18:00",
+      "5 Foo 2026, 18:00",
+      "5 Aug 2026, 13:00 PM",
+      "30 Feb. 2026, 18:00",
+    ]) {
+      expect(() => at(when)).toThrow("Hevy CSV row 2 has an invalid start time.");
+    }
+  });
+
   it("converts an export in pounds and miles", async () => {
     const imperial = [
       '"title","start_time","end_time","description","exercise_title","superset_id","exercise_notes","set_index","set_type","weight_lbs","reps","distance_miles","duration_seconds","rpe"',
