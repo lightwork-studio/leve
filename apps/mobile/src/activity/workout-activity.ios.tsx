@@ -88,8 +88,13 @@ function LiveWorkout() {
       }
     });
     const events = widgets?.addUserInteractionListener((event) => {
-      if (event.target === "LeveRestChanged") restTimer.refresh();
-      else void widgets.session.drain();
+      if (event.target === "LeveRestChanged") {
+        // ActivityKit already has the updated timer. Refresh an open workout immediately and
+        // reconcile a background workout on resume, without echoing a lock-screen update.
+        if (AppState.currentState === "active") restTimer.refresh();
+      } else {
+        void widgets.session.drain();
+      }
     });
     void widgets?.session.drain();
     return () => {
