@@ -309,6 +309,22 @@ it("keeps a paired server selected when Apple sign-in is cancelled", async () =>
   expect(screen()).toContain("Back up with Apple");
 });
 
+it("keeps a first-time Apple sign-in idle when saving the new destination fails", async () => {
+  clerk.appleFlow = async () => {
+    keychain.failWrites = true;
+    return { createdSessionId: "sess_1" };
+  };
+  await render();
+  await tap("Sync with Leve");
+  await tap("Sign in with Apple");
+  expect(clerk.signedIn).toBe(true);
+  expect(readServerChoice()).toBe("local");
+  expect(syncPaused()).toBe(true);
+  expect(screen()).toContain("This phone couldn't save the change");
+  expect(screen()).toContain("Idle");
+  expect(screen()).toContain("Sync off");
+});
+
 it("asks for a new link when the pairing worked but the phone couldn't keep it", async () => {
   await render({ server: "https://sync.home.example", code: CODE });
   keychain.failWrites = true;

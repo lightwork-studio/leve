@@ -185,18 +185,25 @@ function Section({
 
   const connectLeve = async () => {
     if (!leve?.loaded) return;
-    let signedIn = leve.signedIn;
+    let saving = false;
     await run(
       async () => {
-        signedIn = signedIn || (await leve.signIn());
-        if (!signedIn) return;
+        if (choice === null && destination === "local") {
+          // A legacy default follows Apple sign-in. Persist the current local choice first so
+          // activating the Apple session cannot start sync before the new choice is saved.
+          saving = true;
+          turnSyncOff();
+          saving = false;
+        }
+        if (!leve.signedIn && !(await leve.signIn())) return;
         // Keep the old destination until Apple sign-in has completed.
+        saving = true;
         chooseBuiltInServer(store.syncState());
         setSignedOutOnPurpose(false);
         setSyncPaused(false);
         saved();
       },
-      (error) => (signedIn ? SAVE_FAILED : signInProblem(error)),
+      (error) => (saving ? SAVE_FAILED : signInProblem(error)),
     );
   };
   const connectOwn = async () => {
