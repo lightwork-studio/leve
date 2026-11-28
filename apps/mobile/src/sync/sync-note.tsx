@@ -1,7 +1,8 @@
 import { router, usePathname } from "expo-router";
-import { useState, useSyncExternalStore } from "react";
+import { type ReactElement, useState, useSyncExternalStore } from "react";
 import { type StyleProp, Text, View, type ViewStyle } from "react-native";
-import { font, touch, type } from "../theme.ts";
+import { SafeAreaInsetsContext, useSafeAreaInsets } from "react-native-safe-area-context";
+import { font, gutter, touch, type } from "../theme.ts";
 import { Button } from "../ui/buttons.tsx";
 import { Dialog } from "../ui/dialog.tsx";
 import { shortDay } from "../ui/format.ts";
@@ -22,8 +23,8 @@ export interface SyncNote {
   tag: string;
   /** Why, in a few words, after the label on one line: "since 26 Nov". */
   short?: string;
-  /** The way back: "Resume", "Sign in", "Pause". */
-  action?: { label: string; hint: string; onPress: () => void };
+  /** The way back: "Resume", "Sign in", "Pause". `opensSettings` when that is all it does. */
+  action?: { label: string; hint: string; onPress: () => void; opensSettings?: boolean };
 }
 
 // SyncHost decides the note. The week bar shows it as a tag on the tabs, SyncHost as a line on
@@ -79,7 +80,7 @@ function SyncDetails({ note, onClose }: { note: SyncNote; onClose: () => void })
   const pathname = usePathname();
   const last = readLastSynced();
   const { action } = note;
-  const settings = !NO_SETTINGS.has(pathname) && action?.label !== "Settings";
+  const settings = !NO_SETTINGS.has(pathname) && !action?.opensSettings;
   return (
     <Dialog
       eyebrow={note.label}
@@ -140,6 +141,8 @@ export function SyncTag() {
   const styles = useStyles(sheet);
   const note = useSyncNote();
   const [open, setOpen] = useState(false);
+  // Once the note has gone, its details are closed: they don't come back by themselves with the next.
+  if (!note && open) setOpen(false);
   if (!note) return null;
   return (
     <>
@@ -186,6 +189,7 @@ export function SyncLine({
   const published = useSyncNote();
   const note = given === undefined ? published : given;
   const [open, setOpen] = useState(false);
+  if (!note && open) setOpen(false);
   if (!note) return null;
   const { action } = note;
   return (
@@ -224,7 +228,47 @@ export function SyncLine({
   );
 }
 
+/** Routes that show the note themselves: the tabs, and the live workout and its summary. */
+const OWN_NOTE = new Set(["(tabs)", "workout/active", "workout/finish"]);
+
+/**
+ * Every other screen, with the note as a line at its top while there is one, so it moves with the
+ * screen. The screen under it then starts below the line rather than under the status bar. For
+ * the stack's `screenLayout`.
+ */
+export function SyncLineLayout({
+  route,
+  children,
+}: {
+  route: { name: string };
+  children: ReactElement;
+}) {
+  if (OWN_NOTE.has(route.name)) return children;
+  return <WithSyncLine>{children}</WithSyncLine>;
+}
+
+function WithSyncLine({ children }: { children: ReactElement }) {
+  const styles = useStyles(sheet);
+  const note = useSyncNote();
+  const insets = useSafeAreaInsets();
+  // The same tree with or without the line, so the screen keeps its state when one comes or goes.
+  return (
+    <View style={styles.screen}>
+      {note ? (
+        <View style={[styles.dock, { paddingTop: insets.top }]}>
+          <SyncLine note={note} rule />
+        </View>
+      ) : null}
+      <SafeAreaInsetsContext.Provider value={note ? { ...insets, top: 0 } : insets}>
+        <View style={styles.screen}>{children}</View>
+      </SafeAreaInsetsContext.Provider>
+    </View>
+  );
+}
+
 const sheet = themedStyles((c) => ({
+  screen: { flex: 1 },
+  dock: { paddingHorizontal: gutter.group, backgroundColor: c.bg },
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: c.alert },
   dotQuiet: { backgroundColor: "transparent", borderWidth: 1.5, borderColor: c.fg3 },
   problemText: { color: c.alert },
@@ -233,7 +277,7 @@ const sheet = themedStyles((c) => ({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    height: 26,
+    minHeight: 26,
     flexShrink: 0,
     paddingLeft: 8,
     paddingRight: 9,

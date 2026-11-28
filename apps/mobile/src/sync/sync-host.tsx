@@ -8,14 +8,13 @@ import { router, usePathname } from "expo-router";
 import { channel } from "expo-updates";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { AppState, Linking, Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { signInProblem, useAppleSignIn } from "../account/apple-sign-in.ts";
 import { buildInfo } from "../build-info.ts";
 import { useAppData } from "../data/app-data.tsx";
 import { conflicts, type ReviewTarget } from "../data/conflicts.ts";
 import { subscribeDevicePreferences } from "../data/device-preference-store.ts";
 import { startNotingWorkoutHere, workoutHere } from "../data/workout-here.ts";
-import { gutter, radius, space, type } from "../theme.ts";
+import { radius, space, type } from "../theme.ts";
 import { Button } from "../ui/buttons.tsx";
 import { Dialog } from "../ui/dialog.tsx";
 import { themedStyles, useAppearance, useStyles } from "../ui/themed.ts";
@@ -33,7 +32,7 @@ import {
   syncEnabled,
   syncServerUrl,
 } from "./sync-config.ts";
-import { publishSyncNote, SyncLine, type SyncNote } from "./sync-note.tsx";
+import { publishSyncNote, type SyncNote } from "./sync-note.tsx";
 import {
   readLastSynced,
   setSignedOutOnPurpose,
@@ -143,6 +142,7 @@ function useElsewhereNote(
           label: "Settings",
           hint: "Opens Settings to connect a server",
           onPress: () => router.push(SETTINGS),
+          opensSettings: true,
         },
   };
 }
@@ -162,12 +162,13 @@ function Disconnected({ local = false }: { local?: boolean }) {
             label: "Settings",
             hint: "Opens Settings to choose where to sync",
             onPress: () => router.push(SETTINGS),
+            opensSettings: true,
           },
         }
       : null);
   useEffect(() => publishSyncNote(note));
   useEffect(() => () => publishSyncNote(null), []);
-  return note ? <NotSyncing note={note} /> : null;
+  return null;
 }
 
 /** Who the phone syncs as, and with which server. */
@@ -506,6 +507,7 @@ function Sync({
             label: "Sign in",
             hint: "Opens Settings to sign in",
             onPress: () => router.push("/settings"),
+            opensSettings: true,
           },
         },
       };
@@ -576,12 +578,11 @@ function Sync({
     return none;
   };
   const { question, note } = decide();
-  // The week bar shows it as a tag on the tabs, and screens drawn above this one (the live workout
-  // and finishing it are native modals) show the line themselves.
+  // The week bar shows the note as a tag on the tabs, every other screen as a line at its top (see
+  // SyncLineLayout), and the live workout and finishing it show the line over their sheet.
   useEffect(() => publishSyncNote(note));
   useEffect(() => () => publishSyncNote(null), []);
-  if (question) return question;
-  return note ? <NotSyncing note={note} /> : null;
+  return question;
 }
 
 function Body({ text }: { text: string }) {
@@ -1069,31 +1070,10 @@ function UpdatePrompt({ onPause }: { onPause: () => void }) {
   );
 }
 
-/** The tabs, where the week bar carries the note as a tag instead. */
-const TAB_PATHS = new Set(["/", "/history", "/progress"]);
-
-/**
- * Sync isn't running, or is waiting on the person: a line at the top of every screen, above the
- * app, until that changes (on the tabs, a tag in the week bar). It can't be dismissed, only acted
- * on; tapping it shows the whole note.
- */
-function NotSyncing({ note }: { note: SyncNote }) {
-  const styles = useStyles(sheet);
-  const insets = useSafeAreaInsets();
-  const pathname = usePathname();
-  if (TAB_PATHS.has(pathname)) return null;
-  return (
-    <View style={[styles.dock, { paddingTop: insets.top }]}>
-      <SyncLine note={note} rule />
-    </View>
-  );
-}
-
 const sheet = themedStyles((c) => ({
   body: { ...type.body, fontSize: 15, lineHeight: 22, color: c.fg2, marginTop: space.sm },
   actions: { alignItems: "center", gap: 2 },
   apple: { marginTop: space.md, marginRight: 4 },
   appleButton: { height: 44, width: "100%" },
   waiting: { opacity: 0.5 },
-  dock: { paddingHorizontal: gutter.group, backgroundColor: c.bg },
 }));

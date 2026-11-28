@@ -138,8 +138,10 @@ export function WeekBar({
             </Animated.View>
           )}
         </View>
-        {status}
-        {action ?? <View style={styles.noAction} />}
+        <View style={styles.end}>
+          {status}
+          {action ?? <View style={styles.noAction} />}
+        </View>
       </View>
       <Animated.View
         pointerEvents={folded ? "none" : "box-none"}
@@ -273,6 +275,7 @@ const sheet = themedStyles((c) => ({
     minHeight: 32,
     paddingLeft: 6,
   },
+  end: { flexDirection: "row", alignItems: "center", gap: 10 },
   headLine: { flexDirection: "row", alignItems: "center", flexShrink: 1, minWidth: 0 },
   head: { ...type.label, color: c.fg3, flexShrink: 1 },
   headStrong: { color: c.fg, fontWeight: "600" },
