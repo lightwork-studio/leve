@@ -911,3 +911,110 @@ it("compares competing measurement corrections and accepts the server reading in
     vi.unstubAllGlobals();
   }
 });
+
+it("deletes a held reading on every phone after confirming, keeps it on Keep and refuses a changed one", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const world = new World();
+  let screen: ReactTestRenderer | undefined;
+  try {
+    const server = world.server();
+    const account = { account: "alice", server: "s", transport: server.transport("alice") };
+    const a = await world.phone("a", account);
+    const b = await world.phone("b", account);
+    store = a.store;
+    const monday = { takenAt: "2026-11-09T07:00:00.000Z", bodyweightKg: 70, fatPercent: null };
+    const tuesday = { takenAt: "2026-11-10T07:00:00.000Z", bodyweightKg: 71, fatPercent: null };
+    const wednesday = { takenAt: "2026-11-11T07:00:00.000Z", bodyweightKg: 72, fatPercent: null };
+    store.put("body_measurement", "monday", monday);
+    store.put("body_measurement", "tuesday", tuesday);
+    store.put("body_measurement", "wednesday", wednesday);
+    await a.sync();
+    await b.sync();
+    expect(b.store.list("body_measurement")).toHaveLength(3);
+    await act(() => {
+      screen = create(createElement(BodyweightHistory));
+    });
+    if (!screen) throw Error("Missing history");
+    const root = screen.root;
+    const rerender = () => act(() => screen?.update(createElement(BodyweightHistory)));
+    const rows = () =>
+      root.findAll(
+        (n) =>
+          n.type === ("Tap" as never) &&
+          String(n.props.accessibilityLabel).startsWith("Edit bodyweight for "),
+      );
+    const row = (day: string) => {
+      const found = rows().find((n) =>
+        String(n.props.accessibilityLabel).startsWith(`Edit bodyweight for ${day} `),
+      );
+      if (!found) throw Error(`Missing reading for ${day}`);
+      return found;
+    };
+    const day = (takenAt: string) => dayLabel(takenAt);
+    const sheets = () => root.findAllByType(Modal);
+    expect(rows()).toHaveLength(3);
+
+    // Holding a reading asks first; keeping it changes nothing.
+    await act(() => row(day(tuesday.takenAt)).props.onLongPress());
+    const message = sheets()[0]
+      ?.findAllByType(Text)
+      .map((n) => n.children.join(""))[0];
+    expect(message).toMatch(/^The 71 kg reading from .+ will be deleted\.$/);
+    await act(() =>
+      root
+        .find((n) => n.type === Text && n.props.children === "Keep measurement")
+        .parent!.props.onPress(),
+    );
+    expect(sheets()).toHaveLength(0);
+    expect(store.list("body_measurement")).toHaveLength(3);
+
+    // Confirming deletes it here and, after sync, on the other phone.
+    await act(() => row(day(tuesday.takenAt)).props.onLongPress());
+    await confirmAction(root, "Delete measurement");
+    await rerender();
+    expect(rows()).toHaveLength(2);
+    expect(store.get("body_measurement", "tuesday")?.deleted).toBe(true);
+    await a.sync();
+    await b.sync();
+    expect(b.store.get("body_measurement", "tuesday")?.deleted).toBe(true);
+    expect(b.store.get("body_measurement", "monday")?.content).toEqual(monday);
+    expect(b.store.get("body_measurement", "wednesday")?.content).toEqual(wednesday);
+
+    // Screen readers delete through the row's action.
+    await act(() =>
+      row(day(monday.takenAt)).props.onAccessibilityAction({
+        nativeEvent: { actionName: "delete" },
+      }),
+    );
+    // Another phone corrects the reading while the sheet is open: the deletion is refused.
+    b.store.put("body_measurement", "monday", { ...monday, bodyweightKg: 69 });
+    await b.sync();
+    await a.sync();
+    await confirmAction(root, "Delete measurement");
+    await rerender();
+    expect(root.findByProps({ accessibilityRole: "alert" })).toBeDefined();
+    expect(
+      root.findAll(
+        (n) => n.type === Text && /This measurement changed/.test(String(n.props.children)),
+      ),
+    ).not.toHaveLength(0);
+    expect(store.get("body_measurement", "monday")?.content).toEqual({
+      ...monday,
+      bodyweightKg: 69,
+    });
+    expect(rows()).toHaveLength(2);
+    await a.restart();
+    store = a.store;
+    expect(
+      store
+        .list("body_measurement")
+        .map((r) => r.id)
+        .sort(),
+    ).toEqual(["monday", "wednesday"]);
+    expect(store.hasUnsyncedWork()).toBe(false);
+  } finally {
+    await act(() => screen?.unmount());
+    await world.dispose();
+    vi.unstubAllGlobals();
+  }
+});

@@ -54,3 +54,25 @@ export function correctBodyweight(
   validateMeasurement(content);
   if (bodyweightKg !== original.kg) store.put("body_measurement", original.id, content);
 }
+
+/**
+ * Deletes a reading as the person saw it when they asked. A reading already gone has nothing left
+ * to delete; one that changed since, or that sync is still settling, is refused instead.
+ */
+export function deleteBodyweight(
+  store: DeviceStore,
+  original: { id: string; kg: number; at: number },
+) {
+  const row = store.get("body_measurement", original.id);
+  if (!row?.content || row.deleted) return;
+  if (row.status === "conflict")
+    throw new Error("Resolve the conflicting measurement before deleting it.");
+  if (row.fromRestore) throw new Error("Sync this measurement before deleting it.");
+  if (
+    row.content.bodyweightKg !== original.kg ||
+    Date.parse(String(row.content.takenAt)) !== original.at
+  ) {
+    throw new Error("This measurement changed. Try again to delete the latest reading.");
+  }
+  store.delete("body_measurement", original.id);
+}

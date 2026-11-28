@@ -2,7 +2,8 @@ import { openDeviceStore } from "@leve/storage";
 import { createSqlJsEngine } from "@leve/storage/sqljs";
 import initSqlJs from "sql.js";
 import { expect, it, vi } from "vitest";
-import { correctBodyweight, recordBodyweight } from "../src/data/bodyweight.ts";
+import { World } from "../../../packages/sync/test/support/harness.ts";
+import { correctBodyweight, deleteBodyweight, recordBodyweight } from "../src/data/bodyweight.ts";
 import { progressData } from "../src/data/read.ts";
 
 vi.mock("../src/data/ids.ts", () => {
@@ -108,5 +109,43 @@ it("refuses a stale weight correction or a deleted reading without resurrecting 
     expect(store.list("body_measurement")).toHaveLength(0);
   } finally {
     store.close();
+  }
+});
+
+it("deletes a reading only as it was seen, never while sync holds a conflicting version", async () => {
+  const world = new World();
+  try {
+    const server = world.server();
+    const account = { account: "alice", server: "s", transport: server.transport("alice") };
+    const a = await world.phone("a", account);
+    const b = await world.phone("b", account);
+    const takenAt = "2026-11-11T10:00:00.000Z";
+    const content = { takenAt, bodyweightKg: 72, fatPercent: null };
+    const seen = { id: "morning", kg: 72, at: Date.parse(takenAt) };
+    a.store.put("body_measurement", seen.id, content);
+    await a.sync();
+    await b.sync();
+    // Both phones correct it; the later upload finds the other version and holds a conflict.
+    b.store.put("body_measurement", seen.id, { ...content, bodyweightKg: 71 });
+    await b.sync();
+    a.store.put("body_measurement", seen.id, { ...content, bodyweightKg: 73 });
+    await a.sync();
+    expect(a.store.get("body_measurement", seen.id)?.status).toBe("conflict");
+    const mine = { ...seen, kg: 73 };
+    expect(() => deleteBodyweight(a.store, mine)).toThrow(/Resolve the conflicting/);
+    expect(a.store.get("body_measurement", seen.id)?.deleted).toBe(false);
+    // On the other phone, the reading as first seen is stale since its correction.
+    expect(() => deleteBodyweight(b.store, seen)).toThrow(/changed/);
+    deleteBodyweight(b.store, { ...seen, kg: 71 });
+    // A second confirmation has nothing left to delete.
+    deleteBodyweight(b.store, { ...seen, kg: 71 });
+    await b.sync();
+    expect(b.store.hasUnsyncedWork()).toBe(false);
+    expect(await server.row("alice", "body_measurement", seen.id)).toMatchObject({
+      state: "deleted",
+      content: null,
+    });
+  } finally {
+    await world.dispose();
   }
 });

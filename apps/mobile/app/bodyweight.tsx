@@ -3,12 +3,12 @@ import { useMemo, useState } from "react";
 import { FlatList, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppData } from "../src/data/app-data.tsx";
-import { correctBodyweight, recordBodyweight } from "../src/data/bodyweight.ts";
+import { correctBodyweight, deleteBodyweight, recordBodyweight } from "../src/data/bodyweight.ts";
 import { useProgress } from "../src/data/queries.ts";
 import { measurementClock } from "../src/model/measurement-clock.ts";
 import { lineAxis } from "../src/model/progress.ts";
 import { font, gutter, numeral, radius, space, type } from "../src/theme.ts";
-import { DestructiveButton } from "../src/ui/action-sheet.tsx";
+import { ActionSheet, DestructiveButton } from "../src/ui/action-sheet.tsx";
 import { BackLink } from "../src/ui/back-link.tsx";
 import { BodyweightEditor } from "../src/ui/bodyweight-editor.tsx";
 import { BottomSheet } from "../src/ui/bottom-sheet.tsx";
@@ -17,6 +17,7 @@ import { EditorSyncReview, hasEditorConflict } from "../src/ui/editor-sync-revie
 import { EmptyState } from "../src/ui/empty-state.tsx";
 import { dayLabel, shortDay, timeLabel, weightValue } from "../src/ui/format.ts";
 import { SectionLabel } from "../src/ui/group.tsx";
+import { haptic } from "../src/ui/haptics.ts";
 import { ChevronIcon, PlusIcon } from "../src/ui/icons.tsx";
 import { LineChart } from "../src/ui/line-chart.tsx";
 import { Banner } from "../src/ui/notice.tsx";
@@ -37,6 +38,9 @@ export default function BodyweightHistory() {
     unit: WeightUnit;
     reviewing?: boolean;
   } | null>(null);
+  // The reading a long press asked to delete, as it was then, and why a deletion was refused.
+  const [deleting, setDeleting] = useState<(typeof measurements)[number] | null>(null);
+  const [deleteError, setDeleteError] = useState("");
   const reading = editor?.reading;
   const conflict = conflicts.find((row) => row.id === reading?.id);
   const reviewing = !!conflict && !!editor?.reviewing;
@@ -110,6 +114,14 @@ export default function BodyweightHistory() {
             <View style={styles.titles}>
               <TabTitle title="Bodyweight" eyebrow="History" />
             </View>
+            {deleteError ? (
+              <Banner
+                label="Delete"
+                message={deleteError}
+                onDismiss={() => setDeleteError("")}
+                style={styles.review}
+              />
+            ) : null}
             {conflicts.map((record) => (
               <View key={record.id} style={styles.review}>
                 <EditorSyncReview record={record} />
@@ -177,8 +189,17 @@ export default function BodyweightHistory() {
               ]}
               accessibilityRole="button"
               accessibilityLabel={`Edit bodyweight for ${dayLabel(iso)} at ${time}, ${weightValue(item.kg, unit)} ${unit}`}
+              // Holding a reading offers to delete it; screen readers get that as an action.
+              accessibilityActions={[{ name: "delete", label: "Delete measurement" }]}
+              onAccessibilityAction={({ nativeEvent }) => {
+                if (nativeEvent.actionName === "delete") setDeleting(item);
+              }}
               scaleTo={0.98}
               onPress={() => openEditor(item)}
+              onLongPress={() => {
+                haptic.select();
+                setDeleting(item);
+              }}
             >
               <View style={styles.date}>
                 <Text style={styles.day}>{dayLabel(iso)}</Text>
@@ -190,6 +211,26 @@ export default function BodyweightHistory() {
           );
         }}
       />
+      {deleting && (
+        <ActionSheet
+          message={`The ${weightValue(deleting.kg, unit)} ${unit} reading from ${dayLabel(new Date(deleting.at).toISOString())} at ${measurementTime(deleting.at)} will be deleted.`}
+          action="Delete measurement"
+          keep="Keep measurement"
+          onConfirm={() => {
+            setDeleting(null);
+            try {
+              change((store) => deleteBodyweight(store, deleting));
+            } catch (cause) {
+              haptic.warning();
+              setDeleteError((cause as Error).message);
+              return;
+            }
+            haptic.tap();
+            setDeleteError("");
+          }}
+          onClose={() => setDeleting(null)}
+        />
+      )}
       {editor && (
         <BottomSheet
           title={editorTitle}
