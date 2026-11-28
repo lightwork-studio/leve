@@ -24,6 +24,9 @@
   "env": {
     "production": {
       "name": "leve-sync-prod",
+      // App Store builds and MCP clients reach production here (MCP_RESOURCE_URL is
+      // https://sync.leve.timweb.app/mcp). The development Worker has no custom domain.
+      "routes": [{ "pattern": "sync.leve.timweb.app", "custom_domain": true }],
       // Bindings aren't inherited by an environment, so they are repeated here
       // (src/wrangler-config.test.ts checks that they match).
       "durable_objects": {

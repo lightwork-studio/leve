@@ -48,12 +48,15 @@ the token as `LEVE_WEB_PREVIEW_CLOUDFLARE_API_TOKEN`. The repository variables
 
 ## Sync
 
-A build syncs when it has both a sign-in (`EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY`, set in `eas.json`
-for Leve Dev and Leve Preview) and a sync server (`EXPO_PUBLIC_SYNC_URL`). Leve Dev and Leve
-Preview sync with the development Worker (`leve-sync`, see
+A build syncs when it has both a sign-in (`EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY`, set per profile in
+`eas.json`) and a sync server (`EXPO_PUBLIC_SYNC_URL`). Leve Dev and Leve Preview sign in with
+Clerk's development instance and sync with the development Worker (`leve-sync`, see
 [the Worker's README](../sync-cloudflare/README.md)). Set its URL as `EXPO_PUBLIC_SYNC_URL` in the
 EAS `development` and `preview` environments, and in your shell or `.env` for a local build. The
-App Store build has no sync server yet, so it keeps everything on the phone. Browsers never sync.
+App Store build signs in with Clerk's production instance and syncs with the production Worker
+(`leve-sync-prod`) at `https://sync.leve.timweb.app`, set as `EXPO_PUBLIC_SYNC_URL` in the EAS
+`production` environment. Store OTA updates are bundled with the same `eas.json` settings as the
+store build. Browsers never sync.
 
 Development and TestFlight builds can also sync with a server the person runs
 ([apps/sync-node](../sync-node/README.md)), whatever server the build has. Under Settings, Sync

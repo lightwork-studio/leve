@@ -72,6 +72,12 @@ Remove `MCP_WRITES_ENABLED` to disable writes while keeping reads available.
 | `leve-sync`      | development    | Leve Dev and TestFlight previews | each `main` commit whose `check` passed (Release)       |
 | `leve-sync-prod` | production     | App Store builds                 | each new release tag's store build (App Store workflow) |
 
+Production answers at `https://sync.leve.timweb.app`, a custom domain declared in
+`wrangler.jsonc`, so its deploy token must also be able to manage Workers custom domains on that
+zone, as one from the "Edit Cloudflare Workers" template can. Its `MCP_RESOURCE_URL` is
+`https://sync.leve.timweb.app/mcp`, registered on Clerk's production instance like the development
+one above.
+
 Both run the same code from `wrangler.jsonc`, each with its own secrets and accounts. The
 development Worker is the place to try a server change with the preview app before a release tag
 carries it to production.

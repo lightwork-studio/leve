@@ -35,7 +35,8 @@
       "env": {
         "LEVE_APP_VARIANT": "production",
         "EXPO_PUBLIC_BUILD_LABEL": "App Store",
-        "EXPO_PUBLIC_SAMPLE_DATA": "off"
+        "EXPO_PUBLIC_SAMPLE_DATA": "off",
+        "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_live_Y2xlcmsubGV2ZS50aW13ZWIuYXBwJA=="
       }
     }
   },

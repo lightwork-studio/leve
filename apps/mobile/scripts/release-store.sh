@@ -32,8 +32,13 @@ fi
 
 : "${LEVE_PRODUCTION_EAS_PROJECT_ID:?Configure the production EAS project ID.}"
 : "${EXPO_TOKEN:?Configure the production EAS token.}"
-export LEVE_APP_VARIANT=production LEVE_STORE_VERSION="${tag#v}"
-export EXPO_PUBLIC_BUILD_LABEL='App Store' EXPO_PUBLIC_SAMPLE_DATA=off
+# An OTA update must be bundled with the same settings as the store build it reaches, sign-in
+# included. Read first, so a broken eas.json stops the release instead of shipping without them.
+build_env="$(node -e '
+  for (const [key, value] of Object.entries(require("./eas.json").build.production.env))
+    console.log(key + "=" + value)')"
+while IFS= read -r line; do export "$line"; done <<<"$build_env"
+export LEVE_STORE_VERSION="${tag#v}"
 export EXPO_PUBLIC_COMMIT="${commit:0:7}"
 export EXPO_PUBLIC_RELEASE_NUMBER="$(git rev-list --first-parent --count HEAD)"
 
