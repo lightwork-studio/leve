@@ -62,10 +62,8 @@ export function correctBodyweight(
 export function deleteBodyweight(store: DeviceStore, id: string, seen: JsonObject) {
   const row = store.get("body_measurement", id);
   if (!row?.content || row.deleted) return;
-  if (row.status === "conflict")
-    throw new Error("Resolve the conflicting measurement before deleting it.");
-  if (row.fromRestore) throw new Error("Sync this measurement before deleting it.");
-  if (!jsonEqual(row.content, seen))
-    throw new Error("This measurement changed. Try again to delete the latest reading.");
+  if (row.status === "conflict") throw new Error("Review its sync conflict first. Not deleted.");
+  if (row.fromRestore) throw new Error("Sync this measurement first. Not deleted.");
+  if (!jsonEqual(row.content, seen)) throw new Error("Measurement changed elsewhere. Not deleted.");
   store.delete("body_measurement", id);
 }

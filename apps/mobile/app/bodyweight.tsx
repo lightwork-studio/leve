@@ -46,6 +46,8 @@ export default function BodyweightHistory() {
     content: JsonObject;
   } | null>(null);
   const askToDelete = (reading: (typeof measurements)[number]) => {
+    // A reading sync found another version of is settled in its review first.
+    if (conflicts.some((row) => row.id === reading.id)) return openEditor(reading);
     const content = store.get("body_measurement", reading.id)?.content;
     if (content) setDeleting({ reading, content });
   };

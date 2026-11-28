@@ -132,7 +132,7 @@ it("deletes a reading only as it was seen, never while sync holds a conflicting 
     await a.sync();
     expect(a.store.get("body_measurement", seen.id)?.status).toBe("conflict");
     const mine = { ...content, bodyweightKg: 73 };
-    expect(() => deleteBodyweight(a.store, seen.id, mine)).toThrow(/Resolve the conflicting/);
+    expect(() => deleteBodyweight(a.store, seen.id, mine)).toThrow(/sync conflict/);
     expect(a.store.get("body_measurement", seen.id)?.deleted).toBe(false);
     // On the other phone, the reading as first seen is stale since its correction, and so is one
     // whose body fat changed unseen.

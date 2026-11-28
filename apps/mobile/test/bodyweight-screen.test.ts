@@ -1007,9 +1007,7 @@ it("deletes a held reading on every phone after confirming, keeps it on Keep and
     await a.sync();
     await confirmAction(root, "Delete measurement");
     await rerender();
-    expect(spoken.toasts).toEqual([
-      "This measurement changed. Try again to delete the latest reading.",
-    ]);
+    expect(spoken.toasts).toEqual(["Measurement changed elsewhere. Not deleted."]);
     expect(store.get("body_measurement", "monday")?.content).toEqual({ ...monday, fatPercent: 17 });
     expect(rows()).toHaveLength(2);
     await a.restart();
@@ -1021,6 +1019,51 @@ it("deletes a held reading on every phone after confirming, keeps it on Keep and
         .sort(),
     ).toEqual(["monday", "wednesday"]);
     expect(store.hasUnsyncedWork()).toBe(false);
+  } finally {
+    await act(() => screen?.unmount());
+    await world.dispose();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("opens the sync review instead of deleting when the held reading has another version", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const world = new World();
+  let screen: ReactTestRenderer | undefined;
+  try {
+    const server = world.server();
+    const account = { account: "alice", server: "s", transport: server.transport("alice") };
+    const a = await world.phone("a", account);
+    const b = await world.phone("b", account);
+    store = a.store;
+    const initial = { takenAt: "2026-11-12T07:00:00.000Z", bodyweightKg: 70, fatPercent: null };
+    store.put("body_measurement", "first", initial);
+    await a.sync();
+    await b.sync();
+    b.store.put("body_measurement", "first", { ...initial, bodyweightKg: 71 });
+    await b.sync();
+    store.put("body_measurement", "first", { ...initial, bodyweightKg: 69 });
+    await a.sync();
+    await act(() => {
+      screen = create(createElement(BodyweightHistory));
+    });
+    if (!screen) throw Error("Missing history");
+    const root = screen.root;
+    await act(() =>
+      root
+        .find(
+          (n) =>
+            n.type === ("Tap" as never) &&
+            String(n.props.accessibilityLabel).startsWith("Edit bodyweight for "),
+        )
+        .props.onLongPress(),
+    );
+    const text = root
+      .findAllByType(Modal)
+      .flatMap((modal) => modal.findAllByType(Text).map((n) => n.children.join("")));
+    expect(text).toContain("Use server version");
+    expect(text).not.toContain("Delete measurement");
+    expect(store.get("body_measurement", "first")?.deleted).toBe(false);
   } finally {
     await act(() => screen?.unmount());
     await world.dispose();
