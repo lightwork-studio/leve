@@ -3,6 +3,7 @@ import {
   type Contract,
   clientContract,
   compareReleases,
+  HEVY_WORKOUT_ID_PREFIX,
   type JsonObject,
   jsonBytes,
   jsonEqual,
@@ -756,10 +757,15 @@ export class DeviceStore {
     const row = this.#row(kind, id);
     if (!row) return;
     const inFlight = this.#submissionFor(kind, id);
+    // A different device can import the same workout independently. Retain its deletion even
+    // when the local copy never synced, so retrying the import cannot bring it back.
+    const imported = kind === "workout" && id.startsWith(HEVY_WORKOUT_ID_PREFIX);
     if (!this.#knownToServer(row) && !inFlight) {
-      // Never reached the server: nothing to tell it.
-      this.#purge(kind, id);
-      return;
+      if (!imported) {
+        this.#purge(kind, id);
+        return;
+      }
+      this.#purgeDescendants(kind, id);
     }
     if (row.serverState === "deleted" && row.localState === null) return;
     this.#write({
@@ -775,6 +781,7 @@ export class DeviceStore {
       keptContent:
         row.keptContent ?? (row.reoffered && row.serverRevision === null ? row.localContent : null),
       status: row.status === "conflict" ? "conflict" : "pending",
+      seenOnServer: row.seenOnServer || imported,
       ...(row.status === "invalid"
         ? { problem: null, problemRevision: null, problemAt: null }
         : {}),

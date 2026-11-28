@@ -1,6 +1,6 @@
 import Constants from "expo-constants";
 import { router, useLocalSearchParams } from "expo-router";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { buildInfo } from "../src/build-info.ts";
@@ -10,7 +10,14 @@ import {
   saveAppearanceSetting,
   useAppearanceSetting,
 } from "../src/data/appearance-setting.ts";
+import {
+  hevyImportSummary,
+  importHevyWorkouts,
+  prepareHevyImport,
+} from "../src/data/hevy-import.ts";
 import { useOptimisticSettings } from "../src/data/optimistic-settings.ts";
+// Without an extension, so browsers get the file input in place of the system picker.
+import { pickCsv } from "../src/data/pick-csv";
 import { readSettings } from "../src/data/read.ts";
 import {
   type Choice,
@@ -34,6 +41,7 @@ import { ownServerAvailable, syncEnabled } from "../src/sync/sync-config.ts";
 import { SyncServerSection } from "../src/sync/sync-server-section";
 import { font, gutter, numeral, radius, space, type } from "../src/theme.ts";
 import { ActionSheet, useConfirmation } from "../src/ui/action-sheet.tsx";
+import { afterFeedback } from "../src/ui/after-feedback.ts";
 import { ActionRow, ChoiceRow, Stepper, ToggleRow } from "../src/ui/choice-row.tsx";
 import { Enter, StillOnOpen } from "../src/ui/enter.tsx";
 import { announce } from "../src/ui/focus.ts";
@@ -121,6 +129,10 @@ export default function SettingsScreen() {
     [linked.server, linked.code, linked.opened],
   );
   const [problem, setProblem] = useState<string | null>(null);
+  /** The outcome of the last Hevy import, until dismissed. */
+  const [notice, setNotice] = useState<{ label: string; message: string } | null>(null);
+  const [importing, setImporting] = useState(false);
+  const importRunning = useRef(false);
   const [trackRir, setTrackRir] = useTrackRir();
   const showTargets = useShowTargets();
   const appearance = useAppearanceSetting();
@@ -139,8 +151,45 @@ export default function SettingsScreen() {
    */
   const showProblem = (message: string) => {
     haptic.warning();
+    setNotice(null);
     setProblem(message);
     announce(message);
+  };
+
+  /** Adds the workouts of a Hevy CSV export. Nothing is written unless the whole file reads. */
+  const importFromHevy = async () => {
+    if (importRunning.current) return;
+    importRunning.current = true;
+    haptic.select();
+    setImporting(true);
+    try {
+      const csv = await pickCsv();
+      if (csv === null) return;
+      const workouts = await prepareHevyImport(csv);
+      // The write is synchronous: let the busy row paint first.
+      const result = await new Promise<ReturnType<typeof importHevyWorkouts>>((resolve, reject) => {
+        afterFeedback(() => {
+          try {
+            resolve(change((current) => importHevyWorkouts(current, workouts)));
+          } catch (error) {
+            reject(error);
+          }
+        });
+      });
+      const message = hevyImportSummary(result);
+      haptic.success();
+      setProblem(null);
+      setNotice({ label: "Imported", message });
+      announce(message);
+    } catch (error) {
+      const message = (error as Error).message || "Leve couldn't read that file.";
+      haptic.warning();
+      setNotice({ label: "Not imported", message });
+      announce(message);
+    } finally {
+      importRunning.current = false;
+      setImporting(false);
+    }
   };
 
   const queue = (edit: Parameters<typeof optimistic.enqueue>[0]) => {
@@ -190,7 +239,7 @@ export default function SettingsScreen() {
           contentContainerStyle={{
             paddingTop: insets.top + space.sm,
             // Room to scroll the last rows clear of a problem banner.
-            paddingBottom: insets.bottom + space.xxl + (saveProblem ? PROBLEM_ROOM : 0),
+            paddingBottom: insets.bottom + space.xxl + (saveProblem || notice ? PROBLEM_ROOM : 0),
           }}
         >
           <View style={styles.nav}>
@@ -337,6 +386,12 @@ export default function SettingsScreen() {
                 divider
               />
               <ActionRow
+                label={importing ? "Importing from Hevy…" : "Import from Hevy"}
+                hint="Adds the workouts of a Hevy CSV export"
+                divider
+                onPress={() => void importFromHevy()}
+              />
+              <ActionRow
                 label={
                   seedsSample
                     ? "Start again with fresh preview data"
@@ -375,7 +430,7 @@ export default function SettingsScreen() {
           style={[styles.problemDock, { bottom: insets.bottom + space.md }]}
           pointerEvents="box-none"
         >
-          {saveProblem && (
+          {saveProblem ? (
             <Enter leaves>
               <Banner
                 label="Not saved"
@@ -386,6 +441,12 @@ export default function SettingsScreen() {
                 }}
               />
             </Enter>
+          ) : (
+            notice && (
+              <Enter leaves>
+                <Banner {...notice} onDismiss={() => setNotice(null)} />
+              </Enter>
+            )
           )}
         </View>
 

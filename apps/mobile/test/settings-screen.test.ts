@@ -104,6 +104,8 @@ vi.mock("../src/ui/enter.tsx", () => ({
     h("div", { role: props.role }, children),
   StillOnOpen: ({ children }: { children?: ReactNode }) => children,
 }));
+const pickCsv = vi.hoisted(() => vi.fn<() => Promise<string | null>>());
+vi.mock("../src/data/pick-csv", () => ({ pickCsv }));
 vi.mock("../src/ui/haptics.ts", () => ({
   haptic: { tap: () => {}, select: () => {}, warning: () => {}, success: () => {} },
 }));
@@ -562,4 +564,44 @@ it("draws the logo in the about line and still names it Leve", async () => {
   expect(stop).toBe(appearance.commit);
   // The name is not typed out a second time beside the logo.
   expect(about.textContent).toMatch(/^ · version 0\.1\.0 · build /);
+});
+
+const HEVY_HEADER =
+  '"title","start_time","end_time","description","exercise_title","superset_id","exercise_notes","set_index","set_type","weight_kg","reps","distance_km","duration_seconds","rpe"';
+
+it("imports a Hevy export from More, showing the import until it is saved", async () => {
+  pickCsv.mockResolvedValueOnce(
+    [
+      HEVY_HEADER,
+      '"Push","15 Nov 2026, 18:00","15 Nov 2026, 19:00","","Bench Press (Barbell)",,"",0,"normal",80,5,,,',
+      '"Pull","16 Nov 2026, 18:00","16 Nov 2026, 19:00","","Pull Up",,"",0,"normal",,8,,,',
+    ].join("\n"),
+  );
+  await render();
+  feedback.hold();
+  await press("Import from Hevy");
+  expect(byLabel("Importing from Hevy…")).not.toBeNull();
+  expect(store.list("workout")).toEqual([]);
+  await act(feedback.release);
+  await render();
+  expect(store.list("workout").map((workout) => workout.content?.title)).toEqual(
+    expect.arrayContaining(["Push", "Pull"]),
+  );
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("Added 2 workouts.");
+  expect(byLabel("Import from Hevy")).not.toBeNull();
+});
+
+it("explains a file it can't import and writes nothing", async () => {
+  pickCsv.mockResolvedValueOnce("date,exercise,weight\n2026-11-15,Squat,100");
+  await render();
+  await press("Import from Hevy");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+    "Not importedChoose a workout CSV exported from Hevy.",
+  );
+  expect(store.list("workout")).toEqual([]);
+
+  // Cancelling the picker changes nothing and says nothing.
+  pickCsv.mockResolvedValueOnce(null);
+  await press("Import from Hevy");
+  expect(store.list("workout")).toEqual([]);
 });
