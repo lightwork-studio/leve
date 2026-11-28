@@ -171,6 +171,24 @@ describe("Hevy CSV import", () => {
     }
   });
 
+  it("gives a workout the same id whatever language its export was written in", async () => {
+    const exported = (start: string) =>
+      `${HEADER}\n"A","${start}","22 Nov 2026, 21:00","","Pull Up",,"",0,"normal",,8,,,`;
+    importHevyWorkouts(store, await prepareHevyImport(exported("22 Nov 2026, 20:19")));
+    // The same workout from Hevy in German, and on a 12-hour clock as iOS writes it.
+    for (const start of ["22 Nov. 2026, 20:19", "22 Nov 2026, 8:19 PM"]) {
+      expect(importHevyWorkouts(store, await prepareHevyImport(exported(start)))).toEqual({
+        added: 0,
+        existing: 1,
+        deleted: 0,
+      });
+    }
+    expect(store.list("workout").map((workout) => workout.id)).toEqual([
+      "hevy:workout:202611222019:1",
+    ]);
+    expect(parseHevyCsv(exported("3 mrt. 2026, 18:00"))[0]?.minute).toBe("202603031800");
+  });
+
   it("converts an export in pounds and miles", async () => {
     const imperial = [
       '"title","start_time","end_time","description","exercise_title","superset_id","exercise_notes","set_index","set_type","weight_lbs","reps","distance_miles","duration_seconds","rpe"',

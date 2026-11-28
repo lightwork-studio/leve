@@ -69,9 +69,9 @@ function* csvRows(source: string) {
 const MONTH_NAMES = [
   "january januar janner janvier enero gennaio janeiro januari",
   "february februar fevrier febrero febbraio fevereiro februari",
-  "march marz mars marzo marco maart",
+  "march marz mars marzo marco maart mrt",
   "april avril abril aprile",
-  "may mai mayo maggio maio mei",
+  "may mai mayo maggio maio mei maj",
   "june juni juin junio giugno junho",
   "july juli juillet julio luglio julho",
   "august aout agosto augustus",
