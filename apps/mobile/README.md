@@ -125,8 +125,9 @@ When deployment is enabled, every push to `main` runs the checks and then `scrip
 - If the native layer changed (new native module, app config change), there is no matching build
   yet, so a new build starts on EAS and is uploaded to TestFlight when it finishes.
 
-The runtime version is a fingerprint of the native layer, so nobody has to decide which path a
-change needs. To force a new build, run the Release workflow manually on `main` with "build" set.
+The runtime version fingerprints the native layer and dependency patches in the workspace's
+`patches/` directory. To force a new build, run the Release workflow manually on `main` with
+"build" set.
 
 The release number adds a fixed offset to the count of commits on `main`'s first-parent history.
 Each merge adds one, and retrying the same commit keeps its number. Compare the **release** at the
