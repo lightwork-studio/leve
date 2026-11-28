@@ -1,4 +1,4 @@
-import { leveContract } from "@leve/contract";
+import { type JsonObject, jsonEqual, leveContract } from "@leve/contract";
 import { type WeightUnit, weightToKg } from "@leve/core";
 import type { DeviceStore } from "@leve/storage";
 import { newId } from "./ids.ts";
@@ -53,4 +53,17 @@ export function correctBodyweight(
   const content = { ...row.content, bodyweightKg };
   validateMeasurement(content);
   if (bodyweightKg !== original.kg) store.put("body_measurement", original.id, content);
+}
+
+/**
+ * Deletes a reading as the person saw it when they asked, body fat included. A reading already gone
+ * has nothing left to delete; one that changed since, or that sync is still settling, is refused.
+ */
+export function deleteBodyweight(store: DeviceStore, id: string, seen: JsonObject) {
+  const row = store.get("body_measurement", id);
+  if (!row?.content || row.deleted) return;
+  if (row.status === "conflict") throw new Error("Review its sync conflict first. Not deleted.");
+  if (row.fromRestore) throw new Error("Sync this measurement first. Not deleted.");
+  if (!jsonEqual(row.content, seen)) throw new Error("Measurement changed elsewhere. Not deleted.");
+  store.delete("body_measurement", id);
 }

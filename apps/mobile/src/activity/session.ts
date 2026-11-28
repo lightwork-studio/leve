@@ -232,6 +232,19 @@ export function workoutSession(
         });
       return work;
     },
+    async adoptExisting(frame: ActivityFrame, source: string) {
+      const existing = factory.getInstances().find((activity) => activity.getId() === source);
+      if (!existing) return false;
+      const scheduled = frames.set(frame);
+      const ticket = await frames.ticket(frame, scheduled);
+      if (!ticket || scheduled !== frames.generation()) return false;
+      handle = existing;
+      owner = frame.workoutId;
+      cleanStart = false;
+      // Bind a fresh local frame for validation without replacing the live countdown.
+      frames.shown(frame, ticket, scheduled);
+      return true;
+    },
     interact(source: string, target: string) {
       return source === handle?.getId() && frames.interact(target);
     },

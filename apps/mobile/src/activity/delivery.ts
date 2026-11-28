@@ -6,6 +6,7 @@ export interface ActivityTapInbox {
   >;
   finishLeveActivityTap(id: string, applied: boolean, reviewed: boolean): Promise<void>;
   takeLeveReviewRequest(): boolean;
+  canLogLeveActivity?(source: string, target: string): boolean;
 }
 
 // Serialize app startup and native wakeups. A cold foreground handoff can include an unlock.
@@ -17,13 +18,14 @@ export function activityDelivery(
 ) {
   let ready: Promise<void> | undefined;
   let draining = Promise.resolve();
-  function drain() {
+  function drain(afterApply?: () => Promise<void>, recovering = false) {
     if (!ready) return draining;
     draining = draining
       .then(async () => {
         await ready;
         // A failed native inbox write still opens the workout, even if reads also fail.
         if (foreground() && inbox.takeLeveReviewRequest()) review();
+        const deferred: string[] = [];
         for (const tap of await inbox.pendingLeveActivityTaps()) {
           await ready;
           const age = Date.now() - tap.timestamp;
@@ -31,10 +33,20 @@ export function activityDelivery(
             !tap.reviewOnly &&
             age >= 0 &&
             age < 120_000 &&
+            (!recovering || inbox.canLogLeveActivity?.(tap.source, tap.target) === true) &&
             session.interact(tap.source, tap.target);
           const reviewed = !applied && foreground();
           if (reviewed) review();
-          await inbox.finishLeveActivityTap(tap.id, applied, reviewed);
+          if (applied && afterApply) deferred.push(tap.id);
+          else await inbox.finishLeveActivityTap(tap.id, applied, reviewed);
+        }
+        if (afterApply && deferred.length) {
+          // iOS may suspend a headless host as soon as the intent receives its receipt.
+          try {
+            await afterApply();
+          } finally {
+            for (const id of deferred) await inbox.finishLeveActivityTap(id, true, false);
+          }
         }
       })
       .catch(() => {
@@ -44,6 +56,11 @@ export function activityDelivery(
   }
   return {
     drain,
+    async recover(frame: ActivityFrame, source: string, afterApply: () => Promise<void>) {
+      if (!(await session.adoptExisting(frame, source))) return;
+      ready = Promise.resolve();
+      await drain(afterApply, true);
+    },
     publish(frame: ActivityFrame | null, retry = false) {
       const first = !ready;
       ready = session.publish(frame, retry);
