@@ -1,4 +1,5 @@
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from "expo-router";
+import type { ReactElement } from "react";
 import { palettes } from "../theme.ts";
 import { useAppearance } from "./themed.ts";
 
@@ -18,6 +19,12 @@ export interface StackScreen {
   transparent?: boolean;
 }
 
+/** Wraps each screen, by its route, in what every screen of that kind shows. */
+export type ScreenLayout = (props: {
+  route: { name: string };
+  children: ReactElement;
+}) => ReactElement;
+
 const ANIMATION = {
   push: "default",
   cover: "slide_from_bottom",
@@ -32,11 +39,12 @@ const THEMES = {
 };
 
 /** The app's screen stack on phones: the platform's native navigator and transitions. */
-export function AppStack({ screens }: { screens: StackScreen[] }) {
+export function AppStack({ screens, layout }: { screens: StackScreen[]; layout?: ScreenLayout }) {
   const theme = THEMES[useAppearance()];
   return (
     <ThemeProvider value={theme}>
       <Stack
+        {...(layout ? { screenLayout: layout } : {})}
         screenOptions={{
           headerShown: false,
           contentStyle: { backgroundColor: theme.colors.background },
